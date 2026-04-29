@@ -1,0 +1,6 @@
+Row Type,Action,Ad group status,Ad group ID,Ad group,Campaign,Ad group type,Max CPC,Max content CPC,Target CPA,Target ROAS,Max CPM,Max CPV,Percent CPC,Tracking template,Final URL suffix,Custom parameter,Label
+Ad group,Add,Paused,,High Intent - PL,Stands - Search PL,Standard,1.50,,,,,,,,,,
+Ad group,Add,Paused,,Mid Intent - PL,Stands - Search PL,Standard,1.20,,,,,,,,,,
+Ad group,Add,Paused,,High Intent - EN,Stands - Search EN,Standard,1.50,,,,,,,,,,
+Ad group,Add,Paused,,Mid Intent - EN,Stands - Search EN,Standard,1.20,,,,,,,,,,
+Ad group,Add,Paused,,Brand - PL_EN,Stands - Brand,Standard,0.80,,,,,,,,,,
