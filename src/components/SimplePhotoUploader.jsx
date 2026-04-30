@@ -3,6 +3,48 @@ import { Upload, X, Loader2 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 /**
+ * Kompresja obrazka przed uploadem.
+ * - Skala do maks. MAX_DIM (długiego boku) z zachowaniem proporcji
+ * - Konwersja do WebP (lepsza kompresja przy zachowaniu ostrości)
+ * - Quality 0.85 (~150-300 KB dla typowego zdjęcia produktu)
+ * Dzięki temu zdjęcia są szybkie, ale wciąż czytelne (kupiec widzi opakowanie).
+ * Pliki nie-graficzne (np. SVG, GIF animowany) są przekazywane bez zmian.
+ */
+const MAX_DIM = 1600;
+async function compressImage(file) {
+  if (!file.type.startsWith("image/")) return file;
+  if (file.type === "image/svg+xml" || file.type === "image/gif") return file;
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const im = new Image();
+      im.onload = () => { URL.revokeObjectURL(url); resolve(im); };
+      im.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+      im.src = url;
+    });
+    const ratio = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+    const w = Math.round(img.width * ratio);
+    const h = Math.round(img.height * ratio);
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, w, h);
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/webp", 0.85)
+    );
+    if (!blob) return file;
+    // Jeśli kompresja "zwiększyła" rozmiar (małe zdjęcie) - zostaw oryginał
+    if (blob.size >= file.size) return file;
+    const newName = file.name.replace(/\.[^.]+$/, "") + ".webp";
+    return new File([blob], newName, { type: "image/webp" });
+  } catch (e) {
+    console.warn("[compressImage] fallback to original:", e);
+    return file;
+  }
+}
+
+/**
  * <SimplePhotoUploader>
  *
  * Lekki uploader do Supabase Storage. Nie pisze do żadnej tabeli — caller
@@ -63,9 +105,11 @@ export default function SimplePhotoUploader({
 
     const newUrls = [];
     let i = 0;
-    for (const file of fileArr) {
+    for (const rawFile of fileArr) {
       i++;
       try {
+        // Kompresja do 1600px / WebP / quality 0.85 (czytelne, ale lekkie)
+        const file = await compressImage(rawFile);
         const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
         const safeName = file.name
           .replace(/\.[^.]+$/, "")
@@ -78,7 +122,7 @@ export default function SimplePhotoUploader({
 
         const { error: upErr } = await supabase.storage
           .from(bucket)
-          .upload(path, file, { cacheControl: "3600", upsert: false });
+          .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type });
         if (upErr) throw upErr;
 
         const { data: pub } = supabase.storage.from(bucket).getPublicUrl(path);

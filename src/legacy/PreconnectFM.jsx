@@ -3358,16 +3358,17 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
 
             {/* ── PRODUKT: zdjęcie + tytuł + meta ── */}
             <div style={{ display:"flex",gap:12,alignItems:"flex-start" }}>
-              {/* Miniatury zdjęć (1-3) */}
+              {/* Miniatura - tylko zdjęcie głowne (pierwsze) */}
               {hasPhotos
-                ? <div style={{ display:"flex",gap:4,flexShrink:0 }}>
-                    {(o.photos||[]).slice(0,3).map((p,i)=>(
-                      <img key={i} src={p} alt="" style={{ width:i===0?80:48,height:i===0?80:48,objectFit:"cover",borderRadius:8,border:"1px solid #e2e8f0" }}/>
-                    ))}
+                ? <div style={{ position:"relative",flexShrink:0 }}>
+                    <img src={o.photos[0]} alt="" style={{ width:90,height:90,objectFit:"cover",borderRadius:8,border:"1px solid #e2e8f0" }}/>
+                    {(o.photos||[]).length>1 && (
+                      <span style={{ position:"absolute",bottom:4,right:4,background:"rgba(15,23,42,0.75)",color:"white",fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:10 }}>+{o.photos.length-1}</span>
+                    )}
                   </div>
-                : <div style={{ width:80,height:80,borderRadius:8,background:"#f8fafc",border:"1px dashed #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,flexDirection:"column",color:"#cbd5e1",fontSize:11 }}>
-                    <span style={{ fontSize:26,marginBottom:2 }}>{CEMOJI[o.category]||"📦"}</span>
-                    <span style={{ fontSize:9 }}>brak zdjęć produktu</span>
+                : <div style={{ width:90,height:90,borderRadius:8,background:"#f8fafc",border:"1px dashed #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,flexDirection:"column",color:"#cbd5e1",fontSize:11 }}>
+                    <span style={{ fontSize:30,marginBottom:2 }}>{CEMOJI[o.category]||"📦"}</span>
+                    <span style={{ fontSize:9 }}>brak zdjęć</span>
                   </div>
               }
               <div style={{ flex:1,minWidth:0 }}>
@@ -3594,10 +3595,13 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
       {/* Header hero */}
       <div style={{ background:"linear-gradient(135deg,#f0fdf4,#ecfdf5)",borderRadius:12,padding:16,marginBottom:14,display:"flex",gap:14 }}>
         {(o.photos||[]).length>0
-          ? <div style={{ display:"flex",gap:6,flexShrink:0 }}>
-              {o.photos.slice(0,3).map((p,i)=><img key={i} src={p} alt="" style={{ width:i===0?120:65,height:i===0?90:65,objectFit:"cover",borderRadius:7,border:"2px solid #bbf7d0" }}/>)}
+          ? <div style={{ position:"relative",flexShrink:0 }}>
+              <img src={o.photos[0]} alt="" style={{ width:140,height:105,objectFit:"cover",borderRadius:8,border:"2px solid #bbf7d0" }}/>
+              {(o.photos||[]).length>1 && (
+                <span style={{ position:"absolute",bottom:5,right:5,background:"rgba(15,23,42,0.78)",color:"white",fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:12 }}>+{o.photos.length-1}</span>
+              )}
             </div>
-          : <div style={{ width:90,height:70,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:32 }}>{CEMOJI[o.category]||"📦"}</div>
+          : <div style={{ width:140,height:105,borderRadius:8,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:42 }}>{CEMOJI[o.category]||"📦"}</div>
         }
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>
@@ -3638,6 +3642,44 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
                 <div style={{ fontSize:10,fontWeight:700,color:"#047857",textTransform:"uppercase",marginBottom:3 }}>Jak pomaga sprzedaży w sklepie</div>
                 {o.shopBenefit}
               </div>}
+            </Sec>
+          )}
+
+          {/* Zdjęcia produktu — accordion, domyślnie zamknięty, pełen podgląd po rozwinięciu */}
+          {(o.photos||[]).length>0 && (
+            <Sec label={`Zdjęcia produktu (${o.photos.length})`} icon="📸" color="#0d9488" bg="#f0fdfa" defaultOpen={false}>
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:12 }}>
+                {o.photos.map((p,i)=>(
+                  <a key={i} href={p} target="_blank" rel="noreferrer" style={{
+                    display:"block",
+                    background:"#f8fafc",
+                    border:"1px solid #e2e8f0",
+                    borderRadius:10,
+                    overflow:"hidden",
+                    aspectRatio:"4 / 3",
+                    cursor:"zoom-in",
+                    position:"relative",
+                  }}>
+                    <img src={p} alt={`Zdjęcie ${i+1}`} loading="lazy" style={{
+                      width:"100%",
+                      height:"100%",
+                      objectFit:"contain",
+                      background:"white",
+                    }}/>
+                    <span style={{
+                      position:"absolute",
+                      bottom:6, left:6,
+                      background:"rgba(15,23,42,0.75)",
+                      color:"white",
+                      fontSize:10,
+                      fontWeight:600,
+                      padding:"2px 8px",
+                      borderRadius:10,
+                    }}>{i===0 ? "Główne" : `Zdjęcie ${i+1}`}</span>
+                  </a>
+                ))}
+              </div>
+              <div style={{ fontSize:11,color:"#64748b",marginTop:10 }}>Kliknij zdjęcie, by otworzyć w pełnym rozmiarze.</div>
             </Sec>
           )}
 
