@@ -246,6 +246,114 @@ export async function saveFmPrefs(retailerId, prefs) {
 }
 
 // ===================================================================
+// LEGACY SYNC — offers i sends w formacie zgodnym z PreconnectFM.jsx
+// (przechowywane jako JSONB pełnej oferty/wysylki)
+// ===================================================================
+export async function loadLegacyOffers() {
+  const { data, error } = await supabase
+    .from("legacy_offers")
+    .select("data")
+    .order("legacy_id", { ascending: true });
+  if (error) {
+    console.warn("[loadLegacyOffers]", error.message);
+    return null;
+  }
+  return (data || []).map((r) => r.data);
+}
+
+export async function upsertLegacyOffer(offer) {
+  if (!offer || !offer.id) return;
+  const row = {
+    legacy_id: offer.id,
+    supplier_legacy_id: offer.supplierId || "",
+    status: offer.status || null,
+    category: offer.category || null,
+    origin: offer.origin || null,
+    data: offer,
+  };
+  const { error } = await supabase
+    .from("legacy_offers")
+    .upsert(row, { onConflict: "legacy_id" });
+  if (error) console.warn("[upsertLegacyOffer]", error.message);
+}
+
+export async function bulkUpsertLegacyOffers(offers) {
+  if (!offers || !offers.length) return;
+  const rows = offers.map((offer) => ({
+    legacy_id: offer.id,
+    supplier_legacy_id: offer.supplierId || "",
+    status: offer.status || null,
+    category: offer.category || null,
+    origin: offer.origin || null,
+    data: offer,
+  }));
+  const { error } = await supabase
+    .from("legacy_offers")
+    .upsert(rows, { onConflict: "legacy_id" });
+  if (error) console.warn("[bulkUpsertLegacyOffers]", error.message);
+}
+
+export async function deleteLegacyOffer(legacyId) {
+  const { error } = await supabase
+    .from("legacy_offers")
+    .delete()
+    .eq("legacy_id", legacyId);
+  if (error) console.warn("[deleteLegacyOffer]", error.message);
+}
+
+export async function loadLegacySends() {
+  const { data, error } = await supabase
+    .from("legacy_sends")
+    .select("data")
+    .order("legacy_id", { ascending: true });
+  if (error) {
+    console.warn("[loadLegacySends]", error.message);
+    return null;
+  }
+  return (data || []).map((r) => r.data);
+}
+
+export async function upsertLegacySend(send) {
+  if (!send || !send.id) return;
+  const row = {
+    legacy_id: send.id,
+    supplier_legacy_id: send.supplierId || "",
+    offer_legacy_id: send.offerId || null,
+    retailer_id: send.retailerId || null,
+    status: send.status || null,
+    data: send,
+  };
+  const { error } = await supabase
+    .from("legacy_sends")
+    .upsert(row, { onConflict: "legacy_id" });
+  if (error) console.warn("[upsertLegacySend]", error.message);
+}
+
+export async function bulkUpsertLegacySends(sends) {
+  if (!sends || !sends.length) return;
+  const rows = sends.map((send) => ({
+    legacy_id: send.id,
+    supplier_legacy_id: send.supplierId || "",
+    offer_legacy_id: send.offerId || null,
+    retailer_id: send.retailerId || null,
+    status: send.status || null,
+    data: send,
+  }));
+  const { error } = await supabase
+    .from("legacy_sends")
+    .upsert(rows, { onConflict: "legacy_id" });
+  if (error) console.warn("[bulkUpsertLegacySends]", error.message);
+}
+
+export async function deleteLegacySend(legacyId) {
+  const { error } = await supabase
+    .from("legacy_sends")
+    .delete()
+    .eq("legacy_id", legacyId);
+  if (error) console.warn("[deleteLegacySend]", error.message);
+}
+
+// ===================================================================
 // AUDIT LOG
 // ===================================================================
 export async function logAction(action, entity, entityId, meta = {}) {

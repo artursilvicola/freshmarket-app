@@ -8,6 +8,10 @@ import {
   RotateCcw, GripVertical, Heart, Wallet, Bell, Activity, Settings, Lock, Unlock,
   MessageCircle, MessageSquare, Send as SendIcon
 } from "lucide-react";
+import {
+  loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
+  loadLegacySends, upsertLegacySend, bulkUpsertLegacySends, deleteLegacySend,
+} from "../lib/db";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -1159,12 +1163,87 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [sid,    setSid]    = useState(null);
   const [flash,  setFlash]  = useState(null);
   // co is derived from active account when supplier
-  const [offers, setOffers] = useState(() => {
-    try { const s=localStorage.getItem("fm_offers"); return s?JSON.parse(s):OFFERS_INIT; } catch(e){ return OFFERS_INIT; }
-  });
-  const [sends, setSends] = useState(() => {
-    try { const s=localStorage.getItem("fm_sends"); return s?JSON.parse(s):SENDS_INIT; } catch(e){ return SENDS_INIT; }
-  });
+  // OFFERS — ładowane z Supabase (legacy_offers table). Seed jeśli puste.
+  const [offers, _setOffersRaw] = useState(OFFERS_INIT);
+  const [offersLoaded, setOffersLoaded] = useState(false);
+  useEffect(() => {
+    let canceled = false;
+    loadLegacyOffers().then(async (rows) => {
+      if (canceled) return;
+      if (rows && rows.length > 0) {
+        _setOffersRaw(rows);
+      } else {
+        // Supabase puste: użyj localStorage bridge (jeśli user ma stare dane), inaczej seed
+        let bridge = null;
+        try { bridge = JSON.parse(localStorage.getItem("fm_offers") || "null"); } catch(e){}
+        const seed = (bridge && bridge.length) ? bridge : OFFERS_INIT;
+        await bulkUpsertLegacyOffers(seed);
+        _setOffersRaw(seed);
+        // Sprzątanie - już nie używamy localStorage dla offers
+        try { localStorage.removeItem("fm_offers"); } catch(e){}
+      }
+      setOffersLoaded(true);
+    });
+    return () => { canceled = true; };
+  }, []);
+  // setOffers wraper - zapisuje do Supabase + lokalnie
+  const setOffers = useCallback((val) => {
+    _setOffersRaw((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      // Sync z Supabase: znajdź zmienione/nowe i upsert; znajdź usunięte i delete
+      try {
+        const prevById = new Map(prev.map((o) => [o.id, o]));
+        const nextById = new Map(next.map((o) => [o.id, o]));
+        const toUpsert = next.filter((o) => {
+          const old = prevById.get(o.id);
+          return !old || JSON.stringify(old) !== JSON.stringify(o);
+        });
+        const toDelete = prev.filter((o) => !nextById.has(o.id)).map((o) => o.id);
+        if (toUpsert.length) bulkUpsertLegacyOffers(toUpsert);
+        toDelete.forEach((id) => deleteLegacyOffer(id));
+      } catch (e) { console.warn("[setOffers sync]", e); }
+      return next;
+    });
+  }, []);
+
+  // SENDS — analogicznie
+  const [sends, _setSendsRaw] = useState(SENDS_INIT);
+  const [sendsLoaded, setSendsLoaded] = useState(false);
+  useEffect(() => {
+    let canceled = false;
+    loadLegacySends().then(async (rows) => {
+      if (canceled) return;
+      if (rows && rows.length > 0) {
+        _setSendsRaw(rows);
+      } else {
+        let bridge = null;
+        try { bridge = JSON.parse(localStorage.getItem("fm_sends") || "null"); } catch(e){}
+        const seed = (bridge && bridge.length) ? bridge : SENDS_INIT;
+        await bulkUpsertLegacySends(seed);
+        _setSendsRaw(seed);
+        try { localStorage.removeItem("fm_sends"); } catch(e){}
+      }
+      setSendsLoaded(true);
+    });
+    return () => { canceled = true; };
+  }, []);
+  const setSends = useCallback((val) => {
+    _setSendsRaw((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      try {
+        const prevById = new Map(prev.map((s) => [s.id, s]));
+        const nextById = new Map(next.map((s) => [s.id, s]));
+        const toUpsert = next.filter((s) => {
+          const old = prevById.get(s.id);
+          return !old || JSON.stringify(old) !== JSON.stringify(s);
+        });
+        const toDelete = prev.filter((s) => !nextById.has(s.id)).map((s) => s.id);
+        if (toUpsert.length) bulkUpsertLegacySends(toUpsert);
+        toDelete.forEach((id) => deleteLegacySend(id));
+      } catch (e) { console.warn("[setSends sync]", e); }
+      return next;
+    });
+  }, []);
   const [companies, setCompanies] = useState(() => {
     try { const s=localStorage.getItem("fm_companies"); return s?JSON.parse(s):COMPANIES_DB; } catch(e){ return COMPANIES_DB; }
   });
@@ -1386,11 +1465,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     try { const s=localStorage.getItem("fm_fmSchedule"); return s?JSON.parse(s):null; } catch(e){ return null; }
   });
 
-  // Persist key state to localStorage
+  // Persist key state to localStorage (offers/sends idą do Supabase via wraper, NIE do localStorage)
   useEffect(() => {
     try {
-      localStorage.setItem("fm_offers",    JSON.stringify(offers));
-      localStorage.setItem("fm_sends",     JSON.stringify(sends));
+      // offers i sends synchronizują się przez setOffers/setSends wrappers - NIE zapisujemy ich w localStorage
       localStorage.setItem("fm_fmPrefs",   JSON.stringify(fmPrefs));
       localStorage.setItem("fm_fmResps",   JSON.stringify(fmResps));
       localStorage.setItem("fm_retailers", JSON.stringify(retailers));
