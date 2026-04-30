@@ -498,6 +498,12 @@ function Inp({ label, required, hint, ta, children, style:sx, ...p }) {
 function Row({ children }) { return <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:14 }}>{children}</div>; }
 function RetailerLogo({ retailer, size=40 }) {
   if (!retailer) return null;
+  // Jeśli retailer ma logo_url - pokazujemy obrazek, inaczej fallback do inicjałów
+  if (retailer.logo_url) {
+    return <div style={{ width:size,height:size,borderRadius:Math.round(size*0.22),background:"white",border:`2px solid ${retailer.color}44`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,overflow:"hidden" }}>
+      <img src={retailer.logo_url} alt={retailer.name||""} style={{ width:"100%",height:"100%",objectFit:"contain" }}/>
+    </div>;
+  }
   return <div style={{ width:size,height:size,borderRadius:Math.round(size*0.22),background:retailer.bg||"#f1f5f9",border:`2px solid ${retailer.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:Math.round(size*0.3),color:retailer.color,flexShrink:0,letterSpacing:-1 }}>{retailer.initials}</div>;
 }
 function Modal({ title, onClose, children, wide }) {
@@ -4225,6 +4231,27 @@ function PageAdminRetailers({ retailers, setRetailers }) {
             </div>
             {isExpanded&&(
               <div style={{padding:"0 16px 16px",borderTop:"1px solid #f1f5f9"}}>
+                {/* Logo retailera */}
+                <div style={{margin:"14px 0",padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0"}}>
+                  <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:8,fontWeight:600}}>LOGO SIECI</label>
+                  <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+                    <div style={{width:64,height:64,borderRadius:10,background:r.logo_url?"white":(r.bg||"#f1f5f9"),border:`2px solid ${r.color}44`,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {r.logo_url
+                        ? <img src={r.logo_url} alt={r.name} style={{width:"100%",height:"100%",objectFit:"contain"}}/>
+                        : <span style={{fontWeight:800,fontSize:20,color:r.color,letterSpacing:-1}}>{r.initials}</span>}
+                    </div>
+                    <div style={{flex:1}}>
+                      <SimplePhotoUploader
+                        bucket="company-logos"
+                        pathPrefix={`retailer-${r.id}`}
+                        value={r.logo_url || null}
+                        onChange={(newUrl) => updateRetailer(r.id, { logo_url: newUrl })}
+                        multi={false}
+                        label={r.logo_url ? "Kliknij aby zmienić logo sieci" : "Kliknij aby wgrać logo sieci"}
+                      />
+                    </div>
+                  </div>
+                </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,margin:"14px 0"}}>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NAZWA</label><input value={r.name||""} onChange={e=>updateRetailer(r.id,{name:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
