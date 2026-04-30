@@ -3,6 +3,8 @@ chcp 65001 >nul
 title Push do GitHub
 color 0B
 
+set REPO_URL=https://github.com/artursilvicola/freshmarket-app.git
+
 echo.
 echo ============================================
 echo   Push projektu na GitHub
@@ -13,15 +15,11 @@ cd /d "%~dp0"
 echo Folder: %CD%
 echo.
 
-REM Sprawdz czy git jest zainstalowany
+REM 1. Sprawdz git
 where git >nul 2>nul
 if errorlevel 1 (
     echo [BLAD] Git nie jest zainstalowany!
-    echo.
-    echo Pobierz Git ze strony:
-    echo https://git-scm.com/download/win
-    echo.
-    echo Po instalacji uruchom ten skrypt ponownie.
+    echo Pobierz: https://git-scm.com/download/win
     pause
     exit /b 1
 )
@@ -29,99 +27,67 @@ echo [OK] Git znaleziony:
 git --version
 echo.
 
-REM Sprawdz i ustaw git identity (jednorazowo)
+REM 2. Identity
 for /f "tokens=*" %%i in ('git config --global user.email 2^>nul') do set GIT_EMAIL=%%i
 if not defined GIT_EMAIL (
     echo [INFO] Konfiguruje git identity...
     git config --global user.email "artur.stasiak@freshmarket.eu"
     git config --global user.name "Artur Stasiak"
-    echo [OK] Identity ustawione: Artur Stasiak ^<artur.stasiak@freshmarket.eu^>
+    echo [OK] Identity ustawione
     echo.
 )
 
-REM Sprawdz czy git repo juz istnieje
-if exist ".git" (
-    echo [INFO] Repozytorium git juz istnieje.
-    echo Sprawdzam status...
-    git status --short
+REM 3. Init repo jesli nie istnieje
+if not exist ".git" (
+    echo [INFO] Inicjalizuje repozytorium git...
+    git init
     echo.
-    echo Dodaje wszystkie zmiany...
-    git add .
-    git commit -m "Update: %date% %time%"
-    echo.
-    echo Wypycham na GitHub...
-    git push
-    echo.
-    echo [OK] Gotowe! Zmiany wypchniete.
-    pause
-    exit /b 0
 )
 
-REM Pierwsze uruchomienie - inicjalizacja
-echo [INFO] Pierwsze uruchomienie - inicjalizuje repozytorium...
-echo.
-
-git init
-if errorlevel 1 (
-    echo [BLAD] git init nie powiodlo sie.
-    pause
-    exit /b 1
-)
-
-echo.
-echo Dodaje wszystkie pliki...
+REM 4. Dodaj wszystkie pliki i commit (bezpieczne - jesli nic do commitu, idzie dalej)
+echo [INFO] Dodaje pliki...
 git add .
+echo.
+echo [INFO] Commit (jesli sa nowe zmiany)...
+git commit -m "Update %date% %time%" 2>nul
+echo.
+
+REM 5. Ustaw galaz na 'main'
+git branch -M main 2>nul
+
+REM 6. Sprawdz / ustaw remote
+git remote get-url origin >nul 2>nul
 if errorlevel 1 (
-    echo [BLAD] git add nie powiodlo sie.
-    pause
-    exit /b 1
+    echo [INFO] Dodaje remote origin -^> %REPO_URL%
+    git remote add origin %REPO_URL%
+) else (
+    echo [INFO] Aktualizuje remote origin -^> %REPO_URL%
+    git remote set-url origin %REPO_URL%
 )
-
 echo.
-echo Pierwszy commit...
-git commit -m "Initial commit - Fresh Market app"
-if errorlevel 1 (
-    echo [BLAD] git commit nie powiodlo sie.
-    echo Mozliwe ze git wymaga konfiguracji uzytkownika:
-    echo   git config --global user.email "twoj@email.com"
-    echo   git config --global user.name "Twoja Nazwa"
-    pause
-    exit /b 1
-)
 
-echo.
-echo Ustawiam glowna galaz na 'main'...
-git branch -M main
-
-echo.
-echo Lacze z GitHub...
-git remote add origin https://github.com/artursilvicola/freshmarket-app.git
-if errorlevel 1 (
-    echo [INFO] Remote juz istnieje, kontynuuje...
-    git remote set-url origin https://github.com/artursilvicola/freshmarket-app.git
-)
-
-echo.
+REM 7. Push
 echo ============================================
 echo   Wypycham na GitHub...
 echo ============================================
 echo.
 echo Jesli to pierwszy raz - moze pojawic sie okno
-echo logowania do GitHub w przegladarce. Zaloguj sie
-echo i autoryzuj git (1 raz, potem zapamietuje).
+echo logowania do GitHub w przegladarce.
 echo.
 
 git push -u origin main
 if errorlevel 1 (
     echo.
     echo [BLAD] Push nie powiodl sie.
-    echo Mozliwe przyczyny:
-    echo   - autoryzacja w przegladarce nie wykonana
-    echo   - branch konflikt (jesli na GitHub jest juz README itp.)
     echo.
-    echo Jesli git mowi 'rejected' bo remote ma juz pliki:
-    echo   git pull origin main --allow-unrelated-histories
-    echo   potem ponownie URUCHOM ten skrypt
+    echo Mozliwe przyczyny:
+    echo   1. Anulowane logowanie w przegladarce
+    echo   2. Token wygasl
+    echo   3. Remote ma juz pliki ^(np. README dodany przez github.com^)
+    echo.
+    echo Jesli widzisz 'rejected' bo remote ma pliki:
+    echo   git pull origin main --allow-unrelated-histories --no-edit
+    echo   git push -u origin main
     pause
     exit /b 1
 )
@@ -133,7 +99,5 @@ echo ============================================
 echo.
 echo Twoj kod jest na GitHubie:
 echo https://github.com/artursilvicola/freshmarket-app
-echo.
-echo Mozesz teraz przejsc do Netlify deploy.
 echo.
 pause
