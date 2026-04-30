@@ -1122,14 +1122,38 @@ function PageAdminChat({ messages, setMessages, runtimeAccounts }) {
 }
 
 
-export default function App() {
-  // Active account — default first supplier (UNICA GROUP)
-  const [account, setAccount] = useState(() => ({
-    id:"sup-s1", role:"supplier",
-    name:"UNICA GROUP", title:"Dostawca · ES",
-    email:"sales@unicagroup.es",
-    fmId:"s1", chainId:null, retailerId:null, pkg:"prem_10"
-  }));
+export default function App({ initialRole = "supplier", currentUser = null } = {}) {
+  // lockedRole: jeśli ustawiony, ukrywamy switcher i blokujemy przełączanie
+  // (admin może swobodnie udawać innych userów; dostawca/kupiec - nie)
+  const lockedRole = initialRole !== "admin" ? initialRole : null;
+
+  // Active account — wybierany na podstawie initialRole
+  const [account, setAccount] = useState(() => {
+    if (initialRole === "admin") {
+      return {
+        id:"admin", role:"admin",
+        name: currentUser?.name || "Oksana Kozłowska", title:"FM Administrator",
+        email: currentUser?.email || "oksana@freshmarket.eu",
+        fmId:null, chainId:null, retailerId:null
+      };
+    }
+    if (initialRole === "buyer") {
+      // Domyślnie kupiec Biedronki (id:100); później podmienimy na realnego z Supabase
+      return {
+        id:"b-100-100_b1", role:"buyer",
+        name: currentUser?.name || "Test Kupiec", title:"Biedronka",
+        email: currentUser?.email || "",
+        fmId:null, chainId:null, retailerId:100, pkg:null
+      };
+    }
+    // domyślnie supplier (legacy zachowanie)
+    return {
+      id:"sup-s1", role:"supplier",
+      name: currentUser?.name || "UNICA GROUP", title:"Dostawca · ES",
+      email: currentUser?.email || "sales@unicagroup.es",
+      fmId:"s1", chainId:null, retailerId:null, pkg:"prem_10"
+    };
+  });
   const role = account.role;
   const [pg,     setPg]     = useState("dashboard");
   const [sid,    setSid]    = useState(null);
@@ -1344,6 +1368,14 @@ export default function App() {
   useEffect(() => {
     const stillExists = runtimeAccounts.find(a => a.id === account.id);
     if(!stillExists && runtimeAccounts.length > 1) {
+      // Jeśli mamy zablokowaną rolę (dostawca/kupiec) - znajdź konto z tej roli
+      // Inaczej - default fallback do pierwszego suppliera (admin)
+      if (lockedRole) {
+        const sameRole = runtimeAccounts.find(a => a.role === lockedRole);
+        if (sameRole) { switchAccount(sameRole); return; }
+        // Brak konta z lockedRole - nie zmieniamy (pozostawiamy obecne)
+        return;
+      }
       const firstSupplier = runtimeAccounts.find(a=>a.role==="supplier");
       if(firstSupplier) switchAccount(firstSupplier);
     }
@@ -1513,8 +1545,10 @@ export default function App() {
   return (
     <div style={{ fontFamily:"system-ui,-apple-system,sans-serif",background:"#f1f5f9",minHeight:"100vh",color:"#1e293b",fontSize:14 }}>
       <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
-      {/* Account switcher */}
-      <AccountSwitcherBar account={account} accounts={runtimeAccounts} onSwitch={switchAccount} wallet={wallet} fmSettings={fmSettings} retailers={retailers}/>
+      {/* Account switcher — tylko dla admina (dostawca/kupiec ma zablokowaną rolę) */}
+      {!lockedRole && (
+        <AccountSwitcherBar account={account} accounts={runtimeAccounts} onSwitch={switchAccount} wallet={wallet} fmSettings={fmSettings} retailers={retailers}/>
+      )}
       <div style={{ display:"flex",minHeight:"calc(100vh - 36px)" }}>
         {/* Sidebar */}
         <aside style={{ width:220,background:"#0f172a",flexShrink:0,display:"flex",flexDirection:"column" }}>
