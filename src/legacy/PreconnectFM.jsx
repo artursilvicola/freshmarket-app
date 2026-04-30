@@ -12,6 +12,7 @@ import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
   loadLegacySends, upsertLegacySend, bulkUpsertLegacySends, deleteLegacySend,
 } from "../lib/db";
+import SimplePhotoUploader from "../components/SimplePhotoUploader";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -2169,9 +2170,19 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
       </div>
       {/* Logo */}
       <Card title="Logo" icon={Award}>
-        <div style={{ display:"flex",gap:14,alignItems:"center" }}>
-          <div style={{ width:76,height:76,borderRadius:10,border:`2px dashed ${c.logo?"#0d9488":"#dc2626"}`,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:c.logo?"white":"#fef2f2" }}>{c.logo?<img src={c.logo} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>:<Building2 size={24} color="#dc2626"/>}</div>
-          <div><input type="file" ref={logoRef} accept="image/*" onChange={e=>{ const f=e.target.files[0]; if(f) u("logo",URL.createObjectURL(f)); }} style={{ display:"none" }}/><Btn outline sm onClick={()=>logoRef.current?.click()}><Upload size={12}/> {c.logo?"Zmień":"Wgraj logo"}</Btn>{!c.logo&&<div style={{ fontSize:11,color:"#dc2626",marginTop:4 }}>Wymagane do publikacji</div>}</div>
+        <div style={{ display:"flex",gap:14,alignItems:"flex-start" }}>
+          <div style={{ width:76,height:76,borderRadius:10,border:`2px dashed ${c.logo?"#0d9488":"#dc2626"}`,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:c.logo?"white":"#fef2f2" }}>{c.logo?<img src={c.logo} alt="" style={{ width:"100%",height:"100%",objectFit:"contain" }}/>:<Building2 size={24} color="#dc2626"/>}</div>
+          <div style={{ flex:1 }}>
+            <SimplePhotoUploader
+              bucket="company-logos"
+              pathPrefix={c.id || "tmp"}
+              value={c.logo || null}
+              onChange={(newUrl) => u("logo", newUrl)}
+              multi={false}
+              label={c.logo ? "Kliknij aby zmienić logo" : "Kliknij aby wgrać logo firmy"}
+            />
+            {!c.logo && <div style={{ fontSize:11,color:"#dc2626",marginTop:6 }}>Wymagane do publikacji</div>}
+          </div>
         </div>
       </Card>
       <Card title="Dane podstawowe" icon={Building2}>
@@ -2469,17 +2480,17 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
 
         <Card title="D. Zdjęcia produktu (maks. 3)" icon={Upload}>
           <Alrt type="info">Pierwsze zdjęcie (główne) trafia do nagłówka maila kupca. Zdjęcie opakowania handlowego jest wymagane — kupiec i logistyka muszą widzieć dokładnie co dostają.</Alrt>
-          <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:8 }}>
-            {(f.photos||[]).map((p,i)=>(
-              <div key={i} style={{ position:"relative" }}>
-                <img src={p} alt="" style={{ width:90,height:68,objectFit:"cover",borderRadius:7,border:"1px solid #e2e8f0" }}/>
-                <button onClick={()=>u("photos",(f.photos||[]).filter((_,idx)=>idx!==i))} style={{ position:"absolute",top:-5,right:-5,background:"#dc2626",border:"none",borderRadius:"50%",width:16,height:16,color:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center" }}><X size={9}/></button>
-              </div>
-            ))}
-            {(f.photos||[]).length<3&&<div onClick={()=>photoRef.current?.click()} style={{ width:90,height:68,borderRadius:7,border:"2px dashed #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",background:"#f8fafc",flexDirection:"column",color:"#94a3b8" }}><Plus size={16}/><span style={{ fontSize:10,marginTop:2 }}>Dodaj</span></div>}
-          </div>
-          <input type="file" ref={photoRef} accept="image/*" multiple onChange={e=>{ const urls=Array.from(e.target.files).map(file=>URL.createObjectURL(file)); setF(p=>({...p,photos:[...(p.photos||[]),...urls].slice(0,3)})); }} style={{ display:"none" }}/>
-          <div style={{ fontSize:11,color:"#94a3b8" }}>Pierwsze zdjęcie będzie główne w mailu kupca.</div>
+          <SimplePhotoUploader
+            bucket="offer-photos"
+            pathPrefix={co?.id || "tmp"}
+            subFolder={`offer-${f.id || "new"}`}
+            value={f.photos || []}
+            onChange={(newPhotos) => u("photos", newPhotos)}
+            multi={true}
+            max={3}
+            label="Kliknij lub przeciągnij zdjęcia produktu"
+          />
+          <div style={{ fontSize:11,color:"#94a3b8",marginTop:8 }}>Pierwsze zdjęcie będzie główne w mailu kupca. Zdjęcia są zapisywane w chmurze i widoczne dla wszystkich userów.</div>
         </Card>
 
         {Object.keys(errors).length>0&&<div style={{ background:"#fef2f2",border:"1.5px solid #fca5a5",borderRadius:9,padding:"10px 16px",marginBottom:8,display:"flex",gap:8,alignItems:"center",fontSize:13,color:"#dc2626" }}><span style={{fontSize:16}}>⚠</span><div><strong>Uzupełnij wymagane pola:</strong> {Object.keys(errors).map(k=>k).join(", ")}</div></div>}
