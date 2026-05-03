@@ -1,0 +1,20 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Stare URL-e ze starej strony freshmarket.eu (router.php) -> nowe Astro
+[[redirects]]
+  from = "/index.php"
+  to = "/"
+  status = 301
+
+# Decap CMS — panel admina (autoryzacja przez GitHub OAuth)
+# https://decapcms.org/docs/configuration-options/
+[[headers]]
+  for = "/admin/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"

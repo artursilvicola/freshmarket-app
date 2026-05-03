@@ -1,0 +1,62 @@
+---
+import { t, type Locale } from '../i18n/translations';
+
+interface Props { locale: Locale; }
+const { locale } = Astro.props;
+const tr = t(locale);
+const prefix = locale === 'pl' ? '/pl' : '';
+const year = new Date().getFullYear();
+---
+<footer class="bg-brand-800 text-white">
+  <div class="container-wide py-12 grid grid-cols-1 md:grid-cols-4 gap-8">
+    <div>
+      <img src="/assets/logo-freshmarket-2026-white.svg" alt="Fresh Market" class="h-12 w-auto mb-4" />
+      <p class="text-xs uppercase tracking-wider text-brand-200 mb-2">{tr.footer.organizer}</p>
+      <p class="font-semibold">KJOW Sp z o. o.</p>
+      <p class="text-sm text-brand-100">ul. Marii 17/25, 05-803 Pruszków</p>
+      <p class="text-sm text-brand-100 mt-2">+48 603 424 346</p>
+      <p class="text-sm text-brand-100">freshmarket@freshmarket.eu</p>
+      <p class="text-sm text-brand-100 mt-2">NIP(VAT): 118 197 6336</p>
+    </div>
+
+    <div>
+      <p class="text-xs uppercase tracking-wider text-brand-200 mb-3">{tr.footer.menu}</p>
+      <ul class="space-y-2 text-sm">
+        <li><a href={`${prefix}/how-freshmarket-works`} class="hover:text-yellow-300">{tr.nav.how_it_works}</a></li>
+        <li><a href={`${prefix}/exhibition`} class="hover:text-yellow-300">{tr.nav.exhibition}</a></li>
+        <li><a href={`${prefix}/registration`} class="hover:text-yellow-300">{tr.nav.registration}</a></li>
+        <li><a href={`${prefix}/award`} class="hover:text-yellow-300">{tr.nav.award}</a></li>
+        <li><a href={`${prefix}/reviews`} class="hover:text-yellow-300">{tr.nav.reviews}</a></li>
+        <li><a href={`${prefix}/contact`} class="hover:text-yellow-300">{tr.nav.contact}</a></li>
+      </ul>
+    </div>
+
+    <div>
+      <p class="text-xs uppercase tracking-wider text-brand-200 mb-3">{tr.footer.services}</p>
+      <ul class="space-y-2 text-sm">
+        <li><a href="https://fresh-market.pl" class="hover:text-yellow-300">Fresh-market.pl</a></li>
+        <li><a href="https://freshmarket.eu" class="hover:text-yellow-300">Freshmarket.eu</a></li>
+        <li><a href="https://app.freshmarket.eu" class="hover:text-yellow-300">App.freshmarket.eu (B2B)</a></li>
+      </ul>
+    </div>
+
+    <div>
+      <p class="text-xs uppercase tracking-wider text-brand-200 mb-3">Language</p>
+      <div class="flex gap-3">
+        <a href="/" class={locale === 'en' ? 'opacity-100' : 'opacity-50'}>
+          <img src="/assets/flags/en.svg" alt="EN" class="h-6 w-auto" />
+        </a>
+        <a href="/pl" class={locale === 'pl' ? 'opacity-100' : 'opacity-50'}>
+          <img src="/assets/flags/pl.svg" alt="PL" class="h-6 w-auto" />
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="border-t border-brand-700 py-4">
+    <div class="container-wide flex flex-col sm:flex-row justify-between items-center text-xs text-brand-200">
+      <p>{tr.footer.copyright.replace('{year}', String(year))}</p>
+      <p>{tr.footer.developed_by} <a href="https://i-f.online" class="hover:text-yellow-300">Internet Factory</a></p>
+    </div>
+  </div>
+</footer>

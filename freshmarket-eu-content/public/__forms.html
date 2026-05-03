@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Netlify form schema</title></head>
+<body>
+<!--
+  Statyczna deklaracja formularzy dla Netlify Forms.
+  Astro renderuje formularze klient-side, a Netlify wykrywa je tylko ze STATYCZNEGO HTML
+  podczas builda. Ten plik gwarantuje, że formularze "contact", "registration", "award"
+  są zarejestrowane w Netlify, niezależnie od dynamicznych routów.
+-->
+
+<form name="contact" data-netlify="true" data-netlify-honeypot="bot-field" hidden>
+  <input type="text" name="name" />
+  <input type="tel" name="phone" />
+  <input type="email" name="email" />
+  <textarea name="message"></textarea>
+  <input type="checkbox" name="accept_terms" />
+  <input type="hidden" name="locale" />
+  <input name="bot-field" />
+</form>
+
+<form name="registration" data-netlify="true" data-netlify-honeypot="bot-field" hidden>
+  <select name="package"><option value="standard"></option></select>
+  <select name="role"><option value="supplier"></option></select>
+  <input type="text" name="company" />
+  <input type="text" name="contact_person" />
+  <input type="text" name="country" />
+  <input type="email" name="email" />
+  <input type="tel" name="phone" />
+  <input type="number" name="attendees" />
+  <textarea name="products"></textarea>
+  <textarea name="notes"></textarea>
+  <input type="checkbox" name="accept_terms" />
+  <input type="hidden" name="locale" />
+  <input name="bot-field" />
+</form>
+
+<form name="award" data-netlify="true" data-netlify-honeypot="bot-field" hidden>
+  <select name="category"><option value="new_product"></option></select>
+  <input type="text" name="product_name" />
+  <input type="text" name="company" />
+  <input type="text" name="contact_person" />
+  <input type="email" name="email" />
+  <input type="tel" name="phone" />
+  <textarea name="description"></textarea>
+  <input type="url" name="assets_url" />
+  <input type="checkbox" name="accept_terms" />
+  <input type="hidden" name="locale" />
+  <input name="bot-field" />
+</form>
+
+</body>
+</html>

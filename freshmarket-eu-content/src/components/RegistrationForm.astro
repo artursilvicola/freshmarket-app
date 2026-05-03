@@ -1,0 +1,155 @@
+---
+// Formularz rejestracji uczestnika Fresh Market 2026.
+// Etap 1: zebranie danych przez Netlify Forms → email do organizatora → wystawienie proformy ręcznie.
+// Etap 2 (TODO): integracja Stripe Checkout — submit kieruje do Netlify Function /api/checkout
+// która tworzy sesję Stripe i przekierowuje na payment page.
+import type { Locale } from '../i18n/translations';
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+
+const labels = locale === 'pl'
+  ? {
+      title: 'Formularz rejestracji',
+      package: 'Pakiet',
+      package_standard: 'Standard',
+      package_business: 'Business',
+      package_premium: 'Premium (cena na zapytanie)',
+      role: 'Rola',
+      role_supplier: 'Dostawca / Producent',
+      role_buyer: 'Kupiec sieci handlowej',
+      role_distributor: 'Dystrybutor / Hurtownik',
+      role_other: 'Inna',
+      company: 'Firma (NIP, adres do faktury)',
+      contact_person: 'Osoba kontaktowa (imię i nazwisko)',
+      email: 'Email',
+      phone: 'Telefon',
+      attendees: 'Liczba osób',
+      country: 'Kraj',
+      products: 'Krótki opis produktu / kategorii',
+      notes: 'Dodatkowe uwagi',
+      accept: 'Akceptuję regulamin i politykę prywatności',
+      submit: 'Wyślij zgłoszenie',
+      stripe_note: 'Po wysłaniu otrzymasz fakturę proforma na podany e-mail. W przyszłości aktywujemy płatność online (Stripe).',
+    }
+  : {
+      title: 'Registration form',
+      package: 'Package',
+      package_standard: 'Standard',
+      package_business: 'Business',
+      package_premium: 'Premium (price on request)',
+      role: 'Role',
+      role_supplier: 'Supplier / Producer',
+      role_buyer: 'Retail chain buyer',
+      role_distributor: 'Distributor / Wholesaler',
+      role_other: 'Other',
+      company: 'Company (VAT ID, billing address)',
+      contact_person: 'Contact person (full name)',
+      email: 'Email',
+      phone: 'Phone',
+      attendees: 'Number of attendees',
+      country: 'Country',
+      products: 'Short description of product / category',
+      notes: 'Additional notes',
+      accept: 'I accept the terms and privacy policy',
+      submit: 'Submit registration',
+      stripe_note: 'After submission you will receive a proforma invoice by email. Online payment (Stripe) will be enabled later.',
+    };
+
+const successHref = locale === 'pl' ? '/pl/registration?sent=1' : '/registration?sent=1';
+const inputCls = 'w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-brand-500 focus:border-brand-500';
+---
+
+<form
+  name="registration"
+  method="POST"
+  data-netlify="true"
+  data-netlify-honeypot="bot-field"
+  action={successHref}
+  class="space-y-4 bg-white p-6 rounded-xl shadow-sm border border-gray-200"
+>
+  <input type="hidden" name="form-name" value="registration" />
+  <input type="hidden" name="locale" value={locale} />
+  <p class="hidden"><label>Don't fill: <input name="bot-field" /></label></p>
+
+  <h3 class="text-xl font-bold text-brand-700 mb-2">{labels.title}</h3>
+
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="block text-sm font-medium mb-1" for="reg-package">{labels.package} *</label>
+      <select id="reg-package" name="package" required class={inputCls}>
+        <option value="standard">{labels.package_standard} — €490 / €590</option>
+        <option value="business">{labels.package_business} — €720 / €820</option>
+        <option value="premium">{labels.package_premium}</option>
+      </select>
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="reg-role">{labels.role} *</label>
+      <select id="reg-role" name="role" required class={inputCls}>
+        <option value="supplier">{labels.role_supplier}</option>
+        <option value="buyer">{labels.role_buyer}</option>
+        <option value="distributor">{labels.role_distributor}</option>
+        <option value="other">{labels.role_other}</option>
+      </select>
+    </div>
+  </div>
+
+  <div>
+    <label class="block text-sm font-medium mb-1" for="reg-company">{labels.company} *</label>
+    <input id="reg-company" type="text" name="company" required class={inputCls} />
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="block text-sm font-medium mb-1" for="reg-contact">{labels.contact_person} *</label>
+      <input id="reg-contact" type="text" name="contact_person" required class={inputCls} />
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="reg-country">{labels.country}</label>
+      <input id="reg-country" type="text" name="country" class={inputCls} />
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-4">
+    <div>
+      <label class="block text-sm font-medium mb-1" for="reg-email">{labels.email} *</label>
+      <input id="reg-email" type="email" name="email" required class={inputCls} />
+    </div>
+    <div>
+      <label class="block text-sm font-medium mb-1" for="reg-phone">{labels.phone} *</label>
+      <input id="reg-phone" type="tel" name="phone" required class={inputCls} />
+    </div>
+  </div>
+
+  <div>
+    <label class="block text-sm font-medium mb-1" for="reg-attendees">{labels.attendees}</label>
+    <input id="reg-attendees" type="number" name="attendees" min="1" max="20" value="1" class={inputCls} />
+  </div>
+
+  <div>
+    <label class="block text-sm font-medium mb-1" for="reg-products">{labels.products}</label>
+    <textarea id="reg-products" name="products" rows="3" class={inputCls} />
+  </div>
+
+  <div>
+    <label class="block text-sm font-medium mb-1" for="reg-notes">{labels.notes}</label>
+    <textarea id="reg-notes" name="notes" rows="2" class={inputCls} />
+  </div>
+
+  <label class="flex items-start gap-2 text-sm text-gray-700">
+    <input type="checkbox" name="accept_terms" required class="mt-1" />
+    <span>{labels.accept}</span>
+  </label>
+
+  <p class="text-xs text-gray-500 italic">{labels.stripe_note}</p>
+
+  <button
+    type="submit"
+    class="bg-accent-500 hover:bg-accent-600 text-white font-semibold px-8 py-3 rounded-lg transition-colors w-full md:w-auto"
+  >
+    {labels.submit}
+  </button>
+</form>

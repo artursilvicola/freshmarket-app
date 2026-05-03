@@ -1,0 +1,92 @@
+backend:
+  name: github
+  repo: artursilvicola/freshmarket-eu
+  branch: main
+  base_url: https://api.netlify.com
+  auth_endpoint: auth
+
+publish_mode: editorial_workflow
+media_folder: 'public/assets/uploads'
+public_folder: '/assets/uploads'
+
+locale: pl
+
+collections:
+  - name: 'pages_en'
+    label: '🇬🇧 Pages (English)'
+    folder: 'src/content/pages/en'
+    create: true
+    extension: 'md'
+    format: 'frontmatter'
+    slug: '{{slug}}'
+    summary: '{{title}}'
+    fields:
+      - { name: title, label: 'Title', widget: string }
+      - { name: description, label: 'SEO description', widget: text }
+      - { name: slug, label: 'URL slug', widget: string }
+      - { name: locale, label: 'Locale', widget: hidden, default: 'en' }
+      - name: hero
+        label: 'Hero section'
+        widget: object
+        required: false
+        fields:
+          - { name: title, label: 'Hero title', widget: string }
+          - { name: subtitle, label: 'Subtitle', widget: string, required: false }
+          - { name: notice, label: 'Notice line', widget: string, required: false }
+          - { name: image, label: 'Background image', widget: image, required: false }
+          - { name: background_video, label: 'Background video URL', widget: string, required: false }
+          - name: cta
+            label: 'Single CTA'
+            widget: object
+            required: false
+            fields:
+              - { name: label, label: 'Button label', widget: string }
+              - { name: href, label: 'Link URL', widget: string }
+      - { name: body, label: 'Content (markdown)', widget: markdown }
+
+  - name: 'pages_pl'
+    label: '🇵🇱 Strony (Polski)'
+    folder: 'src/content/pages/pl'
+    create: true
+    extension: 'md'
+    format: 'frontmatter'
+    slug: '{{slug}}'
+    summary: '{{title}}'
+    fields:
+      - { name: title, label: 'Tytuł', widget: string }
+      - { name: description, label: 'Opis SEO', widget: text }
+      - { name: slug, label: 'Slug URL', widget: string }
+      - { name: locale, label: 'Locale', widget: hidden, default: 'pl' }
+      - name: hero
+        label: 'Sekcja Hero'
+        widget: object
+        required: false
+        fields:
+          - { name: title, label: 'Tytuł hero', widget: string }
+          - { name: subtitle, label: 'Podtytuł', widget: string, required: false }
+          - { name: notice, label: 'Linia informacyjna', widget: string, required: false }
+          - { name: image, label: 'Tło obrazek', widget: image, required: false }
+          - { name: background_video, label: 'URL wideo w tle', widget: string, required: false }
+          - name: cta
+            label: 'CTA'
+            widget: object
+            required: false
+            fields:
+              - { name: label, label: 'Tekst przycisku', widget: string }
+              - { name: href, label: 'URL', widget: string }
+      - { name: body, label: 'Treść (markdown)', widget: markdown }
+
+  - name: 'site_settings'
+    label: '⚙️ Site settings'
+    files:
+      - file: 'public/site-settings.json'
+        name: 'global'
+        label: 'Global'
+        fields:
+          - { name: contact_email, label: 'Email kontaktowy', widget: string }
+          - { name: contact_phone, label: 'Telefon', widget: string }
+          - { name: organizer_name, label: 'Nazwa organizatora', widget: string }
+          - { name: organizer_address, label: 'Adres', widget: text }
+          - { name: nip, label: 'NIP', widget: string }
+          - { name: event_date, label: 'Data wydarzenia', widget: date }
+          - { name: venue, label: 'Miejsce wydarzenia', widget: string }

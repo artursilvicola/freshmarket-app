@@ -1,0 +1,58 @@
+---
+import { getCollection, render } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Hero from '../components/Hero.astro';
+import ContactForm from '../components/ContactForm.astro';
+import RegistrationForm from '../components/RegistrationForm.astro';
+import AwardForm from '../components/AwardForm.astro';
+import B2BAppCTA from '../components/B2BAppCTA.astro';
+
+export async function getStaticPaths() {
+  const pages = await getCollection('pagesEn');
+  return pages
+    .filter(p => p.id !== 'index')
+    .map(p => ({
+      params: { slug: p.data.slug || p.id },
+      props: { page: p },
+    }));
+}
+
+const { page } = Astro.props;
+const { Content } = await render(page);
+const data = page.data;
+const slug = data.slug || page.id;
+const locale = 'en' as const;
+
+const showContactForm = slug === 'contact';
+const showRegistrationForm = slug === 'registration';
+const showAwardForm = slug === 'award' || slug === 'award/submit';
+const showB2BCTA = ['registration', 'exhibitors-hub', 'distributors-hub', 'retail-chains-hub'].includes(slug);
+
+const sent = Astro.url.searchParams.get('sent') === '1';
+---
+<BaseLayout title={data.title} description={data.description} locale={locale}>
+  {data.hero && <Hero {...data.hero} />}
+
+  <article class="container-narrow py-12 prose prose-lg max-w-none">
+    {sent && (
+      <div class="not-prose bg-green-50 border border-green-200 text-green-800 rounded-lg p-4 mb-6">
+        ✓ Thank you! Your submission has been received. We will contact you shortly.
+      </div>
+    )}
+    <Content />
+  </article>
+
+  {(showContactForm || showRegistrationForm || showAwardForm) && (
+    <section class="container-narrow pb-16">
+      {showContactForm && <ContactForm locale={locale} />}
+      {showRegistrationForm && <RegistrationForm locale={locale} />}
+      {showAwardForm && <AwardForm locale={locale} />}
+    </section>
+  )}
+
+  {showB2BCTA && (
+    <section class="container-narrow pb-16">
+      <B2BAppCTA locale={locale} variant="card" />
+    </section>
+  )}
+</BaseLayout>
