@@ -24,9 +24,15 @@ export function AuthProvider({ children }) {
       setProfile(null);
       return;
     }
+    // [B2B Round 2] Pobierz profil + JOIN do companies (legacy_fm_id, name, country)
+    // + retailers (name) — to potrzebne w PreconnectFM App() do mapowania konta.
     const { data, error } = await supabase
       .from("profiles")
-      .select("*")
+      .select(`
+        *,
+        company:companies(id, name, country, legacy_fm_id, pkg_plan),
+        retailer:retailers(id, name, country)
+      `)
       .eq("id", userId)
       .maybeSingle();
     if (error) {
@@ -34,7 +40,19 @@ export function AuthProvider({ children }) {
       setProfile(null);
       return;
     }
-    setProfile(data);
+    // Splaszcz join w jeden obiekt zeby PreconnectFM nie musial wiedziec o JOIN-ach
+    const enriched = data
+      ? {
+          ...data,
+          legacy_fm_id: data.company?.legacy_fm_id || null,
+          company_name: data.company?.name || null,
+          company_country: data.company?.country || null,
+          country: data.company?.country || data.retailer?.country || null,
+          pkg_plan: data.company?.pkg_plan || null,
+          retailer_name: data.retailer?.name || null,
+        }
+      : null;
+    setProfile(enriched);
   }, []);
 
   useEffect(() => {

@@ -18,7 +18,17 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
+          {/* /register jest dostepny tylko dla zalogowanego admina (B2B Round 2). */}
+          {/* Publiczna rejestracja odbywa sie na freshmarket.eu/registration ->        */}
+          {/* admin akceptuje uczestnika i tworzy konto B2B przez ten ekran.            */}
+          <Route
+            path="/register"
+            element={
+              <ProtectedRoute allowedRoles={["admin"]}>
+                <RegisterPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/admin/*"

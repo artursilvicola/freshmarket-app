@@ -367,3 +367,357 @@ export async function logAction(action, entity, entityId, meta = {}) {
     meta,
   });
 }
+
+// ===================================================================
+// FM 2026 — RETAILERS / COMPANIES legacy mapping
+// ===================================================================
+
+/**
+ * Pobierz retailera po legacy_chain_id (np. "100" dla Biedronki w PreconnectFM).
+ * Zwraca null jeśli nie znaleziono.
+ */
+export async function getRetailerByLegacyId(legacyChainId) {
+  const { data, error } = await supabase
+    .from("retailers")
+    .select("*")
+    .eq("legacy_chain_id", String(legacyChainId))
+    .maybeSingle();
+  if (error) {
+    console.warn("[getRetailerByLegacyId]", error.message);
+    return null;
+  }
+  return data;
+}
+
+/**
+ * Pobierz firmę dostawcy po legacy_fm_id (np. "s1" dla UNICA).
+ */
+export async function getCompanyByLegacyFmId(legacyFmId) {
+  const { data, error } = await supabase
+    .from("companies")
+    .select("*")
+    .eq("legacy_fm_id", String(legacyFmId))
+    .maybeSingle();
+  if (error) {
+    console.warn("[getCompanyByLegacyFmId]", error.message);
+    return null;
+  }
+  return data;
+}
+
+// ===================================================================
+// FM 2026 — RESPONSES (buyer akceptuje/odrzuca dostawce)
+// ===================================================================
+
+export async function getFmResps(retailerId) {
+  let q = supabase.from("fm_resps").select("*");
+  if (retailerId !== undefined && retailerId !== null) {
+    q = q.eq("retailer_id", retailerId);
+  }
+  const { data, error } = await q.order("position", { ascending: true });
+  if (error) {
+    console.warn("[getFmResps]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Zapisz odpowiedź kupca dla dostawcy (zone: green/orange/red/blocked).
+ * Upsert po (retailer_id + supplier_company_id) — kazdy kupiec ma jedna
+ * odpowiedz dla danego dostawcy.
+ */
+export async function saveFmResp({ retailer_id, supplier_company_id, position, zone, status, meta }) {
+  if (!retailer_id || !supplier_company_id) {
+    throw new Error("saveFmResp wymaga retailer_id + supplier_company_id");
+  }
+  // Sprawdz czy istnieje
+  const { data: existing } = await supabase
+    .from("fm_resps")
+    .select("id")
+    .eq("retailer_id", retailer_id)
+    .eq("supplier_company_id", supplier_company_id)
+    .maybeSingle();
+  if (existing?.id) {
+    const { data, error } = await supabase
+      .from("fm_resps")
+      .update({ position, zone, status, meta })
+      .eq("id", existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await supabase
+    .from("fm_resps")
+    .insert({ retailer_id, supplier_company_id, position, zone, status, meta })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteFmResp(id) {
+  const { error } = await supabase.from("fm_resps").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ===================================================================
+// FM 2026 — SCHEDULE (publikowany przez admina, czytaja wszyscy)
+// ===================================================================
+
+export async function getFmSchedule() {
+  const settings = await getFmSettings();
+  return settings?.schedule || null;
+}
+
+export async function saveFmSchedule(schedule) {
+  // fm_settings ma 1-row pattern (limit 1, order updated_at desc)
+  const existing = await getFmSettings();
+  if (existing?.id) {
+    const { data, error } = await supabase
+      .from("fm_settings")
+      .update({ schedule, updated_at: new Date().toISOString() })
+      .eq("id", existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+  const { data, error } = await supabase
+    .from("fm_settings")
+    .insert({ schedule })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// ===================================================================
+// FM 2026 — TARGET RETAILERS (preferencje dostawcy)
+// ===================================================================
+
+export async function getCompanyTargetRetailers(companyId) {
+  const { data, error } = await supabase
+    .from("company_target_retailers")
+    .select("retailer_id, priority, note, retailer:retailers(*)")
+    .eq("company_id", companyId)
+    .order("priority", { ascending: false });
+  if (error) {
+    console.warn("[getCompanyTargetRetailers]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/**
+ * Replace-set: zastąp całą listę preferencji dostawcy nową listą par
+ * { retailer_id, priority, note }.
+ */
+export async function setCompanyTargetRetailers(companyId, items) {
+  if (!companyId) throw new Error("setCompanyTargetRetailers: companyId wymagane");
+  // Wymaz stare i wpisz nowe (transactional via supabase function w przyszlosci;
+  // teraz: 2 osobne kroki)
+  const { error: delErr } = await supabase
+    .from("company_target_retailers")
+    .delete()
+    .eq("company_id", companyId);
+  if (delErr) throw delErr;
+  if (!items || !items.length) return [];
+  const rows = items.map((it) => ({
+    company_id: companyId,
+    retailer_id: it.retailer_id,
+    priority: it.priority || 0,
+    note: it.note || null,
+  }));
+  const { data, error } = await supabase
+    .from("company_target_retailers")
+    .insert(rows)
+    .select();
+  if (error) throw error;
+  return data;
+}
+
+// ===================================================================
+// FM 2026 — WISHLISTS (kupiec stawia priorytet na dostawce)
+// ===================================================================
+
+export async function getFmWishlists(retailerId) {
+  let q = supabase.from("fm_wishlists").select("*");
+  if (retailerId !== undefined && retailerId !== null) {
+    q = q.eq("retailer_id", retailerId);
+  }
+  const { data, error } = await q;
+  if (error) {
+    console.warn("[getFmWishlists]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+export async function saveFmWishlist({ retailer_id, supplier_legacy_id, data }) {
+  if (!retailer_id || !supplier_legacy_id) throw new Error("saveFmWishlist wymaga retailer_id + supplier_legacy_id");
+  const { data: row, error } = await supabase
+    .from("fm_wishlists")
+    .upsert(
+      { retailer_id, supplier_legacy_id, data: data || {} },
+      { onConflict: "retailer_id,supplier_legacy_id" }
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return row;
+}
+
+export async function deleteFmWishlist({ retailer_id, supplier_legacy_id }) {
+  const { error } = await supabase
+    .from("fm_wishlists")
+    .delete()
+    .eq("retailer_id", retailer_id)
+    .eq("supplier_legacy_id", supplier_legacy_id);
+  if (error) throw error;
+}
+
+// ===================================================================
+// FM 2026 — LATE RESPONSES (kupiec po zamknieciu fazy)
+// ===================================================================
+
+export async function getFmLateResps(retailerId) {
+  let q = supabase.from("fm_late_resps").select("*");
+  if (retailerId !== undefined && retailerId !== null) {
+    q = q.eq("retailer_id", retailerId);
+  }
+  const { data, error } = await q;
+  if (error) {
+    console.warn("[getFmLateResps]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+export async function saveFmLateResp({ retailer_id, supplier_legacy_id, zone, data }) {
+  const { data: row, error } = await supabase
+    .from("fm_late_resps")
+    .upsert(
+      { retailer_id, supplier_legacy_id, zone, data: data || {}, responded_at: new Date().toISOString() },
+      { onConflict: "retailer_id,supplier_legacy_id" }
+    )
+    .select()
+    .single();
+  if (error) throw error;
+  return row;
+}
+
+// ===================================================================
+// FM 2026 — MESSAGES (konwersacje admin/supplier/buyer)
+// ===================================================================
+
+export async function getFmMessages({ threadKey, fromUserId, limit = 100 } = {}) {
+  let q = supabase.from("fm_messages").select("*").order("created_at", { ascending: false });
+  if (threadKey) q = q.eq("thread_key", threadKey);
+  if (fromUserId) q = q.eq("from_user_id", fromUserId);
+  q = q.limit(limit);
+  const { data, error } = await q;
+  if (error) {
+    console.warn("[getFmMessages]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+export async function saveFmMessage({ thread_key, from_role, to_role, body, data }) {
+  const { data: { user } } = await supabase.auth.getUser();
+  const row = {
+    thread_key,
+    from_role,
+    from_user_id: user?.id || null,
+    to_role,
+    body,
+    data: data || {},
+  };
+  const { data: created, error } = await supabase
+    .from("fm_messages")
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return created;
+}
+
+export async function markFmMessageRead(id) {
+  const { error } = await supabase
+    .from("fm_messages")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// ===================================================================
+// COMPANIES — bulk upsert (do migracji COMPANIES_DB seed → Supabase)
+// ===================================================================
+
+export async function bulkUpsertCompanies(companies) {
+  if (!companies || !companies.length) return [];
+  // Mapuj legacy fmId → legacy_fm_id w DB
+  const rows = companies.map((c) => ({
+    id: c.id && c.id.length === 36 ? c.id : undefined,
+    legacy_fm_id: c.fmId || null,
+    name: c.name,
+    nip: c.nip || null,
+    country: c.country || null,
+    city: c.city || null,
+    phone: c.phone || null,
+    website: c.website || null,
+    description: c.description || null,
+    types: c.types || [],
+    categories: c.categories || [],
+    products: c.products || null,
+    seasonality: c.seasonality || null,
+    markets: c.markets || null,
+    completeness: c.completeness || 0,
+    logo_url: c.logo || null,
+    pkg_plan: c.pkg || null,
+    pkg_expiry: c.pkgExpiry || null,
+  }));
+  const { data, error } = await supabase
+    .from("companies")
+    .upsert(rows, { onConflict: "legacy_fm_id" })
+    .select();
+  if (error) {
+    console.warn("[bulkUpsertCompanies]", error.message);
+    return [];
+  }
+  return data;
+}
+
+// ===================================================================
+// RETAILERS — bulk upsert (do migracji FM_CHAINS seed → Supabase)
+// ===================================================================
+
+export async function bulkUpsertRetailers(retailers) {
+  if (!retailers || !retailers.length) return [];
+  const rows = retailers.map((r) => ({
+    // retailers.id jest integer (legacy)
+    id: typeof r.id === "number" ? r.id : (parseInt(r.id, 10) || null),
+    legacy_chain_id: r.id ? String(r.id) : null,
+    name: r.name,
+    country: r.country || null,
+    cats: r.cats || [],
+    color: r.color || null,
+    bg: r.bg || null,
+    initials: r.initials || null,
+    buyer_name: r.buyer_name || null,
+    buyer_email: r.buyer_email || null,
+    buyer_phone: r.buyer_phone || null,
+    next_send: r.next_send || null,
+  }));
+  const { data, error } = await supabase
+    .from("retailers")
+    .upsert(rows, { onConflict: "id" })
+    .select();
+  if (error) {
+    console.warn("[bulkUpsertRetailers]", error.message);
+    return [];
+  }
+  return data;
+}

@@ -96,10 +96,8 @@ export default function LoginPage() {
         </form>
 
         <div style={S.footer}>
-          Nie masz konta?{" "}
-          <Link to="/register" style={S.link}>
-            Zarejestruj się
-          </Link>
+          Konta B2B sa tworzone przez administratora po zatwierdzeniu rejestracji
+          na <a href="https://freshmarket.eu/registration" style={S.link}>freshmarket.eu/registration</a>.
         </div>
       </div>
     </div>

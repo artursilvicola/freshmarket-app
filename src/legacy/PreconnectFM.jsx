@@ -1138,31 +1138,51 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // (admin może swobodnie udawać innych userów; dostawca/kupiec - nie)
   const lockedRole = initialRole !== "admin" ? initialRole : null;
 
-  // Active account — wybierany na podstawie initialRole
+  // Active account — driven by `currentUser` profile (Supabase profiles row).
+  // [B2B Round 2] Mapowanie:
+  //   - profile.company_id  -> account.id (uuid lub seedowane "sup-sX")
+  //   - profile.retailer_id -> account.retailerId (legacy integer 100,200,...)
+  //   - companies.legacy_fm_id -> account.fmId (przekazane z props w currentUser.legacy_fm_id)
+  // Jesli currentUser nie zawiera tych pol — fallback na legacy seed (kompatybilnosc
+  // wstecz dla istniejacych testowych instalacji bez migracji 008).
   const [account, setAccount] = useState(() => {
     if (initialRole === "admin") {
       return {
-        id:"admin", role:"admin",
-        name: currentUser?.name || "Oksana Kozłowska", title:"FM Administrator",
-        email: currentUser?.email || "oksana@freshmarket.eu",
-        fmId:null, chainId:null, retailerId:null
+        id: currentUser?.id || "admin",
+        role: "admin",
+        name: currentUser?.name || currentUser?.email || "FM Administrator",
+        title: "FM Administrator",
+        email: currentUser?.email || "",
+        fmId: null, chainId: null, retailerId: null
       };
     }
     if (initialRole === "buyer") {
-      // Domyślnie kupiec Biedronki (id:100); później podmienimy na realnego z Supabase
+      const rid = currentUser?.retailer_id ?? null;
       return {
-        id:"b-100-100_b1", role:"buyer",
-        name: currentUser?.name || "Test Kupiec", title:"Biedronka",
+        id: currentUser?.id || (rid ? `b-${rid}` : "b-unknown"),
+        role: "buyer",
+        name: currentUser?.name || currentUser?.email || "Kupiec",
+        title: currentUser?.retailer_name || (rid ? `Sieć #${rid}` : "Bez przypisanej sieci"),
         email: currentUser?.email || "",
-        fmId:null, chainId:null, retailerId:100, pkg:null
+        fmId: null,
+        chainId: rid,
+        retailerId: rid,
+        pkg: null
       };
     }
-    // domyślnie supplier (legacy zachowanie)
+    // supplier (default)
+    const cid = currentUser?.company_id ?? null;
+    const fmId = currentUser?.legacy_fm_id || null;
     return {
-      id:"sup-s1", role:"supplier",
-      name: currentUser?.name || "UNICA GROUP", title:"Dostawca · ES",
-      email: currentUser?.email || "sales@unicagroup.es",
-      fmId:"s1", chainId:null, retailerId:null, pkg:"prem_10"
+      id: cid || (fmId ? `sup-${fmId}` : "sup-unknown"),
+      role: "supplier",
+      name: currentUser?.company_name || currentUser?.name || "Dostawca",
+      title: currentUser?.country ? `Dostawca · ${currentUser.country}` : "Dostawca",
+      email: currentUser?.email || "",
+      fmId,
+      chainId: null,
+      retailerId: null,
+      pkg: currentUser?.pkg_plan || null
     };
   });
   const role = account.role;
