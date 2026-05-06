@@ -721,3 +721,20 @@ export async function bulkUpsertRetailers(retailers) {
   }
   return data;
 }
+
+/**
+ * [B2B Round 2.5] Pobierz firmę po legacy_supplier_id (PreConnect format, np. "sup-s1").
+ * To NIE to samo co getCompanyByLegacyFmId (która używa "s1" z FM 2026).
+ */
+export async function getCompanyByLegacySupplierId(legacySupplierId) {
+  const { data, error } = await supabase
+    .from("companies")
+    .select("*")
+    .eq("legacy_supplier_id", String(legacySupplierId))
+    .maybeSingle();
+  if (error) {
+    console.warn("[getCompanyByLegacySupplierId]", error.message);
+    return null;
+  }
+  return data;
+}
