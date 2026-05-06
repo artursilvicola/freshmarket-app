@@ -11,6 +11,14 @@ import {
 import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
   loadLegacySends, upsertLegacySend, bulkUpsertLegacySends, deleteLegacySend,
+  // [B2B Round 2.1] Replace localStorage for FM 2026 state
+  getCompanies as dbGetCompanies, bulkUpsertCompanies,
+  getRetailers as dbGetRetailers, bulkUpsertRetailers,
+  getFmSettings as dbGetFmSettings,
+  getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
+  getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
+  getFmWishlists as dbGetFmWishlists, saveFmWishlist as dbSaveFmWishlist,
+  getFmLateResps as dbGetFmLateResps, saveFmLateResp as dbSaveFmLateResp,
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 
@@ -1271,9 +1279,54 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return next;
     });
   }, []);
-  const [companies, setCompanies] = useState(() => {
-    try { const s=localStorage.getItem("fm_companies"); return s?JSON.parse(s):COMPANIES_DB; } catch(e){ return COMPANIES_DB; }
-  });
+  // [B2B Round 2.1] companies: load from Supabase on mount; seed if empty.
+  const [companies, _setCompaniesRaw] = useState(COMPANIES_DB);
+  const [companiesLoaded, setCompaniesLoaded] = useState(false);
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      try {
+        const rows = await dbGetCompanies();
+        if (canceled) return;
+        if (rows && rows.length > 0) {
+          // Map DB rows back to legacy shape — map legacy_fm_id -> fmId
+          const mapped = rows.map(r => ({
+            ...r,
+            fmId: r.legacy_fm_id || r.fmId || null,
+            pkg: r.pkg_plan || r.pkg || null,
+            pkgExpiry: r.pkg_expiry || r.pkgExpiry || null,
+            logo: r.logo_url || r.logo || null,
+          }));
+          _setCompaniesRaw(mapped);
+        } else {
+          // Empty DB — seed COMPANIES_DB and upsert
+          await bulkUpsertCompanies(COMPANIES_DB);
+          _setCompaniesRaw(COMPANIES_DB);
+        }
+        try { localStorage.removeItem("fm_companies"); } catch(e){}
+      } catch (e) { console.warn("[load companies]", e); }
+      finally { setCompaniesLoaded(true); }
+    })();
+    return () => { canceled = true; };
+  }, []);
+  // Debounced bulk-upsert when companies changes (saves bandwidth on rapid edits)
+  const setCompanies = useCallback((val) => {
+    _setCompaniesRaw((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      try {
+        if (companiesLoaded) {
+          // Only upsert changed rows
+          const prevById = new Map(prev.map(c => [c.id, c]));
+          const changed = next.filter(c => {
+            const old = prevById.get(c.id);
+            return !old || JSON.stringify(old) !== JSON.stringify(c);
+          });
+          if (changed.length) bulkUpsertCompanies(changed);
+        }
+      } catch(e) { console.warn("[setCompanies sync]", e); }
+      return next;
+    });
+  }, [companiesLoaded]);
   // co = firma aktywnego dostawcy z companies (SSOT)
   const co = account.role==="supplier"
     ? (companies.find(c=>c.id===account.id) ||
@@ -1324,30 +1377,76 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [orders, setOrders] = useState([
     { id:1, planId:"std_10", planLabel:"Standard 10 wysyłek", price:400, perSend:40, qty:10, date:"2026-01-15", status:"paid", paymentMethod:"przelew", firmName:"Food Market" },
   ]);
-  const [retailers, setRetailers] = useState(() => {
-    try {
-      const s = localStorage.getItem("fm_retailers");
-      if (s) {
-        // Migrate: add fm26ChainId/fm26Active if missing (old localStorage data)
-        return JSON.parse(s).map(r => ({
-          ...r,
-          fm26ChainId: r.fm26ChainId !== undefined ? r.fm26ChainId : (RETAILER_TO_CHAIN[r.id]||null),
-          fm26Active:  r.fm26Active  !== undefined ? r.fm26Active  : !!RETAILER_TO_CHAIN[r.id],
-          buyers: (r.buyers||[]).map(b => ({
-            ...b,
-            fm26Active: b.fm26Active !== undefined ? b.fm26Active : !!RETAILER_TO_CHAIN[r.id]
-          }))
-        }));
-      }
-      return RETAILERS.map(r=>({...r, active:true, fm26ChainId:RETAILER_TO_CHAIN[r.id]||null, fm26Active:!!RETAILER_TO_CHAIN[r.id], buyers:[{
-        id:r.id+"_b1", name:r.buyer||"", email:r.email||"", phone:r.phone||"", cats:r.cats||[], active:true, fm26Active:!!RETAILER_TO_CHAIN[r.id]
-      }]}));
-    } catch(e) {
-      return RETAILERS.map(r=>({...r, active:true, fm26ChainId:RETAILER_TO_CHAIN[r.id]||null, fm26Active:!!RETAILER_TO_CHAIN[r.id], buyers:[{
-        id:r.id+"_b1", name:r.buyer||"", email:r.email||"", phone:r.phone||"", cats:r.cats||[], active:true, fm26Active:!!RETAILER_TO_CHAIN[r.id]
-      }]}));
-    }
-  });
+  // [B2B Round 2.1] retailers: load from Supabase on mount; seed if empty.
+  const [retailers, _setRetailersRaw] = useState(() =>
+    RETAILERS.map(r => ({
+      ...r,
+      active: true,
+      fm26ChainId: RETAILER_TO_CHAIN[r.id] || null,
+      fm26Active: !!RETAILER_TO_CHAIN[r.id],
+      buyers: [{
+        id: r.id + "_b1",
+        name: r.buyer || "",
+        email: r.email || "",
+        phone: r.phone || "",
+        cats: r.cats || [],
+        active: true,
+        fm26Active: !!RETAILER_TO_CHAIN[r.id]
+      }]
+    }))
+  );
+  const [retailersLoaded, setRetailersLoaded] = useState(false);
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      try {
+        const rows = await dbGetRetailers();
+        if (canceled) return;
+        if (rows && rows.length > 0) {
+          // Map DB rows back to legacy shape
+          const mapped = rows.map(r => ({
+            ...r,
+            fm26ChainId: r.fm26ChainId !== undefined ? r.fm26ChainId : (RETAILER_TO_CHAIN[r.id] || null),
+            fm26Active:  r.fm26Active  !== undefined ? r.fm26Active  : !!RETAILER_TO_CHAIN[r.id],
+            active: r.active !== false,
+            buyers: r.buyers || [{
+              id: r.id + "_b1", name: r.buyer_name || "", email: r.buyer_email || "",
+              phone: r.buyer_phone || "", cats: r.cats || [], active: true,
+              fm26Active: !!RETAILER_TO_CHAIN[r.id]
+            }]
+          }));
+          _setRetailersRaw(mapped);
+        } else {
+          const seed = RETAILERS.map(r => ({
+            ...r, active: true, fm26ChainId: RETAILER_TO_CHAIN[r.id] || null,
+            fm26Active: !!RETAILER_TO_CHAIN[r.id],
+            buyers: [{ id: r.id + "_b1", name: r.buyer || "", email: r.email || "", phone: r.phone || "", cats: r.cats || [], active: true, fm26Active: !!RETAILER_TO_CHAIN[r.id] }]
+          }));
+          await bulkUpsertRetailers(seed);
+          _setRetailersRaw(seed);
+        }
+        try { localStorage.removeItem("fm_retailers"); } catch(e){}
+      } catch (e) { console.warn("[load retailers]", e); }
+      finally { setRetailersLoaded(true); }
+    })();
+    return () => { canceled = true; };
+  }, []);
+  const setRetailers = useCallback((val) => {
+    _setRetailersRaw((prev) => {
+      const next = typeof val === "function" ? val(prev) : val;
+      try {
+        if (retailersLoaded) {
+          const prevById = new Map(prev.map(r => [r.id, r]));
+          const changed = next.filter(r => {
+            const old = prevById.get(r.id);
+            return !old || JSON.stringify(old) !== JSON.stringify(r);
+          });
+          if (changed.length) bulkUpsertRetailers(changed);
+        }
+      } catch(e) { console.warn("[setRetailers sync]", e); }
+      return next;
+    });
+  }, [retailersLoaded]);
   // buyerUiState: only starred (UI state per buyer) — MUST be after retailers
   const [buyerUiState, setBuyerUiState] = useState({});
   const buyer = (() => {
@@ -1396,12 +1495,35 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 
   // FM Scheduling state
   const [fmSettings, setFmSettings] = useState({ schedulingOpen: false, openDate: "2026-09-01", currentPhase: 2, planPublished: false });
-  const [fmPrefs, setFmPrefs] = useState(() => {
-    try { const s=localStorage.getItem("fm_fmPrefs"); return s?JSON.parse(s):_fmInitData.p; } catch(e){ return _fmInitData.p; }
-  });
-  const [fmResps, setFmResps] = useState(() => {
-    try { const s=localStorage.getItem("fm_fmResps"); return s?JSON.parse(s):_fmInitData.r; } catch(e){ return _fmInitData.r; }
-  });
+  // [B2B Round 2.1] fmPrefs / fmResps: kept in fm_settings.schedule.meta + fm_resps table.
+  // Initial: try Supabase; fallback to seed _fmInitData.
+  const [fmPrefs, setFmPrefs] = useState(_fmInitData.p);
+  const [fmResps, setFmResps] = useState(_fmInitData.r);
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      try {
+        // fmResps from fm_resps table (admin sees all rows)
+        const rows = await dbGetFmResps();
+        if (canceled) return;
+        if (rows && rows.length > 0) {
+          // Convert flat rows to keyed structure expected by PreconnectFM
+          const grouped = {};
+          for (const r of rows) {
+            if (!r.retailer_id) continue;
+            const supKey = (r.meta && r.meta.supplier_legacy_id) || r.supplier_company_id;
+            if (!supKey) continue;
+            if (!grouped[r.retailer_id]) grouped[r.retailer_id] = {};
+            grouped[r.retailer_id][supKey] = r.zone || r.status || null;
+          }
+          if (Object.keys(grouped).length) setFmResps(grouped);
+        }
+        try { localStorage.removeItem("fm_fmResps"); } catch(e){}
+        try { localStorage.removeItem("fm_fmPrefs"); } catch(e){}
+      } catch (e) { console.warn("[load fmResps]", e); }
+    })();
+    return () => { canceled = true; };
+  }, []);
   const fmChains = useMemo(() =>
     retailers
       .filter(r => r.fm26Active && r.active !== false && r.fm26ChainId)
@@ -1488,26 +1610,74 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }, [runtimeAccounts]); // eslint-disable-line
 
   const onFMRegenerate = useCallback(() => { const d=genFMData(fmSuppliers, fmChains); setFmPrefs(d.p); setFmResps(d.r); }, [fmSuppliers, fmChains]);
-  const [fmSchedule, setFmSchedule] = useState(() => {
-    try { const s=localStorage.getItem("fm_fmSchedule"); return s?JSON.parse(s):null; } catch(e){ return null; }
-  });
+  // [B2B Round 2.1] fmSchedule: load from fm_settings.schedule (Supabase).
+  const [fmSchedule, setFmSchedule] = useState(null);
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      try {
+        const sched = await dbGetFmSchedule();
+        if (canceled) return;
+        if (sched) setFmSchedule(sched);
+        try { localStorage.removeItem("fm_fmSchedule"); } catch(e){}
+      } catch (e) { console.warn("[load fmSchedule]", e); }
+    })();
+    return () => { canceled = true; };
+  }, []);
 
-  // Persist key state to localStorage (offers/sends idą do Supabase via wraper, NIE do localStorage)
+  // [B2B Round 2.1] Persistence:
+  //   - companies / retailers: synced through setCompanies / setRetailers wrappers (above)
+  //   - offers / sends:        synced through setOffers / setSends wrappers
+  //   - fmSchedule:            debounced save to fm_settings.schedule
+  //   - fmResps:               saved per-action by handlers (Accept/Reject); also debounced fallback below
+  //   - UI-only state (previewFor, refundNotifs, messages): localStorage OK
+  // Debounced save of fmSchedule:
+  useEffect(() => {
+    if (!fmSchedule) return;
+    const t = setTimeout(() => {
+      dbSaveFmSchedule(fmSchedule).catch(e => console.warn("[saveFmSchedule]", e));
+    }, 800);
+    return () => clearTimeout(t);
+  }, [fmSchedule]);
+  // Debounced bulk save of fmResps as a fallback (per-action saves are preferred):
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        // Walk the keyed structure and persist each row.
+        // Keys: { [retailerId]: { [supplierKey]: zone } }
+        for (const retId of Object.keys(fmResps || {})) {
+          const inner = fmResps[retId];
+          if (!inner) continue;
+          for (const supKey of Object.keys(inner)) {
+            const zone = inner[supKey];
+            // We need supplier_company_id to satisfy NOT NULL constraint.
+            // If supKey is 's1' style legacy, look up by legacy_fm_id; if it's a uuid, use directly.
+            const supCompany = companies.find(c => c.fmId === supKey || c.id === supKey);
+            const supplier_company_id = supCompany?.id;
+            if (!supplier_company_id) continue;
+            dbSaveFmResp({
+              retailer_id: Number(retId),
+              supplier_company_id,
+              zone,
+              status: zone,
+              meta: { supplier_legacy_id: supKey }
+            }).catch(e => console.warn("[saveFmResp]", e));
+          }
+        }
+      } catch(e) { console.warn("[debounced fmResps save]", e); }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [fmResps, companies]);
+  // UI-only state stays in localStorage:
   useEffect(() => {
     try {
-      // offers i sends synchronizują się przez setOffers/setSends wrappers - NIE zapisujemy ich w localStorage
-      localStorage.setItem("fm_fmPrefs",   JSON.stringify(fmPrefs));
-      localStorage.setItem("fm_fmResps",   JSON.stringify(fmResps));
-      localStorage.setItem("fm_retailers", JSON.stringify(retailers));
-      localStorage.setItem("fm_companies", JSON.stringify(companies));
-      if(fmSchedule) localStorage.setItem("fm_fmSchedule", JSON.stringify(fmSchedule));
       localStorage.setItem("fm_refundNotifs", JSON.stringify(refundNotifs));
-      localStorage.setItem("fm_fmWishlists", JSON.stringify(fmWishlists));
-      localStorage.setItem("fm_fmLateResps", JSON.stringify(fmLateResps));
-      localStorage.setItem("fm_previewFor", JSON.stringify(previewFor));
-      localStorage.setItem("fm_messages", JSON.stringify(messages));
+      localStorage.setItem("fm_previewFor",   JSON.stringify(previewFor));
+      localStorage.setItem("fm_messages",     JSON.stringify(messages));
+      localStorage.setItem("fm_fmWishlists",  JSON.stringify(fmWishlists));
+      localStorage.setItem("fm_fmLateResps",  JSON.stringify(fmLateResps));
     } catch(e){}
-  }, [offers, sends, fmPrefs, fmResps, fmSchedule, retailers, companies, refundNotifs, fmWishlists, fmLateResps, previewFor, messages]);
+  }, [refundNotifs, previewFor, messages, fmWishlists, fmLateResps]);
 
   // pkgMax = limit for current supplier account
   const myLimit = limits.find(l=>l.id===account.id) || {
