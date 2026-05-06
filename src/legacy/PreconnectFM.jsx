@@ -14,7 +14,7 @@ import {
   // [B2B Round 2.1] Replace localStorage for FM 2026 state
   getCompanies as dbGetCompanies, bulkUpsertCompanies,
   getRetailers as dbGetRetailers, bulkUpsertRetailers,
-  getFmSettings as dbGetFmSettings,
+  getFmSettings as dbGetFmSettings, saveFmSettings as dbSaveFmSettings,
   getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
   getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
   getAllCompanyTargetRetailers as dbGetAllCompanyTargetRetailers,
@@ -1545,6 +1545,31 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 
   // FM Scheduling state
   const [fmSettings, setFmSettings] = useState({ schedulingOpen: false, openDate: "2026-09-01", currentPhase: 2, planPublished: false });
+  const [fmSettingsLoaded, setFmSettingsLoaded] = useState(false);
+  useEffect(() => {
+    let canceled = false;
+    (async () => {
+      try {
+        const settings = await dbGetFmSettings();
+        if (!canceled && settings) {
+          setFmSettings((prev) => ({ ...prev, ...settings }));
+        }
+      } catch (e) {
+        console.warn("[load fmSettings]", e);
+      } finally {
+        if (!canceled) setFmSettingsLoaded(true);
+      }
+    })();
+    return () => { canceled = true; };
+  }, []);
+  useEffect(() => {
+    if (!fmSettingsLoaded || account.role !== "admin") return;
+    const t = setTimeout(() => {
+      dbSaveFmSettings(fmSettings).catch(e => console.warn("[save fmSettings]", e));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [fmSettings, fmSettingsLoaded, account.role]);
+
   // [B2B Round 2.1] fmPrefs / fmResps: kept in fm_settings.schedule.meta + fm_resps table.
   // Initial: try Supabase; fallback to seed _fmInitData.
   // Production state starts empty and is hydrated from Supabase. Demo data can

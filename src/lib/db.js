@@ -214,6 +214,42 @@ export async function toggleStar(userId, sendId, currentlyStarred) {
 // ===================================================================
 // FRESH MARKET (event)
 // ===================================================================
+function normalizeFmSettings(row) {
+  if (!row) return null;
+  const phase = row.algo_phase || "closed";
+  const schedulingOpen = phase !== "closed";
+  const planPublished = ["published", "final_published", "event_day"].includes(phase);
+  const currentPhase = planPublished
+    ? 4
+    : ["matching", "algorithm", "corrections"].includes(phase)
+      ? 3
+      : schedulingOpen
+        ? 2
+        : 1;
+  return {
+    ...row,
+    schedulingOpen,
+    currentPhase,
+    planPublished,
+    openDate: row.open_date ? String(row.open_date).slice(0, 10) : "2026-09-01",
+  };
+}
+
+function serializeFmSettings(settings = {}) {
+  const algo_phase = !settings.schedulingOpen
+    ? "closed"
+    : settings.planPublished
+      ? "published"
+      : Number(settings.currentPhase || 1) >= 3
+        ? "matching"
+        : "preferences_open";
+  return {
+    open_date: settings.openDate || settings.open_date || "2026-09-01",
+    algo_phase,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function getFmSettings() {
   const { data, error } = await supabase
     .from("fm_settings")
@@ -222,7 +258,35 @@ export async function getFmSettings() {
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  return normalizeFmSettings(data);
+}
+
+export async function saveFmSettings(settings) {
+  const existing = await getFmSettings();
+  const row = serializeFmSettings(settings);
+  if (existing?.id) {
+    const { data, error } = await supabase
+      .from("fm_settings")
+      .update(row)
+      .eq("id", existing.id)
+      .select()
+      .single();
+    if (error) throw error;
+    return normalizeFmSettings(data);
+  }
+  const { data, error } = await supabase
+    .from("fm_settings")
+    .insert({
+      ...row,
+      venue: settings.venue || "MCC Mazurkas Conference Centre, Ozarow Mazowiecki",
+      event_date: settings.event_date || "2026-09-24",
+      message: settings.message || "Fresh Market 2026",
+      schedule: settings.schedule || {},
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return normalizeFmSettings(data);
 }
 
 export async function getFmPrefs(retailerId) {
