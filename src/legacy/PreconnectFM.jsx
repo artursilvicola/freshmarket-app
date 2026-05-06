@@ -1309,6 +1309,26 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     })();
     return () => { canceled = true; };
   }, []);
+  // [B2B Round 2.2] Upewnij sie ze firma zalogowanego suppliera jest w state.
+  // Bez tego PageCompany / FM supplier widget moze fallbackowac do COMPANY_INIT.
+  useEffect(() => {
+    if (!companiesLoaded) return;
+    if (!currentUser?.company_id) return;
+    _setCompaniesRaw((prev) => {
+      const exists = prev.find(c => c.id === currentUser.company_id);
+      if (exists) return prev;
+      // Wstrzykujemy minimalny rekord firmy z profilu (do uzupelnienia przez admina/dostawce w UI)
+      const injected = {
+        ...COMPANY_INIT,
+        id: currentUser.company_id,
+        name: currentUser.company_name || currentUser.name || "Moja firma",
+        country: currentUser.company_country || currentUser.country || "PL",
+        fmId: currentUser.legacy_fm_id || null,
+        pkg: currentUser.pkg_plan || null,
+      };
+      return [...prev, injected];
+    });
+  }, [companiesLoaded, currentUser?.company_id, currentUser?.legacy_fm_id]);
   // Debounced bulk-upsert when companies changes (saves bandwidth on rapid edits)
   const setCompanies = useCallback((val) => {
     _setCompaniesRaw((prev) => {
@@ -1595,18 +1615,20 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 
   useEffect(() => {
     const stillExists = runtimeAccounts.find(a => a.id === account.id);
-    if(!stillExists && runtimeAccounts.length > 1) {
-      // Jeśli mamy zablokowaną rolę (dostawca/kupiec) - znajdź konto z tej roli
-      // Inaczej - default fallback do pierwszego suppliera (admin)
-      if (lockedRole) {
-        const sameRole = runtimeAccounts.find(a => a.role === lockedRole);
-        if (sameRole) { switchAccount(sameRole); return; }
-        // Brak konta z lockedRole - nie zmieniamy (pozostawiamy obecne)
-        return;
-      }
-      const firstSupplier = runtimeAccounts.find(a=>a.role==="supplier");
-      if(firstSupplier) switchAccount(firstSupplier);
+    if (stillExists) return;
+    if (runtimeAccounts.length === 0) return;
+    // [B2B Round 2.2] W lockedRole mode (supplier/buyer) NIE nadpisujemy
+    // realnego usera kontem seed. Trzymamy `account` z currentUser nawet jesli
+    // nie jest jeszcze w runtimeAccounts - zostanie tam wstawiony, gdy zalogowana
+    // firma/sieć dojedzie do `companies`/`retailers` z DB.
+    if (lockedRole) {
+      // Robimy nic. Zachowujemy current account, ktorego pola id/fmId/retailerId
+      // pochodza z profile.company_id / profile.retailer_id (Round 2.1 mapping).
+      return;
     }
+    // Tylko admin moze swobodnie przelaczac konta - dla niego dajemy default.
+    const firstSupplier = runtimeAccounts.find(a => a.role === "supplier");
+    if (firstSupplier) switchAccount(firstSupplier);
   }, [runtimeAccounts]); // eslint-disable-line
 
   const onFMRegenerate = useCallback(() => { const d=genFMData(fmSuppliers, fmChains); setFmPrefs(d.p); setFmResps(d.r); }, [fmSuppliers, fmChains]);
