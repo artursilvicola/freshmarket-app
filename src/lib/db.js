@@ -510,6 +510,18 @@ export async function getCompanyTargetRetailers(companyId) {
   return data || [];
 }
 
+export async function getAllCompanyTargetRetailers() {
+  const { data, error } = await supabase
+    .from("company_target_retailers")
+    .select("company_id, retailer_id, priority, note, retailer:retailers(*)")
+    .order("priority", { ascending: false });
+  if (error) {
+    console.warn("[getAllCompanyTargetRetailers]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
 /**
  * Replace-set: zastąp całą listę preferencji dostawcy nową listą par
  * { retailer_id, priority, note }.

@@ -17,6 +17,8 @@ import {
   getFmSettings as dbGetFmSettings,
   getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
   getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
+  getAllCompanyTargetRetailers as dbGetAllCompanyTargetRetailers,
+  setCompanyTargetRetailers as dbSetCompanyTargetRetailers,
   getFmWishlists as dbGetFmWishlists, saveFmWishlist as dbSaveFmWishlist,
   getFmLateResps as dbGetFmLateResps, saveFmLateResp as dbSaveFmLateResp,
 } from "../lib/db";
@@ -580,6 +582,33 @@ const CHAIN_TO_RETAILER = {
 const RETAILER_TO_CHAIN = Object.fromEntries(
   Object.entries(CHAIN_TO_RETAILER).map(([ch, rid]) => [rid, ch])
 );
+function resolveRetailerIdFromChain(chainId, retailers = []) {
+  const row = (retailers || []).find(r => r.fm26ChainId === chainId);
+  if (row?.id) return Number(row.id);
+  const mapped = CHAIN_TO_RETAILER[chainId];
+  if (mapped) return Number(mapped);
+  const numeric = Number(chainId);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+function resolveChainIdFromRetailer(retailerId, retailers = [], meta = {}) {
+  if (meta?.chain_id) return meta.chain_id;
+  if (typeof meta?.note === "string" && meta.note.startsWith("chain:")) return meta.note.slice(6);
+  const row = (retailers || []).find(r => Number(r.id) === Number(retailerId) && r.fm26ChainId);
+  if (row?.fm26ChainId) return row.fm26ChainId;
+  return RETAILER_TO_CHAIN[Number(retailerId)] || null;
+}
+function buildTargetRetailerRowsFromPrefs(prefs = {}, retailers = []) {
+  const seen = new Map();
+  Object.entries(prefs).forEach(([chainId, pref], index) => {
+    const retailerId = resolveRetailerIdFromChain(chainId, retailers);
+    if (!retailerId) return;
+    const base = pref === "star" ? 1000 : 100;
+    const row = { retailer_id: retailerId, priority: base - index, note: `chain:${chainId}` };
+    const old = seen.get(retailerId);
+    if (!old || row.priority > old.priority) seen.set(retailerId, row);
+  });
+  return Array.from(seen.values());
+}
 const FM_CHAINS=[
   {id:"ch1",name:"ARHELAN",country:"PL",cat:"owoce, warzywa"},{id:"ch2",name:"AUCHAN",country:"PL/FR",cat:"owoce, warzywa"},
   {id:"ch3",name:"ALBERT owoce",country:"CZ",cat:"owoce"},{id:"ch4",name:"ALBERT warzywa",country:"CZ",cat:"warzywa"},
@@ -1166,6 +1195,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     }
     if (initialRole === "buyer") {
       const rid = currentUser?.retailer_id ?? null;
+      const fmChainId = rid ? (RETAILER_TO_CHAIN[Number(rid)] || null) : null;
       return {
         id: currentUser?.id || (rid ? `b-${rid}` : "b-unknown"),
         role: "buyer",
@@ -1173,7 +1203,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         title: currentUser?.retailer_name || (rid ? `Sieć #${rid}` : "Bez przypisanej sieci"),
         email: currentUser?.email || "",
         fmId: null,
-        chainId: rid,
+        chainId: fmChainId || rid,
         retailerId: rid,
         pkg: null
       };
@@ -1520,9 +1550,27 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [fmPrefs, setFmPrefs] = useState(_fmInitData.p);
   const [fmResps, setFmResps] = useState(_fmInitData.r);
   useEffect(() => {
+    if (!companiesLoaded || !retailersLoaded) return;
     let canceled = false;
     (async () => {
       try {
+        const targets = await dbGetAllCompanyTargetRetailers();
+        if (canceled) return;
+        if (targets && targets.length > 0) {
+          const groupedPrefs = {};
+          for (const row of targets) {
+            const coRow = companies.find(c => c.id === row.company_id);
+            const supKey = coRow?.fmId || coRow?.legacy_fm_id || row.company_id;
+            const chainKey = resolveChainIdFromRetailer(row.retailer_id, retailers, { note: row.note });
+            if (!supKey || !chainKey) continue;
+            if (!groupedPrefs[supKey]) groupedPrefs[supKey] = {};
+            groupedPrefs[supKey][chainKey] = Number(row.priority || 0) >= 1000 ? "star" : "thumb";
+          }
+          if (Object.keys(groupedPrefs).length) {
+            setFmPrefs(prev => ({ ...prev, ...groupedPrefs }));
+          }
+        }
+
         // fmResps from fm_resps table (admin sees all rows)
         const rows = await dbGetFmResps();
         if (canceled) return;
@@ -1531,10 +1579,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
           const grouped = {};
           for (const r of rows) {
             if (!r.retailer_id) continue;
-            const supKey = (r.meta && r.meta.supplier_legacy_id) || r.supplier_company_id;
-            if (!supKey) continue;
-            if (!grouped[r.retailer_id]) grouped[r.retailer_id] = {};
-            grouped[r.retailer_id][supKey] = r.zone || r.status || null;
+            const chainKey = resolveChainIdFromRetailer(r.retailer_id, retailers, r.meta || {});
+            const supCompany = companies.find(c => c.id === r.supplier_company_id);
+            const supKey = (r.meta && r.meta.supplier_legacy_id) || supCompany?.fmId || r.supplier_company_id;
+            if (!chainKey || !supKey) continue;
+            if (!grouped[chainKey]) grouped[chainKey] = {};
+            grouped[chainKey][supKey] = r.zone || r.status || null;
           }
           if (Object.keys(grouped).length) setFmResps(grouped);
         }
@@ -1543,7 +1593,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       } catch (e) { console.warn("[load fmResps]", e); }
     })();
     return () => { canceled = true; };
-  }, []);
+  }, [companiesLoaded, retailersLoaded, companies, retailers]);
   const fmChains = useMemo(() =>
     retailers
       .filter(r => r.fm26Active && r.active !== false && r.fm26ChainId)
@@ -1676,20 +1726,22 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             // If supKey is 's1' style legacy, look up by legacy_fm_id; if it's a uuid, use directly.
             const supCompany = companies.find(c => c.fmId === supKey || c.id === supKey);
             const supplier_company_id = supCompany?.id;
+            const retailer_id = resolveRetailerIdFromChain(retId, retailers);
             if (!supplier_company_id) continue;
+            if (!retailer_id) continue;
             dbSaveFmResp({
-              retailer_id: Number(retId),
+              retailer_id,
               supplier_company_id,
               zone,
               status: zone,
-              meta: { supplier_legacy_id: supKey }
+              meta: { supplier_legacy_id: supKey, chain_id: retId }
             }).catch(e => console.warn("[saveFmResp]", e));
           }
         }
       } catch(e) { console.warn("[debounced fmResps save]", e); }
     }, 1500);
     return () => clearTimeout(t);
-  }, [fmResps, companies]);
+  }, [fmResps, companies, retailers]);
   // UI-only state stays in localStorage:
   useEffect(() => {
     try {
@@ -1831,7 +1883,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-chat")       return <PageAdminChat messages={messages} setMessages={setMessages} runtimeAccounts={runtimeAccounts}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
-      ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor}/>
+      ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers}/>
       : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
     if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts}/>;
     return null;
@@ -5282,7 +5334,7 @@ function RetailerPreviewModal({ retailer, onClose }) {
 /* ═══════════════════════════════════════════════════════════════
    FM PAGE — SUPPLIER
 ═══════════════════════════════════════════════════════════════ */
-function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor }) {
+function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers }) {
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const sid = fmId || "s1";
@@ -5308,6 +5360,11 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
     else if (cur === "star") { np[sid][cid] = "thumb"; }
     else { delete np[sid][cid]; }
     setFmPrefs(np);
+    const company = (companies || []).find(c => c.fmId === sid || c.legacy_fm_id === sid || c.id === sid);
+    if (company?.id) {
+      const rows = buildTargetRetailerRowsFromPrefs(np[sid], retailers);
+      dbSetCompanyTargetRetailers(company.id, rows).catch(e => console.warn("[save target retailers]", e));
+    }
   }
 
 
@@ -5497,6 +5554,18 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
 
   function setResp(sid, val) {
     setFmResps(r => ({ ...r, [chainId]: { ...(r[chainId]||{}), [sid]: val } }));
+    const retailer_id = resolveRetailerIdFromChain(chainId, retailers);
+    const supplier = _suppliers.find(s => s.id === sid);
+    const company = (companies || []).find(c => c.id === supplier?.companyId || c.fmId === sid || c.legacy_fm_id === sid);
+    if (retailer_id && company?.id) {
+      dbSaveFmResp({
+        retailer_id,
+        supplier_company_id: company.id,
+        zone: val,
+        status: val,
+        meta: { supplier_legacy_id: sid, chain_id: chainId }
+      }).catch(e => console.warn("[save buyer fm resp]", e));
+    }
   }
   function toggleWish(sid) {
     if (!setFmWishlists) return;
