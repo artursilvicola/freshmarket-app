@@ -5377,7 +5377,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
   // Count only from _chains that are displayed (avoids seed keys for non-displayed chains)
   const stars    = _chains.filter(c => myPrefs[c.id] === "star").length;
   const thumbs   = _chains.filter(c => myPrefs[c.id] === "thumb").length;
-  const meetings = currentPlan?.res[sid]?.m || [];
+  const meetings = currentPlan?.res?.[sid]?.m || [];
 
   function toggle(cid) {
     if (phase !== 2) return; // only editable in phase 2
@@ -5576,7 +5576,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
   const chain      = _chains.find(c=>c.id===chainId);
   const allParticipants = _suppliers; // all FM participants — buyer sees everyone and decides
   const currentPlan = fmSchedule || fmAlgo; // fmSchedule (approved) takes priority over raw algo
-  const myMatches  = _suppliers.filter(s => currentPlan?.res[s.id]?.m?.includes(chainId));
+  const myMatches  = _suppliers.filter(s => currentPlan?.res?.[s.id]?.m?.includes(chainId));
   const ph = FM_PHASES[phase-1];
 
   function setResp(sid, val) {

@@ -532,7 +532,9 @@ export async function deleteFmResp(id) {
 
 export async function getFmSchedule() {
   const settings = await getFmSettings();
-  return settings?.schedule || null;
+  const sched = settings?.schedule;
+  if (!sched || typeof sched !== "object" || !sched.res) return null;
+  return sched;
 }
 
 export async function saveFmSchedule(schedule) {
