@@ -1547,8 +1547,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [fmSettings, setFmSettings] = useState({ schedulingOpen: false, openDate: "2026-09-01", currentPhase: 2, planPublished: false });
   // [B2B Round 2.1] fmPrefs / fmResps: kept in fm_settings.schedule.meta + fm_resps table.
   // Initial: try Supabase; fallback to seed _fmInitData.
-  const [fmPrefs, setFmPrefs] = useState(_fmInitData.p);
-  const [fmResps, setFmResps] = useState(_fmInitData.r);
+  // Production state starts empty and is hydrated from Supabase. Demo data can
+  // still be generated manually from the admin "Dane testowe" button.
+  const [fmPrefs, setFmPrefs] = useState({});
+  const [fmResps, setFmResps] = useState({});
   useEffect(() => {
     if (!companiesLoaded || !retailersLoaded) return;
     let canceled = false;
@@ -5044,11 +5046,11 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
   const filteredChains = _chains.filter(c=>c.name.toLowerCase().includes(search.toLowerCase()));
 
   // Stats
-  const totalStars   = Object.values(fmPrefs).reduce((a,p)=>a+Object.values(p||{}).filter(v=>v==="star").length,0);
-  const totalThumbs  = Object.values(fmPrefs).reduce((a,p)=>a+Object.values(p||{}).filter(v=>v==="thumb").length,0);
-  const totalWant    = Object.values(fmResps).reduce((a,r)=>a+Object.values(r||{}).filter(v=>v==="want").length,0);
-  const totalChance  = Object.values(fmResps).reduce((a,r)=>a+Object.values(r||{}).filter(v=>v==="chance").length,0);
-  const totalRemove  = Object.values(fmResps).reduce((a,r)=>a+Object.values(r||{}).filter(v=>v==="remove").length,0);
+  const totalStars   = _suppliers.reduce((a,s)=>a+_chains.filter(c=>fmPrefs[s.id]?.[c.id]==="star").length,0);
+  const totalThumbs  = _suppliers.reduce((a,s)=>a+_chains.filter(c=>fmPrefs[s.id]?.[c.id]==="thumb").length,0);
+  const totalWant    = _chains.reduce((a,c)=>a+_suppliers.filter(s=>fmResps[c.id]?.[s.id]==="want").length,0);
+  const totalChance  = _chains.reduce((a,c)=>a+_suppliers.filter(s=>fmResps[c.id]?.[s.id]==="chance").length,0);
+  const totalRemove  = _chains.reduce((a,c)=>a+_suppliers.filter(s=>fmResps[c.id]?.[s.id]==="remove").length,0);
 
   return (
     <div>
@@ -6504,9 +6506,9 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
 
       {/* ══ TAB: DANE WEJŚCIOWE ══ */}
       {tab==="dane" && (()=>{
-        const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=5).length;
-        const _cr = _chains.filter(c=>Object.values(fmResps[c.id]||{}).some(v=>v==="want"||v==="chance")).length;
-        const _rp = Math.round(_sr/_suppliers.length*100);
+        const _sr = _suppliers.filter(s=>_chains.filter(c=>fmPrefs[s.id]?.[c.id]==="star").length>=5).length;
+        const _cr = _chains.filter(c=>_suppliers.some(s=>["want","chance"].includes(fmResps[c.id]?.[s.id]))).length;
+        const _rp = Math.round((_sr/Math.max(_suppliers.length,1))*100);
         return (
           <div>
             <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14 }}>
