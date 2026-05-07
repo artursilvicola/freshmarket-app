@@ -5498,11 +5498,14 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                     {stars.map(c=>{
                       const resp = fmResps[c.id]?.[s.id];
                       const rc = resp==="want"?"#059669":resp==="chance"?"#d97706":resp==="remove"?"#dc2626":"#94a3b8";
-                      const rl = resp==="want"?"✅ Chcę":resp==="chance"?"🤝 Szansa":resp==="remove"?"❌ Nie":"⏳ brak";
+                      // [B2B Round FM-buyer-rejection-logic] Semantic labels for
+                      // admin clarity. "remove" maps to NIE CHCE SPOTKANIA per spec.
+                      const rl = resp==="want"?"✅ CHCE":resp==="chance"?"🤝 NA KONIEC":resp==="remove"?"❌ NIE CHCE":"⏳ brak";
+                      const rTitle = resp==="want"?"Kupiec: CHCE SPOTKANIE":resp==="chance"?"Kupiec: NA KONIEC KOLEJKI (deprioritized_by_buyer)":resp==="remove"?"Kupiec: NIE CHCE SPOTKANIA (rejected_by_buyer)":"Kupiec jeszcze nie odpowiedział";
                       return(
-                        <div key={c.id} style={{ padding:"8px 10px",borderRadius:8,background:"#fffbeb",border:"1px solid #fde68a",display:"flex",alignItems:"center",gap:6 }}>
+                        <div key={c.id} title={rTitle} style={{ padding:"8px 10px",borderRadius:8,background:"#fffbeb",border:"1px solid #fde68a",display:"flex",alignItems:"center",gap:6 }}>
                           <span style={{ fontSize:11,fontWeight:700,color:"#1e293b",flex:1 }}>{c.name}</span>
-                          <span style={{ fontSize:10,fontWeight:700,color:rc }}>{rl}</span>
+                          <span style={{ fontSize:10,fontWeight:700,color:rc,whiteSpace:"nowrap" }}>{rl}</span>
                         </div>
                       );
                     })}
@@ -5514,11 +5517,12 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                     {thumbs.map(c=>{
                       const resp = fmResps[c.id]?.[s.id];
                       const rc = resp==="want"?"#059669":resp==="chance"?"#d97706":resp==="remove"?"#dc2626":"#94a3b8";
-                      const rl = resp==="want"?"✅":resp==="chance"?"🤝":resp==="remove"?"❌":"⏳";
+                      const rl = resp==="want"?"✅ CHCE":resp==="chance"?"🤝 NA KONIEC":resp==="remove"?"❌ NIE CHCE":"⏳ brak";
+                      const rTitle = resp==="want"?"Kupiec: CHCE SPOTKANIE":resp==="chance"?"Kupiec: NA KONIEC KOLEJKI":resp==="remove"?"Kupiec: NIE CHCE SPOTKANIA":"Kupiec jeszcze nie odpowiedział";
                       return(
-                        <div key={c.id} style={{ padding:"7px 10px",borderRadius:8,background:"#f0fdfa",border:"1px solid #a7f3d0",display:"flex",alignItems:"center",gap:6 }}>
+                        <div key={c.id} title={rTitle} style={{ padding:"7px 10px",borderRadius:8,background:"#f0fdfa",border:"1px solid #a7f3d0",display:"flex",alignItems:"center",gap:6 }}>
                           <span style={{ fontSize:11,color:"#1e293b",flex:1 }}>{c.name}</span>
-                          <span style={{ fontSize:10,fontWeight:700,color:rc }}>{rl}</span>
+                          <span style={{ fontSize:10,fontWeight:700,color:rc,whiteSpace:"nowrap" }}>{rl}</span>
                         </div>
                       );
                     })}
@@ -6054,7 +6058,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
                     </button>
                     <button onClick={()=>setRemoveConfirm(removeDialog)}
                       style={{ padding:"11px 16px",borderRadius:9,border:"1px solid #fca5a5",background:"white",color:"#dc2626",fontWeight:600,fontSize:12,cursor:"pointer",textAlign:"left" }}>
-                      Usuń całkowicie z listy spotkań
+                      Nie chcę spotkania z tą firmą
                     </button>
                     <button onClick={()=>{ setRemoveDialog(null); setRemoveConfirm(null); }}
                       style={{ padding:"8px 16px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:12,cursor:"pointer" }}>
@@ -6064,14 +6068,14 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
                 </>
               ) : (
                 <>
-                  <div style={{ fontWeight:700,fontSize:15,marginBottom:8,color:"#dc2626" }}>⚠️ Potwierdzenie usunięcia</div>
+                  <div style={{ fontWeight:700,fontSize:15,marginBottom:8,color:"#dc2626" }}>⚠️ Potwierdzenie odrzucenia</div>
                   <div style={{ fontSize:13,color:"#334155",marginBottom:20,lineHeight:1.6 }}>
-                    <strong>{sup?.name}</strong> nie będzie miała możliwości spotkania z Twoją siecią w żadnej formie. Tej decyzji nie można łatwo cofnąć.
+                    Oznaczysz firmę <strong>{sup?.name}</strong> jako <strong>NIE CHCĘ SPOTKANIA</strong>. Algorytm nie doda tej pary do Twojego planu. Administrator może wciąż dodać spotkanie ręcznie po wyraźnym ostrzeżeniu.
                   </div>
                   <div style={{ display:"flex",gap:8 }}>
                     <button onClick={()=>{ setResp(removeDialog,"remove"); setRemoveDialog(null); setRemoveConfirm(null); }}
                       style={{ flex:1,padding:"11px 16px",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer" }}>
-                      Tak, usuń całkowicie
+                      Tak, nie chcę spotkania
                     </button>
                     <button onClick={()=>{ setRemoveDialog(null); setRemoveConfirm(null); }}
                       style={{ padding:"11px 16px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:12,cursor:"pointer" }}>
@@ -6493,13 +6497,18 @@ function buildFMData(prefs, resps, chains, suppliers) {
 /* ═══════════════════════════════════════════════════════════════
    FM ADMIN CORRECTION PANEL — interaktywny grid
 ═══════════════════════════════════════════════════════════════ */
-function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains, fmSuppliers, fmWishlists }) {
+function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains, fmSuppliers, fmWishlists, fmResps }) {
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
+  const _resps     = fmResps || {};
   const [selA, setSelA] = useState(null);
   const [swapLog, setSwapLog] = useState([]);
   const [filterChain, setFilterChain] = useState("all");
   const [approved, setApproved] = useState(false);
+  // [B2B Round FM-buyer-rejection-logic] Pending placement awaiting admin
+  // confirmation when target chain's buyer rejected the supplier.
+  // Shape: { rejections: [{sid, cid, supplierName, chainName}], commit: () => void }
+  const [pendingOverride, setPendingOverride] = useState(null);
 
   if (!data || !data.cq) return (
     <div style={{ padding:40,textAlign:"center",color:"#94a3b8" }}>
@@ -6512,6 +6521,12 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
     ? _chains
     : _chains.filter(c => c.id === filterChain);
   const maxRows = Math.max(..._chains.map(c => (data.cq[c.id] || []).filter(x => x).length), 20);
+
+  // [B2B Round FM-buyer-rejection-logic] Lookup for "did this buyer/chain reject
+  // this supplier?". Buyer-side reject is stored as fm_resps.zone === "remove"
+  // (see PageBuyerFM modal "Nie chcę spotkania z tą firmą" → setResp(sid,"remove")).
+  const isBuyerRejected = (cid, sid) => _resps?.[cid]?.[sid] === "remove";
+  const isManualOverride = (sid, cid) => Boolean(data?.overrides?.[sid]?.[cid]);
 
   const handleClick = (cid, pos) => {
     if (approved) return;
@@ -6544,34 +6559,124 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
       logMsg = `➡️ Przesunięcie: ${nA} → ${chName} #${pos+1}`;
     }
 
-    const newNums = {};
-    _suppliers.forEach(s => { newNums[s.id] = {}; });
-    _chains.forEach(c => {
-      (newCq[c.id] || []).forEach((sid2, p) => {
-        if (sid2 && newNums[sid2]) newNums[sid2][c.id] = p + 1;
-      });
-    });
+    // [B2B Round FM-buyer-rejection-logic] Detect rejected pairings created by
+    // this swap. A pair is "newly rejected" if (1) supplier ends up in a chain
+    // they weren't already in, AND (2) that chain's buyer flagged them as
+    // remove. Pre-existing rejections (e.g. previous override) aren't re-flagged.
+    const wasInChain = (s, c) => (data.cq[c] || []).includes(s);
+    const rejections = [];
+    if (a.sid !== sid) {
+      // a.sid moves into cid
+      if (!wasInChain(a.sid, cid) && isBuyerRejected(cid, a.sid) && !isManualOverride(a.sid, cid)) {
+        rejections.push({
+          sid: a.sid, cid,
+          supplierName: (_suppliers.find(x => x.id === a.sid) || {}).name || a.sid,
+          chainName: (_chains.find(x => x.id === cid) || {}).name || cid,
+        });
+      }
+      // sid moves into a.cid (if swap)
+      if (sid && !wasInChain(sid, a.cid) && isBuyerRejected(a.cid, sid) && !isManualOverride(sid, a.cid)) {
+        rejections.push({
+          sid, cid: a.cid,
+          supplierName: (_suppliers.find(x => x.id === sid) || {}).name || sid,
+          chainName: (_chains.find(x => x.id === a.cid) || {}).name || a.cid,
+        });
+      }
+    }
 
-    // Rebuild res from newCq so other views (PageSupplierFM, PageBuyerFM, plan tab) stay in sync
-    const newRes = {};
-    _suppliers.forEach(s => {
-      newRes[s.id] = { m: [], r: (data?.res?.[s.id]?.r || {}) };
-    });
-    _chains.forEach(ch => {
-      (newCq[ch.id] || []).forEach(sid2 => {
-        if (sid2 && newRes[sid2]) newRes[sid2].m.push(ch.id);
+    // Function that actually applies the move. Reused from confirm-callback path.
+    const commit = () => {
+      const newNums = {};
+      _suppliers.forEach(s => { newNums[s.id] = {}; });
+      _chains.forEach(c => {
+        (newCq[c.id] || []).forEach((sid2, p) => {
+          if (sid2 && newNums[sid2]) newNums[sid2][c.id] = p + 1;
+        });
       });
-    });
+      const newRes = {};
+      _suppliers.forEach(s => {
+        newRes[s.id] = { m: [], r: (data?.res?.[s.id]?.r || {}) };
+      });
+      _chains.forEach(ch => {
+        (newCq[ch.id] || []).forEach(sid2 => {
+          if (sid2 && newRes[sid2]) newRes[sid2].m.push(ch.id);
+        });
+      });
+      // [B2B Round FM-buyer-rejection-logic] Persist override flag in
+      // data.overrides[sid][cid] = "manually_added_despite_buyer_rejection"
+      // so all downstream views (plan, admin pipeline) can mark this pair.
+      const newOverrides = JSON.parse(JSON.stringify(data?.overrides || {}));
+      rejections.forEach(({ sid: rSid, cid: rCid }) => {
+        if (!newOverrides[rSid]) newOverrides[rSid] = {};
+        newOverrides[rSid][rCid] = "manually_added_despite_buyer_rejection";
+      });
+      setData(prev => ({ ...prev, cq: newCq, nums: newNums, res: newRes, overrides: newOverrides }));
+      setSwapLog(prev => [
+        ...rejections.map(r => `⚠️ Dodano mimo odrzucenia: ${r.supplierName} → ${r.chainName}`),
+        logMsg,
+        ...prev,
+      ].slice(0, 20));
+      setSelA(null);
+    };
 
-    setData(prev => ({ ...prev, cq: newCq, nums: newNums, res: newRes }));
-    setSwapLog(prev => [logMsg, ...prev].slice(0, 20));
-    setSelA(null);
+    if (rejections.length > 0) {
+      setPendingOverride({ rejections, commit });
+    } else {
+      commit();
+    }
   };
 
   const totalMeetings = _suppliers.reduce((a, s) => a + (data?.res?.[s.id]?.m?.length || 0), 0);
 
   return (
     <div>
+      {/* [B2B Round FM-buyer-rejection-logic] Manual override confirmation modal.
+          Shown when admin tries to place a supplier into a chain whose buyer
+          flagged that supplier as "remove" (Nie chcę spotkania). Admin must
+          consciously confirm and the resulting meeting gets the
+          "manually_added_despite_buyer_rejection" override flag. */}
+      {pendingOverride && (
+        <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20 }}>
+          <div style={{ background:"white",borderRadius:14,padding:24,maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontWeight:800,fontSize:16,marginBottom:10,color:"#dc2626",display:"flex",alignItems:"center",gap:8 }}>
+              <AlertTriangle size={18}/> Uwaga — odrzucenie przez kupca
+            </div>
+            <div style={{ fontSize:13,color:"#334155",marginBottom:14,lineHeight:1.65 }}>
+              {pendingOverride.rejections.length === 1 ? (
+                <>
+                  Sieć <strong>{pendingOverride.rejections[0].chainName}</strong> oznaczyła dostawcę{" "}
+                  <strong>{pendingOverride.rejections[0].supplierName}</strong> jako <strong>NIE CHCĘ SPOTKANIA</strong>.
+                  Czy mimo to chcesz ręcznie dodać spotkanie?
+                </>
+              ) : (
+                <>
+                  Następujące pary zostały oznaczone przez kupców jako <strong>NIE CHCĘ SPOTKANIA</strong>:
+                  <ul style={{ margin:"8px 0 0 18px",padding:0 }}>
+                    {pendingOverride.rejections.map((r,i)=>(
+                      <li key={i} style={{ marginTop:4 }}><strong>{r.supplierName}</strong> → <strong>{r.chainName}</strong></li>
+                    ))}
+                  </ul>
+                  Czy mimo to chcesz ręcznie dodać te spotkania?
+                </>
+              )}
+            </div>
+            <div style={{ fontSize:11,color:"#64748b",marginBottom:18,padding:"8px 12px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8 }}>
+              ℹ️ Po zatwierdzeniu pary zostaną oznaczone w systemie jako <strong>DODANE RĘCZNIE MIMO ODRZUCENIA</strong> i będą widoczne z ikoną ⚠️ w pipelinie i podglądzie planu.
+            </div>
+            <div style={{ display:"flex",gap:8,justifyContent:"flex-end" }}>
+              <button onClick={()=>setPendingOverride(null)}
+                style={{ padding:"10px 18px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit" }}>
+                Anuluj
+              </button>
+              <button onClick={()=>{ pendingOverride.commit(); setPendingOverride(null); }}
+                style={{ padding:"10px 18px",borderRadius:8,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit" }}>
+                Dodaj mimo odrzucenia
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Status bar */}
       {!approved ? (
         <div style={{ background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10 }}>
@@ -6684,12 +6789,18 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
                     const isTarget = !isSel && selA && !approved;
                     // Highlight same supplier across all chains
                     const isSameSup = !isSel && selA && sid === selA.sid;
+                    // [B2B Round FM-buyer-rejection-logic] Mark cells where the
+                    // pair was added despite buyer rejection (via the manual
+                    // override flow above).
+                    const isOverride = sid && isManualOverride(sid, c.id);
                     return (
                       <td key={c.id}
                         onClick={()=>!approved && handleClick(c.id, row)}
-                        style={{ padding:"4px 6px",cursor:approved?"default":(sid||selA)?"pointer":"default",background:isSel?"#fef9c3":isSameSup?"#fef3c7":isTarget&&!sid?"#f0fdfa":"transparent",outline:isSel?"2px solid #fbbf24":isSameSup?"2px solid #f59e0b":"none",borderRight:"1px solid #f1f5f9",transition:"background 0.1s" }}>
+                        title={isOverride ? "Dodane ręcznie mimo odrzucenia przez kupca" : undefined}
+                        style={{ padding:"4px 6px",cursor:approved?"default":(sid||selA)?"pointer":"default",background:isSel?"#fef9c3":isSameSup?"#fef3c7":isOverride?"#fee2e2":isTarget&&!sid?"#f0fdfa":"transparent",outline:isSel?"2px solid #fbbf24":isSameSup?"2px solid #f59e0b":isOverride?"1px dashed #dc2626":"none",borderRight:"1px solid #f1f5f9",transition:"background 0.1s" }}>
                         {sup ? (
                           <div style={{ display:"flex",alignItems:"center",gap:3 }}>
+                            {isOverride && <span style={{ fontSize:11,color:"#dc2626" }}>⚠️</span>}
                             <span style={{ width:6,height:6,borderRadius:3,background:sup.pkg==="Premium"?"#d97706":"#3b82f6",flexShrink:0 }}/>
                             <span style={{ color:"#1e293b",fontWeight:sup.pkg==="Premium"?700:500,overflow:"hidden",textOverflow:"ellipsis",maxWidth:80,display:"inline-block" }}>{sup.name}</span>
                           </div>
@@ -7035,7 +7146,29 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                 <div style={{ overflowX:"auto" }}>
                   <table style={{ width:"100%",borderCollapse:"collapse",fontSize:12 }}>
                     <thead><tr style={{ background:"#f8fafc" }}>{["Firma","Pakiet","Spotkań","Sieci"].map(h=><th key={h} style={{ padding:"8px 12px",textAlign:"left",color:"#64748b",borderBottom:"1px solid #e2e8f0",fontWeight:600,fontSize:10,textTransform:"uppercase" }}>{h}</th>)}</tr></thead>
-                    <tbody>{_suppliers.map(s=>{const _plan=pickFMPlan(fmSchedule,fmAlgo);const mRaw=_plan?.res?.[s.id]?.m||[]; const mNums=_plan?.nums?.[s.id]||{}; const m=[...mRaw].sort((a,b)=>(Number(mNums[a])||9999)-(Number(mNums[b])||9999));return(<tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9" }}><td style={{ padding:"8px 12px",fontWeight:600 }}>{s.name}</td><td style={{ padding:"8px 12px" }}><Badge color={s.pkg==="Premium"?"#d97706":"#2563eb"}>{s.pkg}</Badge></td><td style={{ padding:"8px 12px",fontWeight:700,color:m.length>=5?"#059669":m.length>=3?"#d97706":"#dc2626" }}>{m.length}/{FM_MAX_M}</td><td style={{ padding:"8px 12px",color:"#64748b",fontSize:11 }}>{m.map(cid=>_chains.find(c=>c.id===cid)?.name).join(", ")||"—"}</td></tr>);})}</tbody>
+                    <tbody>{_suppliers.map(s=>{
+                      const _plan=pickFMPlan(fmSchedule,fmAlgo);
+                      const mRaw=_plan?.res?.[s.id]?.m||[];
+                      const mNums=_plan?.nums?.[s.id]||{};
+                      const m=[...mRaw].sort((a,b)=>(Number(mNums[a])||9999)-(Number(mNums[b])||9999));
+                      // [B2B Round FM-buyer-rejection-logic] Mark chain names
+                      // with ⚠️ if the meeting was added despite buyer rejection.
+                      const overrides = _plan?.overrides?.[s.id] || {};
+                      const chainCells = m.map(cid=>{
+                        const ch = _chains.find(c=>c.id===cid);
+                        const name = ch?.name || cid;
+                        return overrides[cid] ? `⚠️ ${name}` : name;
+                      }).join(", ") || "—";
+                      const overrideCount = Object.keys(overrides).filter(cid => mRaw.includes(cid)).length;
+                      return(
+                        <tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9", background: overrideCount > 0 ? "#fef2f2" : "transparent" }} title={overrideCount > 0 ? `${overrideCount} ${overrideCount===1?"spotkanie dodane":"spotkania dodane"} mimo odrzucenia przez kupca` : undefined}>
+                          <td style={{ padding:"8px 12px",fontWeight:600 }}>{s.name}{overrideCount>0 && <span style={{ marginLeft:6,fontSize:10,fontWeight:700,color:"#dc2626" }}>⚠️ {overrideCount}</span>}</td>
+                          <td style={{ padding:"8px 12px" }}><Badge color={s.pkg==="Premium"?"#d97706":"#2563eb"}>{s.pkg}</Badge></td>
+                          <td style={{ padding:"8px 12px",fontWeight:700,color:m.length>=5?"#059669":m.length>=3?"#d97706":"#dc2626" }}>{m.length}/{FM_MAX_M}</td>
+                          <td style={{ padding:"8px 12px",color:"#64748b",fontSize:11 }}>{chainCells}</td>
+                        </tr>
+                      );
+                    })}</tbody>
                   </table>
                 </div>
               </Card>
@@ -7074,7 +7207,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
             </div>
           </div>
           <div style={{opacity:phase>=3?1:0.4,pointerEvents:phase>=3?"auto":"none",transition:"opacity 0.2s"}}>
-            <FMAdminCorrectionPanel data={fmFullData} setData={setFmFullData} onApprove={(d)=>{ approveAndPublish(d); setTab("plan"); }} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} fmWishlists={fmWishlists||{}}/>
+            <FMAdminCorrectionPanel data={fmFullData} setData={setFmFullData} onApprove={(d)=>{ approveAndPublish(d); setTab("plan"); }} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} fmWishlists={fmWishlists||{}} fmResps={fmResps}/>
           </div>
           {/* Preview For + Late Selection controls — UNDER correction panel */}
           <div style={{marginBottom:16,padding:"14px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10}}>
