@@ -791,6 +791,24 @@ const COMPANIES_DB = [
   {id:"sup-s30",fmId:"s30",name:"Schrijvershof",nip:"NL0000000004",country:"NL",city:"Breda",phone:"+31 76 123 4567",website:"https://schrijvershof.nl",description:"Holenderski producent pomidorów szklarniowych. Pomidory malinowe, cherry, koktajlowe. Certyfikat GlobalGAP.",types:["producent"],categories:["warzywa"],products:"pomidory malinowe, cherry, koktajlowe, grape",seasonality:"cały rok",markets:"PL, DE, NL, UK",completeness:84,logo:null,pdfs:[],contacts:[{role:"sales",name:"Pieter Schrijver",position:"Export Manager",phone:"+31 76 123 4567",email:"export@schrijvershof.nl"}],certs:[],pkg:"std_10",pkgExpiry:"2026-12-31"},];
 
 /* helper used by buyer/admin panels */
+// [B2B Round 5.5] Single source of truth for "does this supplier-key string
+// belong to this company row?". Round 5 introduced 4 possible representations:
+//   - company UUID (legacy default)
+//   - legacy_supplier_id ("sup-codex-silvicola") — the post-Round-5 canonical
+//   - fmId ("s1" / "s5") — FM 2026 matching id
+//   - "sup-<fmId>" ("sup-s1") — pre-Round-2.5 seed format
+// All filter sites that compare offer/send.supplierId against a company must
+// use this helper so they survive the migration.
+function legacyKeyMatchesCompany(key, co) {
+  if (!key || !co) return false;
+  return (
+    key === co.id ||
+    key === co.legacy_supplier_id ||
+    key === co.fmId ||
+    key === ("sup-" + (co.fmId || ""))
+  );
+}
+
 // [B2B Round 5.4] After Round 5, offers.supplierId stores legacy_supplier_id
 // (e.g. "sup-codex-silvicola") so the supplier_legacy_id RLS check passes on
 // INSERT. The resolver must therefore match against c.legacy_supplier_id (DB
@@ -802,13 +820,7 @@ function getSupplierCo(send, offers, companies) {
   const offer = getOffer(send?.offerId, offers);
   const sid = offer?.supplierId;
   if (!sid) return COMPANY_INIT;
-  return (
-    co.find(c => c.id === sid) ||
-    co.find(c => c.legacy_supplier_id === sid) ||
-    co.find(c => c.fmId === sid) ||
-    co.find(c => ("sup-" + (c.fmId || "")) === sid) ||
-    COMPANY_INIT
-  );
+  return co.find(c => legacyKeyMatchesCompany(sid, c)) || COMPANY_INIT;
 }
 
 /* ─────────────── KONTA DEMO — wszystkie firmy FM ───────────────────────── */
@@ -2123,7 +2135,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
-    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers}/>;
+    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} setMessages={setMessages} runtimeAccounts={runtimeAccounts}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
@@ -3957,9 +3969,9 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
 
   const activeOffersCount = (co) => {
     if(visibleOfferIds !== null) {
-      return offers.filter(o=>o.supplierId===co.id && o.status==="active" && visibleOfferIds.has(o.id)).length;
+      return offers.filter(o=>legacyKeyMatchesCompany(o.supplierId, co) && o.status==="active" && visibleOfferIds.has(o.id)).length;
     }
-    return offers.filter(o=>o.supplierId===co.id && o.status==="active").length;
+    return offers.filter(o=>legacyKeyMatchesCompany(o.supplierId, co) && o.status==="active").length;
   };
 
   return (
@@ -4873,7 +4885,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
 
 
 /* ── Admin Firmy: pakiety, limity, rozliczenia per firma ─────────────────── */
-function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers }) {
+function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies }) {
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -4883,7 +4895,11 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
       <div style={{ fontWeight:700,fontSize:15,marginBottom:14 }}>Firmy i limity pakietów</div>
       {limits.map(lim=>{
         const isExpanded = expandedId===lim.id;
-        const firmSends = sends.filter(s=>s.supplierId===lim.id);
+        // [B2B Round 5.5] Resolve firm by lim.id (UUID), then match sends across
+        // all legacy_supplier_id formats. Falls back to id-only match if company
+        // row isn't loaded yet.
+        const firmCo = (companies||[]).find(c => c.id === lim.id) || { id: lim.id };
+        const firmSends = sends.filter(s => legacyKeyMatchesCompany(s.supplierId, firmCo));
         const used = firmSends.filter(s=>!["rejected","refunded","queued"].includes(s.status)).length;
         const pct = lim.max>0 ? Math.round(used/lim.max*100) : 0;
         return (
@@ -5112,11 +5128,11 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
                                .map(s=>s.offerId)
                   );
                   return (offers||[]).filter(o=>
-                    o.supplierId===co.id && o.status==="active" && sentOfferIds.has(o.id)
+                    legacyKeyMatchesCompany(o.supplierId, co) && o.status==="active" && sentOfferIds.has(o.id)
                   );
                 }
                 // Supplier or admin: show all active offers of this company
-                return (offers||[]).filter(o=>o.supplierId===co.id&&o.status==="active");
+                return (offers||[]).filter(o=>legacyKeyMatchesCompany(o.supplierId, co)&&o.status==="active");
               })();
             if(coOffers==="__no_retailer__") return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>Brak przypisanej sieci detalicznej — podgląd propozycji niedostępny.</div>;
             if(coOffers.length===0) return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>Brak aktywnych propozycji w tej chwili.</div>;
