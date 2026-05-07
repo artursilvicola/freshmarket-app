@@ -626,13 +626,21 @@ function pickFMPlan(savedPlan, fallbackPlan) {
   return savedPlan && savedPlan.res && savedPlan.nums ? savedPlan : fallbackPlan;
 }
 
+// [B2B Round buyer-rejection-fix-1] BUGFIX: priority must keep stars >=1000
+// and thumbs <1000 because hydration in App reads:
+//   groupedPrefs[supKey][chainKey] = Number(row.priority||0) >= 1000 ? "star" : "thumb"
+// Previously this used `base - index` so the 2nd, 3rd... saved star got
+// priority 999, 998, ... which loaded back as "thumb". Result: after any
+// refresh user ended up with 1 star (or 0 after edits) and the rest sliding
+// silently into reserves. Flat priority bands fix this — order within a band
+// isn't used by buildFMData (only the star/thumb classification is).
 function buildTargetRetailerRowsFromPrefs(prefs = {}, retailers = []) {
   const seen = new Map();
-  Object.entries(prefs).forEach(([chainId, pref], index) => {
+  Object.entries(prefs).forEach(([chainId, pref]) => {
     const retailerId = resolveRetailerIdFromChain(chainId, retailers);
     if (!retailerId) return;
-    const base = pref === "star" ? 1000 : 100;
-    const row = { retailer_id: retailerId, priority: base - index, note: `chain:${chainId}` };
+    const priority = pref === "star" ? 1000 : 100;
+    const row = { retailer_id: retailerId, priority, note: `chain:${chainId}` };
     const old = seen.get(retailerId);
     if (!old || row.priority > old.priority) seen.set(retailerId, row);
   });
