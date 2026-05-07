@@ -597,6 +597,14 @@ function resolveChainIdFromRetailer(retailerId, retailers = [], meta = {}) {
   if (row?.fm26ChainId) return row.fm26ChainId;
   return RETAILER_TO_CHAIN[Number(retailerId)] || null;
 }
+// [B2B Round 4.1] Defensive picker: only use savedPlan from Supabase if it has
+// the full shape produced by buildFMData (.res + .nums). Otherwise fall back to
+// fallbackPlan (typically fmAlgo, which is always well-formed). This protects
+// against partially-written / placeholder rows in fm_settings.schedule.
+function pickFMPlan(savedPlan, fallbackPlan) {
+  return savedPlan && savedPlan.res && savedPlan.nums ? savedPlan : fallbackPlan;
+}
+
 function buildTargetRetailerRowsFromPrefs(prefs = {}, retailers = []) {
   const seen = new Map();
   Object.entries(prefs).forEach(([chainId, pref], index) => {
@@ -5373,7 +5381,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
   if (!fmSettings.schedulingOpen && (fmSettings.currentPhase||1) < 2) return <FMLockScreen openDate={fmSettings.openDate}/>;
 
   const myPrefs  = fmPrefs[sid] || {};
-  const currentPlan = fmSchedule || fmAlgo; // fmSchedule (approved) takes priority over raw algo
+  const currentPlan = pickFMPlan(fmSchedule, fmAlgo); // approved schedule wins; fall back to algo if schedule malformed
   // Count only from _chains that are displayed (avoids seed keys for non-displayed chains)
   const stars    = _chains.filter(c => myPrefs[c.id] === "star").length;
   const thumbs   = _chains.filter(c => myPrefs[c.id] === "thumb").length;
@@ -5511,7 +5519,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
     );
 
     // Published plan — use fmSchedule if available, else fmAlgo
-    const planData = fmSchedule || fmAlgo;
+    const planData = pickFMPlan(fmSchedule, fmAlgo);
     const myNums = planData?.nums?.[sid] || {};
     const entries = Object.entries(myNums).filter(([,n])=>n>0).sort((a,b)=>Number(a[1])-Number(b[1]));
     const myMeetings = planData?.res?.[sid]?.m || [];
@@ -5586,7 +5594,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
       if (pa !== pb) return pa === "star" ? -1 : 1;
       return (a.name||"").localeCompare(b.name||"");
     });
-  const currentPlan = fmSchedule || fmAlgo; // fmSchedule (approved) takes priority over raw algo
+  const currentPlan = pickFMPlan(fmSchedule, fmAlgo); // approved schedule wins; fall back to algo if schedule malformed
   const myMatches  = _suppliers.filter(s => currentPlan?.res?.[s.id]?.m?.includes(chainId));
   const ph = FM_PHASES[phase-1];
 
@@ -5739,7 +5747,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
     const hasPreview  = !!(previewFor?.chains || []).includes(chainId);
     const lateEnabled = !!((retailers||[]).find(r=>r.fm26ChainId===chainId)?.lateSelectionEnabled);
     const myLateResps = (fmLateResps||{})[chainId] || {};
-    const planData3   = fmSchedule || fmAlgo;
+    const planData3   = pickFMPlan(fmSchedule, fmAlgo);
     const previewMatches = _suppliers.filter(s => planData3?.res?.[s.id]?.m?.includes(chainId));
 
     return (
@@ -5852,8 +5860,8 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
   }
 
   // FAZA 4+: plan po korektach / oczekiwanie na publikację lub plan finalny
-  const planData = fmSchedule || fmAlgo;
-  const finalMatches = (planData ? _suppliers.filter(s => planData.res[s.id]?.m?.includes(chainId)) : myMatches)
+  const planData = pickFMPlan(fmSchedule, fmAlgo);
+  const finalMatches = (planData ? _suppliers.filter(s => planData?.res?.[s.id]?.m?.includes(chainId)) : myMatches)
     .slice().sort((a,b)=>{
       if(!pub) return 0; // don't sort before publication
       const numA = planData?.nums?.[a.id]?.[chainId] || 9999;
@@ -6152,7 +6160,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
     // Rebuild res from newCq so other views (PageSupplierFM, PageBuyerFM, plan tab) stay in sync
     const newRes = {};
     _suppliers.forEach(s => {
-      newRes[s.id] = { m: [], r: (data.res[s.id]?.r || {}) };
+      newRes[s.id] = { m: [], r: (data?.res?.[s.id]?.r || {}) };
     });
     _chains.forEach(ch => {
       (newCq[ch.id] || []).forEach(sid2 => {
@@ -6165,7 +6173,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
     setSelA(null);
   };
 
-  const totalMeetings = _suppliers.reduce((a, s) => a + (data.res[s.id]?.m?.length || 0), 0);
+  const totalMeetings = _suppliers.reduce((a, s) => a + (data?.res?.[s.id]?.m?.length || 0), 0);
 
   return (
     <div>
@@ -6451,7 +6459,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
   const [tab, setTab] = useState("zarzadzanie");
   const phase = fmSettings.currentPhase;
   // Full data with slot numbers for Faza 4 admin correction grid
-  const [fmFullData, setFmFullData] = useState(() => fmSchedule || buildFMData(fmPrefs, fmResps, _chains, _suppliers));
+  const [fmFullData, setFmFullData] = useState(() => pickFMPlan(fmSchedule, buildFMData(fmPrefs, fmResps, _chains, _suppliers)));
   // Rebuild when prefs/resps change (e.g. after onRegenerate)
   const rebuildFull = () => setFmFullData(buildFMData(fmPrefs, fmResps, _chains, _suppliers));
   const approveAndPublish = (data) => { setFmSchedule(data); setFmFullData(data); };
@@ -6595,7 +6603,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
           {(fmFullData||fmSchedule) && (
             <div style={{ marginTop:16 }}>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14 }}>
-                {[[_suppliers.length,"Dostawców","#0d9488"],[_chains.length,"Sieci","#2563eb"],[Object.values((fmSchedule||fmAlgo).res).reduce((a,r)=>a+r.m.length,0),"Spotkań","#059669"],[Object.values((fmSchedule||fmAlgo).res).filter(r=>r.m.length>=5).length,"Pełnych planów","#7c3aed"]].map(([v,l,c])=>(
+                {(()=>{const _plan=pickFMPlan(fmSchedule,fmAlgo);const _resVals=Object.values(_plan?.res||{});return [[_suppliers.length,"Dostawców","#0d9488"],[_chains.length,"Sieci","#2563eb"],[_resVals.reduce((a,r)=>a+(r?.m?.length||0),0),"Spotkań","#059669"],[_resVals.filter(r=>(r?.m?.length||0)>=5).length,"Pełnych planów","#7c3aed"]];})().map(([v,l,c])=>(
                   <div key={l} style={{ padding:"12px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center",borderTop:`3px solid ${c}` }}>
                     <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
                     <div style={{ fontSize:10,color:"#64748b",marginTop:2 }}>{l}</div>
@@ -6606,7 +6614,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                 <div style={{ overflowX:"auto" }}>
                   <table style={{ width:"100%",borderCollapse:"collapse",fontSize:12 }}>
                     <thead><tr style={{ background:"#f8fafc" }}>{["Firma","Pakiet","Spotkań","Sieci"].map(h=><th key={h} style={{ padding:"8px 12px",textAlign:"left",color:"#64748b",borderBottom:"1px solid #e2e8f0",fontWeight:600,fontSize:10,textTransform:"uppercase" }}>{h}</th>)}</tr></thead>
-                    <tbody>{_suppliers.map(s=>{const mRaw=(fmSchedule||fmAlgo)?.res?.[s.id]?.m||[]; const mNums=(fmSchedule||fmAlgo)?.nums?.[s.id]||{}; const m=[...mRaw].sort((a,b)=>(Number(mNums[a])||9999)-(Number(mNums[b])||9999));return(<tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9" }}><td style={{ padding:"8px 12px",fontWeight:600 }}>{s.name}</td><td style={{ padding:"8px 12px" }}><Badge color={s.pkg==="Premium"?"#d97706":"#2563eb"}>{s.pkg}</Badge></td><td style={{ padding:"8px 12px",fontWeight:700,color:m.length>=5?"#059669":m.length>=3?"#d97706":"#dc2626" }}>{m.length}/{FM_MAX_M}</td><td style={{ padding:"8px 12px",color:"#64748b",fontSize:11 }}>{m.map(cid=>_chains.find(c=>c.id===cid)?.name).join(", ")||"—"}</td></tr>);})}</tbody>
+                    <tbody>{_suppliers.map(s=>{const _plan=pickFMPlan(fmSchedule,fmAlgo);const mRaw=_plan?.res?.[s.id]?.m||[]; const mNums=_plan?.nums?.[s.id]||{}; const m=[...mRaw].sort((a,b)=>(Number(mNums[a])||9999)-(Number(mNums[b])||9999));return(<tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9" }}><td style={{ padding:"8px 12px",fontWeight:600 }}>{s.name}</td><td style={{ padding:"8px 12px" }}><Badge color={s.pkg==="Premium"?"#d97706":"#2563eb"}>{s.pkg}</Badge></td><td style={{ padding:"8px 12px",fontWeight:700,color:m.length>=5?"#059669":m.length>=3?"#d97706":"#dc2626" }}>{m.length}/{FM_MAX_M}</td><td style={{ padding:"8px 12px",color:"#64748b",fontSize:11 }}>{m.map(cid=>_chains.find(c=>c.id===cid)?.name).join(", ")||"—"}</td></tr>);})}</tbody>
                   </table>
                 </div>
               </Card>
