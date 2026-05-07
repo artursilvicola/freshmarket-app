@@ -791,11 +791,24 @@ const COMPANIES_DB = [
   {id:"sup-s30",fmId:"s30",name:"Schrijvershof",nip:"NL0000000004",country:"NL",city:"Breda",phone:"+31 76 123 4567",website:"https://schrijvershof.nl",description:"Holenderski producent pomidorów szklarniowych. Pomidory malinowe, cherry, koktajlowe. Certyfikat GlobalGAP.",types:["producent"],categories:["warzywa"],products:"pomidory malinowe, cherry, koktajlowe, grape",seasonality:"cały rok",markets:"PL, DE, NL, UK",completeness:84,logo:null,pdfs:[],contacts:[{role:"sales",name:"Pieter Schrijver",position:"Export Manager",phone:"+31 76 123 4567",email:"export@schrijvershof.nl"}],certs:[],pkg:"std_10",pkgExpiry:"2026-12-31"},];
 
 /* helper used by buyer/admin panels */
+// [B2B Round 5.4] After Round 5, offers.supplierId stores legacy_supplier_id
+// (e.g. "sup-codex-silvicola") so the supplier_legacy_id RLS check passes on
+// INSERT. The resolver must therefore match against c.legacy_supplier_id (DB
+// JOIN field), not just c.id (UUID). Without this, every newly-saved offer
+// rendered to buyer/admin showed "Food Market" (COMPANY_INIT fallback) instead
+// of the real supplier name.
 function getSupplierCo(send, offers, companies) {
   const co = companies || [];
   const offer = getOffer(send?.offerId, offers);
-  if(!offer?.supplierId) return COMPANY_INIT;
-  return co.find(c=>c.id===offer.supplierId) || COMPANY_INIT;
+  const sid = offer?.supplierId;
+  if (!sid) return COMPANY_INIT;
+  return (
+    co.find(c => c.id === sid) ||
+    co.find(c => c.legacy_supplier_id === sid) ||
+    co.find(c => c.fmId === sid) ||
+    co.find(c => ("sup-" + (c.fmId || "")) === sid) ||
+    COMPANY_INIT
+  );
 }
 
 /* ─────────────── KONTA DEMO — wszystkie firmy FM ───────────────────────── */
