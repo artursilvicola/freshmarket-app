@@ -2046,18 +2046,23 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     fl("Potwierdzenie cofnięte", "warning");
   }
 
-  // [B2B Round 5] Buyer-open marker: called by PageBuyerDetail useEffect when
-  // buyer first opens an unread send. Uses SECURITY DEFINER RPC because buyer
-  // RLS only allows SELECT on legacy_sends. Idempotent — RPC no-ops if status
-  // is already past 'sent'. UI updates only on RPC success.
-  async function markSendOpened(sendId) {
-    const cur = sends.find(x => x.id === sendId);
-    if (!cur || cur.status !== "sent") return;
+  // [B2B Round 5.3] Buyer-open marker: called by PageBuyerDetail useEffect when
+  // buyer first opens an unread send. Takes the FULL send object passed via
+  // closure from PageBuyerDetail — NOT a stale sends.find() lookup. Uses
+  // SECURITY DEFINER RPC because buyer RLS only allows SELECT on legacy_sends.
+  // Idempotent at the RPC level — RPC no-ops if status is already past 'sent'.
+  async function markSendOpened(send) {
+    if (!send || send.status !== "sent") return;
+    console.log("[markSendOpened] before RPC", { id: send.id, status: send.status });
     try {
-      await dbMarkLegacySendRead(sendId);
-    } catch (e) { console.warn("[markSendOpened]", e?.message || e); return; }
+      const result = await dbMarkLegacySendRead(send.id);
+      console.log("[markSendOpened] after RPC", result);
+    } catch (e) {
+      console.error("[markSendOpened] RPC error", e?.message || e);
+      return;
+    }
     const ts = nowStr();
-    _setSendsRaw(s => s.map(x => x.id === sendId
+    _setSendsRaw(s => s.map(x => x.id === send.id
       ? { ...x, status: "read", readAt: ts, readType: "auto_buyer_open" }
       : x
     ));
@@ -4034,15 +4039,16 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
 function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, buyerRetailerId, sends, onOpened }) {
   const supplierCo = getSupplierCo(send, offers, companies) || co || COMPANY_INIT;
   const [showCoModal, setShowCoModal] = useState(false);
-  // [B2B Round 5] First time buyer opens this detail: flip status sent -> read
-  // via SECURITY DEFINER RPC (markSendOpened in App). Idempotent: RPC no-ops
-  // when status already past 'sent'. Local state updates only on success.
+  // [B2B Round 5.3] First time buyer opens this detail: flip status sent -> read
+  // via SECURITY DEFINER RPC (markSendOpened in App). Pass the WHOLE send
+  // object — not just id — so markSendOpened doesn't need to do a stale
+  // sends.find() lookup that may race with hydration.
   const sendId = send?.id;
   const sendStatus = send?.status;
   useEffect(() => {
-    if (!sendId || sendStatus !== "sent" || typeof onOpened !== "function") return;
-    onOpened(sendId);
-  }, [sendId, sendStatus, onOpened]);
+    if (!send || send.status !== "sent" || typeof onOpened !== "function") return;
+    onOpened(send);
+  }, [sendId, sendStatus, onOpened]); // eslint-disable-line react-hooks/exhaustive-deps
   if(!send) return <div><Btn outline onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> Wróć</Btn></div>;
   const o=getOffer(send.offerId,offers); if(!o) return null;
   const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
