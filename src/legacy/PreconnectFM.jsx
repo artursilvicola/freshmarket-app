@@ -3652,26 +3652,33 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
         {howOpenBuy && (
           <div style={{ padding:"0 18px 18px",borderTop:"1px solid #f1f5f9" }}>
             <p style={{ fontSize:13,color:"#334155",lineHeight:1.7,marginTop:14,marginBottom:12 }}>
-              Witaj w panelu Fresh Market! Platforma ma na celu oszczędność Twojego czasu i dostarczanie Ci wyłącznie dopasowanych propozycji od zweryfikowanych dostawców.
+              Witamy w panelu kupca Fresh Market. Ten panel służy do dwóch rzeczy: przeglądania <strong>propozycji asortymentowych od dostawców</strong> w module PreConnect oraz <strong>wyboru firm do spotkań</strong> podczas Fresh Market 2026.
             </p>
 
             <div style={{ fontWeight:700,fontSize:13,color:"#0d9488",marginBottom:8,display:"flex",alignItems:"center",gap:6 }}>
-              <Send size={13}/> Moduł PreConnect (Całoroczny)
+              <Send size={13}/> Moduł PreConnect
             </div>
             <ul style={{ margin:"0 0 14px 0",paddingLeft:18,display:"flex",flexDirection:"column",gap:7 }}>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Odbiór propozycji asortymentowych:</strong> W pierwszy wtorek każdego miesiąca otrzymasz powiadomienie z listą nowych propozycji od dostawców — z konkretnymi produktami, certyfikatami i krajami pochodzenia.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65,background:"#f0fdf4",padding:"6px 10px",borderRadius:7,listStyle:"none",marginLeft:-18,border:"1px solid #bbf7d0" }}>⭐ <strong>Zasada 14 dni:</strong> Prosimy o zapoznanie się z propozycjami (kliknięcie <em>Szczegóły</em>) w ciągu 14 dni od daty wysyłki. Dostawca otrzymuje potwierdzenie dostarczenia — bez przekazywania Twoich danych kontaktowych.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Zarządzanie:</strong> Przeglądaj pełne profile dostawców (certyfikaty, zaplecze) i zapisuj wybrane propozycje (ikona serca), aby szybko wrócić do nich w przyszłości.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Propozycje asortymentowe:</strong> W tej sekcji otrzymujesz oferty od dostawców dopasowane do Twojej sieci handlowej.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Ocena propozycji:</strong> Możesz otworzyć szczegóły produktu, sprawdzić parametry, logistykę, certyfikaty i materiały dodatkowe.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Zapisane:</strong> Jeśli oferta jest interesująca, możesz ją zapisać do późniejszego przeglądu.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65,background:"#f0fdf4",padding:"6px 10px",borderRadius:7,listStyle:"none",marginLeft:-18,border:"1px solid #bbf7d0" }}>⭐ <strong>Status odczytu:</strong> Otwarcie szczegółów oznacza, że propozycja została odczytana przez kupca.</li>
             </ul>
 
             <div style={{ fontWeight:700,fontSize:13,color:"#7c3aed",marginBottom:8,display:"flex",alignItems:"center",gap:6 }}>
-              <Calendar size={13}/> Moduł Spotkania FM 2026 (Targi)
+              <Calendar size={13}/> Spotkania B2B — Fresh Market 2026
             </div>
-            <ul style={{ margin:"0 0 10px 0",paddingLeft:18,display:"flex",flexDirection:"column",gap:7 }}>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Wybór dostawców (do 16 września):</strong> W zakładce <em>Spotkania FM 2026</em> oznacz firmy, z którymi chcesz porozmawiać (✅ Chcę się spotkać) lub daj im szansę (🤝 Daj szansę).</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Korekty (Lista życzeń):</strong> Gdy plan będzie w trakcie finalizacji, możesz przejrzeć przypisane firmy. Jeśli brakuje kogoś ważnego, użyj przycisku <em>+ Chcę</em> — firma trafi na Listę życzeń Administratora.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Kontakt:</strong> W prawym dolnym rogu ekranu znajdziesz czat. Pytania do harmonogramu lub chęć zgłoszenia zmian — napisz bezpośrednio do Administratora.</li>
+            <ul style={{ margin:"0 0 14px 0",paddingLeft:18,display:"flex",flexDirection:"column",gap:7 }}>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Wybór dostawców:</strong> W tej sekcji widzisz firmy, które chcą spotkać się z Twoją siecią podczas Fresh Market 2026.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Twoja decyzja:</strong> Możesz oznaczyć dostawcę jako: <em>Chcę spotkanie</em>, <em>Daj szansę</em> albo <em>Nie</em>.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Plan spotkań:</strong> Na podstawie decyzji kupców i wyborów dostawców system przygotowuje propozycję harmonogramu spotkań.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Publikacja wyników:</strong> Finalny plan spotkań pojawi się w panelu po zatwierdzeniu przez organizatora.</li>
             </ul>
+
+            <div style={{ fontWeight:700,fontSize:12,color:"#334155",marginBottom:6 }}>Pomoc</div>
+            <p style={{ fontSize:12,color:"#475569",lineHeight:1.65,margin:0 }}>
+              Jeśli masz pytania lub widzisz błędne dane, skontaktuj się z organizatorem przez czat lub dane kontaktowe w panelu.
+            </p>
           </div>
         )}
       </div>
@@ -3685,8 +3692,8 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
           <div style={{ flex:1 }}>
             <div style={{ color:"white",fontWeight:800,fontSize:18,marginBottom:8 }}>PreConnect</div>
             <div style={{ color:"rgba(255,255,255,0.7)",fontSize:13,lineHeight:1.8,maxWidth:580 }}>
-              Konkretne <strong style={{ color:"#6ee7b7" }}>propozycje asortymentowe</strong> od zweryfikowanych dostawców — produkty, kraj pochodzenia, certyfikaty, logistyka.<br/>
-              Każda propozycja jest dostarczona bezpośrednio do Ciebie z gwarancją odczytu.
+              <strong style={{ color:"#6ee7b7" }}>Przeglądaj propozycje od dostawców</strong> dopasowane do Twojej sieci.<br/>
+              Otwieraj szczegóły, porównuj produkty i zapisuj najciekawsze oferty.
             </div>
             {unread>0&&(
               <div style={{ marginTop:12,padding:"10px 14px",background:"rgba(13,148,136,0.2)",border:"1px solid rgba(13,148,136,0.4)",borderRadius:9,fontSize:12,color:"#6ee7b7",display:"flex",alignItems:"center",gap:8 }}>
@@ -3722,10 +3729,10 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
               }
             </div>
             <div style={{ fontSize:13,color:fmOpen?"#334155":"#94a3b8",lineHeight:1.8,maxWidth:580 }}>
-              Tutaj możesz umówić się na spotkania z dostawcami owoców, warzyw i kwiatów, którzy uczestniczą w Fresh Market 2026.<br/>
+              <strong style={fmOpen?{color:"#059669"}:{color:"#94a3b8"}}>Wybieraj dostawców, z którymi chcesz spotkać się podczas wydarzenia.</strong> Oznacz firmy jako <em>Chcę spotkanie</em>, <em>Daj szansę</em> lub <em>Nie</em>, a system przygotuje plan rozmów.<br/>
               {fmOpen
-                ? <><strong style={{ color:"#059669" }}>Preferencje spotkań są otwarte.</strong> Przejdź do sekcji Spotkania FM 2026, aby wskazać firmy, z którymi chcesz się spotkać (do <strong>16 września</strong>).</>
-                : <>Rejestracja zostanie otwarta wkrótce. Wybory partnerów do spotkań: do <strong>16 września 2026</strong>. Finalne numery: <strong>22 września</strong>.</>
+                ? <>Wskaż wybory do <strong>16 września</strong>. Finalny harmonogram: <strong>22 września</strong>.</>
+                : <>Rejestracja zostanie otwarta wkrótce. Wybory: do <strong>16 września 2026</strong>. Finalny harmonogram: <strong>22 września</strong>.</>
               }
             </div>
           </div>
