@@ -24,6 +24,8 @@ import {
   // [B2B Round 5] Per-action save lifecycle helpers
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
+  // [B2B Round supplier-FM-UX] Confirm supplier's FM chain selection
+  saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 
@@ -2116,6 +2118,34 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       : x
     ));
   }
+  // [B2B Round supplier-FM-UX] Confirm supplier's FM 2026 chain selection.
+  // Resolves the company by fmId (or legacySupplierId fallback), persists
+  // fm_selection_confirmed_at to Supabase, and updates local companies state
+  // so the badge re-renders immediately. Returns the new timestamp or null.
+  async function confirmFmSelection() {
+    const fmId = account.fmId;
+    const co = (companies || []).find(c =>
+      c.id === account.id
+      || (fmId && (c.fmId === fmId || c.legacy_fm_id === fmId))
+      || (account.legacySupplierId && c.legacy_supplier_id === account.legacySupplierId)
+    );
+    if (!co?.id) {
+      fl("Nie udało się znaleźć Twojej firmy w bazie. Skontaktuj się z administratorem.", "error");
+      return null;
+    }
+    let saved;
+    try {
+      saved = await dbSaveFmSelectionConfirmation(co.id);
+    } catch (e) {
+      fl(`Błąd potwierdzenia: ${e?.message || "spróbuj ponownie"}`, "error");
+      return null;
+    }
+    const ts = saved?.fm_selection_confirmed_at || new Date().toISOString();
+    _setCompaniesRaw(prev => prev.map(c => c.id === co.id ? { ...c, fm_selection_confirmed_at: ts } : c));
+    fl("Dziękujemy, Twój wybór sieci został zapisany.");
+    return ts;
+  }
+
   function dismissRefund(id){ setRefundNotifs(n=>n.map(x=>x.id===id?{...x,dismissed:true}:x)); }
   async function runAI(){ setAiLoad(true); await new Promise(r=>setTimeout(r,2200)); setCo(prev=>({...prev,description:"Eksporter owoców i warzyw. Własna pakowalnia z sortownią optyczną i chłodnią. Dostawy retail-ready do sieci CEE, DE, NL.",completeness:96})); setAiLoad(false); setAiModal(false); fl("AI uzupełnił opis firmy."); }
   function updateLimit(id,changes){ setLimits(prev=>prev.map(l=>l.id===id?{...l,...changes}:l)); }
@@ -2163,9 +2193,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-chat")       return <PageAdminChat messages={messages} setMessages={setMessages} runtimeAccounts={runtimeAccounts}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
-      ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers}/>
+      ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
       : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
-    if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts}/>;
+    if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
     return null;
   }
 
@@ -2360,94 +2390,127 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
         )}
       </div>
 
-      {/* ════ BLOK 1: PRECONNECT ════ */}
-      <div style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:16,padding:"28px 28px",marginBottom:16 }}>
-        <div style={{ display:"flex",alignItems:"flex-start",gap:14,marginBottom:20 }}>
-          <div style={{ width:48,height:48,borderRadius:12,background:"rgba(13,148,136,0.25)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-            <Send size={22} color="#6ee7b7"/>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ color:"white",fontWeight:800,fontSize:18,marginBottom:8 }}>PreConnect</div>
-            <div style={{ color:"rgba(255,255,255,0.7)",fontSize:13,lineHeight:1.8,maxWidth:580 }}>
-              Wyślij swoje <strong style={{ color:"#6ee7b7" }}>propozycje asortymentowe</strong> bezpośrednio do sieci handlowej z gwarancją przeczytania.<br/>
-              Jeżeli kupiec nie zapozna się z propozycją w ciągu 14 dni, zwrócimy Twoje pieniądze.<br/>
-              Wysyłki realizowane są w pierwszy wtorek każdego miesiąca.
-            </div>
-            {/* PreConnect notifications — only here */}
-            {refunds.length>0&&(
-              <div style={{ marginTop:12,padding:"10px 14px",background:"rgba(251,191,36,0.15)",border:"1px solid rgba(251,191,36,0.4)",borderRadius:9,fontSize:12,color:"#fbbf24" }}>
-                {refunds.length === 1
-                  ? `Zwrot ${refunds[0].amount} EUR — ${refunds[0].msg}`
-                  : `${refunds.length} zwroty kredytu czekają na Twój panel.`
-                }
-              </div>
-            )}
-            {pending>0&&(
-              <div style={{ marginTop:8,padding:"8px 12px",background:"rgba(234,88,12,0.15)",border:"1px solid rgba(234,88,12,0.35)",borderRadius:9,fontSize:12,color:"#fed7aa" }}>
-                {pending} {pending===1?"propozycja":"propozycje"} w trakcie — oczekuje na odczyt przez kupca (max 14 dni).
-              </div>
-            )}
-            {confirmed>0&&(
-              <div style={{ marginTop:8,padding:"8px 12px",background:"rgba(5,150,105,0.15)",border:"1px solid rgba(5,150,105,0.4)",borderRadius:9,fontSize:12,color:"#6ee7b7" }}>
-                {confirmed} {confirmed===1?"propozycja przeczytana":"propozycje przeczytane"} — kupcy zapoznali się z Twoimi propozycjami.
-              </div>
-            )}
-          </div>
+      {/* ════ STAŁY PANEL INFO: SPOTKANIA FM 2026 ════ */}
+      {/* [B2B Round supplier-FM-UX] Persistent info block. Visible regardless of
+          schedulingOpen — supplier always knows the timeline and where to ask
+          for help. Greyed when fmOpen=false but text stays readable. */}
+      <div style={{ marginBottom:16,padding:"16px 18px",background:fmOpen?"#fffbeb":"#f8fafc",border:`1px solid ${fmOpen?"#fde68a":"#e2e8f0"}`,borderRadius:12 }}>
+        <div style={{ fontWeight:700,fontSize:13,color:fmOpen?"#92400e":"#475569",marginBottom:10,display:"flex",alignItems:"center",gap:7 }}>
+          <Calendar size={14}/> Moduł Spotkania FM 2026 (Targi)
+          {!fmOpen && <span style={{ marginLeft:6,fontSize:10,fontWeight:700,color:"#94a3b8",background:"#f1f5f9",padding:"2px 8px",borderRadius:20 }}>🔒 ZAMKNIĘTE</span>}
         </div>
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
-          <button onClick={()=>nav("wysylki")} style={{ padding:"14px 18px",background:"rgba(13,148,136,0.85)",border:"1px solid rgba(13,148,136,0.5)",borderRadius:10,color:"white",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:10 }}>
-            <Send size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>Nowa wysyłka</div><div style={{ fontSize:11,opacity:0.75,marginTop:2 }}>{rem} wysyłek w pakiecie</div></div>
-          </button>
-          <button onClick={()=>nav("offers")} style={{ padding:"14px 18px",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,color:"white",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:10 }}>
-            <Tag size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>Moje propozycje</div><div style={{ fontSize:11,opacity:0.65,marginTop:2 }}>{offers.filter(o=>o.status==="active").length} opublikowanych · {offers.filter(o=>o.status==="draft").length} szkiców</div></div>
-          </button>
+        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,fontSize:12,color:fmOpen?"#334155":"#64748b",lineHeight:1.6 }}>
+          <div>
+            <div style={{ fontWeight:700,marginBottom:3,color:fmOpen?"#1e293b":"#475569" }}>Preferencje do 16 września</div>
+            <div>Wybierz maksymalnie 5 głównych sieci oznaczonych gwiazdką ⭐ oraz sieci rezerwowe oznaczone 👍, z którymi chcesz się spotkać.</div>
+          </div>
+          <div>
+            <div style={{ fontWeight:700,marginBottom:3,color:fmOpen?"#1e293b":"#475569" }}>Wyniki od 22 września</div>
+            <div>Algorytm i Administrator ułożą grafik. W zakładce <em>Twoje spotkania</em> zobaczysz numery spotkań oraz profile dopasowanych sieci.</div>
+          </div>
+          <div>
+            <div style={{ fontWeight:700,marginBottom:3,color:fmOpen?"#1e293b":"#475569" }}>Masz problem?</div>
+            <div>W prawym dolnym rogu znajdziesz ikonę czatu. Napisz do nas — Administrator jest do Twojej dyspozycji.</div>
+          </div>
         </div>
       </div>
 
-      {/* ════ BLOK 2: SPOTKANIA B2B — FRESH MARKET 2026 ════ */}
-      <div onClick={fmOpen?()=>nav(resolveFMRoute(fmSettings)):undefined} style={{ borderRadius:16,border:fmOpen?"2px solid #059669":"1px solid #e2e8f0",background:fmOpen?"linear-gradient(135deg,#f0fdf4,#ecfdf5)":"white",padding:"28px 28px",position:"relative",overflow:"hidden",cursor:fmOpen?"pointer":"default" }}>
-        {!fmOpen&&<div style={{ position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,#e2e8f0,#f1f5f9)" }}/>}
-        <div style={{ display:"flex",alignItems:"flex-start",gap:14,marginBottom:20 }}>
-          <div style={{ width:48,height:48,borderRadius:12,background:fmOpen?"rgba(5,150,105,0.15)":"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-            <Calendar size={22} color={fmOpen?"#059669":"#94a3b8"}/>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap" }}>
-              <span style={{ fontWeight:800,fontSize:18,color:fmOpen?"#0f172a":"#94a3b8" }}>Spotkania B2B — Fresh Market 2026</span>
-              {fmOpen
-                ? <span style={{ background:"#059669",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>● AKTYWNE</span>
-                : <span style={{ background:"#f1f5f9",color:"#94a3b8",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>🔒 ZAMKNIĘTE</span>
-              }
-            </div>
-            <div style={{ fontSize:13,color:fmOpen?"#334155":"#94a3b8",lineHeight:1.8,maxWidth:580 }}>
-              Planowanie spotkań B2B z kupcami sieci handlowych podczas Fresh Market 2026.<br/>
-              {fmOpen
-                ? <><strong style={{ color:"#059669" }}>Aplikacja jest aktywna.</strong> Przejdź do sekcji Spotkania FM 2026, aby wybrać sieci i zobaczyć swój plan.</>
-                : <>Aplikacja będzie dostępna od września 2026.<br/>Planowane otwarcie: <strong>1 września 2026</strong>. Dostępna dla dostawców i kupców od 1 września.</>
-              }
-            </div>
-          </div>
-        </div>
-        {!fmOpen&&(
-          <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:20 }}>
-            {[["🎯","1–16 września","Wybór preferowanych sieci handlowych"],["🔒","16 września","Zamknięcie wyborów — dalsze zmiany tylko przez administratora"],["⚙️","17–22 września","Algorytm matchingu + ręczne korekty administratora"],["📋","22 września","Publikacja finalnego harmonogramu i numerów"],["🎪","24 września","Fresh Market 2026 — event"]].map(([ic,d,sub])=>(
-              <div key={d} style={{ flex:1,minWidth:120,padding:"10px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
-                <div style={{ fontSize:16,marginBottom:3 }}>{ic}</div>
-                <div style={{ fontSize:11,fontWeight:700,color:"#334155" }}>{d}</div>
-                <div style={{ fontSize:11,color:"#94a3b8",marginTop:2,lineHeight:1.4 }}>{sub}</div>
+      {/* [B2B Round supplier-FM-UX] Tile order depends on schedulingOpen.
+          fmOpen=true  → Spotkania B2B FIRST (most important now), PreConnect SECOND
+          fmOpen=false → PreConnect FIRST (default daily flow), Spotkania SECOND (greyed) */}
+      {(() => {
+        const preConnectTile = (
+          <div key="preconnect" style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:16,padding:"28px 28px",marginBottom:16 }}>
+            <div style={{ display:"flex",alignItems:"flex-start",gap:14,marginBottom:20 }}>
+              <div style={{ width:48,height:48,borderRadius:12,background:"rgba(13,148,136,0.25)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <Send size={22} color="#6ee7b7"/>
               </div>
-            ))}
+              <div style={{ flex:1 }}>
+                <div style={{ color:"white",fontWeight:800,fontSize:18,marginBottom:8 }}>PreConnect</div>
+                <div style={{ color:"rgba(255,255,255,0.7)",fontSize:13,lineHeight:1.8,maxWidth:580 }}>
+                  Wyślij swoje <strong style={{ color:"#6ee7b7" }}>propozycje asortymentowe</strong> bezpośrednio do sieci handlowej z gwarancją przeczytania.<br/>
+                  Jeżeli kupiec nie zapozna się z propozycją w ciągu 14 dni, zwrócimy Twoje pieniądze.<br/>
+                  Wysyłki realizowane są w pierwszy wtorek każdego miesiąca.
+                </div>
+                {refunds.length>0&&(
+                  <div style={{ marginTop:12,padding:"10px 14px",background:"rgba(251,191,36,0.15)",border:"1px solid rgba(251,191,36,0.4)",borderRadius:9,fontSize:12,color:"#fbbf24" }}>
+                    {refunds.length === 1
+                      ? `Zwrot ${refunds[0].amount} EUR — ${refunds[0].msg}`
+                      : `${refunds.length} zwroty kredytu czekają na Twój panel.`
+                    }
+                  </div>
+                )}
+                {pending>0&&(
+                  <div style={{ marginTop:8,padding:"8px 12px",background:"rgba(234,88,12,0.15)",border:"1px solid rgba(234,88,12,0.35)",borderRadius:9,fontSize:12,color:"#fed7aa" }}>
+                    {pending} {pending===1?"propozycja":"propozycje"} w trakcie — oczekuje na odczyt przez kupca (max 14 dni).
+                  </div>
+                )}
+                {confirmed>0&&(
+                  <div style={{ marginTop:8,padding:"8px 12px",background:"rgba(5,150,105,0.15)",border:"1px solid rgba(5,150,105,0.4)",borderRadius:9,fontSize:12,color:"#6ee7b7" }}>
+                    {confirmed} {confirmed===1?"propozycja przeczytana":"propozycje przeczytane"} — kupcy zapoznali się z Twoimi propozycjami.
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
+              <button onClick={()=>nav("wysylki")} style={{ padding:"14px 18px",background:"rgba(13,148,136,0.85)",border:"1px solid rgba(13,148,136,0.5)",borderRadius:10,color:"white",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:10 }}>
+                <Send size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>Nowa wysyłka</div><div style={{ fontSize:11,opacity:0.75,marginTop:2 }}>{rem} wysyłek w pakiecie</div></div>
+              </button>
+              <button onClick={()=>nav("offers")} style={{ padding:"14px 18px",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,color:"white",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:10 }}>
+                <Tag size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>Moje propozycje</div><div style={{ fontSize:11,opacity:0.65,marginTop:2 }}>{offers.filter(o=>o.status==="active").length} opublikowanych · {offers.filter(o=>o.status==="draft").length} szkiców</div></div>
+              </button>
+            </div>
           </div>
-        )}
-        {fmOpen&&(
-          <button onClick={()=>nav(resolveFMRoute(fmSettings))} style={{ padding:"13px 22px",background:"#059669",border:"none",borderRadius:10,color:"white",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,marginBottom:16 }}>
-            <Calendar size={15}/> Przejdź do Spotkań FM 2026
-          </button>
-        )}
-        <div style={{ paddingTop:14,borderTop:"1px solid #e2e8f0",fontSize:11,color:"#94a3b8" }}>
-          Pytania? Kontakt: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818
-        </div>
-      </div>
+        );
+
+        const fmTile = (
+          <div key="fm" onClick={fmOpen?()=>nav(resolveFMRoute(fmSettings)):undefined} style={{ borderRadius:16,border:fmOpen?"2px solid #059669":"1px solid #e2e8f0",background:fmOpen?"linear-gradient(135deg,#f0fdf4,#ecfdf5)":"white",padding:"28px 28px",marginBottom:16,position:"relative",overflow:"hidden",cursor:fmOpen?"pointer":"default" }}>
+            {!fmOpen&&<div style={{ position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,#e2e8f0,#f1f5f9)" }}/>}
+            <div style={{ display:"flex",alignItems:"flex-start",gap:14,marginBottom:20 }}>
+              <div style={{ width:48,height:48,borderRadius:12,background:fmOpen?"rgba(5,150,105,0.15)":"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <Calendar size={22} color={fmOpen?"#059669":"#94a3b8"}/>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap" }}>
+                  <span style={{ fontWeight:800,fontSize:18,color:fmOpen?"#0f172a":"#94a3b8" }}>Spotkania B2B — Fresh Market 2026</span>
+                  {fmOpen
+                    ? <span style={{ background:"#059669",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>● AKTYWNE</span>
+                    : <span style={{ background:"#f1f5f9",color:"#94a3b8",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>🔒 ZAMKNIĘTE</span>
+                  }
+                </div>
+                <div style={{ fontSize:13,color:fmOpen?"#334155":"#94a3b8",lineHeight:1.8,maxWidth:580 }}>
+                  Planowanie spotkań B2B z kupcami sieci handlowych podczas Fresh Market 2026.<br/>
+                  {fmOpen
+                    ? <><strong style={{ color:"#059669" }}>Aplikacja jest aktywna.</strong> Przejdź do sekcji Spotkania FM 2026, aby wybrać sieci i zobaczyć swój plan.</>
+                    : <>Aplikacja będzie dostępna od września 2026.<br/>Planowane otwarcie: <strong>1 września 2026</strong>. Dostępna dla dostawców i kupców od 1 września.</>
+                  }
+                </div>
+              </div>
+            </div>
+            {!fmOpen&&(
+              <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:20 }}>
+                {[["🎯","1–16 września","Wybór preferowanych sieci handlowych"],["🔒","16 września","Zamknięcie wyborów — dalsze zmiany tylko przez administratora"],["⚙️","17–22 września","Algorytm matchingu + ręczne korekty administratora"],["📋","22 września","Publikacja finalnego harmonogramu i numerów"],["🎪","24 września","Fresh Market 2026 — event"]].map(([ic,d,sub])=>(
+                  <div key={d} style={{ flex:1,minWidth:120,padding:"10px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
+                    <div style={{ fontSize:16,marginBottom:3 }}>{ic}</div>
+                    <div style={{ fontSize:11,fontWeight:700,color:"#334155" }}>{d}</div>
+                    <div style={{ fontSize:11,color:"#94a3b8",marginTop:2,lineHeight:1.4 }}>{sub}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {fmOpen&&(
+              <button onClick={()=>nav(resolveFMRoute(fmSettings))} style={{ padding:"13px 22px",background:"#059669",border:"none",borderRadius:10,color:"white",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,marginBottom:16 }}>
+                <Calendar size={15}/> Przejdź do Spotkań FM 2026
+              </button>
+            )}
+            <div style={{ paddingTop:14,borderTop:"1px solid #e2e8f0",fontSize:11,color:"#94a3b8" }}>
+              Pytania? Kontakt: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818
+            </div>
+          </div>
+        );
+
+        return fmOpen ? <>{fmTile}{preConnectTile}</> : <>{preConnectTile}{fmTile}</>;
+      })()}
     </div>
   );
 }
@@ -5333,7 +5396,12 @@ function ZoneLegend() {
 /* ═══════════════════════════════════════════════════════════════
    ADMIN PREFERENCES VIEW (Faza 2 podgląd dla admina)
 ═══════════════════════════════════════════════════════════════ */
-function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppliers }) {
+function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppliers, companies }) {
+  // [B2B Round supplier-FM-UX] Resolve a supplier list-row to its company row.
+  const findCo = (s) => (companies || []).find(c =>
+    c.fmId === s.id || c.legacy_fm_id === s.id ||
+    c.legacy_supplier_id === s.id || c.legacy_supplier_id === ("sup-" + (s.id || ""))
+  );
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const [subView, setSubView] = useState("suppliers"); // "suppliers" | "chains"
@@ -5383,6 +5451,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
               const stars = Object.values(prefs).filter(v=>v==="star").length;
               const thumbs = Object.values(prefs).filter(v=>v==="thumb").length;
               const filled = stars>=5;
+              const confirmedAt = findCo(s)?.fm_selection_confirmed_at;
               return(
                 <div key={s.id} onClick={()=>setSelSup(s.id)}
                   style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9",cursor:"pointer",background:selSup===s.id?"#f0fdfa":"white" }}>
@@ -5390,7 +5459,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                     <span style={{ width:6,height:6,borderRadius:3,background:s.pkg==="Premium"?"#d97706":"#3b82f6",flexShrink:0 }}/>
                     <div style={{ flex:1,minWidth:0 }}>
                       <div style={{ fontSize:12,fontWeight:selSup===s.id?700:500,color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{s.name}</div>
-                      <div style={{ fontSize:10,color:"#94a3b8" }}>{s.country}</div>
+                      <div style={{ fontSize:10,color:"#94a3b8" }}>{s.country}{confirmedAt && <span style={{color:"#059669",marginLeft:6,fontWeight:700}}>✓ POTWIERDZONO</span>}</div>
                     </div>
                     <div style={{ fontSize:10,display:"flex",gap:4 }}>
                       <span style={{ color:"#d97706",fontWeight:700 }}>⭐{stars}</span>
@@ -5412,14 +5481,16 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
             const prefs = fmPrefs[s.id]||{};
             const stars = _chains.filter(c=>prefs[c.id]==="star");
             const thumbs = _chains.filter(c=>prefs[c.id]==="thumb");
+            const confirmedAt = findCo(s)?.fm_selection_confirmed_at;
             return(
               <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:12,padding:18 }}>
-                <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:16 }}>
+                <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap" }}>
                   <div>
                     <div style={{ fontSize:16,fontWeight:800,color:"#1e293b" }}>{s.name}</div>
                     <div style={{ fontSize:12,color:"#64748b" }}>{s.country} · {s.products}</div>
                   </div>
                   <Badge color={s.pkg==="Premium"?"#d97706":"#2563eb"} bg={s.pkg==="Premium"?"#fef3c7":"#eff6ff"}>{s.pkg}</Badge>
+                  {confirmedAt && <Badge color="#059669" bg="#f0fdf4">✓ Potwierdzono {new Date(confirmedAt).toLocaleDateString("pl-PL")}</Badge>}
                 </div>
                 {stars.length>0&&<>
                   <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>⭐ Główne sieci ({stars.length}/5)</div>
@@ -5635,7 +5706,7 @@ function RetailerPreviewModal({ retailer, onClose }) {
 /* ═══════════════════════════════════════════════════════════════
    FM PAGE — SUPPLIER
 ═══════════════════════════════════════════════════════════════ */
-function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers }) {
+function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers, accountId, confirmFmSelection }) {
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const sid = fmId || "s1";
@@ -5698,6 +5769,64 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
           </div>
         )}
         {!readOnly&&ready&&<Alrt type="success">Gotowe! 5 głównych sieci wybranych. Możesz jeszcze dodać rezerwowe. Wybory można zmieniać do <strong>16 września 2026</strong> (godz. 23:59).</Alrt>}
+        {(() => {
+          // [B2B Round supplier-FM-UX] Confirmation block. Shown only in editable
+          // phase (readOnly=false). Resolves the supplier's company row from
+          // companies[] and reads fm_selection_confirmed_at — present means
+          // "Wybór potwierdzony"; absent means user hasn't clicked Potwierdź yet.
+          if (readOnly) return null;
+          const co = (companies || []).find(c =>
+            c.id === accountId
+            || (fmId && (c.fmId === fmId || c.legacy_fm_id === fmId))
+          );
+          const confirmedAt = co?.fm_selection_confirmed_at || null;
+          return (
+            <div style={{ background:"white",border:`2px solid ${confirmedAt?"#059669":ready?"#0d9488":"#e2e8f0"}`,borderRadius:12,padding:"16px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap" }}>
+              <div style={{ flex:1,minWidth:200 }}>
+                {confirmedAt ? (
+                  <>
+                    <div style={{ fontWeight:700,fontSize:13,color:"#059669",display:"flex",alignItems:"center",gap:6 }}>
+                      <CheckCircle size={15}/> Wybór potwierdzony
+                    </div>
+                    <div style={{ fontSize:11,color:"#64748b",marginTop:3 }}>
+                      Zapisano: <strong>{new Date(confirmedAt).toLocaleString("pl-PL")}</strong>. Możesz jeszcze zmieniać wybory do 16 września — kliknij ponownie <em>Potwierdź wybór</em> po zmianach, żeby admin widział aktualną decyzję.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ fontWeight:700,fontSize:13,color:ready?"#0d9488":"#64748b" }}>
+                      {ready ? "Gotowe — kliknij Potwierdź wybór" : "Wybierz najpierw 5 głównych sieci"}
+                    </div>
+                    <div style={{ fontSize:11,color:"#64748b",marginTop:3 }}>
+                      Twoje zaznaczenia są zapisywane na bieżąco, ale dopiero kliknięcie <em>Potwierdź wybór</em> oznacza dla administratora, że Twój wybór jest finalny.
+                    </div>
+                  </>
+                )}
+              </div>
+              <button
+                onClick={() => { if (typeof confirmFmSelection === "function") confirmFmSelection(); }}
+                disabled={!ready || typeof confirmFmSelection !== "function"}
+                style={{
+                  padding:"11px 22px",
+                  background: !ready ? "#e2e8f0" : confirmedAt ? "#0d9488" : "#059669",
+                  color: !ready ? "#94a3b8" : "white",
+                  border:"none",
+                  borderRadius:9,
+                  fontWeight:700,
+                  fontSize:13,
+                  cursor: ready ? "pointer" : "not-allowed",
+                  fontFamily:"inherit",
+                  display:"flex",
+                  alignItems:"center",
+                  gap:7,
+                  whiteSpace:"nowrap"
+                }}
+              >
+                <CheckCircle size={14}/> {confirmedAt ? "Potwierdź ponownie" : "Potwierdź wybór"}
+              </button>
+            </div>
+          );
+        })()}
         <Card title={readOnly?"Twoje wybory sieci (tylko odczyt)":"Wybierz sieci handlowe"} icon={Store}>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6 }}>
             {_chains.map(c => {
@@ -6719,7 +6848,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   );
 }
 
-function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, onRegenerate, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts }) {
+function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, onRegenerate, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies }) {
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const [tab, setTab] = useState("zarzadzanie");
@@ -6827,13 +6956,32 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
         const _rp = Math.round((_sr/Math.max(_suppliers.length,1))*100);
         const noPickSuppliers = _suppliers.filter(s => Object.keys(fmPrefs[s.id]||{}).length === 0);
         const noRespChains = _chains.filter(c => !_suppliers.some(s => fmResps[c.id]?.[s.id]));
+        // [B2B Round supplier-FM-UX] Confirmation tracking. A supplier is
+        // "confirmed" when their company row has fm_selection_confirmed_at set.
+        // Resolution by fmId/legacy_supplier_id/sup-<fmId> covers all the
+        // supplier-key formats Round 5 introduced.
+        const findCo = (s) => (companies || []).find(c =>
+          c.fmId === s.id || c.legacy_fm_id === s.id ||
+          c.legacy_supplier_id === s.id || c.legacy_supplier_id === ("sup-" + (s.id || ""))
+        );
+        const confirmedSuppliers = _suppliers.filter(s => findCo(s)?.fm_selection_confirmed_at);
+        const unconfirmedReady = _suppliers.filter(s => {
+          const isReady = _chains.filter(c => fmPrefs[s.id]?.[c.id]==="star").length >= 5;
+          return isReady && !findCo(s)?.fm_selection_confirmed_at;
+        });
         if (_suppliers.length === 0 && _chains.length === 0) {
           return <div style={{padding:30,textAlign:"center",color:"#94a3b8",background:"white",borderRadius:12,border:"1px solid #e2e8f0"}}>Dane wejściowe nie są jeszcze kompletne — brak dostawców i sieci.</div>;
         }
         return (
           <div>
-            <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14 }}>
-              {[[_sr+"/"+_suppliers.length,"Dostawców gotowych","#d97706"],[_suppliers.length-_sr,"Nie wybrało","#dc2626"],[_cr+"/"+_chains.length,"Sieci odpow.","#2563eb"],[_rp+"%","Gotowość",_rp>=50?"#059669":"#d97706"]].map(([v,l,c])=>(
+            <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14 }}>
+              {[
+                [_sr+"/"+_suppliers.length,"Dostawców gotowych","#d97706"],
+                [confirmedSuppliers.length+"/"+_suppliers.length,"✓ Potwierdzonych","#059669"],
+                [_suppliers.length-_sr,"Nie wybrało","#dc2626"],
+                [_cr+"/"+_chains.length,"Sieci odpow.","#2563eb"],
+                [_rp+"%","Gotowość",_rp>=50?"#059669":"#d97706"]
+              ].map(([v,l,c])=>(
                 <div key={l} style={{ padding:"12px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center",borderTop:`3px solid ${c}` }}>
                   <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
                   <div style={{ fontSize:10,color:"#64748b",marginTop:2 }}>{l}</div>
@@ -6841,12 +6989,19 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
               ))}
             </div>
             {_rp < 50 && <Alrt type="warning">Tylko {_sr}/{_suppliers.length} dostawców wypełniło preferencje ({_rp}%). Rozważ poczekanie z uruchomieniem algorytmu.</Alrt>}
-            {(noPickSuppliers.length > 0 || noRespChains.length > 0) && (
-              <div style={{display:"grid",gridTemplateColumns:noPickSuppliers.length&&noRespChains.length?"1fr 1fr":"1fr",gap:10,marginBottom:14}}>
+            {unconfirmedReady.length > 0 && <Alrt type="info">{unconfirmedReady.length} {unconfirmedReady.length===1?"dostawca ma":"dostawców ma"} 5 głównych sieci ale nie kliknął/-li jeszcze przycisku "Potwierdź wybór" — wybór nie jest finalny.</Alrt>}
+            {(noPickSuppliers.length > 0 || noRespChains.length > 0 || unconfirmedReady.length > 0) && (
+              <div style={{display:"grid",gridTemplateColumns:`repeat(${[noPickSuppliers,noRespChains,unconfirmedReady].filter(a=>a.length>0).length},1fr)`,gap:10,marginBottom:14}}>
                 {noPickSuppliers.length > 0 && (
                   <div style={{padding:"12px 14px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10}}>
                     <div style={{fontSize:11,fontWeight:700,color:"#991b1b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Dostawcy bez żadnych wyborów ({noPickSuppliers.length})</div>
                     <div style={{fontSize:11,color:"#7f1d1d",lineHeight:1.6,maxHeight:120,overflowY:"auto"}}>{noPickSuppliers.map(s=>s.name).join(" · ")}</div>
+                  </div>
+                )}
+                {unconfirmedReady.length > 0 && (
+                  <div style={{padding:"12px 14px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#1e40af",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Gotowi, ale nie potwierdzili ({unconfirmedReady.length})</div>
+                    <div style={{fontSize:11,color:"#1e3a8a",lineHeight:1.6,maxHeight:120,overflowY:"auto"}}>{unconfirmedReady.map(s=>s.name).join(" · ")}</div>
                   </div>
                 )}
                 {noRespChains.length > 0 && (
@@ -6857,7 +7012,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                 )}
               </div>
             )}
-            <FMAdminPreferencesView fmPrefs={fmPrefs} fmResps={fmResps} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers}/>
+            <FMAdminPreferencesView fmPrefs={fmPrefs} fmResps={fmResps} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} companies={companies}/>
           </div>
         );
       })()}

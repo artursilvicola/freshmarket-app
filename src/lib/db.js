@@ -613,6 +613,23 @@ export async function getAllCompanyTargetRetailers() {
   return data || [];
 }
 
+// [B2B Round supplier-FM-UX] Mark a supplier's FM 2026 chain selection as
+// confirmed. Called when supplier clicks "Potwierdz wybor" in PageSupplierFM
+// (subPage fm-sched). Idempotent: re-confirming overwrites the timestamp,
+// which is the desired behavior — admin sees the LATEST confirmation.
+// Pass null to clear (currently not used, but allowed).
+export async function saveFmSelectionConfirmation(companyId, confirmedAt = new Date().toISOString()) {
+  if (!companyId) throw new Error("saveFmSelectionConfirmation: companyId wymagane");
+  const { data, error } = await supabase
+    .from("companies")
+    .update({ fm_selection_confirmed_at: confirmedAt })
+    .eq("id", companyId)
+    .select("id, fm_selection_confirmed_at")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 /**
  * Replace-set: zastąp całą listę preferencji dostawcy nową listą par
  * { retailer_id, priority, note }.
