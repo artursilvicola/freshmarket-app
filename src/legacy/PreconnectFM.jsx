@@ -1837,7 +1837,14 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     max: account.pkg==="Premium" ? 10 : 5,
     used: 0, pkgExpiry: "2026-12-31", email: account.email||""
   };
-  const pkgUsed = sends.filter(s=>s.supplierId===account.id&&!["rejected","refunded","queued"].includes(s.status)).length;
+  // [B2B Round 5.2] mySupplierKey is what `offers.supplierId` and `sends.supplierId`
+  // contain for THIS supplier — Round 5 changed saveOffer/sendToChain to use
+  // legacySupplierId (sup-codex-silvicola) so RLS supplier_legacy_id check passes.
+  // But UI filters historically used account.id (company UUID). Without this
+  // alias, freshly saved offers/sends are invisible to their own creator.
+  // For non-supplier roles legacySupplierId is null → falls back to account.id.
+  const mySupplierKey = account.legacySupplierId || account.id;
+  const pkgUsed = sends.filter(s=>s.supplierId===mySupplierKey&&!["rejected","refunded","queued"].includes(s.status)).length;
   const pkgMax  = myLimit.max;
   const rem     = Math.max(0, pkgMax - pkgUsed);
 
@@ -2081,14 +2088,14 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }
 
   function renderPage(){
-    if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={account.id}/>;
+    if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey}/>;
     if(pg==="company")      return <PageCompany co={co} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers}/>;
-    if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={account.id} co={co} retailers={retailers} companies={companies}/>;
-    if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={account.id}/>;
+    if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
+    if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
-    if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} retailers={retailers} accountId={account.id}/>;
+    if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} retailers={retailers} accountId={mySupplierKey}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies}/>;
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }}/>;
@@ -2108,7 +2115,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     return null;
   }
 
-  const activeRefunds = refundNotifs.filter(n => !n.dismissed && (!n.supplierId || n.supplierId === account.id));
+  const activeRefunds = refundNotifs.filter(n => !n.dismissed && (!n.supplierId || n.supplierId === mySupplierKey));
 
   return (
     <div style={{ fontFamily:"system-ui,-apple-system,sans-serif",background:"#f1f5f9",minHeight:"100vh",color:"#1e293b",fontSize:14 }}>
