@@ -1296,15 +1296,23 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       if (canceled) return;
       if (rows && rows.length > 0) {
         _setOffersRaw(rows);
-      } else {
-        // Supabase puste: użyj localStorage bridge (jeśli user ma stare dane), inaczej seed
+      } else if (!import.meta.env.PROD) {
+        // [B2B Round 5.6] Seed bootstrap is dev/local only. In production we
+        // don't auto-insert OFFERS_INIT into Supabase — empty table stays empty.
+        // Reason: cleanup of ghost data (DELETE FROM legacy_offers) would
+        // otherwise be undone the next time any user loaded the app, because
+        // OFFERS_INIT contains demo offers tied to non-existent suppliers
+        // (sup-s14 etc.). Admin can still recreate demo via resetToSeed button.
         let bridge = null;
         try { bridge = JSON.parse(localStorage.getItem("fm_offers") || "null"); } catch(e){}
         const seed = (bridge && bridge.length) ? bridge : OFFERS_INIT;
         await bulkUpsertLegacyOffers(seed);
         _setOffersRaw(seed);
-        // Sprzątanie - już nie używamy localStorage dla offers
         try { localStorage.removeItem("fm_offers"); } catch(e){}
+      } else {
+        // Production with empty table: just keep React state empty. UI shows
+        // "Brak propozycji" and supplier creates fresh ones via "Dodaj propozycję".
+        _setOffersRaw([]);
       }
       setOffersLoaded(true);
     });
@@ -1351,13 +1359,19 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         if (canceled) return;
         if (rows && rows.length > 0) {
           _setSendsRaw(rows);
-        } else {
+        } else if (!import.meta.env.PROD) {
+          // [B2B Round 5.6] Same reasoning as legacy_offers above. SENDS_INIT
+          // contains 14 demo sends across suppliers sup-s1 / sup-s5 / sup-s14;
+          // sup-s14 has no matching company row so it would re-create ghost
+          // data after each cleanup. Dev only.
           let bridge = null;
           try { bridge = JSON.parse(localStorage.getItem("fm_sends") || "null"); } catch(e){}
           const seed = (bridge && bridge.length) ? bridge : SENDS_INIT;
           try { await bulkUpsertLegacySends(seed); } catch (e) { console.warn("[seed sends]", e?.message || e); }
           _setSendsRaw(seed);
           try { localStorage.removeItem("fm_sends"); } catch(e){}
+        } else {
+          _setSendsRaw([]);
         }
       } catch (e) { console.warn("[load sends]", e?.message || e); }
       finally { if (!canceled) setSendsLoaded(true); }
