@@ -26,6 +26,10 @@
 --   1. AUDYT (Section A)        - tylko SELECT, niczego nie zmienia
 --   2. PREVIEW (Section B)      - tylko SELECT, pokazuje co znikie
 --   3. DELETE Wariant A (Section C)  - <-- REKOMENDOWANY na teraz
+--      Rozbity na 3 BLOKI uruchamiane oddzielnie:
+--        C.1 — BEGIN + DELETE-y + kontrolny SELECT (transakcja otwarta)
+--        C.2 — COMMIT (osobny blok, uruchamiasz tylko jesli C.1 OK)
+--        C.3 — ROLLBACK (osobny blok, uruchamiasz tylko jesli C.1 NIE OK)
 --   4. WERYFIKACJA (Section D)
 --   5. (opcjonalnie pozniej, NIE TERAZ) DELETE Wariant B (Section E)
 --
@@ -192,9 +196,26 @@ WHERE supplier_legacy_id NOT IN (
 -- NIE rusza: sup-codex-silvicola, sup-s5, ani niczego co ma match w companies.
 -- NIE rusza: rekordow Round 5 z duzym legacy_id.
 --
--- WAZNE: uruchom dopiero po sprawdzeniu sekcji A i B.
--- Jesli wynik weryfikacji w sekcji D jest nieoczekiwany - daj ROLLBACK; zamiast COMMIT;
+-- PROCEDURA 2-ETAPOWA — uruchamiaj BLOKAMI ODDZIELNIE.
+-- Sekcja podzielona na trzy SAMODZIELNE bloki: C.1 (DELETE w transakcji bez
+-- COMMIT), C.2 (COMMIT) i C.3 (ROLLBACK). Uruchamiasz najpierw C.1, patrzysz
+-- na wynik kontrolnego SELECT-a, potem ZALEZNIE od wyniku odpalasz C.2
+-- albo C.3 — nigdy obu.
+--
+-- WAZNE:
+--   1) Uruchom dopiero po sprawdzeniu Section A i Section B.
+--   2) Po C.1 transakcja zostaje OTWARTA do czasu C.2 albo C.3 — w tej samej
+--      sesji SQL Editora. Nie zamykaj okna miedzy C.1 a C.2/C.3, bo Supabase
+--      zamknie sesje i zrobi auto-rollback (czyli "bezpiecznie cofnie").
+--   3) W Supabase SQL Editor: uruchom kazdy blok jako oddzielne "Run". Najpierw
+--      C.1 (zaznacz tylko ten blok i klik Run). Potem zaleznie od wyniku
+--      zaznacz C.2 ALBO C.3 i kliknij Run.
 -- ----------------------------------------------------------------------------
+
+
+-- ── C.1 ── PREVIEW W TRANSAKCJI (uruchom jako pierwszy) ─────────────────────
+-- Otwiera transakcje, wykonuje DELETE i pokazuje kontrolny SELECT.
+-- NIE zawiera COMMIT — zmiany sa widoczne tylko dla tej sesji.
 
 BEGIN;
 
@@ -208,8 +229,12 @@ WHERE supplier_legacy_id NOT IN (
   SELECT legacy_supplier_id FROM companies WHERE legacy_supplier_id IS NOT NULL
 );
 
--- Inline weryfikacja - jesli liczby wygladaja sensownie, daj COMMIT.
--- Inaczej daj ROLLBACK.
+-- Kontrolny SELECT — TO MUSI ZWROCIC SENSOWNE LICZBY zanim odpalisz C.2.
+-- Oczekiwane:
+--   ghost_sends_remaining_should_be_zero  = 0
+--   ghost_offers_remaining_should_be_zero = 0
+--   sends_total_after  > 0  (UNICA + Food Market Court powinny zostac)
+--   offers_total_after > 0
 SELECT
   (SELECT COUNT(*) FROM legacy_sends) AS sends_total_after,
   (SELECT COUNT(*) FROM legacy_sends
@@ -222,8 +247,29 @@ SELECT
        SELECT legacy_supplier_id FROM companies WHERE legacy_supplier_id IS NOT NULL
      )) AS ghost_offers_remaining_should_be_zero;
 
+-- ── decyzja ──
+-- WYNIK OK     → uruchom C.2 (COMMIT)
+-- WYNIK NIE OK → uruchom C.3 (ROLLBACK)
+-- (transakcja jest jeszcze otwarta — wybor jest po Twojej stronie)
+
+
+-- ── C.2 ── COMMIT (uruchom OSOBNO, tylko jesli C.1 wyglada OK) ──────────────
+-- Zatwierdza usuniecie. Po wykonaniu zmian nie da sie cofnac.
+
 COMMIT;
--- Jesli cos podejrzanego: zamien linie wyzej na: ROLLBACK;
+
+
+-- ── C.3 ── ROLLBACK (uruchom OSOBNO, tylko jesli C.1 wyglada NIE OK) ────────
+-- Cofa wszystkie DELETE-y z C.1. Baza wraca do stanu sprzed transakcji.
+-- Bezpieczne — niczego nie traci, mozna potem zdebugowac i sprobowac jeszcze raz.
+
+ROLLBACK;
+
+
+-- ── PRZYPOMNIENIE ──────────────────────────────────────────────────────────
+-- Po C.1 odpalasz dokladnie JEDEN z {C.2, C.3}. Nigdy obu. Po C.2 baza ma
+-- ghosty usuniete na trwale. Po C.3 baza wraca do stanu wyjsciowego i mozesz
+-- C.1 odpalic od nowa (np. po analizie wyniku albo po fixie kodu).
 
 
 -- ============================================================================
