@@ -5574,7 +5574,18 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
 
   const myResps    = fmResps[chainId] || {};
   const chain      = _chains.find(c=>c.id===chainId);
-  const allParticipants = _suppliers; // all FM participants — buyer sees everyone and decides
+  const allParticipants = _suppliers; // full FM participant list (used for late-resps section)
+  // [B2B Round 4] Primary list = suppliers who picked THIS chain in their preferences.
+  // Only those count for matching (see buildFMData R1/R2 — supplierPref must be defined).
+  // Sort: ⭐ main first, then 👍 reserve, then by name.
+  const interestedSuppliers = _suppliers
+    .filter(s => fmPrefs[s.id]?.[chainId])
+    .sort((a, b) => {
+      const pa = fmPrefs[a.id]?.[chainId];
+      const pb = fmPrefs[b.id]?.[chainId];
+      if (pa !== pb) return pa === "star" ? -1 : 1;
+      return (a.name||"").localeCompare(b.name||"");
+    });
   const currentPlan = fmSchedule || fmAlgo; // fmSchedule (approved) takes priority over raw algo
   const myMatches  = _suppliers.filter(s => currentPlan?.res?.[s.id]?.m?.includes(chainId));
   const ph = FM_PHASES[phase-1];
@@ -5673,24 +5684,30 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
 
       {phBanner}
       <div style={{ display:"flex",gap:10,marginBottom:16,flexWrap:"wrap" }}>
-        {[[allParticipants.length,"Uczestników FM","#0d9488"],[Object.values(myResps).filter(v=>v==="want").length,"✅ Chcę się spotkać","#059669"],[Object.values(myResps).filter(v=>v==="chance").length,"🤝 Daj szansę","#d97706"]].map(([v,l,c])=>(
+        {[[interestedSuppliers.length,"Wybrali Twoją sieć","#0d9488"],[Object.values(myResps).filter(v=>v==="want").length,"✅ Chcę się spotkać","#059669"],[Object.values(myResps).filter(v=>v==="chance").length,"🤝 Daj szansę","#d97706"]].map(([v,l,c])=>(
           <div key={l} style={{ flex:1,minWidth:90,padding:"14px 16px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
             <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
             <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{l}</div>
           </div>
         ))}
       </div>
-      <Card title={`Firmy uczestniczące w Fresh Market 2026`} icon={Users}>
-        <div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>Wskaż firmy, z którymi chcesz się spotkać. Twoje wybory są informacją dla algorytmu.</div>
-        {allParticipants.length===0
-          ? <div style={{ padding:30,textAlign:"center",color:"#94a3b8",fontSize:13 }}>Brak firm uczestniczących w Fresh Market 2026.</div>
-          : allParticipants.map(s=>{
+      <Card title={`Dostawcy, którzy wybrali Twoją sieć`} icon={Users}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>Tylko firmy, które zaznaczyły Twoją sieć w "Wybór sieci". Algorytm dopasowuje wyłącznie pary, w których obie strony chcą spotkania.</div>
+        {interestedSuppliers.length===0
+          ? <div style={{ padding:30,textAlign:"center",color:"#94a3b8",fontSize:13,lineHeight:1.6 }}>Brak dostawców oczekujących na decyzję.<br/><span style={{fontSize:11}}>Gdy dostawcy zaznaczą Twoją sieć w "Wybór sieci", pojawią się tutaj.</span></div>
+          : interestedSuppliers.map(s=>{
               const resp = myResps[s.id];
+              const supPref = fmPrefs[s.id]?.[chainId];
+              const prefLbl = supPref==="star" ? "⭐ Główna" : "👍 Rezerwowa";
+              const prefCol = supPref==="star" ? "#d97706" : "#0d9488";
               return (
                 <div key={s.id} style={{ padding:"12px 6px",borderBottom:"1px solid #f1f5f9",background:resp==="want"?"rgba(240,253,244,0.7)":resp==="chance"?"rgba(255,251,235,0.7)":"transparent" }}>
                   <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap" }}>
                     <div style={{ flex:1,minWidth:140 }}>
-                      <div style={{ fontWeight:700,fontSize:13,marginBottom:2 }}>{s.name}</div>
+                      <div style={{ fontWeight:700,fontSize:13,marginBottom:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap" }}>
+                        {s.name}
+                        <span style={{ fontSize:10,fontWeight:700,color:prefCol,background:prefCol+"15",padding:"1px 7px",borderRadius:10,border:`1px solid ${prefCol}33` }}>{prefLbl}</span>
+                      </div>
                       <div style={{ fontSize:11,color:"#64748b" }}>{s.country} · {s.products}</div>
                     </div>
                     <Btn sm outline onClick={()=>openFirmPreview(s)} style={{ fontSize:10 }}><Eye size={10}/> Podgląd</Btn>
@@ -6534,6 +6551,11 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
         const _sr = _suppliers.filter(s=>_chains.filter(c=>fmPrefs[s.id]?.[c.id]==="star").length>=5).length;
         const _cr = _chains.filter(c=>_suppliers.some(s=>["want","chance"].includes(fmResps[c.id]?.[s.id]))).length;
         const _rp = Math.round((_sr/Math.max(_suppliers.length,1))*100);
+        const noPickSuppliers = _suppliers.filter(s => Object.keys(fmPrefs[s.id]||{}).length === 0);
+        const noRespChains = _chains.filter(c => !_suppliers.some(s => fmResps[c.id]?.[s.id]));
+        if (_suppliers.length === 0 && _chains.length === 0) {
+          return <div style={{padding:30,textAlign:"center",color:"#94a3b8",background:"white",borderRadius:12,border:"1px solid #e2e8f0"}}>Dane wejściowe nie są jeszcze kompletne — brak dostawców i sieci.</div>;
+        }
         return (
           <div>
             <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14 }}>
@@ -6545,6 +6567,22 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
               ))}
             </div>
             {_rp < 50 && <Alrt type="warning">Tylko {_sr}/{_suppliers.length} dostawców wypełniło preferencje ({_rp}%). Rozważ poczekanie z uruchomieniem algorytmu.</Alrt>}
+            {(noPickSuppliers.length > 0 || noRespChains.length > 0) && (
+              <div style={{display:"grid",gridTemplateColumns:noPickSuppliers.length&&noRespChains.length?"1fr 1fr":"1fr",gap:10,marginBottom:14}}>
+                {noPickSuppliers.length > 0 && (
+                  <div style={{padding:"12px 14px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#991b1b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Dostawcy bez żadnych wyborów ({noPickSuppliers.length})</div>
+                    <div style={{fontSize:11,color:"#7f1d1d",lineHeight:1.6,maxHeight:120,overflowY:"auto"}}>{noPickSuppliers.map(s=>s.name).join(" · ")}</div>
+                  </div>
+                )}
+                {noRespChains.length > 0 && (
+                  <div style={{padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
+                    <div style={{fontSize:11,fontWeight:700,color:"#92400e",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Sieci bez odpowiedzi ({noRespChains.length})</div>
+                    <div style={{fontSize:11,color:"#78350f",lineHeight:1.6,maxHeight:120,overflowY:"auto"}}>{noRespChains.map(c=>c.name).join(" · ")}</div>
+                  </div>
+                )}
+              </div>
+            )}
             <FMAdminPreferencesView fmPrefs={fmPrefs} fmResps={fmResps} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers}/>
           </div>
         );
