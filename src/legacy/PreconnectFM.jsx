@@ -1692,18 +1692,30 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       try {
         const targets = await dbGetAllCompanyTargetRetailers();
         if (canceled) return;
+        // [B2B Round FM-supplier-prefs-diag] Diagnostic — show what comes back
+        // from company_target_retailers and how it maps into fmPrefs.
+        console.log("[FMDiag/CTR] raw rows from DB:", targets?.length || 0, targets);
         if (targets && targets.length > 0) {
           const groupedPrefs = {};
+          const skipped = [];
           for (const row of targets) {
             const coRow = companies.find(c => c.id === row.company_id);
             const supKey = coRow?.fmId || coRow?.legacy_fm_id || row.company_id;
             const chainKey = resolveChainIdFromRetailer(row.retailer_id, retailers, { note: row.note });
-            if (!supKey || !chainKey) continue;
+            if (!supKey || !chainKey) {
+              skipped.push({ row, supKey, chainKey, reason: !supKey ? "no supKey" : "no chainKey" });
+              continue;
+            }
             if (!groupedPrefs[supKey]) groupedPrefs[supKey] = {};
             groupedPrefs[supKey][chainKey] = Number(row.priority || 0) >= 1000 ? "star" : "thumb";
           }
+          console.log("[FMDiag/CTR] grouped:", groupedPrefs, "skipped:", skipped);
           if (Object.keys(groupedPrefs).length) {
-            setFmPrefs(prev => ({ ...prev, ...groupedPrefs }));
+            setFmPrefs(prev => {
+              const merged = { ...prev, ...groupedPrefs };
+              console.log("[FMDiag/CTR] fmPrefs after merge:", merged);
+              return merged;
+            });
           }
         }
 
@@ -5735,6 +5747,24 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
   const stars    = _chains.filter(c => myPrefs[c.id] === "star").length;
   const thumbs   = _chains.filter(c => myPrefs[c.id] === "thumb").length;
   const meetings = currentPlan?.res?.[sid]?.m || [];
+
+  // [B2B Round FM-supplier-prefs-diag] Diagnostic — what does the supplier
+  // view actually compute from fmPrefs given the current account/sid? If
+  // myPrefs is {} but fmPrefs has data under a different supKey, we'll see
+  // the mismatch here. Also flags chains in _chains that DO have a pref but
+  // wouldn't display correctly (sanity check id format).
+  console.log("[FMDiag/PageSupplier]", {
+    sid,
+    accountId,
+    fmPrefs_keys: Object.keys(fmPrefs || {}),
+    myPrefs_count: Object.keys(myPrefs).length,
+    myPrefs_stars: Object.entries(myPrefs).filter(([,v]) => v === "star").map(([k]) => k),
+    myPrefs_thumbs: Object.entries(myPrefs).filter(([,v]) => v === "thumb").map(([k]) => k),
+    chains_in_view: _chains.length,
+    chain_ids_first10: _chains.slice(0, 10).map(c => c.id),
+    counter_stars: stars,
+    counter_thumbs: thumbs,
+  });
 
   function toggle(cid) {
     if (phase !== 2) return; // only editable in phase 2

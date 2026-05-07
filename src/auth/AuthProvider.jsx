@@ -56,6 +56,17 @@ export function AuthProvider({ children }) {
           retailer_name: data.retailer?.name || null,
         }
       : null;
+    // [B2B Round FM-supplier-prefs-diag] Temporary diagnostic — confirm
+    // AuthProvider loads the right company for the logged-in user. Remove
+    // once supplier prefs hydration is verified.
+    console.log("[FMDiag/Auth]", {
+      email: enriched?.email,
+      role: enriched?.role,
+      company_id: enriched?.company_id,
+      legacy_fm_id: enriched?.legacy_fm_id,
+      legacy_supplier_id: enriched?.legacy_supplier_id,
+      retailer_id: enriched?.retailer_id,
+    });
     setProfile(enriched);
   }, []);
 
