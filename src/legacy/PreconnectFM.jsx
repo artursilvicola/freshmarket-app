@@ -21,6 +21,9 @@ import {
   setCompanyTargetRetailers as dbSetCompanyTargetRetailers,
   getFmWishlists as dbGetFmWishlists, saveFmWishlist as dbSaveFmWishlist,
   getFmLateResps as dbGetFmLateResps, saveFmLateResp as dbSaveFmLateResp,
+  // [B2B Round 5] Per-action save lifecycle helpers
+  markLegacySendRead as dbMarkLegacySendRead,
+  expireLegacySends14d as dbExpireLegacySends14d,
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 
@@ -597,6 +600,22 @@ function resolveChainIdFromRetailer(retailerId, retailers = [], meta = {}) {
   if (row?.fm26ChainId) return row.fm26ChainId;
   return RETAILER_TO_CHAIN[Number(retailerId)] || null;
 }
+// [B2B Round 5] Generate a collision-resistant numeric legacy_id (bigint-safe).
+// Date.now() alone is unsafe — two clicks within the same ms produce identical
+// IDs and the UPSERT silently overwrites. We mix in a 1000-bucket random suffix
+// (so two ops within the same ms have <0.1% collision chance) and additionally
+// retry against the in-memory `existing` array if the candidate is already used.
+function genUniqueLegacyId(existing = []) {
+  const used = new Set((existing || []).map(x => x?.id).filter(v => v != null));
+  let candidate = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  let attempts = 0;
+  while (used.has(candidate) && attempts < 50) {
+    candidate = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+    attempts++;
+  }
+  return candidate;
+}
+
 // [B2B Round 4.1] Defensive picker: only use savedPlan from Supabase if it has
 // the full shape produced by buildFMData (.res + .nums). Otherwise fall back to
 // fallbackPlan (typically fmAlgo, which is always well-formed). This protects
@@ -1219,13 +1238,20 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     // supplier (default)
     const cid = currentUser?.company_id ?? null;
     const fmId = currentUser?.legacy_fm_id || null;
+    // [B2B Round 5] legacySupplierId is the value RLS expects in
+    // legacy_offers/sends.supplier_legacy_id (e.g. "sup-s1"). Falls back to
+    // a derived "sup-<fmId>" so existing seed-style data still works for
+    // accounts that haven't had legacy_supplier_id backfilled yet.
+    const legacySupplierId = currentUser?.legacy_supplier_id
+      || (fmId ? `sup-${fmId}` : null);
     return {
-      id: cid || (fmId ? `sup-${fmId}` : "sup-unknown"),
+      id: cid || legacySupplierId || "sup-unknown",
       role: "supplier",
       name: currentUser?.company_name || currentUser?.name || "Dostawca",
       title: currentUser?.country ? `Dostawca · ${currentUser.country}` : "Dostawca",
       email: currentUser?.email || "",
       fmId,
+      legacySupplierId,
       chainId: null,
       retailerId: null,
       pkg: currentUser?.pkg_plan || null
@@ -1259,11 +1285,14 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     });
     return () => { canceled = true; };
   }, []);
-  // setOffers wraper - zapisuje do Supabase + lokalnie
+  // setOffers wraper - zapisuje do Supabase + lokalnie.
+  // [B2B Round 5] Hot-path callers (saveOffer) await per-action upsert and
+  // surface errors. This wrapper is defense-in-depth for state-driven multi-row
+  // syncs; it deliberately swallows async errors but logs them so unhandled
+  // rejections don't crash. If you need write confirmation, await db helpers.
   const setOffers = useCallback((val) => {
     _setOffersRaw((prev) => {
       const next = typeof val === "function" ? val(prev) : val;
-      // Sync z Supabase: znajdź zmienione/nowe i upsert; znajdź usunięte i delete
       try {
         const prevById = new Map(prev.map((o) => [o.id, o]));
         const nextById = new Map(next.map((o) => [o.id, o]));
@@ -1272,8 +1301,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
           return !old || JSON.stringify(old) !== JSON.stringify(o);
         });
         const toDelete = prev.filter((o) => !nextById.has(o.id)).map((o) => o.id);
-        if (toUpsert.length) bulkUpsertLegacyOffers(toUpsert);
-        toDelete.forEach((id) => deleteLegacyOffer(id));
+        if (toUpsert.length) bulkUpsertLegacyOffers(toUpsert).catch(e => console.warn("[setOffers async upsert]", e?.message || e));
+        toDelete.forEach((id) => deleteLegacyOffer(id).catch(e => console.warn("[setOffers async delete]", e?.message || e)));
       } catch (e) { console.warn("[setOffers sync]", e); }
       return next;
     });
@@ -1284,22 +1313,35 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [sendsLoaded, setSendsLoaded] = useState(false);
   useEffect(() => {
     let canceled = false;
-    loadLegacySends().then(async (rows) => {
+    (async () => {
+      // [B2B Round 5] Run idempotent 14-day expiry sweep BEFORE loading sends
+      // so the hydrated state already reflects any newly-expired rows. RPC
+      // failure is non-fatal — we still load whatever is in the DB.
+      try {
+        await dbExpireLegacySends14d();
+      } catch (e) { console.warn("[expire sends]", e?.message || e); }
       if (canceled) return;
-      if (rows && rows.length > 0) {
-        _setSendsRaw(rows);
-      } else {
-        let bridge = null;
-        try { bridge = JSON.parse(localStorage.getItem("fm_sends") || "null"); } catch(e){}
-        const seed = (bridge && bridge.length) ? bridge : SENDS_INIT;
-        await bulkUpsertLegacySends(seed);
-        _setSendsRaw(seed);
-        try { localStorage.removeItem("fm_sends"); } catch(e){}
-      }
-      setSendsLoaded(true);
-    });
+      try {
+        const rows = await loadLegacySends();
+        if (canceled) return;
+        if (rows && rows.length > 0) {
+          _setSendsRaw(rows);
+        } else {
+          let bridge = null;
+          try { bridge = JSON.parse(localStorage.getItem("fm_sends") || "null"); } catch(e){}
+          const seed = (bridge && bridge.length) ? bridge : SENDS_INIT;
+          try { await bulkUpsertLegacySends(seed); } catch (e) { console.warn("[seed sends]", e?.message || e); }
+          _setSendsRaw(seed);
+          try { localStorage.removeItem("fm_sends"); } catch(e){}
+        }
+      } catch (e) { console.warn("[load sends]", e?.message || e); }
+      finally { if (!canceled) setSendsLoaded(true); }
+    })();
     return () => { canceled = true; };
   }, []);
+  // [B2B Round 5] See setOffers note. Hot-path callers (sendToChain,
+  // moderate, sendApproved, confirmManual, undoConfirm) await per-action
+  // upsertLegacySend and surface errors via fl(). This wrapper is fallback.
   const setSends = useCallback((val) => {
     _setSendsRaw((prev) => {
       const next = typeof val === "function" ? val(prev) : val;
@@ -1311,8 +1353,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
           return !old || JSON.stringify(old) !== JSON.stringify(s);
         });
         const toDelete = prev.filter((s) => !nextById.has(s.id)).map((s) => s.id);
-        if (toUpsert.length) bulkUpsertLegacySends(toUpsert);
-        toDelete.forEach((id) => deleteLegacySend(id));
+        if (toUpsert.length) bulkUpsertLegacySends(toUpsert).catch(e => console.warn("[setSends async upsert]", e?.message || e));
+        toDelete.forEach((id) => deleteLegacySend(id).catch(e => console.warn("[setSends async delete]", e?.message || e)));
       } catch (e) { console.warn("[setSends sync]", e); }
       return next;
     });
@@ -1862,15 +1904,157 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }
 
   // ── Actions ────────────────────────────────────────────────────────────
-  function saveOffer(d,st){ if(d.id&&offers.find(o=>o.id===d.id)) setOffers(offers.map(o=>o.id===d.id?{...o,...d,status:st}:o)); else setOffers([...offers,{...d,id:Date.now(),supplierId:account.id,status:st}]); fl(st==="active"?"Propozycja opublikowana!":"Szkic zapisany."); nav("offers"); }
+  // [B2B Round 5] Hot-path actions: per-action awaited save with error toast.
+  // Sequence: build new state -> await dbUpsert -> on success update React state +
+  // success toast + nav; on failure show error toast and DO NOT update state.
+  // This makes "Propozycja opublikowana!" honest — if you see it, it's in DB.
+  async function saveOffer(d, st) {
+    const supplierKey = account.legacySupplierId || account.id;
+    const isUpdate = d.id && offers.find(o => o.id === d.id);
+    const newOffer = isUpdate
+      ? { ...offers.find(o => o.id === d.id), ...d, status: st }
+      : { ...d, id: genUniqueLegacyId(offers), supplierId: supplierKey, status: st };
+    try {
+      await upsertLegacyOffer(newOffer);
+    } catch (e) {
+      fl(`Błąd zapisu propozycji: ${e?.message || "spróbuj ponownie"}`, "error");
+      return;
+    }
+    _setOffersRaw(prev => isUpdate
+      ? prev.map(o => o.id === d.id ? newOffer : o)
+      : [...prev, newOffer]
+    );
+    fl(st === "active" ? "Propozycja opublikowana!" : "Szkic zapisany.");
+    nav("offers");
+  }
 
-  function sendToChain(oId,rId){ setSends(prev=>[...prev,{id:Date.now(),supplierId:account.id,offerId:oId,retailerId:rId,month:"2026-05",pos:prev.filter(s=>s.retailerId===rId).length+1,status:"pending_moderation",price:getPlanById(co?.pkg)?.perSend||getPlanById(COMPANY_INIT.pkg)?.perSend||40,sendDate:"2026-05-06",daysLeft:14,confirmHistory:[]}]); fl("Propozycja dodana do kolejki moderacji."); nav("wysylki"); }
-  function moderate(id,act){ setSends(s=>s.map(x=>x.id===id?{...x,status:act==="approve"?"approved":"rejected"}:x)); fl(act==="approve"?"Propozycja zatwierdzona":"Propozycja odrzucona"); }
-  function updateSendDate(id,date){ setSends(s=>s.map(x=>x.id===id?{...x,sendDate:date}:x)); }
-  function updateSendPos(id,pos){ setSends(s=>s.map(x=>x.id===id?{...x,pos:+pos}:x)); }
-  function sendApproved(){ const c=sends.filter(s=>s.status==="approved").length; if(!c){fl("Brak zatwierdzonych propozycji.","warning");return;} setSends(s=>s.map(x=>x.status==="approved"?{...x,status:"sent",sentAt:x.sendDate||"2026-05-06",daysLeft:14}:x)); fl(`Wysłano ${c} propozycji.`); }
-  function confirmManual(id,rt,note){ const ts=nowStr(); setSends(s=>s.map(x=>x.id===id?{...x,status:"read_manual",readAt:ts,readType:rt,manualNote:note,daysLeft:0,confirmHistory:[...(x.confirmHistory||[]),{action:"confirm",type:rt,note,at:ts}]}:x)); fl("Potwierdzenie zapisane."); }
-  function undoConfirm(id){ const ts=nowStr(); setSends(s=>s.map(x=>x.id===id?{...x,status:"sent",readAt:null,readType:null,manualNote:null,daysLeft:3,confirmHistory:[...(x.confirmHistory||[]),{action:"undo",note:"Cofnięcie potwierdzenia",at:ts}]}:x)); fl("Potwierdzenie cofnięte","warning"); }
+  async function sendToChain(oId, rId) {
+    if (rem <= 0) {
+      fl(`Brak dostępnych kredytów w pakiecie (${pkgUsed}/${pkgMax} wykorzystanych). Doładuj pakiet w "Finanse".`, "error");
+      return;
+    }
+    const supplierKey = account.legacySupplierId || account.id;
+    const newSend = {
+      id: genUniqueLegacyId(sends),
+      supplierId: supplierKey,
+      offerId: oId,
+      retailerId: rId,
+      month: "2026-05",
+      pos: sends.filter(s => s.retailerId === rId).length + 1,
+      status: "pending_moderation",
+      price: getPlanById(co?.pkg)?.perSend || getPlanById(COMPANY_INIT.pkg)?.perSend || 40,
+      sendDate: new Date().toISOString().slice(0, 10),
+      daysLeft: 14,
+      confirmHistory: [],
+    };
+    try {
+      await upsertLegacySend(newSend);
+    } catch (e) {
+      fl(`Błąd wysyłki: ${e?.message || "spróbuj ponownie"}`, "error");
+      return;
+    }
+    _setSendsRaw(prev => [...prev, newSend]);
+    fl("Propozycja dodana do kolejki moderacji.");
+    nav("wysylki");
+  }
+
+  async function moderate(id, act) {
+    const cur = sends.find(x => x.id === id);
+    if (!cur) return;
+    const updated = { ...cur, status: act === "approve" ? "approved" : "rejected" };
+    try {
+      await upsertLegacySend(updated);
+    } catch (e) {
+      fl(`Błąd moderacji: ${e?.message || "spróbuj ponownie"}`, "error");
+      return;
+    }
+    _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
+    fl(act === "approve" ? "Propozycja zatwierdzona" : "Propozycja odrzucona");
+  }
+
+  // updateSendDate / updateSendPos: lightweight admin-only edits, keep silent
+  // bulk path (wrapper handles persistence). Errors are non-fatal here.
+  function updateSendDate(id, date) { setSends(s => s.map(x => x.id === id ? { ...x, sendDate: date } : x)); }
+  function updateSendPos(id, pos)   { setSends(s => s.map(x => x.id === id ? { ...x, pos: +pos } : x)); }
+
+  async function sendApproved() {
+    const approved = sends.filter(s => s.status === "approved");
+    if (!approved.length) { fl("Brak zatwierdzonych propozycji.", "warning"); return; }
+    const today = new Date().toISOString().slice(0, 10);
+    const updated = approved.map(s => ({ ...s, status: "sent", sentAt: s.sendDate || today, daysLeft: 14 }));
+    try {
+      await bulkUpsertLegacySends(updated);
+    } catch (e) {
+      fl(`Błąd wysyłki: ${e?.message || "spróbuj ponownie"}`, "error");
+      return;
+    }
+    const updatedById = new Map(updated.map(u => [u.id, u]));
+    _setSendsRaw(s => s.map(x => updatedById.get(x.id) || x));
+    fl(`Wysłano ${updated.length} propozycji.`);
+  }
+
+  async function confirmManual(id, rt, note) {
+    const cur = sends.find(x => x.id === id);
+    if (!cur) return;
+    const ts = nowStr();
+    const updated = {
+      ...cur,
+      status: "read_manual",
+      readAt: ts,
+      readType: rt,
+      manualNote: note,
+      daysLeft: 0,
+      confirmHistory: [...(cur.confirmHistory || []), { action: "confirm", type: rt, note, at: ts }],
+    };
+    try {
+      await upsertLegacySend(updated);
+    } catch (e) {
+      fl(`Błąd potwierdzenia: ${e?.message || "spróbuj ponownie"}`, "error");
+      return;
+    }
+    _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
+    fl("Potwierdzenie zapisane.");
+  }
+
+  async function undoConfirm(id) {
+    const cur = sends.find(x => x.id === id);
+    if (!cur) return;
+    const ts = nowStr();
+    const updated = {
+      ...cur,
+      status: "sent",
+      readAt: null,
+      readType: null,
+      manualNote: null,
+      daysLeft: 3,
+      confirmHistory: [...(cur.confirmHistory || []), { action: "undo", note: "Cofnięcie potwierdzenia", at: ts }],
+    };
+    try {
+      await upsertLegacySend(updated);
+    } catch (e) {
+      fl(`Błąd cofania potwierdzenia: ${e?.message || "spróbuj ponownie"}`, "error");
+      return;
+    }
+    _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
+    fl("Potwierdzenie cofnięte", "warning");
+  }
+
+  // [B2B Round 5] Buyer-open marker: called by PageBuyerDetail useEffect when
+  // buyer first opens an unread send. Uses SECURITY DEFINER RPC because buyer
+  // RLS only allows SELECT on legacy_sends. Idempotent — RPC no-ops if status
+  // is already past 'sent'. UI updates only on RPC success.
+  async function markSendOpened(sendId) {
+    const cur = sends.find(x => x.id === sendId);
+    if (!cur || cur.status !== "sent") return;
+    try {
+      await dbMarkLegacySendRead(sendId);
+    } catch (e) { console.warn("[markSendOpened]", e?.message || e); return; }
+    const ts = nowStr();
+    _setSendsRaw(s => s.map(x => x.id === sendId
+      ? { ...x, status: "read", readAt: ts, readType: "auto_buyer_open" }
+      : x
+    ));
+  }
   function dismissRefund(id){ setRefundNotifs(n=>n.map(x=>x.id===id?{...x,dismissed:true}:x)); }
   async function runAI(){ setAiLoad(true); await new Promise(r=>setTimeout(r,2200)); setCo(prev=>({...prev,description:"Eksporter owoców i warzyw. Własna pakowalnia z sortownią optyczną i chłodnią. Dostawy retail-ready do sieci CEE, DE, NL.",completeness:96})); setAiLoad(false); setAiModal(false); fl("AI uzupełnił opis firmy."); }
   function updateLimit(id,changes){ setLimits(prev=>prev.map(l=>l.id===id?{...l,...changes}:l)); }
@@ -1910,7 +2094,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }}/>;
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
-    if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends}/>;
+    if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
@@ -3840,9 +4024,18 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
   );
 }
 
-function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, buyerRetailerId, sends }) {
+function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, buyerRetailerId, sends, onOpened }) {
   const supplierCo = getSupplierCo(send, offers, companies) || co || COMPANY_INIT;
   const [showCoModal, setShowCoModal] = useState(false);
+  // [B2B Round 5] First time buyer opens this detail: flip status sent -> read
+  // via SECURITY DEFINER RPC (markSendOpened in App). Idempotent: RPC no-ops
+  // when status already past 'sent'. Local state updates only on success.
+  const sendId = send?.id;
+  const sendStatus = send?.status;
+  useEffect(() => {
+    if (!sendId || sendStatus !== "sent" || typeof onOpened !== "function") return;
+    onOpened(sendId);
+  }, [sendId, sendStatus, onOpened]);
   if(!send) return <div><Btn outline onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> Wróć</Btn></div>;
   const o=getOffer(send.offerId,offers); if(!o) return null;
   const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);

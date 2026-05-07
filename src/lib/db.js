@@ -325,6 +325,11 @@ export async function loadLegacyOffers() {
   return (data || []).map((r) => r.data);
 }
 
+// [B2B Round 5] Per-action writes: throw on error so callers can show
+// an error toast instead of falsely reporting success. Hot-path callers
+// (saveOffer, sendToChain, moderate, ...) MUST await these and handle
+// the rejection. The legacy bulk wrappers in PreconnectFM.jsx still call
+// the bulk variants in fire-and-forget mode for state-driven syncs.
 export async function upsertLegacyOffer(offer) {
   if (!offer || !offer.id) return;
   const row = {
@@ -338,7 +343,7 @@ export async function upsertLegacyOffer(offer) {
   const { error } = await supabase
     .from("legacy_offers")
     .upsert(row, { onConflict: "legacy_id" });
-  if (error) console.warn("[upsertLegacyOffer]", error.message);
+  if (error) throw error;
 }
 
 export async function bulkUpsertLegacyOffers(offers) {
@@ -354,7 +359,7 @@ export async function bulkUpsertLegacyOffers(offers) {
   const { error } = await supabase
     .from("legacy_offers")
     .upsert(rows, { onConflict: "legacy_id" });
-  if (error) console.warn("[bulkUpsertLegacyOffers]", error.message);
+  if (error) throw error;
 }
 
 export async function deleteLegacyOffer(legacyId) {
@@ -362,7 +367,7 @@ export async function deleteLegacyOffer(legacyId) {
     .from("legacy_offers")
     .delete()
     .eq("legacy_id", legacyId);
-  if (error) console.warn("[deleteLegacyOffer]", error.message);
+  if (error) throw error;
 }
 
 export async function loadLegacySends() {
@@ -390,7 +395,7 @@ export async function upsertLegacySend(send) {
   const { error } = await supabase
     .from("legacy_sends")
     .upsert(row, { onConflict: "legacy_id" });
-  if (error) console.warn("[upsertLegacySend]", error.message);
+  if (error) throw error;
 }
 
 export async function bulkUpsertLegacySends(sends) {
@@ -406,7 +411,7 @@ export async function bulkUpsertLegacySends(sends) {
   const { error } = await supabase
     .from("legacy_sends")
     .upsert(rows, { onConflict: "legacy_id" });
-  if (error) console.warn("[bulkUpsertLegacySends]", error.message);
+  if (error) throw error;
 }
 
 export async function deleteLegacySend(legacyId) {
@@ -414,7 +419,27 @@ export async function deleteLegacySend(legacyId) {
     .from("legacy_sends")
     .delete()
     .eq("legacy_id", legacyId);
-  if (error) console.warn("[deleteLegacySend]", error.message);
+  if (error) throw error;
+}
+
+// [B2B Round 5] Buyer marks a "sent" send as opened/read. Backed by
+// SECURITY DEFINER RPC because buyer RLS only allows SELECT, not UPDATE.
+// RPC verifies the caller is the right buyer for that send's retailer.
+export async function markLegacySendRead(legacyId) {
+  if (!legacyId) return null;
+  const { data, error } = await supabase.rpc("mark_legacy_send_read", { p_legacy_id: Number(legacyId) });
+  if (error) throw error;
+  return data;
+}
+
+// [B2B Round 5] Idempotent 14-day expiry sweep. Any authenticated user can
+// call it; SECURITY DEFINER RPC promotes "sent" sends older than 14 days
+// to "unread_expired". Returns count of rows updated. Called once per
+// hydration so the first user each day triggers expiry.
+export async function expireLegacySends14d() {
+  const { data, error } = await supabase.rpc("expire_legacy_sends_14d");
+  if (error) throw error;
+  return data || 0;
 }
 
 // ===================================================================

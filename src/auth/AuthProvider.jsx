@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
       .from("profiles")
       .select(`
         *,
-        company:companies(id, name, country, legacy_fm_id, pkg_plan),
+        company:companies(id, name, country, legacy_fm_id, legacy_supplier_id, pkg_plan),
         retailer:retailers(id, name, country)
       `)
       .eq("id", userId)
@@ -40,11 +40,15 @@ export function AuthProvider({ children }) {
       setProfile(null);
       return;
     }
-    // Splaszcz join w jeden obiekt zeby PreconnectFM nie musial wiedziec o JOIN-ach
+    // Splaszcz join w jeden obiekt zeby PreconnectFM nie musial wiedziec o JOIN-ach.
+    // [B2B Round 5] legacy_supplier_id (np. "sup-s1") jest WYMAGANY przez RLS dla
+    // legacy_offers / legacy_sends INSERT/UPDATE. Bez niego silent-fail przy
+    // sendToChain (RLS check supplier_legacy_id = app_supplier_legacy_id()).
     const enriched = data
       ? {
           ...data,
           legacy_fm_id: data.company?.legacy_fm_id || null,
+          legacy_supplier_id: data.company?.legacy_supplier_id || null,
           company_name: data.company?.name || null,
           company_country: data.company?.country || null,
           country: data.company?.country || data.retailer?.country || null,
