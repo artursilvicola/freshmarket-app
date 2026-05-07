@@ -1283,7 +1283,17 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     };
   });
   const role = account.role;
-  const [pg,     setPg]     = useState("dashboard");
+  // [B2B Round buyer-copy.1] Initial page must depend on role. Hardcoded
+  // "dashboard" used to render the SUPPLIER PageDashboard for every freshly
+  // logged-in buyer at /kupiec — they saw "Nowa wysyłka", "Moje propozycje
+  // 4 opublikowanych" and other supplier-only UI before they could navigate
+  // anywhere. Buyer lands on b-dash (PageBuyerDashboard with buyer copy);
+  // admin lands on a-dash; supplier keeps "dashboard".
+  const [pg,     setPg]     = useState(
+    role === "buyer"  ? "b-dash" :
+    role === "admin"  ? "a-dash" :
+    "dashboard"
+  );
   const [sid,    setSid]    = useState(null);
   const [flash,  setFlash]  = useState(null);
   // co is derived from active account when supplier
