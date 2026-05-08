@@ -1749,7 +1749,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         id: r.fm26ChainId,
         name: r.name,
         country: r.country,
-        cat: (r.buyers||[]).flatMap(b=>b.cats||[]).filter((v,i,a)=>a.indexOf(v)===i).join(", ") || "owoce, warzywa"
+        cat: (r.buyers||[]).flatMap(b=>b.cats||[]).filter((v,i,a)=>a.indexOf(v)===i).join(", ") || "owoce, warzywa",
+        logo_url: r.logo_url || r.logo || null,
+        color: r.color || "#0d9488",
+        bg: r.bg || "#f0fdfa",
+        initials: r.initials || (r.name || "?").split(/\s+/).map(x=>x[0]).join("").slice(0,3).toUpperCase(),
       })),
     [retailers]
   );
@@ -5902,13 +5906,15 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
             {_chains.map(c => {
               const p = myPrefs[c.id];
               return (
-                <div key={c.id} style={{ display:"flex",alignItems:"center",gap:6,padding:"9px 10px",borderRadius:8,border:p==="star"?`2px solid #d97706`:p==="thumb"?`2px solid #0d9488`:`1px solid #e2e8f0`,background:p==="star"?"#fffbeb":p==="thumb"?"#f0fdfa":"white",opacity:readOnly&&!p?0.5:1 }}>
+                <div key={c.id} style={{ display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:8,border:p==="star"?`2px solid #d97706`:p==="thumb"?`2px solid #0d9488`:`1px solid #e2e8f0`,background:p==="star"?"#fffbeb":p==="thumb"?"#f0fdfa":"white",opacity:readOnly&&!p?0.5:1 }}>
                   <button onClick={()=>toggle(c.id)} disabled={readOnly} style={{ background:"none",border:"none",cursor:readOnly?"default":"pointer",fontSize:18,minWidth:24,padding:0,lineHeight:1 }}>
                     {p==="star"?"⭐":p==="thumb"?"👍":"○"}
                   </button>
+                  <RetailerLogo retailer={c} size={34}/>
                   <div style={{ flex:1,minWidth:0 }}>
-                    <div style={{ fontSize:12,fontWeight:p?"600":"500",color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.name}</div>
-                    <div style={{ fontSize:10,color:"#94a3b8" }}>{c.country} · {c.cat}</div>
+                    <div style={{ fontSize:12,fontWeight:p?"700":"600",color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.name}</div>
+                    <div style={{ fontSize:10,color:"#64748b" }}>{FLAGS[c.country]||"🌐"} {CNAMES[c.country]||c.country}</div>
+                    <div style={{ fontSize:10,color:"#94a3b8",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.cat}</div>
                   </div>
                   {p==="star"&&<span style={{ fontSize:9,color:"#d97706",fontWeight:700,flexShrink:0 }}>GŁÓWNA</span>}
                   {p==="thumb"&&<span style={{ fontSize:9,color:"#0d9488",fontWeight:700,flexShrink:0 }}>REZERWOWA</span>}

@@ -823,6 +823,7 @@ export async function bulkUpsertRetailers(retailers) {
     name: r.name,
     country: r.country || null,
     cats: r.cats || [],
+    logo_url: r.logo_url || r.logo || null,
     color: r.color || null,
     bg: r.bg || null,
     initials: r.initials || null,
