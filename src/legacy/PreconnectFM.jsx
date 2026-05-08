@@ -1772,12 +1772,29 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const fmAlgo = useMemo(() => buildFMData(fmPrefs, fmResps, fmChains, fmSuppliers), [fmPrefs, fmResps, fmChains, fmSuppliers]);
 
   const runtimeAccounts = useMemo(() => {
-    const adminAcc = {
-      id:"admin", role:"admin",
-      name:"Oksana Kozłowska", title:"FM Administrator",
-      email:"oksana@freshmarket.eu",
-      fmId:null, chainId:null, retailerId:null
-    };
+    // [B2B Round admin-entry-fix] When the logged-in user is admin, build the
+    // adminAcc from real auth identity so its `id` matches account.id (the
+    // currentUser.id used during App's account useState init). Without this,
+    // runtimeAccounts had a seed entry id="admin" that never matched the
+    // auth UUID — `stillExists` returned undefined and the auto-switch effect
+    // (~line 1828) flipped the admin onto the first supplier on mount.
+    // For non-admin sessions we keep the seed Oksana entry so the account
+    // switcher still presents an "admin" option for demo / view-as.
+    const adminAcc = currentUser && initialRole === "admin"
+      ? {
+          id: currentUser.id || "admin",
+          role: "admin",
+          name: currentUser.name || currentUser.email || "FM Administrator",
+          title: "FM Administrator",
+          email: currentUser.email || "oksana@freshmarket.eu",
+          fmId: null, chainId: null, retailerId: null,
+        }
+      : {
+          id:"admin", role:"admin",
+          name:"Oksana Kozłowska", title:"FM Administrator",
+          email:"oksana@freshmarket.eu",
+          fmId:null, chainId:null, retailerId:null
+        };
     const supplierAccs = companies.map(co => ({
       id: co.id,
       role: "supplier",
@@ -1809,7 +1826,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       });
     });
     return [adminAcc, ...supplierAccs, ...buyerAccs];
-  }, [companies, retailers]);
+  }, [companies, retailers, currentUser?.id, currentUser?.email, currentUser?.name, initialRole]);
 
   useEffect(() => {
     const stillExists = runtimeAccounts.find(a => a.id === account.id);
@@ -1824,7 +1841,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       // pochodza z profile.company_id / profile.retailer_id (Round 2.1 mapping).
       return;
     }
-    // Tylko admin moze swobodnie przelaczac konta - dla niego dajemy default.
+    // [B2B Round admin-entry-fix] Real-auth admin (account.role === "admin")
+    // must NEVER be auto-switched to a supplier seed on mount. The legacy
+    // demo behavior — "admin lands on first supplier as default" — was for
+    // the showcase mode where there was no real auth. In production it
+    // caused /admin to render PageDashboard (supplier) hiding PageAdminDash
+    // and the FM admin tools. Real admin already has account.role="admin"
+    // and pg="a-dash" from App init; nothing to do.
+    if (account.role === "admin") {
+      return;
+    }
+    // Demo / no-auth fallback: pick first supplier as default account so
+    // the showcase has something to render.
     const firstSupplier = runtimeAccounts.find(a => a.role === "supplier");
     if (firstSupplier) switchAccount(firstSupplier);
   }, [runtimeAccounts]); // eslint-disable-line
