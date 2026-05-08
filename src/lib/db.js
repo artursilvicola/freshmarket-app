@@ -51,24 +51,199 @@ export async function updateCompany(id, patch) {
 // ===================================================================
 // RETAILERS
 // ===================================================================
+function toRetailerDbRow(r = {}) {
+  const primaryBuyer = (r.buyers || []).find((b) => b.active !== false) || r.buyers?.[0] || null;
+  return {
+    id: typeof r.id === "number" ? r.id : (parseInt(r.id, 10) || null),
+    legacy_chain_id: r.legacy_chain_id || r.legacyChainId || (r.id ? String(r.id) : null),
+    name: r.name,
+    country: r.country || null,
+    cats: r.cats || [],
+    logo_url: r.logo_url || r.logo || null,
+    color: r.color || null,
+    bg: r.bg || null,
+    initials: r.initials || null,
+    buyer_name: r.buyer_name || primaryBuyer?.name || r.buyer || null,
+    buyer_email: r.buyer_email || primaryBuyer?.email || r.email || null,
+    buyer_phone: r.buyer_phone || primaryBuyer?.phone || r.phone || null,
+    next_send: r.next_send || r.nextSend || null,
+    active: r.active !== false,
+    fm26_active: !!(r.fm26_active ?? r.fm26Active),
+    fm26_chain_id: r.fm26_chain_id || r.fm26ChainId || null,
+    description: r.description || null,
+  };
+}
+
 export async function getRetailers() {
   const { data, error } = await supabase
     .from("retailers")
-    .select("*")
+    .select(`
+      *,
+      buyers:profiles!fk_profiles_retailer(
+        id,
+        role,
+        name,
+        email,
+        phone,
+        position,
+        retailer_id,
+        active,
+        fm26_active,
+        buyer_categories
+      )
+    `)
     .order("name");
   if (error) throw error;
   return data;
 }
 
-export async function updateRetailer(id, patch) {
+export async function createRetailer(retailer) {
+  const row = toRetailerDbRow(retailer);
   const { data, error } = await supabase
     .from("retailers")
-    .update(patch)
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateRetailer(id, patch) {
+  const row = toRetailerDbRow({ id, ...patch });
+  delete row.id;
+  delete row.legacy_chain_id;
+  const { data, error } = await supabase
+    .from("retailers")
+    .update(row)
     .eq("id", id)
     .select()
     .single();
   if (error) throw error;
   return data;
+}
+
+export async function updateBuyerProfile(id, patch) {
+  if (!id) throw new Error("updateBuyerProfile wymaga id");
+  const row = {
+    name: patch.name ?? null,
+    email: patch.email ?? null,
+    phone: patch.phone ?? null,
+    position: patch.position ?? null,
+    retailer_id: patch.retailer_id ?? null,
+    active: patch.active !== false,
+    fm26_active: !!patch.fm26_active,
+    buyer_categories: patch.buyer_categories || [],
+    role: "buyer",
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(row)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateOwnBuyerProfile(id, patch) {
+  if (!id) throw new Error("updateOwnBuyerProfile wymaga id");
+  const row = {
+    name: patch.name ?? null,
+    phone: patch.phone ?? null,
+    position: patch.position ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(row)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function createBuyerAccount({
+  email,
+  name,
+  retailer_id,
+  phone = null,
+  position = null,
+  buyer_categories = [],
+  active = true,
+  fm26_active = false,
+}) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error("Brak aktywnej sesji admina");
+
+  const res = await fetch("/.netlify/functions/admin-create-user", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      email,
+      role: "buyer",
+      name,
+      retailer_id: Number(retailer_id),
+      send_magic_link: true,
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error || "Nie udało się utworzyć kupca");
+  const profile = await updateBuyerProfile(json.user_id, {
+    name,
+    email,
+    phone,
+    position,
+    retailer_id,
+    active,
+    fm26_active,
+    buyer_categories,
+  });
+  return { ...json, profile };
+}
+
+export async function adminUpdateBuyerAccount({
+  user_id,
+  email,
+  name,
+  phone = null,
+  position = null,
+  retailer_id,
+  active = true,
+  fm26_active = false,
+  buyer_categories = [],
+}) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error("Brak aktywnej sesji admina");
+
+  const res = await fetch("/.netlify/functions/admin-update-user", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      user_id,
+      role: "buyer",
+      email,
+      name,
+      phone,
+      position,
+      retailer_id: Number(retailer_id),
+      active,
+      fm26_active,
+      buyer_categories,
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error || "Nie udało się zaktualizować kupca");
+  return json;
 }
 
 // ===================================================================
@@ -816,22 +991,7 @@ export async function bulkUpsertCompanies(companies) {
 
 export async function bulkUpsertRetailers(retailers) {
   if (!retailers || !retailers.length) return [];
-  const rows = retailers.map((r) => ({
-    // retailers.id jest integer (legacy)
-    id: typeof r.id === "number" ? r.id : (parseInt(r.id, 10) || null),
-    legacy_chain_id: r.id ? String(r.id) : null,
-    name: r.name,
-    country: r.country || null,
-    cats: r.cats || [],
-    logo_url: r.logo_url || r.logo || null,
-    color: r.color || null,
-    bg: r.bg || null,
-    initials: r.initials || null,
-    buyer_name: r.buyer_name || null,
-    buyer_email: r.buyer_email || null,
-    buyer_phone: r.buyer_phone || null,
-    next_send: r.next_send || null,
-  }));
+  const rows = retailers.map((r) => toRetailerDbRow(r));
   const { data, error } = await supabase
     .from("retailers")
     .upsert(rows, { onConflict: "id" })

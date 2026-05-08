@@ -14,6 +14,8 @@ import {
   // [B2B Round 2.1] Replace localStorage for FM 2026 state
   getCompanies as dbGetCompanies, bulkUpsertCompanies,
   getRetailers as dbGetRetailers, bulkUpsertRetailers,
+  createBuyerAccount as dbCreateBuyerAccount,
+  adminUpdateBuyerAccount as dbAdminUpdateBuyerAccount, updateOwnBuyerProfile as dbUpdateOwnBuyerProfile,
   getFmSettings as dbGetFmSettings, saveFmSettings as dbSaveFmSettings,
   getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
   getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
@@ -442,6 +444,9 @@ function getRetailerCats(r) {
     return [...new Set((r.buyers).flatMap(b => b.cats || []))];
   }
   return [];
+}
+function isUuidLike(v) {
+  return typeof v === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 }
 function nowStr()               { return new Date().toISOString().slice(0,16).replace("T"," "); }
 
@@ -1511,18 +1516,22 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(account.role === "buyer" && account.retailerId) {
       setRetailers(prev => prev.map(r => {
         if(r.id !== account.retailerId) return r;
-        const bKey = account.id;
         const buyers = (r.buyers||[]).map(b => {
-          if("b-"+r.id+"-"+b.id !== bKey) return b;
+          if(b.id !== account.id) return b;
           return {
             ...b,
-            name:  updated.name  ?? b.name,
-            email: updated.email ?? b.email,
+            name: updated.name ?? b.name,
             phone: updated.phone ?? b.phone,
+            position: updated.position ?? b.position,
           };
         });
         return { ...r, buyers };
       }));
+      dbUpdateOwnBuyerProfile(account.id, {
+        name: updated.name ?? buyer.name,
+        phone: updated.phone ?? buyer.phone,
+        position: updated.position ?? buyer.position,
+      }).catch((e) => console.warn("[buyer profile save]", e));
     }
   };
   const [limits, setLimits] = useState(LIMITS_INIT);
@@ -1562,18 +1571,41 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         const rows = await dbGetRetailers();
         if (canceled) return;
         if (rows && rows.length > 0) {
-          // Map DB rows back to legacy shape
-          const mapped = rows.map(r => ({
-            ...r,
-            fm26ChainId: r.fm26ChainId !== undefined ? r.fm26ChainId : (RETAILER_TO_CHAIN[r.id] || null),
-            fm26Active:  r.fm26Active  !== undefined ? r.fm26Active  : !!RETAILER_TO_CHAIN[r.id],
-            active: r.active !== false,
-            buyers: r.buyers || [{
-              id: r.id + "_b1", name: r.buyer_name || "", email: r.buyer_email || "",
-              phone: r.buyer_phone || "", cats: r.cats || [], active: true,
-              fm26Active: !!RETAILER_TO_CHAIN[r.id]
-            }]
-          }));
+          // Retailers are the shared source of truth; buyer accounts come from
+          // real profiles rows linked by profiles.retailer_id.
+          const mapped = rows.map(r => {
+            const profileBuyers = (r.buyers || [])
+              .filter(b => !b.role || b.role === "buyer")
+              .map(b => ({
+                id: b.id,
+                name: b.name || "",
+                email: b.email || "",
+                phone: b.phone || "",
+                position: b.position || "",
+                cats: b.buyer_categories || r.cats || [],
+                active: b.active !== false,
+                fm26Active: !!(b.fm26_active ?? r.fm26_active),
+                isManaged: true,
+              }));
+            const fallbackBuyers = profileBuyers.length ? profileBuyers : [{
+              id: r.id + "_b1",
+              name: r.buyer_name || "",
+              email: r.buyer_email || "",
+              phone: r.buyer_phone || "",
+              position: "",
+              cats: r.cats || [],
+              active: true,
+              fm26Active: !!(r.fm26_active ?? RETAILER_TO_CHAIN[r.id]),
+              isManaged: false,
+            }];
+            return {
+              ...r,
+              fm26ChainId: r.fm26_chain_id || r.fm26ChainId || RETAILER_TO_CHAIN[r.id] || null,
+              fm26Active:  !!(r.fm26_active ?? r.fm26Active ?? RETAILER_TO_CHAIN[r.id]),
+              active: r.active !== false,
+              buyers: fallbackBuyers,
+            };
+          });
           _setRetailersRaw(mapped);
         } else {
           const seed = RETAILERS.map(r => ({
@@ -1612,13 +1644,24 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     const starred = buyerUiState[account.id]?.starred || [];
     if(account.role === "buyer" && account.retailerId) {
       const r = (retailers||[]).find(x => x.id === account.retailerId);
-      const bKey = account.id;
-      const b = (r?.buyers||[]).find(x => "b-"+r.id+"-"+x.id === bKey);
+      const b = (r?.buyers||[]).find(x => x.id === account.id) || null;
+      if(currentUser?.role === "buyer") return {
+        name: currentUser.name || b?.name || "",
+        position: currentUser.position || b?.position || "Category Manager",
+        company: r?.name || currentUser?.retailer_name || "",
+        email: currentUser.email || b?.email || "",
+        phone: currentUser.phone || b?.phone || "",
+        country: r?.country || "PL",
+        consent: true,
+        starred,
+        active: currentUser.active !== false && (b?.active !== false),
+        cats: currentUser.buyer_categories || b?.cats || r?.cats || [],
+      };
       if(b) return {
-        name: b.name || "", position: "Category Manager",
-        company: r.name || "", email: b.email || "",
-        phone: b.phone || "", country: r.country || "PL",
-        consent: true, starred,
+        name: b.name || "", position: b.position || "Category Manager",
+        company: r?.name || "", email: b.email || "",
+        phone: b.phone || "", country: r?.country || "PL",
+        consent: true, starred, active: b.active !== false, cats: b.cats || r?.cats || [],
       };
     }
     return { ...BUYER_INIT, starred };
@@ -1692,30 +1735,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       try {
         const targets = await dbGetAllCompanyTargetRetailers();
         if (canceled) return;
-        // [B2B Round FM-supplier-prefs-diag] Diagnostic — show what comes back
-        // from company_target_retailers and how it maps into fmPrefs.
-        console.log("[FMDiag/CTR] raw rows from DB:", targets?.length || 0, targets);
         if (targets && targets.length > 0) {
           const groupedPrefs = {};
-          const skipped = [];
           for (const row of targets) {
             const coRow = companies.find(c => c.id === row.company_id);
             const supKey = coRow?.fmId || coRow?.legacy_fm_id || row.company_id;
             const chainKey = resolveChainIdFromRetailer(row.retailer_id, retailers, { note: row.note });
-            if (!supKey || !chainKey) {
-              skipped.push({ row, supKey, chainKey, reason: !supKey ? "no supKey" : "no chainKey" });
-              continue;
-            }
+            if (!supKey || !chainKey) continue;
             if (!groupedPrefs[supKey]) groupedPrefs[supKey] = {};
             groupedPrefs[supKey][chainKey] = Number(row.priority || 0) >= 1000 ? "star" : "thumb";
           }
-          console.log("[FMDiag/CTR] grouped:", groupedPrefs, "skipped:", skipped);
           if (Object.keys(groupedPrefs).length) {
-            setFmPrefs(prev => {
-              const merged = { ...prev, ...groupedPrefs };
-              console.log("[FMDiag/CTR] fmPrefs after merge:", merged);
-              return merged;
-            });
+            setFmPrefs(prev => ({ ...prev, ...groupedPrefs }));
           }
         }
 
@@ -1815,9 +1846,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       if(r.active === false) return;
       (r.buyers||[]).forEach(b => {
         if(b.active === false) return;
-        const bId = "b-" + r.id + "-" + b.id;
         buyerAccs.push({
-          id: bId,
+          id: b.id,
           role: "buyer",
           name: b.name || r.name,
           title: r.name,
@@ -2156,12 +2186,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // Idempotent at the RPC level — RPC no-ops if status is already past 'sent'.
   async function markSendOpened(send) {
     if (!send || send.status !== "sent") return;
-    console.log("[markSendOpened] before RPC", { id: send.id, status: send.status });
     try {
-      const result = await dbMarkLegacySendRead(send.id);
-      console.log("[markSendOpened] after RPC", result);
+      await dbMarkLegacySendRead(send.id);
     } catch (e) {
-      console.error("[markSendOpened] RPC error", e?.message || e);
+      console.warn("[markSendOpened]", e?.message || e);
       return;
     }
     const ts = nowStr();
@@ -3902,17 +3930,10 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
       if(retailer) {
         if(retailer.active===false) return false;
         const offer = getOffer(s.offerId, offers);
-        const myBuyerEntry = (retailer.buyers||[]).find(b =>
-          b.email && buyer?.email && b.email === buyer.email
-        );
-        if(myBuyerEntry) {
-          if(myBuyerEntry.active===false) return false;
-          if(offer?.category && !(myBuyerEntry.cats||[]).includes(offer.category)) return false;
-        } else {
-          const hasActiveBuyer = (retailer.buyers||[]).some(b =>
-            b.active!==false && (b.cats||[]).includes(offer?.category)
-          );
-          if(!hasActiveBuyer && offer?.category) return false;
+        if (buyer?.active === false) return false;
+        const myCats = buyer?.cats || [];
+        if(myCats.length && offer?.category && !myCats.includes(offer.category)) {
+          return false;
         }
       }
     }
@@ -4200,7 +4221,17 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
   return (
     <div style={{ maxWidth:560 }}>
       <h2 style={{ marginBottom:16,fontSize:16 }}>Mój profil</h2>
-      <Card title="Dane" icon={User}><Row><Inp label="Imię i nazwisko" required value={b.name} onChange={e=>u("name",e.target.value)}/><Inp label="Stanowisko" value={b.position} onChange={e=>u("position",e.target.value)}/></Row><Row><Inp label="Firma" value={b.company} onChange={e=>u("company",e.target.value)}/><Inp label="Email" type="email" value={b.email} onChange={e=>u("email",e.target.value)}/></Row><Inp label="Telefon" value={b.phone} onChange={e=>u("phone",e.target.value)}/></Card>
+      <Card title="Dane" icon={User}>
+        <Row>
+          <Inp label="Imię i nazwisko" required value={b.name} onChange={e=>u("name",e.target.value)}/>
+          <Inp label="Stanowisko" value={b.position} onChange={e=>u("position",e.target.value)}/>
+        </Row>
+        <Row>
+          <Inp label="Sieć handlowa" value={b.company} readOnly />
+          <Inp label="Email (zmiana przez administratora)" type="email" value={b.email} readOnly />
+        </Row>
+        <Inp label="Telefon" value={b.phone} onChange={e=>u("phone",e.target.value)}/>
+      </Card>
       <Card title="Subskrypcja mailingowa" icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>Zgoda na mailing Preconnect</div><div style={{ fontSize:12,color:"#64748b" }}>Raz w miesiącu, w pierwszy wtorek. Zgodę można wycofać w każdej chwili.</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>Subskrypcja aktywna · Następny mailing: 6 maja 2026</div>}</Card>
       <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl("Profil zapisany."); }}>Zapisz</Btn></div>
     </div>
@@ -4746,10 +4777,13 @@ function PageAdminRetailers({ retailers, setRetailers }) {
   const [filterActive, setFilterActive]   = useState("all");
   const [showForm, setShowForm]           = useState(false);
   const [formError, setFormError]         = useState({});
-  const EMPTY_RETAILER = {name:"",country:"PL",active:true,fm26ChainId:null,fm26Active:false,nextSend:"2026-05-06",color:"#0d9488",bg:"#f0fdfa",initials:"",buyers:[{id:"new_b1",name:"",email:"",phone:"",cats:[],active:true,fm26Active:false}]};
+  const EMPTY_RETAILER = {name:"",country:"PL",active:true,fm26ChainId:null,fm26Active:false,nextSend:"2026-05-06",color:"#0d9488",bg:"#f0fdfa",initials:"",description:"",buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]};
   const [newR, setNewR]     = useState({...EMPTY_RETAILER});
   const [expandedId, setExpandedId] = useState(null);
   const [savedIds, setSavedIds]     = useState({});
+  const [saveError, setSaveError]   = useState({});
+  const [savingId, setSavingId]     = useState(null);
+  const [saveMeta, setSaveMeta]     = useState({});
 
   function updateRetailer(id, changes) { setRetailers(prev=>prev.map(r=>r.id===id?{...r,...changes}:r)); }
   function updateBuyer(retailerId, buyerId, changes) {
@@ -4760,10 +4794,20 @@ function PageAdminRetailers({ retailers, setRetailers }) {
   }
   function addBuyer(retailerId) {
     const newId=retailerId+"_b"+Date.now();
-    setRetailers(prev=>prev.map(r=>r.id!==retailerId?r:{...r,buyers:[...(r.buyers||[]),{id:newId,name:"",email:"",phone:"",cats:[],active:true}]}));
+    setRetailers(prev=>prev.map(r=>r.id!==retailerId?r:{...r,buyers:[...(r.buyers||[]),{id:newId,name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:r.fm26Active||false,isNew:true}]}));
   }
   function removeBuyer(retailerId, buyerId) {
-    setRetailers(prev=>prev.map(r=>r.id!==retailerId?r:{...r,buyers:(r.buyers||[]).filter(b=>b.id!==buyerId)}));
+    setRetailers(prev=>prev.map(r=>{
+      if(r.id!==retailerId) return r;
+      return {
+        ...r,
+        buyers:(r.buyers||[]).flatMap(b => {
+          if(b.id !== buyerId) return [b];
+          if(isUuidLike(b.id)) return [{ ...b, active:false, _deactivated:true }];
+          return [];
+        })
+      };
+    }));
   }
   function toggleBuyerCat(retailerId, buyerId, cat) {
     setRetailers(prev=>prev.map(r=>{
@@ -4775,9 +4819,95 @@ function PageAdminRetailers({ retailers, setRetailers }) {
       })};
     }));
   }
-  function saveRetailer(id) {
-    setSavedIds(prev=>({...prev,[id]:true}));
-    setTimeout(()=>setSavedIds(prev=>{const n={...prev};delete n[id];return n;}),2500);
+  async function saveRetailer(id) {
+    const retailer = retailers.find(r => r.id === id);
+    if (!retailer) return;
+    const errs = {};
+    if(!retailer.name?.trim()) errs[id] = "Sieć musi mieć nazwę.";
+    const buyers = (retailer.buyers||[]);
+    const seenEmails = new Set();
+    for (const b of buyers) {
+      if (b.active === false && !b.isNew) continue;
+      if (!b.name?.trim()) { errs[id] = "Każdy aktywny kupiec musi mieć imię i nazwisko."; break; }
+      if (!b.email?.trim()) { errs[id] = "Każdy aktywny kupiec musi mieć email."; break; }
+      const emailKey = String(b.email || "").trim().toLowerCase();
+      if (emailKey && seenEmails.has(emailKey)) { errs[id] = "Email kupca w obrębie jednej sieci musi być unikalny."; break; }
+      if (emailKey) seenEmails.add(emailKey);
+      if ((b.cats||[]).length === 0) { errs[id] = "Każdy aktywny kupiec musi mieć min. 1 kategorię."; break; }
+    }
+    if (retailer.fm26Active && !retailer.fm26ChainId) errs[id] = "Sieć FM 2026 musi mieć ustawione ID łańcucha.";
+    if (Object.keys(errs).length) { setSaveError(prev => ({ ...prev, ...errs })); return; }
+
+    setSavingId(id);
+    setSaveError(prev => ({ ...prev, [id]: null }));
+    try {
+      await bulkUpsertRetailers([retailer]);
+      const links = [];
+      const nextBuyers = [];
+      for (const b of buyers) {
+        if (b.isNew || !isUuidLike(b.id)) {
+          if (b.active === false) continue;
+          const created = await dbCreateBuyerAccount({
+            email: b.email,
+            name: b.name,
+            retailer_id: id,
+            phone: b.phone || null,
+            position: b.position || null,
+            buyer_categories: b.cats || [],
+            active: b.active !== false,
+            fm26_active: !!b.fm26Active,
+          });
+          if (created.magic_link) {
+            links.push({ email: b.email, magic_link: created.magic_link });
+          }
+          nextBuyers.push({
+            id: created.user_id,
+            name: b.name,
+            email: b.email,
+            phone: b.phone || "",
+            position: b.position || "",
+            cats: b.cats || [],
+            active: b.active !== false,
+            fm26Active: !!b.fm26Active,
+            isManaged: true,
+          });
+        } else if (isUuidLike(b.id)) {
+          const updated = await dbAdminUpdateBuyerAccount({
+            user_id: b.id,
+            email: b.email,
+            name: b.name,
+            phone: b.phone || null,
+            position: b.position || null,
+            retailer_id: id,
+            active: b.active !== false,
+            fm26_active: !!b.fm26Active,
+            buyer_categories: b.cats || [],
+          });
+          nextBuyers.push({
+            id: updated.id,
+            name: updated.name || b.name,
+            email: updated.email || b.email,
+            phone: updated.phone || b.phone || "",
+            position: updated.position || b.position || "",
+            cats: updated.buyer_categories || b.cats || [],
+            active: updated.active !== false,
+            fm26Active: !!updated.fm26_active,
+            isManaged: true,
+          });
+        } else {
+          nextBuyers.push({ ...b });
+        }
+      }
+
+      setRetailers(prev => prev.map(r => r.id !== id ? r : ({ ...r, buyers: nextBuyers })));
+      setSaveMeta(prev => ({ ...prev, [id]: { links } }));
+      setSavedIds(prev=>({...prev,[id]:true}));
+      setTimeout(()=>setSavedIds(prev=>{const n={...prev};delete n[id];return n;}),2500);
+    } catch (e) {
+      setSaveError(prev => ({ ...prev, [id]: e?.message || "Nie udało się zapisać zmian." }));
+    } finally {
+      setSavingId(null);
+    }
   }
   function toggleNewBuyerCat(cat) {
     setNewR(prev=>{const buyers=[...prev.buyers];const b={...buyers[0]};b.cats=(b.cats||[]).includes(cat)?(b.cats||[]).filter(c=>c!==cat):[...(b.cats||[]),cat];buyers[0]=b;return{...prev,buyers};});
@@ -4794,9 +4924,9 @@ function PageAdminRetailers({ retailers, setRetailers }) {
     if(Object.keys(errs).length>0){setFormError(errs);return;}
     const initials=newR.name.split(" ").map(w=>w[0]).join("").slice(0,3).toUpperCase();
     const newId=Math.max(...retailers.map(r=>r.id),120)+1;
-    const entry={...newR,id:newId,initials:initials||newR.name.slice(0,3).toUpperCase(),buyers:newR.buyers.map((b,i)=>({...b,id:`${newId}_b${i+1}`}))};
+    const entry={...newR,id:newId,initials:initials||newR.name.slice(0,3).toUpperCase(),buyers:newR.buyers.map((b,i)=>({...b,id:`${newId}_b${i+1}`,isNew:true}))};
     setRetailers(prev=>[...prev,entry]);
-    setNewR({...EMPTY_RETAILER,buyers:[{id:"new_b1",name:"",email:"",phone:"",cats:[],active:true}]});
+    setNewR({...EMPTY_RETAILER,buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]});
     setFormError({});setShowForm(false);setExpandedId(newId);
   }
   const filtered=retailers.filter(r=>{
@@ -4856,6 +4986,10 @@ function PageAdminRetailers({ retailers, setRetailers }) {
               <input type="date" value={newR.nextSend} onChange={e=>setNewR(p=>({...p,nextSend:e.target.value}))} style={fldStyle("nextSend")}/>
             </div>
           </div>
+          <div style={{marginBottom:16}}>
+            <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>OPIS / NOTATKA</label>
+            <textarea value={newR.description||""} onChange={e=>setNewR(p=>({...p,description:e.target.value}))} rows={3} style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"}}/>
+          </div>
           <div style={{marginBottom:12}}>
             <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13,fontWeight:500}}>
               <input type="checkbox" checked={newR.fm26Active||false}
@@ -4897,6 +5031,10 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                 <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>TELEFON</label>
                 <input value={newR.buyers[0].phone} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],phone:e.target.value};return{...p,buyers:b};})} placeholder="+48 22 123 4567" style={fldStyle("phone")}/>
               </div>
+              <div>
+                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>STANOWISKO</label>
+                <input value={newR.buyers[0].position||""} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],position:e.target.value};return{...p,buyers:b};})} placeholder="np. Category Manager" style={fldStyle("position")}/>
+              </div>
             </div>
             <div>
               <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:6}}>ODPOWIEDZIALNOŚĆ *</label>
@@ -4913,7 +5051,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
           </div>
           <div style={{display:"flex",gap:8}}>
             <Btn primary onClick={addRetailer}><Plus size={13}/> Dodaj sieć</Btn>
-            <Btn outline onClick={()=>{setShowForm(false);setFormError({});setNewR({...EMPTY_RETAILER,buyers:[{id:"new_b1",name:"",email:"",phone:"",cats:[],active:true}]});}}>Anuluj</Btn>
+            <Btn outline onClick={()=>{setShowForm(false);setFormError({});setNewR({...EMPTY_RETAILER,buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]});}}>Anuluj</Btn>
           </div>
         </div>
       )}
@@ -4975,6 +5113,10 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NASTĘPNA WYSYŁKA</label><input type="date" value={r.nextSend||""} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                 </div>
+                <div style={{marginBottom:14}}>
+                  <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>OPIS / NOTATKA ADMINA</label>
+                  <textarea value={r.description||""} onChange={e=>updateRetailer(r.id,{description:e.target.value})} rows={3} style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"}}/>
+                </div>
                 <div style={{marginTop:8}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                     <span style={{fontWeight:600,fontSize:13}}>Kupcy ({(r.buyers||[]).length})</span>
@@ -4996,8 +5138,8 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                           {(r.buyers||[]).length>1&&<button onClick={()=>removeBuyer(r.id,b.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:2,fontSize:11}}><X size={13}/></button>}
                         </div>
                       </div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
-                        {[["IMIĘ I NAZWISKO","name",b.name,"text","np. Anna Nowak"],["EMAIL","email",b.email,"email","kupiec@siec.pl"],["TELEFON","phone",b.phone,"tel","+48 22 ..."]].map(([lbl,key,val,type,ph])=>(
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:10}}>
+                        {[["IMIĘ I NAZWISKO","name",b.name,"text","np. Anna Nowak"],["EMAIL","email",b.email,"email","kupiec@siec.pl"],["TELEFON","phone",b.phone,"tel","+48 22 ..."],["STANOWISKO","position",b.position,"text","np. Category Manager"]].map(([lbl,key,val,type,ph])=>(
                           <div key={key}><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:2}}>{lbl}</label><input type={type} value={val||""} placeholder={ph} onChange={e=>updateBuyer(r.id,b.id,{[key]:e.target.value})} style={{width:"100%",padding:"6px 9px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                         ))}
                       </div>
@@ -5015,8 +5157,23 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                     </div>
                   ))}
                 </div>
+                {saveMeta[r.id]?.links?.length > 0 && (
+                  <div style={{marginTop:12,padding:"10px 12px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"#1d4ed8",marginBottom:6}}>Nowe konta kupców utworzone</div>
+                    {saveMeta[r.id].links.map((lnk, idx) => (
+                      <div key={idx} style={{fontSize:11,color:"#334155",marginBottom:4,wordBreak:"break-all"}}>
+                        <strong>{lnk.email}</strong>: {lnk.magic_link}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {saveError[r.id] && (
+                  <div style={{marginTop:12,padding:"10px 12px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,fontSize:12,color:"#b91c1c"}}>
+                    {saveError[r.id]}
+                  </div>
+                )}
                 <div style={{display:"flex",gap:8,marginTop:14,paddingTop:12,borderTop:"1px solid #f1f5f9"}}>
-                  <Btn primary onClick={()=>saveRetailer(r.id)}>💾 Zapisz zmiany</Btn>
+                  <Btn primary onClick={()=>saveRetailer(r.id)}>{savingId===r.id ? "Zapisywanie..." : "💾 Zapisz zmiany"}</Btn>
                   <Btn outline onClick={()=>setExpandedId(null)}>Zwiń</Btn>
                 </div>
               </div>
@@ -5779,24 +5936,6 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
   const stars    = _chains.filter(c => myPrefs[c.id] === "star").length;
   const thumbs   = _chains.filter(c => myPrefs[c.id] === "thumb").length;
   const meetings = currentPlan?.res?.[sid]?.m || [];
-
-  // [B2B Round FM-supplier-prefs-diag] Diagnostic — what does the supplier
-  // view actually compute from fmPrefs given the current account/sid? If
-  // myPrefs is {} but fmPrefs has data under a different supKey, we'll see
-  // the mismatch here. Also flags chains in _chains that DO have a pref but
-  // wouldn't display correctly (sanity check id format).
-  console.log("[FMDiag/PageSupplier]", {
-    sid,
-    accountId,
-    fmPrefs_keys: Object.keys(fmPrefs || {}),
-    myPrefs_count: Object.keys(myPrefs).length,
-    myPrefs_stars: Object.entries(myPrefs).filter(([,v]) => v === "star").map(([k]) => k),
-    myPrefs_thumbs: Object.entries(myPrefs).filter(([,v]) => v === "thumb").map(([k]) => k),
-    chains_in_view: _chains.length,
-    chain_ids_first10: _chains.slice(0, 10).map(c => c.id),
-    counter_stars: stars,
-    counter_thumbs: thumbs,
-  });
 
   function toggle(cid) {
     if (phase !== 2) return; // only editable in phase 2
