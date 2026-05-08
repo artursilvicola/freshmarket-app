@@ -617,6 +617,12 @@ export async function expireLegacySends14d() {
   return data || 0;
 }
 
+export async function refundUnreadExpiredLegacySends() {
+  const { data, error } = await supabase.rpc("refund_unread_expired_legacy_sends");
+  if (error) throw error;
+  return data || 0;
+}
+
 // ===================================================================
 // AUDIT LOG
 // ===================================================================
@@ -695,26 +701,43 @@ export async function saveFmResp({ retailer_id, supplier_company_id, position, z
   if (!retailer_id || !supplier_company_id) {
     throw new Error("saveFmResp wymaga retailer_id + supplier_company_id");
   }
-  // Sprawdz czy istnieje
-  const { data: existing } = await supabase
+  const payload = { retailer_id, supplier_company_id, position, zone, status, meta };
+
+  const { data: upserted, error: upsertError } = await supabase
     .from("fm_resps")
-    .select("id")
+    .upsert(payload, { onConflict: "retailer_id,supplier_company_id" })
+    .select()
+    .maybeSingle();
+  if (!upsertError) return upserted;
+
+  const { data: existingRows, error: existingError } = await supabase
+    .from("fm_resps")
+    .select("id, created_at")
     .eq("retailer_id", retailer_id)
     .eq("supplier_company_id", supplier_company_id)
-    .maybeSingle();
-  if (existing?.id) {
+    .order("created_at", { ascending: false });
+  if (existingError) throw existingError;
+
+  if (existingRows?.length) {
+    const keepId = existingRows[0].id;
+    const duplicateIds = existingRows.slice(1).map((row) => row.id).filter(Boolean);
+    if (duplicateIds.length) {
+      const { error: deleteError } = await supabase.from("fm_resps").delete().in("id", duplicateIds);
+      if (deleteError) throw deleteError;
+    }
     const { data, error } = await supabase
       .from("fm_resps")
       .update({ position, zone, status, meta })
-      .eq("id", existing.id)
+      .eq("id", keepId)
       .select()
       .single();
     if (error) throw error;
     return data;
   }
+
   const { data, error } = await supabase
     .from("fm_resps")
-    .insert({ retailer_id, supplier_company_id, position, zone, status, meta })
+    .insert(payload)
     .select()
     .single();
   if (error) throw error;

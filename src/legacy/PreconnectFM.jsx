@@ -26,6 +26,7 @@ import {
   // [B2B Round 5] Per-action save lifecycle helpers
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
+  refundUnreadExpiredLegacySends as dbRefundUnreadExpiredLegacySends,
   // [B2B Round supplier-FM-UX] Confirm supplier's FM chain selection
   saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
 } from "../lib/db";
@@ -650,6 +651,18 @@ function buildTargetRetailerRowsFromPrefs(prefs = {}, retailers = []) {
     if (!old || row.priority > old.priority) seen.set(retailerId, row);
   });
   return Array.from(seen.values());
+}
+const BUYER_RESPONSE_VALUES = new Set(["want", "chance", "remove"]);
+function hasBuyerResponse(value) {
+  return BUYER_RESPONSE_VALUES.has(value);
+}
+function hasRefundMarker(send) {
+  return Boolean(send?.refundAt || send?.refundTxId || send?.refundAmount || send?.data?.refundAt);
+}
+function getRefundAmount(send) {
+  const raw = send?.refundAmount ?? send?.data?.refundAmount ?? send?.price ?? send?.data?.price ?? 0;
+  const amount = Number(raw);
+  return Number.isFinite(amount) ? amount : 0;
 }
 const FM_CHAINS=[
   {id:"ch1",name:"ARHELAN",country:"PL",cat:"owoce, warzywa"},{id:"ch2",name:"AUCHAN",country:"PL/FR",cat:"owoce, warzywa"},
@@ -1297,6 +1310,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       pkg: currentUser?.pkg_plan || null
     };
   });
+  const mySupplierKey = account.role === "supplier" ? (account.legacySupplierId || account.id) : account.id;
   const role = account.role;
   // [B2B Round buyer-copy.1] Initial page must depend on role. Hardcoded
   // "dashboard" used to render the SUPPLIER PageDashboard for every freshly
@@ -1377,6 +1391,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       // failure is non-fatal — we still load whatever is in the DB.
       try {
         await dbExpireLegacySends14d();
+        await dbRefundUnreadExpiredLegacySends();
       } catch (e) { console.warn("[expire sends]", e?.message || e); }
       if (canceled) return;
       try {
@@ -1540,8 +1555,33 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     "sup-s5":  { balance:120, transactions:[{id:1,desc:"Zakup pakietu Standard 10",amount:-400,date:"2026-02-01",type:"debit"},{id:2,desc:"Doładowanie",amount:520,date:"2026-02-01",type:"credit"}] },
     "sup-s14": { balance:200, transactions:[{id:1,desc:"Zakup pakietu Premium 10",amount:-600,date:"2026-01-20",type:"debit"},{id:2,desc:"Doładowanie",amount:800,date:"2026-01-20",type:"credit"}] },
   });
-  const wallet = walletMap[account.id] || WALLET_INIT;
-  const setWallet = (val) => setWalletMap(prev=>({ ...prev, [account.id]: typeof val==="function"?val(wallet):val }));
+  const walletKey = account.role === "supplier" ? mySupplierKey : account.id;
+  const baseWallet = walletMap[walletKey] || walletMap[account.id] || WALLET_INIT;
+  const refundedSendsForWallet = useMemo(
+    () => (sends || []).filter(s =>
+      s?.supplierId === mySupplierKey &&
+      ["unread_expired", "refunded"].includes(s?.status) &&
+      hasRefundMarker(s)
+    ),
+    [sends, mySupplierKey]
+  );
+  const wallet = useMemo(() => {
+    const refundTxs = refundedSendsForWallet.map((s) => ({
+      id: `refund-${s.id}`,
+      desc: `Zwrot za brak odczytu propozycji #${s.id}`,
+      amount: getRefundAmount(s),
+      date: s.refundAt || s.data?.refundAt || s.expiredAt || s.sentAt || s.sendDate || nowStr().slice(0, 10),
+      type: "refund",
+    }));
+    const existingIds = new Set((baseWallet.transactions || []).map((t) => String(t.id)));
+    const missingRefundTxs = refundTxs.filter((t) => !existingIds.has(String(t.id)));
+    const refundTotal = missingRefundTxs.reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    return {
+      balance: Number(baseWallet.balance || 0) + refundTotal,
+      transactions: [...(baseWallet.transactions || []), ...missingRefundTxs],
+    };
+  }, [baseWallet, refundedSendsForWallet]);
+  const setWallet = (val) => setWalletMap(prev=>({ ...prev, [walletKey]: typeof val==="function"?val(wallet):val }));
   const [orders, setOrders] = useState([
     { id:1, planId:"std_10", planLabel:"Standard 10 wysyłek", price:400, perSend:40, qty:10, date:"2026-01-15", status:"paid", paymentMethod:"przelew", firmName:"Food Market" },
   ]);
@@ -1728,6 +1768,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // still be generated manually from the admin "Dane testowe" button.
   const [fmPrefs, setFmPrefs] = useState({});
   const [fmResps, setFmResps] = useState({});
+  const [fmRespsLoaded, setFmRespsLoaded] = useState(false);
+  const fmRespsSavePrimedRef = useRef(false);
   useEffect(() => {
     if (!companiesLoaded || !retailersLoaded) return;
     let canceled = false;
@@ -1770,6 +1812,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         try { localStorage.removeItem("fm_fmResps"); } catch(e){}
         try { localStorage.removeItem("fm_fmPrefs"); } catch(e){}
       } catch (e) { console.warn("[load fmResps]", e); }
+      finally { if (!canceled) setFmRespsLoaded(true); }
     })();
     return () => { canceled = true; };
   }, [companiesLoaded, retailersLoaded, companies, retailers]);
@@ -1913,6 +1956,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   //   - fmSchedule:            debounced save to fm_settings.schedule
   //   - fmResps:               saved per-action by handlers (Accept/Reject); also debounced fallback below
   //   - UI-only state (previewFor, refundNotifs, messages): localStorage OK
+  useEffect(() => {
+    fmRespsSavePrimedRef.current = false;
+  }, [account.id, account.role]);
   // Debounced save of fmSchedule:
   useEffect(() => {
     if (!fmSchedule) return;
@@ -1921,37 +1967,54 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     }, 800);
     return () => clearTimeout(t);
   }, [fmSchedule]);
-  // Debounced bulk save of fmResps as a fallback (per-action saves are preferred):
+  // Debounced fallback save of fmResps should only ever run for the currently
+  // logged-in buyer. Supplier/admin views may hydrate fm_resps for display, but
+  // they must not try to write buyer decisions back to the table.
   useEffect(() => {
+    if (account.role !== "buyer" || !account.retailerId || !fmRespsLoaded) return;
+    if (!fmRespsSavePrimedRef.current) {
+      fmRespsSavePrimedRef.current = true;
+      return;
+    }
+    const chainId = retailers.find(r => r.id === account.retailerId)?.fm26ChainId;
+    if (!chainId) return;
     const t = setTimeout(() => {
       try {
-        // Walk the keyed structure and persist each row.
-        // Keys: { [retailerId]: { [supplierKey]: zone } }
-        for (const retId of Object.keys(fmResps || {})) {
-          const inner = fmResps[retId];
-          if (!inner) continue;
-          for (const supKey of Object.keys(inner)) {
-            const zone = inner[supKey];
-            // We need supplier_company_id to satisfy NOT NULL constraint.
-            // If supKey is 's1' style legacy, look up by legacy_fm_id; if it's a uuid, use directly.
-            const supCompany = companies.find(c => c.fmId === supKey || c.id === supKey);
-            const supplier_company_id = supCompany?.id;
-            const retailer_id = resolveRetailerIdFromChain(retId, retailers);
-            if (!supplier_company_id) continue;
-            if (!retailer_id) continue;
-            dbSaveFmResp({
-              retailer_id,
-              supplier_company_id,
-              zone,
-              status: zone,
-              meta: { supplier_legacy_id: supKey, chain_id: retId }
-            }).catch(e => console.warn("[saveFmResp]", e));
-          }
+        const inner = fmResps?.[chainId];
+        if (!inner) return;
+        for (const supKey of Object.keys(inner)) {
+          const zone = inner[supKey];
+          const supCompany = companies.find(c => c.fmId === supKey || c.id === supKey);
+          const supplier_company_id = supCompany?.id;
+          if (!supplier_company_id) continue;
+          dbSaveFmResp({
+            retailer_id: account.retailerId,
+            supplier_company_id,
+            zone,
+            status: zone,
+            meta: { supplier_legacy_id: supKey, chain_id: chainId }
+          }).catch(e => console.warn("[saveFmResp]", e));
         }
       } catch(e) { console.warn("[debounced fmResps save]", e); }
     }, 1500);
     return () => clearTimeout(t);
-  }, [fmResps, companies, retailers]);
+  }, [fmResps, companies, retailers, account.role, account.retailerId, fmRespsLoaded]);
+  useEffect(() => {
+    if (account.role !== "supplier" || refundedSendsForWallet.length === 0) return;
+    setRefundNotifs(prev => {
+      const known = new Set((prev || []).map(n => String(n.id)));
+      const additions = refundedSendsForWallet
+        .filter(s => !known.has(`refund-${s.id}`))
+        .map(s => ({
+          id: `refund-${s.id}`,
+          supplierId: mySupplierKey,
+          amount: getRefundAmount(s),
+          msg: `Zwrot za brak odczytu propozycji #${s.id} został zapisany na portfelu.`,
+          dismissed: false,
+        }));
+      return additions.length ? [...additions, ...(prev || [])] : prev;
+    });
+  }, [account.role, refundedSendsForWallet, mySupplierKey]);
   // UI-only state stays in localStorage:
   useEffect(() => {
     try {
@@ -1976,7 +2039,6 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // But UI filters historically used account.id (company UUID). Without this
   // alias, freshly saved offers/sends are invisible to their own creator.
   // For non-supplier roles legacySupplierId is null → falls back to account.id.
-  const mySupplierKey = account.legacySupplierId || account.id;
   const pkgUsed = sends.filter(s=>s.supplierId===mySupplierKey&&!["rejected","refunded","queued"].includes(s.status)).length;
   const pkgMax  = myLimit.max;
   const rem     = Math.max(0, pkgMax - pkgUsed);
@@ -3448,33 +3510,33 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
 
   const allSent=sends.filter(s=>(!s.supplierId||s.supplierId===accountId)&&!["queued","pending_moderation","rejected"].includes(s.status));
   const confirmed=allSent.filter(s=>["read","read_manual"].includes(s.status));
-  const expired=allSent.filter(s=>s.status==="unread_expired");
+  const allExpired=allSent.filter(s=>s.status==="unread_expired");
+  const expired=allExpired.filter(hasRefundMarker);
+  const refundedExpired = expired;
+  const pendingRefunds = allExpired.filter(s => !hasRefundMarker(s));
   const pkgOpt=PKG_OPTS.find(p=>p.id===co.pkg)||PKG_OPTS[2];
   const pct=Math.min(100,Math.round(allSent.length/pkgOpt.max*100));
   const totalEarned=confirmed.length*pkgOpt.perSend;
-  const totalRefunds=expired.length*pkgOpt.perSend;
+  const totalRefunds=refundedExpired.reduce((sum, s) => sum + getRefundAmount(s), 0);
 
   return (
     <div style={{ maxWidth:860 }}>
-      {/* Tab bar */}
       <div style={{ display:"flex",gap:0,marginBottom:20,background:"#f1f5f9",borderRadius:10,padding:4,width:"fit-content" }}>
-        {[["saldo","Saldo i pakiet"],["historia","Historia wysyłek"],["pakiety","Cennik i pakiety"]].map(([t,l])=>(
+        {[["saldo","Saldo i pakiet"],["historia","Historia wysylek"],["pakiety","Cennik i pakiety"]].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{ padding:"8px 18px",borderRadius:8,border:"none",background:tab===t?"white":"transparent",fontWeight:tab===t?600:400,fontSize:13,cursor:"pointer",fontFamily:"inherit",color:tab===t?"#1e293b":"#64748b",boxShadow:tab===t?"0 1px 4px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
 
-      {/* TAB: Saldo */}
       {tab==="saldo"&&<>
-        {/* Balance hero */}
         <div style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:14,padding:"22px 26px",marginBottom:16,display:"flex",gap:24,alignItems:"stretch",flexWrap:"wrap" }}>
           <div style={{ flex:1,minWidth:160 }}>
             <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>Saldo portfela</div>
             <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{wallet.balance}<span style={{ fontSize:16,fontWeight:400,marginLeft:4 }}>EUR</span></div>
-            <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>Środki na kolejne wysyłki · {getPlanById(co.pkg)?.perSend||40} EUR/szt.</div>
-            <div style={{ marginTop:14 }}><Btn onClick={()=>nav("wysylki")} style={{ background:"rgba(255,255,255,0.12)",color:"white",border:"1px solid rgba(255,255,255,0.2)" }}><Send size={13}/> Wyślij propozycję</Btn></div>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>Srodki na kolejne wysylki - {getPlanById(co.pkg)?.perSend||40} EUR/szt.</div>
+            <div style={{ marginTop:14 }}><Btn onClick={()=>nav("wysylki")} style={{ background:"rgba(255,255,255,0.12)",color:"white",border:"1px solid rgba(255,255,255,0.2)" }}><Send size={13}/> Wyslij propozycje</Btn></div>
           </div>
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",alignItems:"center" }}>
-            {[["Wysłano łącznie",allSent.length,"mailingów","rgba(255,255,255,0.07)","white"],["Potwierdzone odczyty",confirmed.length,"propozycji","rgba(5,150,105,0.22)","#6ee7b7"],["Zwroty",expired.length,"propozycji","rgba(239,68,68,0.18)","#fca5a5"]].map(([l,v,u,bg,c])=>(
+            {[["Wyslano lacznie",allSent.length,"mailingow","rgba(255,255,255,0.07)","white"],["Potwierdzone odczyty",confirmed.length,"propozycji","rgba(5,150,105,0.22)","#6ee7b7"],["Zwroty",refundedExpired.length,"propozycji","rgba(239,68,68,0.18)","#fca5a5"]].map(([l,v,u,bg,c])=>(
               <div key={l} style={{ padding:"12px 16px",background:bg,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",minWidth:100,textAlign:"center" }}>
                 <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
                 <div style={{ fontSize:10,color:c,opacity:0.75 }}>{u}</div>
@@ -3484,9 +3546,8 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           </div>
         </div>
 
-        {/* KPIs */}
         <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:16 }}>
-          {[["Efektywny koszt",`${totalEarned-totalRefunds} EUR`,"po zwrotach","#7c3aed"],["Zwroty",`+${totalRefunds} EUR`,"na portfel","#059669"],["Open rate",allSent.length?Math.round(confirmed.length/allSent.length*100)+"%":"0%","potwierdzonych",confirmed.length/Math.max(1,allSent.length)>=0.5?"#059669":"#d97706"]].map(([l,v,sub,c])=>(
+          {[["Efektywny koszt",`${totalEarned-totalRefunds} EUR`,"po zwrotach","#7c3aed"],["Zwroty",`+${totalRefunds} EUR`,pendingRefunds.length>0?"zaksiegowane / w toku":"na portfel","#059669"],["Open rate",allSent.length?Math.round(confirmed.length/allSent.length*100)+"%":"0%","potwierdzonych",confirmed.length/Math.max(1,allSent.length)>=0.5?"#059669":"#d97706"]].map(([l,v,sub,c])=>(
             <div key={l} style={{ padding:"12px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10 }}>
               <div style={{ fontSize:11,color:"#94a3b8",marginBottom:3 }}>{l}</div>
               <div style={{ fontSize:20,fontWeight:800,color:c }}>{v}</div>
@@ -3495,7 +3556,6 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           ))}
         </div>
 
-        {/* Active package */}
         <Card title="Aktywny pakiet" icon={CreditCard}>
           <div style={{ display:"flex",gap:14,alignItems:"center",flexWrap:"wrap" }}>
             <div style={{ padding:"12px 20px",background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,color:"white",flexShrink:0 }}>
@@ -3505,33 +3565,41 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
             </div>
             <div style={{ flex:1,minWidth:200 }}>
               <div style={{ display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5 }}>
-                <span style={{ color:"#64748b" }}>Użyto: {allSent.length}/{pkgOpt.max} wysyłek</span>
+                <span style={{ color:"#64748b" }}>Uzyto: {allSent.length}/{pkgOpt.max} wysylek</span>
                 <span style={{ fontWeight:600,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{pct}%</span>
               </div>
               <div style={{ background:"#e2e8f0",borderRadius:4,height:8,overflow:"hidden" }}><div style={{ height:"100%",background:pct>=90?"#dc2626":pct>=70?"#d97706":"#0d9488",borderRadius:4,width:`${pct}%` }}/></div>
               <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10 }}>
-                {[["Cena pakietu",`${pkgOpt.price} EUR`],["Ważny do",co.pkgExpiry||"2026-12-31"]].map(([l,v])=><div key={l} style={{ padding:"7px 10px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div><div style={{ fontWeight:600,fontSize:12 }}>{v}</div></div>)}
+                {[["Cena pakietu",`${pkgOpt.price} EUR`],["Wazny do",co.pkgExpiry||"2026-12-31"]].map(([l,v])=><div key={l} style={{ padding:"7px 10px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div><div style={{ fontWeight:600,fontSize:12 }}>{v}</div></div>)}
               </div>
             </div>
           </div>
-          <div style={{ marginTop:14 }}><Btn outline sm onClick={()=>setTab("pakiety")}><CreditCard size={12}/> Zmień pakiet</Btn></div>
+          <div style={{ marginTop:14 }}><Btn outline sm onClick={()=>setTab("pakiety")}><CreditCard size={12}/> Zmien pakiet</Btn></div>
         </Card>
 
-        {/* Refunds */}
         {expired.length>0&&<Card title="Zwroty za brak odczytu" icon={RotateCcw} style={{ borderLeft:"3px solid #059669" }}>
-          <Alrt type="success"><strong>{expired.length} zwroty = +{totalRefunds} EUR</strong> wróciły na portfel. Możesz je wykorzystać na wysyłki do innych sieci.</Alrt>
+          <Alrt type="success"><strong>{expired.length} zwroty = +{totalRefunds} EUR</strong> wrocily na portfel. Mozesz je wykorzystac na wysylki do innych sieci.</Alrt>
           {expired.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); return (
             <div key={s.id} style={{ display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:13 }}>
               <RotateCcw size={12} color="#059669"/>
-              <div style={{ flex:1 }}>{CEMOJI[o?.category]} <strong>{o?.title||o?.product}</strong> → {r?.name}</div>
-              <strong style={{ color:"#059669" }}>+{pkgOpt.perSend} EUR</strong>
+              <div style={{ flex:1 }}>{CEMOJI[o?.category]} <strong>{o?.title||o?.product}</strong>{" -> "}{r?.name}</div>
+              <strong style={{ color:"#059669" }}>+{getRefundAmount(s)} EUR</strong>
+            </div>
+          );})}
+        </Card>}
+        {pendingRefunds.length>0&&<Card title="Zwroty w toku" icon={RotateCcw} style={{ borderLeft:"3px solid #d97706" }}>
+          <Alrt type="warning"><strong>{pendingRefunds.length} {pendingRefunds.length===1?"zwrot jest":"zwroty sa"} w toku.</strong> Status propozycji jest juz wygaszony, ale zapis zwrotu jeszcze dojezdza do portfela.</Alrt>
+          {pendingRefunds.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); return (
+            <div key={s.id} style={{ display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:13 }}>
+              <RotateCcw size={12} color="#d97706"/>
+              <div style={{ flex:1 }}>{CEMOJI[o?.category]} <strong>{o?.title||o?.product}</strong>{" -> "}{r?.name}</div>
+              <strong style={{ color:"#d97706" }}>zwrot w toku</strong>
             </div>
           );})}
         </Card>}
 
-        {/* Transactions */}
         <Card title="Ostatnie transakcje" icon={FileText}>
-          {[...wallet.transactions, ...expired.map((s,i)=>({ id:`e${i}`,desc:`Zwrot: ${getOffer(s.offerId,offers)?.product||"propozycja"} → ${getRetailerLive(s.retailerId)?.name||"sieć"} (brak odczytu)`,amount:pkgOpt.perSend,date:s.sentAt||"2026-04",type:"refund" }))].map((t,i)=>(
+          {(wallet.transactions || []).map((t,i)=>(
             <div key={i} style={{ display:"flex",gap:10,alignItems:"center",padding:"9px 0",borderBottom:"1px solid #f1f5f9" }}>
               <div style={{ width:30,height:30,borderRadius:"50%",background:t.type==="refund"?"#d1fae5":t.type==="credit"?"#dbeafe":"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                 {t.type==="refund"?<RotateCcw size={12} color="#059669"/>:t.type==="credit"?<Plus size={12} color="#2563eb"/>:<X size={12} color="#dc2626"/>}
@@ -3543,11 +3611,10 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
         </Card>
       </>}
 
-      {/* TAB: Historia wysyłek */}
-      {tab==="historia"&&<Card title="Historia wysyłek" noPad>
+      {tab==="historia"&&<Card title="Historia wysylek" noPad>
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%",borderCollapse:"collapse" }}>
-            <thead><tr style={{ background:"#f8fafc" }}>{["Propozycja","Sieć","Tier","Data","Status","Kwota"].map(h=><th key={h} style={{ padding:"10px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap" }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background:"#f8fafc" }}>{["Propozycja","Siec","Tier","Data","Status","Kwota"].map(h=><th key={h} style={{ padding:"10px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap" }}>{h}</th>)}</tr></thead>
             <tbody>
               {allSent.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); const sc=STATUS_MAP[s.status]; const isConf=["read","read_manual"].includes(s.status); return (
                 <tr key={s.id} style={{ background:s.status==="unread_expired"?"#fef9f9":isConf?"#f0fdf4":"white" }}>
@@ -3559,16 +3626,15 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
                     <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
                     {(s.status==="pending_moderation"||s.status==="queued")&&<Info size={11} color={sc?.[1]} style={{verticalAlign:"middle"}}/>}
                   </span></td>
-                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{s.status==="unread_expired"?<span style={{ color:"#059669" }}>↩ +{pkgOpt.perSend} EUR</span>:isConf?<span style={{ color:"#1e293b" }}>{pkgOpt.perSend} EUR</span>:<span style={{ color:"#94a3b8" }}>oczekuje</span>}</td>
+                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>+{getRefundAmount(s)} EUR</span>:<span style={{ color:"#d97706" }}>zwrot w toku</span>):isConf?<span style={{ color:"#1e293b" }}>{pkgOpt.perSend} EUR</span>:<span style={{ color:"#94a3b8" }}>oczekuje</span>}</td>
                 </tr>
               );})}
-              {allSent.length===0&&<tr><td colSpan={6} style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>Brak wysyłek.</td></tr>}
+              {allSent.length===0&&<tr><td colSpan={6} style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>Brak wysylek.</td></tr>}
             </tbody>
           </table>
         </div>
       </Card>}
 
-      {/* TAB: Cennik */}
       {tab==="pakiety"&&<PageFinansePakiety co={co} setCo={setCo} fl={fl} buyPackage={buyPackage} orders={orders} wallet={wallet} pkgMax={pkgMax} pkgUsed={pkgUsed}/>}
     </div>
   );
@@ -4583,7 +4649,7 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=5).length;
         // FM chains: use fm26ChainId for fmResps lookup (keys are chX, not numeric retailer IDs)
         const _fmRetailers = (retailers||[]).filter(r => r.fm26Active && r.active!==false && r.fm26ChainId);
-        const _cr = _fmRetailers.filter(r => Object.values(fmResps[r.fm26ChainId]||{}).some(v=>v==="want"||v==="chance")).length;
+        const _cr = _fmRetailers.filter(r => Object.values(fmResps[r.fm26ChainId]||{}).some(hasBuyerResponse)).length;
         const _mt = fmSchedule ? Object.values(fmSchedule.res||{}).reduce((a,r)=>a+r.m.length,0) : 0;
         return (
           <div onClick={()=>nav("a-fm")} style={{ cursor:"pointer",background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap" }}>
@@ -7074,7 +7140,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   // Count how many chains have responded to at least some suppliers
   const chainsDone = _chains.filter(c => {
     const r = fmResps[c.id] || {};
-    return Object.values(r).some(v=>v==="want"||v==="chance");
+    return Object.values(r).some(hasBuyerResponse);
   }).length;
 
   const totalMeetings = fmAlgo ? Object.values(fmAlgo.res).reduce((a,r)=>a+r.m.length,0) : 0;
@@ -7274,10 +7340,10 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
       {/* ══ TAB: DANE WEJŚCIOWE ══ */}
       {tab==="dane" && (()=>{
         const _sr = _suppliers.filter(s=>_chains.filter(c=>fmPrefs[s.id]?.[c.id]==="star").length>=5).length;
-        const _cr = _chains.filter(c=>_suppliers.some(s=>["want","chance"].includes(fmResps[c.id]?.[s.id]))).length;
+        const _cr = _chains.filter(c=>_suppliers.some(s=>hasBuyerResponse(fmResps[c.id]?.[s.id]))).length;
         const _rp = Math.round((_sr/Math.max(_suppliers.length,1))*100);
         const noPickSuppliers = _suppliers.filter(s => Object.keys(fmPrefs[s.id]||{}).length === 0);
-        const noRespChains = _chains.filter(c => !_suppliers.some(s => fmResps[c.id]?.[s.id]));
+        const noRespChains = _chains.filter(c => !_suppliers.some(s => hasBuyerResponse(fmResps[c.id]?.[s.id])));
         // [B2B Round supplier-FM-UX] Confirmation tracking. A supplier is
         // "confirmed" when their company row has fm_selection_confirmed_at set.
         // Resolution by fmId/legacy_supplier_id/sup-<fmId> covers all the
@@ -7472,11 +7538,13 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                   const resps=(fmLateResps||{})[ch.id]||{};
                   const wantIds=Object.entries(resps).filter(([,v])=>v==="want").map(([k])=>k);
                   const chanceIds=Object.entries(resps).filter(([,v])=>v==="chance").map(([k])=>k);
+                  const removeIds=Object.entries(resps).filter(([,v])=>v==="remove").map(([k])=>k);
                   return(
                     <div key={ch.id} style={{padding:"8px 12px",background:"white",borderRadius:8,border:"1px solid #fde68a",marginBottom:6}}>
                       <div style={{fontWeight:700,fontSize:12,color:"#92400e",marginBottom:4}}>{ch.name}</div>
                       {wantIds.length>0&&<div style={{fontSize:11,color:"#059669"}}>✅ Chcę: {wantIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
                       {chanceIds.length>0&&<div style={{fontSize:11,color:"#d97706",marginTop:2}}>🤝 Daj szansę: {chanceIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
+                      {removeIds.length>0&&<div style={{fontSize:11,color:"#dc2626",marginTop:2}}>❌ Nie chcę: {removeIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
                     </div>
                   );
                 })}
