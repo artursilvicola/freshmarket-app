@@ -22,7 +22,11 @@ import {
   getAllCompanyTargetRetailers as dbGetAllCompanyTargetRetailers,
   setCompanyTargetRetailers as dbSetCompanyTargetRetailers,
   getFmWishlists as dbGetFmWishlists, saveFmWishlist as dbSaveFmWishlist,
+  deleteFmWishlist as dbDeleteFmWishlist,
   getFmLateResps as dbGetFmLateResps, saveFmLateResp as dbSaveFmLateResp,
+  deleteFmLateResp as dbDeleteFmLateResp,
+  getFmMessages as dbGetFmMessages, saveFmMessage as dbSaveFmMessage,
+  markFmMessageRead as dbMarkFmMessageRead,
   // [B2B Round 5] Per-action save lifecycle helpers
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
@@ -652,6 +656,61 @@ function buildTargetRetailerRowsFromPrefs(prefs = {}, retailers = []) {
   });
   return Array.from(seen.values());
 }
+function groupFmWishlists(rows = [], retailers = []) {
+  const grouped = {};
+  for (const row of rows || []) {
+    const chainKey = resolveChainIdFromRetailer(row.retailer_id, retailers, row.data || {});
+    if (!chainKey || !row.supplier_legacy_id) continue;
+    if (!grouped[chainKey]) grouped[chainKey] = [];
+    if (!grouped[chainKey].includes(row.supplier_legacy_id)) grouped[chainKey].push(row.supplier_legacy_id);
+  }
+  return grouped;
+}
+function groupFmLateResps(rows = [], retailers = []) {
+  const grouped = {};
+  for (const row of rows || []) {
+    const chainKey = resolveChainIdFromRetailer(row.retailer_id, retailers, row.data || {});
+    if (!chainKey || !row.supplier_legacy_id || !row.zone) continue;
+    if (!grouped[chainKey]) grouped[chainKey] = {};
+    grouped[chainKey][row.supplier_legacy_id] = row.zone;
+  }
+  return grouped;
+}
+function getFmThreadKey(userId) {
+  return userId ? `user:${userId}` : null;
+}
+function normalizeFmMessage(row) {
+  if (!row) return null;
+  const threadUserId =
+    row.to_user_id ||
+    row.data?.to_user_id ||
+    (typeof row.thread_key === "string" && row.thread_key.startsWith("user:") ? row.thread_key.slice(5) : null) ||
+    row.from_user_id ||
+    null;
+  const fromId = row.from_role === "admin" ? "admin" : row.from_user_id;
+  const toId = row.to_role === "admin" ? "admin" : threadUserId;
+  return {
+    id: row.id,
+    fromId,
+    toId,
+    text: row.body || "",
+    timestamp: new Date(row.created_at || Date.now()).getTime(),
+    read: Boolean(row.read_at),
+    fromRole: row.from_role || null,
+    toRole: row.to_role || null,
+    threadKey: row.thread_key || null,
+    toUserId: threadUserId,
+  };
+}
+function sortMessagesChronologically(items = []) {
+  return [...(items || [])].sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+}
+function mergeMessage(items = [], nextItem) {
+  if (!nextItem) return sortMessagesChronologically(items);
+  const map = new Map((items || []).map(m => [String(m.id), m]));
+  map.set(String(nextItem.id), nextItem);
+  return sortMessagesChronologically(Array.from(map.values()));
+}
 const BUYER_RESPONSE_VALUES = new Set(["want", "chance", "remove"]);
 function hasBuyerResponse(value) {
   return BUYER_RESPONSE_VALUES.has(value);
@@ -926,7 +985,7 @@ function getAiAnswer(text) {
 /* ══════════════════════════════════════════════════════════════════════════
    FLOATING CHAT — pływający dymek dla dostawców i kupców
 ══════════════════════════════════════════════════════════════════════════ */
-function FloatingChat({ account, messages, setMessages }) {
+function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const bottomRef = useRef(null);
@@ -940,30 +999,22 @@ function FloatingChat({ account, messages, setMessages }) {
   const unread = thread.filter(m => m.fromId === "admin" && !m.read).length;
 
   // Mark admin messages as read when opening chat
-  function handleOpen() {
-    setOpen(o => !o);
-    if (!open) {
-      setMessages(prev => prev.map(m =>
-        m.fromId === "admin" && m.toId === myId ? { ...m, read: true } : m
-      ));
+  async function handleOpen() {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen && typeof onMarkThreadRead === "function") {
+      await onMarkThreadRead(myId, account.role);
     }
   }
 
-  function send() {
+  async function send() {
     const t = text.trim();
     if (!t) return;
-    setMessages(prev => [...prev, {
-      id: Date.now(),
-      fromId: myId,
-      toId: "admin",
-      text: t,
-      timestamp: Date.now(),
-      read: false,
-    }]);
-    setText("");
+    const saved = await onSendMessage?.(t);
+    if (saved) setText("");
   }
 
-  function onKey(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }
+  function onKey(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } }
 
   useEffect(() => {
     if (open && bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
@@ -1016,7 +1067,7 @@ function FloatingChat({ account, messages, setMessages }) {
               rows={2}
               style={{ flex:1, padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:12, fontFamily:"inherit", resize:"none", outline:"none", background:"#f8fafc" }}
             />
-            <button onClick={send} disabled={!text.trim()} style={{ padding:"8px 12px", borderRadius:8, background:text.trim()?"#0d9488":"#e2e8f0", color:text.trim()?"white":"#94a3b8", border:"none", cursor:text.trim()?"pointer":"default", display:"flex", alignItems:"center" }}>
+            <button onClick={()=>void send()} disabled={!text.trim()} style={{ padding:"8px 12px", borderRadius:8, background:text.trim()?"#0d9488":"#e2e8f0", color:text.trim()?"white":"#94a3b8", border:"none", cursor:text.trim()?"pointer":"default", display:"flex", alignItems:"center" }}>
               <SendIcon size={14}/>
             </button>
           </div>
@@ -1038,7 +1089,7 @@ function FloatingChat({ account, messages, setMessages }) {
 /* ══════════════════════════════════════════════════════════════════════════
    PAGE ADMIN CHAT — widok administratora z listą wątków i oknem rozmowy
 ══════════════════════════════════════════════════════════════════════════ */
-function PageAdminChat({ messages, setMessages, runtimeAccounts }) {
+function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRead }) {
   const [selectedId, setSelectedId] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -1066,30 +1117,26 @@ function PageAdminChat({ messages, setMessages, runtimeAccounts }) {
   );
 
   // Mark as read when selecting
-  function selectUser(uid) {
+  async function selectUser(uid) {
     setSelectedId(uid);
     setReplyText("");
-    setMessages(prev => prev.map(m =>
-      m.fromId === uid && m.toId === "admin" ? { ...m, read: true } : m
-    ));
+    if (typeof onMarkThreadRead === "function") {
+      await onMarkThreadRead(uid, "admin");
+    }
   }
 
-  function sendReply() {
+  async function sendReply() {
     const t = replyText.trim();
     if (!t || !selectedId) return;
-    setMessages(prev => [...prev, {
-      id: Date.now(),
-      fromId: "admin",
-      toId: selectedId,
-      text: t,
-      timestamp: Date.now(),
-      read: false,
-    }]);
-    setReplyText("");
-    setAiLoading(false);
+    const targetRole = getAccount(selectedId).role;
+    const saved = await onSendReply?.(selectedId, targetRole, t);
+    if (saved) {
+      setReplyText("");
+      setAiLoading(false);
+    }
   }
 
-  function onKey(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendReply(); } }
+  function onKey(e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendReply(); } }
 
   useEffect(() => {
     if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
@@ -1123,7 +1170,7 @@ function PageAdminChat({ messages, setMessages, runtimeAccounts }) {
             const isActive = selectedId === userId;
             const lastMsg = messages.filter(m => (m.fromId===userId&&m.toId==="admin")||(m.fromId==="admin"&&m.toId===userId)).sort((a,b)=>b.timestamp-a.timestamp)[0];
             return (
-              <div key={userId} onClick={()=>selectUser(userId)}
+              <div key={userId} onClick={()=>void selectUser(userId)}
                 style={{ padding:"12px 14px", cursor:"pointer", background:isActive?"#f0fdfa":"transparent", borderBottom:"1px solid #f1f5f9", borderLeft:isActive?"3px solid #0d9488":"3px solid transparent", transition:"background 0.1s" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                   <div style={{ width:32, height:32, borderRadius:"50%", background:ROLE_COLORS_CHAT[acc.role]+"22", border:`1px solid ${ROLE_COLORS_CHAT[acc.role]}44`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:12, fontWeight:700, color:ROLE_COLORS_CHAT[acc.role] }}>
@@ -1232,7 +1279,7 @@ function PageAdminChat({ messages, setMessages, runtimeAccounts }) {
                 style={{ flex:1, padding:"8px 12px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13, fontFamily:"inherit", resize:"none", outline:"none", background:replyText?"#fffbeb":"white", transition:"background 0.2s" }}
               />
               <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                <button onClick={sendReply} disabled={!replyText.trim()} style={{ padding:"8px 14px", borderRadius:8, background:replyText.trim()?"#0d9488":"#e2e8f0", color:replyText.trim()?"white":"#94a3b8", border:"none", cursor:replyText.trim()?"pointer":"default", display:"flex", alignItems:"center", gap:6, fontSize:13, fontWeight:600 }}>
+                <button onClick={()=>void sendReply()} disabled={!replyText.trim()} style={{ padding:"8px 14px", borderRadius:8, background:replyText.trim()?"#0d9488":"#e2e8f0", color:replyText.trim()?"white":"#94a3b8", border:"none", cursor:replyText.trim()?"pointer":"default", display:"flex", alignItems:"center", gap:6, fontSize:13, fontWeight:600 }}>
                   <SendIcon size={14}/> Wyślij
                 </button>
                 {replyText && (
@@ -1712,15 +1759,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [refundNotifs, setRefundNotifs] = useState(() => {
     try { const s=localStorage.getItem("fm_refundNotifs"); return s?JSON.parse(s):REFUND_NOTIFS_SEED; } catch(e){ return REFUND_NOTIFS_SEED; }
   });
-  const [fmWishlists, setFmWishlists] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("fm_fmWishlists")) || {}; } catch(e){ return {}; }
-  });
+  const [fmWishlists, setFmWishlists] = useState({});
   // fmLateResps: late selections for a chain unlocked by admin after Sept 16
   // structure: { [chainId]: { [supplierId]: "want"|"chance"|"remove" } }
   // These do NOT feed the algorithm — admin-only reference for manual corrections
-  const [fmLateResps, setFmLateResps] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("fm_fmLateResps")) || {}; } catch(e){ return {}; }
-  });
+  const [fmLateResps, setFmLateResps] = useState({});
   // previewFor: set of supplier/chain IDs for which admin has enabled preview
   // structure: { suppliers: Set→Array, chains: Set→Array }
   const [previewFor, setPreviewFor] = useState(() => {
@@ -1729,9 +1772,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return s || { suppliers: [], chains: [] };
     } catch(e){ return { suppliers: [], chains: [] }; }
   });
-  const [messages, setMessages] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("fm_messages")) || []; } catch(e){ return []; }
-  });
+  const [messages, setMessages] = useState([]);
   const [aiModal, setAiModal] = useState(false);
   const [aiLoad,  setAiLoad]  = useState(false);
 
@@ -1816,6 +1857,126 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     })();
     return () => { canceled = true; };
   }, [companiesLoaded, retailersLoaded, companies, retailers]);
+  useEffect(() => {
+    if (!retailersLoaded) return;
+    if (!["admin", "buyer"].includes(account.role)) {
+      setFmWishlists({});
+      return;
+    }
+    let canceled = false;
+    (async () => {
+      try {
+        const retailerId = account.role === "buyer" ? account.retailerId : null;
+        let rows = await dbGetFmWishlists(retailerId);
+        if (canceled) return;
+        const legacy = (() => {
+          try { return JSON.parse(localStorage.getItem("fm_fmWishlists")) || {}; } catch (e) { return {}; }
+        })();
+        const allowedChainId = account.role === "buyer"
+          ? (retailers.find(r => r.id === account.retailerId)?.fm26ChainId || account.chainId || null)
+          : null;
+        const legacyRows = [];
+        Object.entries(legacy || {}).forEach(([chainId, supplierIds]) => {
+          if (allowedChainId && chainId !== allowedChainId) return;
+          const mappedRetailerId = resolveRetailerIdFromChain(chainId, retailers);
+          if (!mappedRetailerId) return;
+          (supplierIds || []).forEach((supplierLegacyId) => {
+            if (!supplierLegacyId) return;
+            legacyRows.push({
+              retailer_id: mappedRetailerId,
+              supplier_legacy_id: supplierLegacyId,
+              data: { chain_id: chainId, migrated_from_local_storage: true },
+            });
+          });
+        });
+        if (legacyRows.length) {
+          const existing = new Set((rows || []).map(r => `${r.retailer_id}::${r.supplier_legacy_id}`));
+          const missing = legacyRows.filter(r => !existing.has(`${r.retailer_id}::${r.supplier_legacy_id}`));
+          if (missing.length) {
+            await Promise.all(missing.map(row => dbSaveFmWishlist(row).catch(e => console.warn("[migrate fmWishlists]", e))));
+            rows = [...(rows || []), ...missing];
+          }
+          try { localStorage.removeItem("fm_fmWishlists"); } catch (e) {}
+        }
+        if (!canceled) setFmWishlists(groupFmWishlists(rows, retailers));
+      } catch (e) {
+        console.warn("[load fmWishlists]", e);
+        if (!canceled) setFmWishlists({});
+      }
+    })();
+    return () => { canceled = true; };
+  }, [retailersLoaded, retailers, account.role, account.retailerId, account.chainId]);
+  useEffect(() => {
+    if (!retailersLoaded) return;
+    if (!["admin", "buyer"].includes(account.role)) {
+      setFmLateResps({});
+      return;
+    }
+    let canceled = false;
+    (async () => {
+      try {
+        const retailerId = account.role === "buyer" ? account.retailerId : null;
+        let rows = await dbGetFmLateResps(retailerId);
+        if (canceled) return;
+        const legacy = (() => {
+          try { return JSON.parse(localStorage.getItem("fm_fmLateResps")) || {}; } catch (e) { return {}; }
+        })();
+        const allowedChainId = account.role === "buyer"
+          ? (retailers.find(r => r.id === account.retailerId)?.fm26ChainId || account.chainId || null)
+          : null;
+        const legacyRows = [];
+        Object.entries(legacy || {}).forEach(([chainId, supplierMap]) => {
+          if (allowedChainId && chainId !== allowedChainId) return;
+          const mappedRetailerId = resolveRetailerIdFromChain(chainId, retailers);
+          if (!mappedRetailerId) return;
+          Object.entries(supplierMap || {}).forEach(([supplierLegacyId, zone]) => {
+            if (!supplierLegacyId || !zone) return;
+            legacyRows.push({
+              retailer_id: mappedRetailerId,
+              supplier_legacy_id: supplierLegacyId,
+              zone,
+              data: { chain_id: chainId, migrated_from_local_storage: true },
+            });
+          });
+        });
+        if (legacyRows.length) {
+          const existing = new Set((rows || []).map(r => `${r.retailer_id}::${r.supplier_legacy_id}`));
+          const missing = legacyRows.filter(r => !existing.has(`${r.retailer_id}::${r.supplier_legacy_id}`));
+          if (missing.length) {
+            await Promise.all(missing.map(row => dbSaveFmLateResp(row).catch(e => console.warn("[migrate fmLateResps]", e))));
+            rows = [...(rows || []), ...missing];
+          }
+          try { localStorage.removeItem("fm_fmLateResps"); } catch (e) {}
+        }
+        if (!canceled) setFmLateResps(groupFmLateResps(rows, retailers));
+      } catch (e) {
+        console.warn("[load fmLateResps]", e);
+        if (!canceled) setFmLateResps({});
+      }
+    })();
+    return () => { canceled = true; };
+  }, [retailersLoaded, retailers, account.role, account.retailerId, account.chainId]);
+  useEffect(() => {
+    if (!account?.id) {
+      setMessages([]);
+      return;
+    }
+    let canceled = false;
+    (async () => {
+      try {
+        const rows = account.role === "admin"
+          ? await dbGetFmMessages({ limit: 300 })
+          : await dbGetFmMessages({ threadKey: getFmThreadKey(account.id), limit: 200 });
+        if (canceled) return;
+        try { localStorage.removeItem("fm_messages"); } catch (e) {}
+        setMessages(sortMessagesChronologically((rows || []).map(normalizeFmMessage).filter(Boolean)));
+      } catch (e) {
+        console.warn("[load fmMessages]", e);
+        if (!canceled) setMessages([]);
+      }
+    })();
+    return () => { canceled = true; };
+  }, [account.id, account.role]);
   const fmChains = useMemo(() =>
     retailers
       .filter(r => r.fm26Active && r.active !== false && r.fm26ChainId)
@@ -1955,7 +2116,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   //   - offers / sends:        synced through setOffers / setSends wrappers
   //   - fmSchedule:            debounced save to fm_settings.schedule
   //   - fmResps:               saved per-action by handlers (Accept/Reject); also debounced fallback below
-  //   - UI-only state (previewFor, refundNotifs, messages): localStorage OK
+  //   - fmWishlists/fmLateResps/messages: hydrated from Supabase
+  //   - UI-only state (previewFor, refundNotifs): localStorage OK
   useEffect(() => {
     fmRespsSavePrimedRef.current = false;
   }, [account.id, account.role]);
@@ -2020,11 +2182,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     try {
       localStorage.setItem("fm_refundNotifs", JSON.stringify(refundNotifs));
       localStorage.setItem("fm_previewFor",   JSON.stringify(previewFor));
-      localStorage.setItem("fm_messages",     JSON.stringify(messages));
-      localStorage.setItem("fm_fmWishlists",  JSON.stringify(fmWishlists));
-      localStorage.setItem("fm_fmLateResps",  JSON.stringify(fmLateResps));
     } catch(e){}
-  }, [refundNotifs, previewFor, messages, fmWishlists, fmLateResps]);
+  }, [refundNotifs, previewFor]);
 
   // pkgMax = limit for current supplier account
   const myLimit = limits.find(l=>l.id===account.id) || {
@@ -2058,8 +2217,6 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     }]})));
     setCompanies(COMPANIES_DB);
     setRefundNotifs(REFUND_NOTIFS_SEED);
-    setFmWishlists({});
-    setFmLateResps({});
     setPreviewFor({ suppliers: [], chains: [] });
     fl("Dane testowe zresetowane do domyślnych.");
   }
@@ -2288,6 +2445,62 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     return ts;
   }
 
+  async function markThreadRead(targetUserId, recipientRole = account.role) {
+    if (!targetUserId) return;
+    const unreadIds = (messages || [])
+      .filter(m => !m.read)
+      .filter(m => recipientRole === "admin"
+        ? (m.fromId === targetUserId && m.toId === "admin")
+        : (m.fromId === "admin" && m.toId === targetUserId))
+      .map(m => m.id);
+    if (!unreadIds.length) return;
+    try {
+      await Promise.all(unreadIds.map(id => dbMarkFmMessageRead(id)));
+      setMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, read: true } : m));
+    } catch (e) {
+      console.warn("[markFmMessageRead]", e);
+    }
+  }
+  async function sendChatMessage(body) {
+    const text = String(body || "").trim();
+    if (!text || !account?.id || account.role === "admin" || initialRole === "admin") return null;
+    try {
+      const created = await dbSaveFmMessage({
+        thread_key: getFmThreadKey(account.id),
+        from_role: account.role,
+        to_role: "admin",
+        to_user_id: null,
+        body: text,
+        data: { thread_user_id: account.id }
+      });
+      const msg = normalizeFmMessage(created);
+      setMessages(prev => mergeMessage(prev, msg));
+      return msg;
+    } catch (e) {
+      console.warn("[sendChatMessage]", e);
+      return null;
+    }
+  }
+  async function sendAdminReply(targetUserId, targetRole, body) {
+    const text = String(body || "").trim();
+    if (!text || !targetUserId) return null;
+    try {
+      const created = await dbSaveFmMessage({
+        thread_key: getFmThreadKey(targetUserId),
+        from_role: "admin",
+        to_role: targetRole || "supplier",
+        to_user_id: targetUserId,
+        body: text,
+        data: { to_user_id: targetUserId }
+      });
+      const msg = normalizeFmMessage(created);
+      setMessages(prev => mergeMessage(prev, msg));
+      return msg;
+    } catch (e) {
+      console.warn("[sendAdminReply]", e);
+      return null;
+    }
+  }
   function dismissRefund(id){ setRefundNotifs(n=>n.map(x=>x.id===id?{...x,dismissed:true}:x)); }
   async function runAI(){ setAiLoad(true); await new Promise(r=>setTimeout(r,2200)); setCo(prev=>({...prev,description:"Eksporter owoców i warzyw. Własna pakowalnia z sortownią optyczną i chłodnią. Dostawy retail-ready do sieci CEE, DE, NL.",completeness:96})); setAiLoad(false); setAiModal(false); fl("AI uzupełnił opis firmy."); }
   function updateLimit(id,changes){ setLimits(prev=>prev.map(l=>l.id===id?{...l,...changes}:l)); }
@@ -2332,7 +2545,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies}/>;
-    if(pg==="a-chat")       return <PageAdminChat messages={messages} setMessages={setMessages} runtimeAccounts={runtimeAccounts}/>;
+    if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
@@ -2473,7 +2686,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
           {renderPage()}
         </main>
         {(role==="supplier"||role==="buyer")&&(
-          <FloatingChat account={account} messages={messages} setMessages={setMessages}/>
+          <FloatingChat account={account} messages={messages} onSendMessage={sendChatMessage} onMarkThreadRead={markThreadRead}/>
         )}
       </div>
     </div>
@@ -6291,10 +6504,49 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
   }
   function toggleWish(sid) {
     if (!setFmWishlists) return;
+    const retailer_id = resolveRetailerIdFromChain(chainId, retailers);
+    if (!retailer_id) return;
+    const exists = wishList.includes(sid);
     setFmWishlists(prev => {
       const cur = prev[chainId] || [];
-      const updated = cur.includes(sid) ? cur.filter(x=>x!==sid) : [...cur, sid];
+      const updated = exists ? cur.filter(x=>x!==sid) : [...cur, sid];
       return { ...prev, [chainId]: updated };
+    });
+    const op = exists
+      ? dbDeleteFmWishlist({ retailer_id, supplier_legacy_id: sid })
+      : dbSaveFmWishlist({ retailer_id, supplier_legacy_id: sid, data: { chain_id: chainId } });
+    op.catch(e => {
+      console.warn("[save buyer fm wishlist]", e);
+      setFmWishlists(prev => {
+        const cur = prev[chainId] || [];
+        const rolledBack = exists ? [...cur, sid] : cur.filter(x => x !== sid);
+        return { ...prev, [chainId]: rolledBack };
+      });
+    });
+  }
+  function setLateResp(sid, nextVal) {
+    if (!setFmLateResps) return;
+    const retailer_id = resolveRetailerIdFromChain(chainId, retailers);
+    if (!retailer_id) return;
+    const currentVal = (fmLateResps?.[chainId] || {})[sid];
+    const finalVal = currentVal === nextVal ? null : nextVal;
+    setFmLateResps(prev => {
+      const nextChain = { ...((prev && prev[chainId]) || {}) };
+      if (finalVal) nextChain[sid] = finalVal;
+      else delete nextChain[sid];
+      return { ...(prev || {}), [chainId]: nextChain };
+    });
+    const op = finalVal
+      ? dbSaveFmLateResp({ retailer_id, supplier_legacy_id: sid, zone: finalVal, data: { chain_id: chainId } })
+      : dbDeleteFmLateResp({ retailer_id, supplier_legacy_id: sid });
+    op.catch(e => {
+      console.warn("[save buyer fm late resp]", e);
+      setFmLateResps(prev => {
+        const nextChain = { ...((prev && prev[chainId]) || {}) };
+        if (currentVal) nextChain[sid] = currentVal;
+        else delete nextChain[sid];
+        return { ...(prev || {}), [chainId]: nextChain };
+      });
     });
   }
 
@@ -6518,7 +6770,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
                     <div style={{ display:"flex",gap:5 }}>
                       {[["want","✅ Chcę","#059669"],["chance","🤝 Daj szansę","#d97706"]].map(([val,lbl,col])=>(
                         <button key={val}
-                          onClick={()=>setFmLateResps&&setFmLateResps(prev=>({...prev,[chainId]:{...(prev[chainId]||{}),[s.id]:resp===val?undefined:val}}))}
+                          onClick={()=>setLateResp(s.id, val)}
                           style={{ padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",border:`${resp===val?"2":"1"}px solid ${resp===val?col:"#e2e8f0"}`,background:resp===val?col+"15":"white",color:resp===val?col:"#64748b" }}>
                           {lbl}
                         </button>

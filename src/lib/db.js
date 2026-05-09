@@ -926,14 +926,24 @@ export async function saveFmLateResp({ retailer_id, supplier_legacy_id, zone, da
   return row;
 }
 
+export async function deleteFmLateResp({ retailer_id, supplier_legacy_id }) {
+  const { error } = await supabase
+    .from("fm_late_resps")
+    .delete()
+    .eq("retailer_id", retailer_id)
+    .eq("supplier_legacy_id", supplier_legacy_id);
+  if (error) throw error;
+}
+
 // ===================================================================
 // FM 2026 — MESSAGES (konwersacje admin/supplier/buyer)
 // ===================================================================
 
-export async function getFmMessages({ threadKey, fromUserId, limit = 100 } = {}) {
+export async function getFmMessages({ threadKey, fromUserId, toUserId, limit = 100 } = {}) {
   let q = supabase.from("fm_messages").select("*").order("created_at", { ascending: false });
   if (threadKey) q = q.eq("thread_key", threadKey);
   if (fromUserId) q = q.eq("from_user_id", fromUserId);
+  if (toUserId) q = q.eq("to_user_id", toUserId);
   q = q.limit(limit);
   const { data, error } = await q;
   if (error) {
@@ -943,13 +953,14 @@ export async function getFmMessages({ threadKey, fromUserId, limit = 100 } = {})
   return data || [];
 }
 
-export async function saveFmMessage({ thread_key, from_role, to_role, body, data }) {
+export async function saveFmMessage({ thread_key, from_role, to_role, to_user_id = null, body, data }) {
   const { data: { user } } = await supabase.auth.getUser();
   const row = {
     thread_key,
     from_role,
     from_user_id: user?.id || null,
     to_role,
+    to_user_id,
     body,
     data: data || {},
   };
