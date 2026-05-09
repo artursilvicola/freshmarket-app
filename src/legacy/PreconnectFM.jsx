@@ -1504,10 +1504,16 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             logo: r.logo_url || r.logo || null,
           }));
           _setCompaniesRaw(mapped);
-        } else {
-          // Empty DB — seed COMPANIES_DB and upsert
+        } else if (!import.meta.env.PROD) {
+          // [B2B Round ghost-data-cleanup] Seed bootstrap dev/local only.
+          // COMPANIES_DB contains sup-s1/sup-s14 ghost-suppliers. Production
+          // should never auto-seed these — if companies table is somehow empty
+          // (shouldn't happen post-Round-5.6), state stays [] and UI shows
+          // empty state. Admin sets up real companies via /register.
           await bulkUpsertCompanies(COMPANIES_DB);
           _setCompaniesRaw(COMPANIES_DB);
+        } else {
+          _setCompaniesRaw([]);
         }
         try { localStorage.removeItem("fm_companies"); } catch(e){}
       } catch (e) { console.warn("[load companies]", e); }
@@ -1694,7 +1700,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             };
           });
           _setRetailersRaw(mapped);
-        } else {
+        } else if (!import.meta.env.PROD) {
+          // [B2B Round ghost-data-cleanup] Same gating as companies.
+          // Production retailers are admin-managed; auto-seed should not run.
           const seed = RETAILERS.map(r => ({
             ...r, active: true, fm26ChainId: RETAILER_TO_CHAIN[r.id] || null,
             fm26Active: !!RETAILER_TO_CHAIN[r.id],
@@ -1702,6 +1710,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
           }));
           await bulkUpsertRetailers(seed);
           _setRetailersRaw(seed);
+        } else {
+          _setRetailersRaw([]);
         }
         try { localStorage.removeItem("fm_retailers"); } catch(e){}
       } catch (e) { console.warn("[load retailers]", e); }
@@ -2206,6 +2216,15 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const nav = (p,id) => { setPg(p); setSid(id||null); setFlash(null); };
 
   function resetToSeed() {
+    // [B2B Round ghost-data-cleanup] Hard-block resetToSeed in production.
+    // The function was useful for staging/QA but in production it would
+    // re-inject SENDS_INIT/OFFERS_INIT/COMPANIES_DB which contain
+    // sup-s1/sup-s14 ghost suppliers — undoing any cleanup. Admin who
+    // really needs to reset prod must do it consciously via Supabase SQL.
+    if (import.meta.env.PROD) {
+      fl("Reset danych testowych jest wyłączony w produkcji. Skontaktuj się z deweloperem aby wykonać reset bezpośrednio w bazie.", "error");
+      return;
+    }
     ["fm_offers","fm_sends","fm_fmPrefs","fm_fmResps","fm_fmSchedule","fm_retailers","fm_companies","fm_refundNotifs","fm_fmWishlists","fm_fmLateResps","fm_previewFor","fm_messages"].forEach(k=>localStorage.removeItem(k));
     setOffers(OFFERS_INIT);
     setSends(SENDS_INIT);
