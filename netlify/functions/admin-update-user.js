@@ -20,6 +20,8 @@
 
 import { createClient } from "@supabase/supabase-js";
 
+const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
+
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
@@ -85,29 +87,72 @@ export const handler = async (event) => {
   } = body;
 
   if (!user_id) return errJson(400, "Brak user_id");
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedName = normalizeText(name);
+  const normalizedPhone = normalizeText(phone);
+  const normalizedPosition = normalizeText(position);
+  const normalizedRetailerId = retailer_id ? Number(retailer_id) : null;
+  const normalizedBuyerCategories = normalizeBuyerCategories(buyer_categories);
+
+  if (role === "buyer") {
+    if (!normalizedName) return errJson(400, "Kupiec musi mieć imię i nazwisko.");
+    if (!normalizedEmail) return errJson(400, "Kupiec musi mieć adres e-mail.");
+    if (!normalizedRetailerId) return errJson(400, "Kupiec musi być przypisany do jednej sieci handlowej.");
+    if (active !== false && normalizedBuyerCategories.length === 0) {
+      return errJson(400, "Aktywny kupiec musi mieć przynajmniej jedną kategorię.");
+    }
+  }
+
+  const { data: targetProfile, error: targetErr } = await supaSvc
+    .from("profiles")
+    .select("id, role, email")
+    .eq("id", user_id)
+    .maybeSingle();
+  if (targetErr || !targetProfile) {
+    return errJson(404, "Nie znaleziono profilu kupca do aktualizacji.");
+  }
+  if (targetProfile.role !== "buyer" || role !== "buyer") {
+    return errJson(400, "Ta ścieżka służy tylko do zarządzania kupcami.");
+  }
+
+  const { data: retailer, error: rErr } = await supaSvc
+    .from("retailers")
+    .select("id")
+    .eq("id", normalizedRetailerId)
+    .maybeSingle();
+  if (rErr || !retailer) return errJson(400, "Wybrana sieć handlowa nie istnieje.");
+
+  const { data: profiles, error: dupErr } = await supaSvc
+    .from("profiles")
+    .select("id, email")
+    .eq("role", "buyer")
+    .not("email", "is", null);
+  if (dupErr) return errJson(500, "Nie udało się sprawdzić duplikatów kupców.");
+  const duplicate = (profiles || []).find((p) => p.id !== user_id && normalizeEmail(p.email) === normalizedEmail);
+  if (duplicate) return errJson(409, "Kupiec z tym adresem e-mail już istnieje.");
 
   const authPatch = {
-    user_metadata: { name, role, company_id, retailer_id },
+    user_metadata: { name: normalizedName, role, company_id, retailer_id: normalizedRetailerId },
   };
-  if (email) authPatch.email = email;
+  if (normalizedEmail) authPatch.email = normalizedEmail;
 
   const { error: authErr } = await supaSvc.auth.admin.updateUserById(user_id, authPatch);
   if (authErr) {
-    return errJson(500, "Nie udalo sie zaktualizowac auth.users: " + authErr.message);
+    return errJson(authErr.message?.toLowerCase().includes("already been registered") ? 409 : 500, "Nie udalo sie zaktualizowac auth.users: " + authErr.message);
   }
 
   const profilePatch = {
     id: user_id,
-    email,
+    email: normalizedEmail,
     role,
-    name,
-    phone,
-    position,
+    name: normalizedName,
+    phone: normalizedPhone,
+    position: normalizedPosition,
     company_id,
-    retailer_id,
+    retailer_id: normalizedRetailerId,
     active,
     fm26_active,
-    buyer_categories,
+    buyer_categories: normalizedBuyerCategories,
     updated_at: new Date().toISOString(),
   };
   const { data: saved, error: saveErr } = await supaSvc
@@ -136,4 +181,19 @@ function errJson(code, msg) {
     headers: { ...cors, "Content-Type": "application/json" },
     body: JSON.stringify({ error: msg }),
   };
+}
+
+function normalizeText(value) {
+  if (value == null) return null;
+  const next = String(value).trim();
+  return next || null;
+}
+
+function normalizeEmail(value) {
+  const next = normalizeText(value);
+  return next ? next.toLowerCase() : null;
+}
+
+function normalizeBuyerCategories(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).filter((v) => BUYER_CATEGORY_OPTIONS.has(v)))];
 }

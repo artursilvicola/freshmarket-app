@@ -32,6 +32,8 @@
 
 import { createClient } from "@supabase/supabase-js";
 
+const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
+
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
@@ -94,9 +96,16 @@ export const handler = async (event) => {
     name = null,
     company_id = null,
     retailer_id = null,
+    phone = null,
+    position = null,
+    active = true,
+    fm26_active = false,
+    buyer_categories = [],
     send_magic_link = true,
   } = body;
-  if (!email) return errJson(400, "Brak email");
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedName = normalizeText(name);
+  if (!normalizedEmail) return errJson(400, "Brak email");
   if (!["admin", "supplier", "buyer"].includes(role)) {
     return errJson(400, "Niepoprawna role (admin/supplier/buyer)");
   }
@@ -106,29 +115,58 @@ export const handler = async (event) => {
   if (role === "buyer" && !retailer_id) {
     return errJson(400, "buyer wymaga retailer_id");
   }
+  if (role === "buyer" && !normalizedName) {
+    return errJson(400, "buyer wymaga imienia i nazwiska");
+  }
+
+  if (role === "buyer") {
+    const { data: retailer, error: rErr } = await supaSvc
+      .from("retailers")
+      .select("id")
+      .eq("id", Number(retailer_id))
+      .maybeSingle();
+    if (rErr || !retailer) return errJson(400, "Wybrana sieć handlowa nie istnieje.");
+
+    const { data: profiles, error: dupErr } = await supaSvc
+      .from("profiles")
+      .select("id, email")
+      .eq("role", "buyer")
+      .not("email", "is", null);
+    if (dupErr) return errJson(500, "Nie udało się sprawdzić duplikatów kupców.");
+    const duplicate = (profiles || []).find((p) => normalizeEmail(p.email) === normalizedEmail);
+    if (duplicate) return errJson(409, "Kupiec z tym adresem e-mail już istnieje.");
+  }
 
   // 3. Stworz auth.users
   const { data: created, error: cErr } = await supaSvc.auth.admin.createUser({
-    email,
+    email: normalizedEmail,
     email_confirm: true, // omijamy email confirmation - admin tworzy konta
-    user_metadata: { name, role, company_id, retailer_id },
+    user_metadata: { name: normalizedName, role, company_id, retailer_id: retailer_id ? Number(retailer_id) : null },
   });
   if (cErr || !created?.user) {
-    return errJson(500, "Nie udalo sie utworzyc usera: " + (cErr?.message || ""));
+    return errJson(cErr?.message?.toLowerCase().includes("already been registered") ? 409 : 500, "Nie udalo sie utworzyc usera: " + (cErr?.message || ""));
   }
 
   // 4. Upsert profile (na pewniaka, nawet jesli trigger handle_new_user istnieje)
   const profileRow = {
     id: created.user.id,
-    email,
+    email: normalizedEmail,
     role,
-    name,
+    name: normalizedName,
     company_id,
-    retailer_id,
+    retailer_id: retailer_id ? Number(retailer_id) : null,
+    phone: normalizeText(phone),
+    position: normalizeText(position),
+    active: active !== false,
+    fm26_active: !!fm26_active,
+    buyer_categories: normalizeBuyerCategories(buyer_categories),
+    updated_at: new Date().toISOString(),
   };
-  const { error: upErr } = await supaSvc
+  const { data: savedProfile, error: upErr } = await supaSvc
     .from("profiles")
-    .upsert(profileRow, { onConflict: "id" });
+    .upsert(profileRow, { onConflict: "id" })
+    .select()
+    .single();
   if (upErr) {
     // Konto powstalo, profile nie - zwrocmy bledy z context'em
     return errJson(500, "Konto utworzone, ale update profile nie powiodl sie: " + upErr.message);
@@ -158,11 +196,12 @@ export const handler = async (event) => {
 
   return okJson({
     user_id: created.user.id,
-    email,
+    email: normalizedEmail,
     role,
     company_id,
-    retailer_id,
+    retailer_id: retailer_id ? Number(retailer_id) : null,
     magic_link,
+    profile: savedProfile,
   });
 };
 
@@ -180,4 +219,19 @@ function errJson(code, msg) {
     headers: { ...cors, "Content-Type": "application/json" },
     body: JSON.stringify({ error: msg }),
   };
+}
+
+function normalizeText(value) {
+  if (value == null) return null;
+  const next = String(value).trim();
+  return next || null;
+}
+
+function normalizeEmail(value) {
+  const next = normalizeText(value);
+  return next ? next.toLowerCase() : null;
+}
+
+function normalizeBuyerCategories(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).filter((v) => BUYER_CATEGORY_OPTIONS.has(v)))];
 }

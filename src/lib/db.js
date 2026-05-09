@@ -11,6 +11,51 @@
  */
 import { supabase } from "./supabase";
 
+const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
+
+function normalizeText(value) {
+  if (value == null) return null;
+  const next = String(value).trim();
+  return next || null;
+}
+
+function normalizeEmail(value) {
+  const next = normalizeText(value);
+  return next ? next.toLowerCase() : null;
+}
+
+function normalizeBuyerCategories(values = []) {
+  return [...new Set((Array.isArray(values) ? values : []).filter((v) => BUYER_CATEGORY_OPTIONS.has(v)))];
+}
+
+function validateBuyerAccountPayload(payload, { allowRetailerless = false } = {}) {
+  const name = normalizeText(payload.name);
+  const email = normalizeEmail(payload.email);
+  const phone = normalizeText(payload.phone);
+  const position = normalizeText(payload.position);
+  const retailer_id = Number(payload.retailer_id);
+  const buyer_categories = normalizeBuyerCategories(payload.buyer_categories);
+  const active = payload.active !== false;
+  const fm26_active = !!payload.fm26_active;
+
+  if (!name) throw new Error("Kupiec musi mieć imię i nazwisko.");
+  if (!email) throw new Error("Kupiec musi mieć adres e-mail.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Adres e-mail kupca ma niepoprawny format.");
+  if (!allowRetailerless && !Number.isInteger(retailer_id)) throw new Error("Kupiec musi być przypisany do jednej sieci handlowej.");
+  if (active && buyer_categories.length === 0) throw new Error("Aktywny kupiec musi mieć przypisaną przynajmniej jedną kategorię.");
+
+  return {
+    name,
+    email,
+    phone,
+    position,
+    retailer_id,
+    buyer_categories,
+    active,
+    fm26_active,
+  };
+}
+
 // ===================================================================
 // COMPANIES
 // ===================================================================
@@ -124,15 +169,16 @@ export async function updateRetailer(id, patch) {
 
 export async function updateBuyerProfile(id, patch) {
   if (!id) throw new Error("updateBuyerProfile wymaga id");
+  const normalized = validateBuyerAccountPayload(patch);
   const row = {
-    name: patch.name ?? null,
-    email: patch.email ?? null,
-    phone: patch.phone ?? null,
-    position: patch.position ?? null,
-    retailer_id: patch.retailer_id ?? null,
-    active: patch.active !== false,
-    fm26_active: !!patch.fm26_active,
-    buyer_categories: patch.buyer_categories || [],
+    name: normalized.name,
+    email: normalized.email,
+    phone: normalized.phone,
+    position: normalized.position,
+    retailer_id: normalized.retailer_id,
+    active: normalized.active,
+    fm26_active: normalized.fm26_active,
+    buyer_categories: normalized.buyer_categories,
     role: "buyer",
     updated_at: new Date().toISOString(),
   };
@@ -149,11 +195,12 @@ export async function updateBuyerProfile(id, patch) {
 export async function updateOwnBuyerProfile(id, patch) {
   if (!id) throw new Error("updateOwnBuyerProfile wymaga id");
   const row = {
-    name: patch.name ?? null,
-    phone: patch.phone ?? null,
-    position: patch.position ?? null,
+    name: normalizeText(patch.name),
+    phone: normalizeText(patch.phone),
+    position: normalizeText(patch.position),
     updated_at: new Date().toISOString(),
   };
+  if (!row.name) throw new Error("Imię i nazwisko są wymagane.");
   const { data, error } = await supabase
     .from("profiles")
     .update(row)
@@ -177,6 +224,16 @@ export async function createBuyerAccount({
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
   if (!token) throw new Error("Brak aktywnej sesji admina");
+  const normalized = validateBuyerAccountPayload({
+    email,
+    name,
+    retailer_id,
+    phone,
+    position,
+    buyer_categories,
+    active,
+    fm26_active,
+  });
 
   const res = await fetch("/.netlify/functions/admin-create-user", {
     method: "POST",
@@ -185,26 +242,21 @@ export async function createBuyerAccount({
       Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      email,
+      email: normalized.email,
       role: "buyer",
-      name,
-      retailer_id: Number(retailer_id),
+      name: normalized.name,
+      retailer_id: normalized.retailer_id,
+      phone: normalized.phone,
+      position: normalized.position,
+      buyer_categories: normalized.buyer_categories,
+      active: normalized.active,
+      fm26_active: normalized.fm26_active,
       send_magic_link: true,
     }),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json?.error || "Nie udało się utworzyć kupca");
-  const profile = await updateBuyerProfile(json.user_id, {
-    name,
-    email,
-    phone,
-    position,
-    retailer_id,
-    active,
-    fm26_active,
-    buyer_categories,
-  });
-  return { ...json, profile };
+  return json;
 }
 
 export async function adminUpdateBuyerAccount({
@@ -221,6 +273,17 @@ export async function adminUpdateBuyerAccount({
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
   if (!token) throw new Error("Brak aktywnej sesji admina");
+  if (!user_id) throw new Error("Brak identyfikatora kupca do aktualizacji.");
+  const normalized = validateBuyerAccountPayload({
+    email,
+    name,
+    retailer_id,
+    phone,
+    position,
+    buyer_categories,
+    active,
+    fm26_active,
+  });
 
   const res = await fetch("/.netlify/functions/admin-update-user", {
     method: "POST",
@@ -231,14 +294,14 @@ export async function adminUpdateBuyerAccount({
     body: JSON.stringify({
       user_id,
       role: "buyer",
-      email,
-      name,
-      phone,
-      position,
-      retailer_id: Number(retailer_id),
-      active,
-      fm26_active,
-      buyer_categories,
+      email: normalized.email,
+      name: normalized.name,
+      phone: normalized.phone,
+      position: normalized.position,
+      retailer_id: normalized.retailer_id,
+      active: normalized.active,
+      fm26_active: normalized.fm26_active,
+      buyer_categories: normalized.buyer_categories,
     }),
   });
   const json = await res.json();

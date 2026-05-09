@@ -5069,6 +5069,7 @@ const [expandedRetailers, setExpandedRetailers] = useState(() => {
 /* ── Admin: Sieci ─────────────────────────────────────────────────────── */
 function PageAdminRetailers({ retailers, setRetailers }) {
   const CAT_OPTS = [["owoce","🍎 Owoce"],["warzywa","🥕 Warzywa"],["kwiaty","🌸 Kwiaty"]];
+  const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
   const [search, setSearch]               = useState("");
   const [filterCat, setFilterCat]         = useState("");
   const [filterCountry, setFilterCountry] = useState("");
@@ -5117,19 +5118,46 @@ function PageAdminRetailers({ retailers, setRetailers }) {
       })};
     }));
   }
+  function getDuplicateBuyerEmail(retailerId, buyerId, email) {
+    const normalized = normalizeEmail(email);
+    if (!normalized) return null;
+    for (const retailer of retailers || []) {
+      for (const buyer of retailer.buyers || []) {
+        if (retailer.id === retailerId && buyer.id === buyerId) continue;
+        if (buyer.active === false) continue;
+        if (normalizeEmail(buyer.email) === normalized) {
+          return { retailerName: retailer.name, buyerName: buyer.name || buyer.email || "kupiec" };
+        }
+      }
+    }
+    return null;
+  }
   async function saveRetailer(id) {
     const retailer = retailers.find(r => r.id === id);
     if (!retailer) return;
     const errs = {};
     if(!retailer.name?.trim()) errs[id] = "Sieć musi mieć nazwę.";
-    const buyers = (retailer.buyers||[]);
+    const buyers = (retailer.buyers||[]).map((b) => ({
+      ...b,
+      name: String(b.name || "").trim(),
+      email: normalizeEmail(b.email),
+      phone: String(b.phone || "").trim(),
+      position: String(b.position || "").trim(),
+      cats: [...new Set((b.cats || []).filter(Boolean))],
+    }));
+    const activeBuyers = buyers.filter((b) => b.active !== false);
+    if (retailer.active !== false && activeBuyers.length === 0) errs[id] = "Aktywna sieć musi mieć przynajmniej jednego aktywnego kupca.";
+    if (retailer.fm26Active && !activeBuyers.some((b) => b.fm26Active)) errs[id] = "Sieć FM 2026 musi mieć przynajmniej jednego aktywnego kupca oznaczonego dla FM 2026.";
     const seenEmails = new Set();
     for (const b of buyers) {
       if (b.active === false && !b.isNew) continue;
       if (!b.name?.trim()) { errs[id] = "Każdy aktywny kupiec musi mieć imię i nazwisko."; break; }
       if (!b.email?.trim()) { errs[id] = "Każdy aktywny kupiec musi mieć email."; break; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email)) { errs[id] = `Adres e-mail kupca "${b.name || b.email}" ma niepoprawny format.`; break; }
       const emailKey = String(b.email || "").trim().toLowerCase();
       if (emailKey && seenEmails.has(emailKey)) { errs[id] = "Email kupca w obrębie jednej sieci musi być unikalny."; break; }
+      const duplicate = getDuplicateBuyerEmail(id, b.id, emailKey);
+      if (duplicate) { errs[id] = `Email ${emailKey} jest już przypisany do kupca ${duplicate.buyerName} w sieci ${duplicate.retailerName}.`; break; }
       if (emailKey) seenEmails.add(emailKey);
       if ((b.cats||[]).length === 0) { errs[id] = "Każdy aktywny kupiec musi mieć min. 1 kategorię."; break; }
     }
@@ -5160,13 +5188,13 @@ function PageAdminRetailers({ retailers, setRetailers }) {
           }
           nextBuyers.push({
             id: created.user_id,
-            name: b.name,
-            email: b.email,
-            phone: b.phone || "",
-            position: b.position || "",
-            cats: b.cats || [],
-            active: b.active !== false,
-            fm26Active: !!b.fm26Active,
+            name: created.profile?.name || b.name,
+            email: created.profile?.email || b.email,
+            phone: created.profile?.phone || b.phone || "",
+            position: created.profile?.position || b.position || "",
+            cats: created.profile?.buyer_categories || b.cats || [],
+            active: created.profile?.active !== false,
+            fm26Active: !!created.profile?.fm26_active,
             isManaged: true,
           });
         } else if (isUuidLike(b.id)) {
@@ -5216,7 +5244,10 @@ function PageAdminRetailers({ retailers, setRetailers }) {
     if(!newR.country) errs.country="Wymagany";
     if(!newR.buyers[0].name.trim()) errs.buyerName="Wymagane";
     if(!newR.buyers[0].email.trim()) errs.buyerEmail="Wymagany";
+    if(newR.buyers[0].email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newR.buyers[0].email.trim())) errs.buyerEmail="Niepoprawny email";
     if((newR.buyers[0].cats||[]).length===0) errs.buyerCats="Wybierz min. 1";
+    const duplicate = getDuplicateBuyerEmail(null, null, newR.buyers[0].email);
+    if (duplicate) errs.buyerEmail=`Email jest już przypisany do ${duplicate.buyerName} w sieci ${duplicate.retailerName}`;
     if(newR.fm26Active && !newR.fm26ChainId?.trim()) errs.fm26ChainId="Wymagane gdy sieć uczestniczy w FM 2026 (np. ch28)";
     if(newR.fm26Active && newR.fm26ChainId?.trim() && retailers.some(r=>r.fm26ChainId===newR.fm26ChainId.trim())) errs.fm26ChainId="Ten ID jest już zajęty przez inną sieć";
     if(Object.keys(errs).length>0){setFormError(errs);return;}
