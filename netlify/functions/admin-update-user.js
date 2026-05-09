@@ -19,6 +19,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 
 const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
 
@@ -36,12 +37,9 @@ export const handler = async (event) => {
     return { statusCode: 405, headers: cors, body: "Method Not Allowed" };
   }
 
-  const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!SUPABASE_URL || !SERVICE_KEY || !ANON_KEY) {
-    return errJson(500, "Brak konfiguracji Supabase");
-  }
+  const env = resolveEnvConfig();
+  const missing = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey", "supabaseAnonKey"]);
+  if (missing.length) return errJson(500, envErrorPayload("admin-update-user", missing));
 
   const authHeader = event.headers.authorization || event.headers.Authorization;
   if (!authHeader?.startsWith("Bearer ")) {
@@ -49,13 +47,13 @@ export const handler = async (event) => {
   }
   const token = authHeader.slice(7);
 
-  const supaUser = createClient(SUPABASE_URL, ANON_KEY, {
+  const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
   if (uErr || !userData?.user) return errJson(401, "Nieprawidlowy token");
 
-  const supaSvc = createClient(SUPABASE_URL, SERVICE_KEY);
+  const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   const { data: profile, error: pErr } = await supaSvc
     .from("profiles")
     .select("role")
@@ -179,7 +177,7 @@ function errJson(code, msg) {
   return {
     statusCode: code,
     headers: { ...cors, "Content-Type": "application/json" },
-    body: JSON.stringify({ error: msg }),
+    body: JSON.stringify(typeof msg === "string" ? { error: msg } : msg),
   };
 }
 

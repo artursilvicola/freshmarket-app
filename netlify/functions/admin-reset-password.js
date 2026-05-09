@@ -19,6 +19,7 @@
  * [B2B Round 2.4]
  */
 import { createClient } from "@supabase/supabase-js";
+import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -30,11 +31,10 @@ export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
   if (event.httpMethod !== "POST") return { statusCode: 405, headers: cors, body: "Method Not Allowed" };
 
-  const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const ANON_KEY    = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!SUPABASE_URL || !SERVICE_KEY || !ANON_KEY) {
-    return errJson(500, "Brak konfiguracji Supabase (URL + SERVICE_ROLE_KEY + ANON_KEY)");
+  const env = resolveEnvConfig();
+  const missing = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey", "supabaseAnonKey"]);
+  if (missing.length) {
+    return errJson(500, envErrorPayload("admin-reset-password", missing));
   }
 
   // 1. Autoryzacja: caller musi byc admin
@@ -42,13 +42,13 @@ export const handler = async (event) => {
   if (!authHeader?.startsWith("Bearer ")) return errJson(401, "Brak naglowka Authorization");
   const token = authHeader.slice(7);
 
-  const supaUser = createClient(SUPABASE_URL, ANON_KEY, {
+  const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
   if (uErr || !userData?.user) return errJson(401, "Nieprawidlowy token");
 
-  const supaSvc = createClient(SUPABASE_URL, SERVICE_KEY);
+  const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   const { data: caller, error: cErr } = await supaSvc
     .from("profiles")
     .select("role")
@@ -89,7 +89,7 @@ export const handler = async (event) => {
     type: "magiclink",
     email,
     options: {
-      redirectTo: process.env.B2B_APP_URL || "https://app.freshmarket.eu",
+      redirectTo: env.b2bAppUrl,
     },
   });
   if (linkErr) return errJson(500, "Magic link nie wygenerowany: " + linkErr.message);
@@ -101,4 +101,4 @@ export const handler = async (event) => {
 };
 
 function okJson(p) { return { statusCode: 200, headers: { ...cors, "Content-Type": "application/json" }, body: JSON.stringify(p) }; }
-function errJson(c, m) { return { statusCode: c, headers: { ...cors, "Content-Type": "application/json" }, body: JSON.stringify({ error: m }) }; }
+function errJson(c, m) { return { statusCode: c, headers: { ...cors, "Content-Type": "application/json" }, body: JSON.stringify(typeof m === "string" ? { error: m } : m) }; }

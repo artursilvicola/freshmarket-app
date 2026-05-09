@@ -15,43 +15,34 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 
 export const handler = async (event) => {
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return json(405, { error: "Method Not Allowed" });
   }
 
-  const RESEND_API_KEY = process.env.RESEND_API_KEY;
-  const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const env = resolveEnvConfig();
+  const missing = missingEnvNames(env, ["resendApiKey", "supabaseUrl", "supabaseServiceRoleKey"]);
 
-  if (!RESEND_API_KEY) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Brak RESEND_API_KEY w env" }),
-    };
-  }
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Brak konfiguracji Supabase (URL / SERVICE_ROLE_KEY)" }),
-    };
+  if (missing.length) {
+    return json(500, envErrorPayload("send-offer", missing));
   }
 
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return { statusCode: 400, body: JSON.stringify({ error: "Niepoprawny JSON" }) };
+    return json(400, { error: "Niepoprawny JSON" });
   }
 
   const { sendId } = body;
   if (!sendId) {
-    return { statusCode: 400, body: JSON.stringify({ error: "Brak sendId" }) };
+    return json(400, { error: "Brak sendId" });
   }
 
   // Klient z service_role — omija RLS (potrzebne, bo to backend)
-  const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  const supa = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
 
   // 1. Pobierz dane wysyłki
   const { data: send, error: sErr } = await supa
@@ -65,17 +56,11 @@ export const handler = async (event) => {
     .eq("id", sendId)
     .single();
   if (sErr || !send) {
-    return {
-      statusCode: 404,
-      body: JSON.stringify({ error: "Wysyłka nie znaleziona" }),
-    };
+    return json(404, { error: "Wysyłka nie znaleziona" });
   }
 
   if (send.status !== "approved" && send.status !== "queued") {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: `Wysyłka ma status ${send.status} — nie wysyłam` }),
-    };
+    return json(400, { error: `Wysyłka ma status ${send.status} — nie wysyłam` });
   }
 
   // 2. Złóż HTML maila
@@ -85,7 +70,7 @@ export const handler = async (event) => {
   const resendRes = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${RESEND_API_KEY}`,
+      Authorization: `Bearer ${env.resendApiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -98,10 +83,7 @@ export const handler = async (event) => {
 
   if (!resendRes.ok) {
     const txt = await resendRes.text();
-    return {
-      statusCode: 502,
-      body: JSON.stringify({ error: "Resend error", detail: txt }),
-    };
+    return json(502, { error: "Resend error", detail: txt });
   }
 
   // 4. Zaktualizuj status wysyłki
@@ -110,11 +92,16 @@ export const handler = async (event) => {
     .update({ status: "sent", sent_at: new Date().toISOString() })
     .eq("id", sendId);
 
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ ok: true }),
-  };
+  return json(200, { ok: true });
 };
+
+function json(statusCode, payload) {
+  return {
+    statusCode,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  };
+}
 
 function renderEmail(send) {
   const o = send.offer;

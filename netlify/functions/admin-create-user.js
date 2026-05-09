@@ -31,6 +31,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 
 const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
 
@@ -48,11 +49,10 @@ export const handler = async (event) => {
     return { statusCode: 405, headers: cors, body: "Method Not Allowed" };
   }
 
-  const SUPABASE_URL =
-    process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!SUPABASE_URL || !SERVICE_KEY) {
-    return errJson(500, "Brak konfiguracji Supabase (URL + SERVICE_ROLE_KEY)");
+  const env = resolveEnvConfig();
+  const missingCore = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey"]);
+  if (missingCore.length) {
+    return errJson(500, envErrorPayload("admin-create-user", missingCore));
   }
 
   // 1. Autoryzacja: musi byc zalogowany admin
@@ -63,17 +63,16 @@ export const handler = async (event) => {
   const token = authHeader.slice(7);
 
   // Klient z anon do weryfikacji JWT
-  const ANON_KEY =
-    process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
-  if (!ANON_KEY) return errJson(500, "Brak SUPABASE_ANON_KEY w env");
-  const supaUser = createClient(SUPABASE_URL, ANON_KEY, {
+  const missingAuth = missingEnvNames(env, ["supabaseAnonKey"]);
+  if (missingAuth.length) return errJson(500, envErrorPayload("admin-create-user", missingAuth));
+  const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
   if (uErr || !userData?.user) return errJson(401, "Nieprawidlowy token");
 
   // Sprawdz role w profiles
-  const supaSvc = createClient(SUPABASE_URL, SERVICE_KEY);
+  const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   const { data: profile, error: pErr } = await supaSvc
     .from("profiles")
     .select("role")
@@ -177,9 +176,9 @@ export const handler = async (event) => {
   if (send_magic_link) {
     const { data: linkData, error: linkErr } = await supaSvc.auth.admin.generateLink({
       type: "magiclink",
-      email,
+      email: normalizedEmail,
       options: {
-        redirectTo: process.env.B2B_APP_URL || "https://app.freshmarket.eu",
+        redirectTo: env.b2bAppUrl,
       },
     });
     if (linkErr) {
@@ -217,7 +216,7 @@ function errJson(code, msg) {
   return {
     statusCode: code,
     headers: { ...cors, "Content-Type": "application/json" },
-    body: JSON.stringify({ error: msg }),
+    body: JSON.stringify(typeof msg === "string" ? { error: msg } : msg),
   };
 }
 
