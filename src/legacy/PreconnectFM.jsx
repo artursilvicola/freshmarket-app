@@ -27,6 +27,8 @@ import {
   deleteFmLateResp as dbDeleteFmLateResp,
   getFmMessages as dbGetFmMessages, saveFmMessage as dbSaveFmMessage,
   markFmMessageRead as dbMarkFmMessageRead,
+  generateCompanyDescriptionAI as dbGenerateCompanyDescriptionAI,
+  suggestAdminChatReplyAI as dbSuggestAdminChatReplyAI,
   // [B2B Round 5] Per-action save lifecycle helpers
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
@@ -1089,7 +1091,7 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
 /* ══════════════════════════════════════════════════════════════════════════
    PAGE ADMIN CHAT — widok administratora z listą wątków i oknem rozmowy
 ══════════════════════════════════════════════════════════════════════════ */
-function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRead }) {
+function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRead, onSuggestReply }) {
   const [selectedId, setSelectedId] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -1144,6 +1146,35 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
 
   function getAccount(uid) {
     return runtimeAccounts?.find(a => a.id === uid) || { name: uid, role: "supplier", title: "" };
+  }
+
+  async function suggestReplyWithAI() {
+    const lastMsg = thread[thread.length - 1];
+    if (!lastMsg || lastMsg.fromId === "admin") return;
+    const participant = getAccount(selectedId);
+    const threadPayload = thread.map(m => ({
+      author: m.fromId === "admin" ? "admin" : "user",
+      text: m.text,
+      timestamp: m.timestamp,
+    }));
+
+    setAiLoading(true);
+    try {
+      const suggestion = await onSuggestReply?.({
+        participant: {
+          name: participant.name,
+          role: participant.role,
+          title: participant.title || "",
+        },
+        thread: threadPayload,
+      });
+      setReplyText(suggestion || getAiAnswer(lastMsg.text));
+    } catch (e) {
+      console.warn("[suggestAdminReplyAI]", e);
+      setReplyText(getAiAnswer(lastMsg.text));
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   const ROLE_COLORS_CHAT = { supplier:"#0d9488", buyer:"#2563eb", admin:"#7c3aed" };
@@ -1254,14 +1285,7 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
                     </div>
                   ) : (
                     <button
-                      onClick={()=>{
-                        setAiLoading(true);
-                        setTimeout(()=>{
-                          const suggestion = getAiAnswer(lastMsg.text);
-                          setReplyText(suggestion);
-                          setAiLoading(false);
-                        }, 900);
-                      }}
+                      onClick={()=>void suggestReplyWithAI()}
                       style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", borderRadius:8, border:"1px solid #ddd6fe", background:"#f5f3ff", color:"#7c3aed", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
                       ✨ Sformułuj odpowiedź (AI)
                     </button>
@@ -2520,8 +2544,35 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return null;
     }
   }
+  async function suggestAdminReply(payload) {
+    try {
+      const res = await dbSuggestAdminChatReplyAI(payload);
+      return res?.suggestion || "";
+    } catch (e) {
+      console.warn("[suggestAdminReply]", e);
+      throw e;
+    }
+  }
   function dismissRefund(id){ setRefundNotifs(n=>n.map(x=>x.id===id?{...x,dismissed:true}:x)); }
-  async function runAI(){ setAiLoad(true); await new Promise(r=>setTimeout(r,2200)); setCo(prev=>({...prev,description:"Eksporter owoców i warzyw. Własna pakowalnia z sortownią optyczną i chłodnią. Dostawy retail-ready do sieci CEE, DE, NL.",completeness:96})); setAiLoad(false); setAiModal(false); fl("AI uzupełnił opis firmy."); }
+  async function runAI(companyDraft, applyDraft){
+    setAiLoad(true);
+    try {
+      const result = await dbGenerateCompanyDescriptionAI({
+        company_id: co?.id || null,
+        company: companyDraft || co,
+      });
+      const patch = { description: result?.description || "" };
+      if (typeof applyDraft === "function") applyDraft(patch);
+      else setCo(prev=>({ ...prev, ...patch }));
+      setAiModal(false);
+      fl(result?.source?.website_used ? "AI przygotował opis na podstawie danych firmy i strony WWW." : "AI przygotował opis na podstawie danych firmy.");
+    } catch (e) {
+      console.warn("[generateCompanyDescriptionAI]", e);
+      fl(e?.message || "Nie udało się wygenerować opisu firmy.", "warning");
+    } finally {
+      setAiLoad(false);
+    }
+  }
   function updateLimit(id,changes){ setLimits(prev=>prev.map(l=>l.id===id?{...l,...changes}:l)); }
   function toggleStar(offerId){ setBuyer(b=>({ ...b, starred: b.starred?.includes(offerId) ? b.starred.filter(x=>x!==offerId) : [...(b.starred||[]),offerId] })); }
 
@@ -2564,7 +2615,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies}/>;
-    if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead}/>;
+    if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
@@ -3143,13 +3194,13 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
       {/* AI banner */}
       <div style={{ background:"#eff6ff",border:"1px solid #93c5fd",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",gap:10,alignItems:"flex-start" }}>
         <Bot size={18} color="#3b82f6" style={{ flexShrink:0,marginTop:1 }}/>
-        <div style={{ flex:1,fontSize:13,color:"#1e40af" }}><strong>AI Auto-fill</strong> — podaj adres WWW i wgraj PDF, a AI wygeneruje opis firmy.</div>
+        <div style={{ flex:1,fontSize:13,color:"#1e40af" }}><strong>AI Auto-fill</strong> — podaj adres WWW, a AI przygotuje opis firmy na podstawie Twoich danych i treści strony.</div>
         <div style={{ display:"flex",gap:6 }}>
           <Btn sm onClick={()=>setAiModal(true)} style={{ background:"#3b82f6",color:"white",border:"none" }}><Sparkles size={12}/> Generuj AI</Btn>
           <Btn sm outline onClick={()=>setShowPreview(true)}><Eye size={12}/> Podgląd</Btn>
         </div>
       </div>
-      {aiModal&&<div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={()=>!aiLoad&&setAiModal(false)}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:14,padding:24,maxWidth:420,width:"90%" }}><h3 style={{ marginBottom:14 }}>AI Auto-fill</h3><Inp label="Strona WWW" value={c.website} onChange={e=>u("website",e.target.value)}/>{aiLoad&&<Alrt type="success"><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> Analizuję...</Alrt>}<div style={{ display:"flex",gap:8 }}><Btn primary onClick={runAI} disabled={aiLoad} full style={{ background:"#3b82f6" }}>Generuj</Btn><Btn outline onClick={()=>setAiModal(false)}>Anuluj</Btn></div></div></div>}
+      {aiModal&&<div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={()=>!aiLoad&&setAiModal(false)}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:14,padding:24,maxWidth:420,width:"90%" }}><h3 style={{ marginBottom:14 }}>AI Auto-fill</h3><div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>AI wykorzysta dane firmy z profilu oraz treść Twojej strony, aby zaproponować gotowy opis do dalszej edycji.</div><Inp label="Strona WWW" value={c.website} onChange={e=>u("website",e.target.value)}/>{aiLoad&&<Alrt type="success"><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> Analizuję stronę i przygotowuję opis...</Alrt>}<div style={{ display:"flex",gap:8 }}><Btn primary onClick={()=>void runAI(c, patch => setC(prev=>({ ...prev, ...patch })))} disabled={aiLoad} full style={{ background:"#3b82f6" }}>Generuj</Btn><Btn outline onClick={()=>setAiModal(false)} disabled={aiLoad}>Anuluj</Btn></div></div></div>}
       {/* Completeness */}
       <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 16px",marginBottom:14 }}>
         <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}><span>Kompletność profilu</span><span style={{ fontWeight:700,color:completeness>=80?"#059669":"#d97706" }}>{completeness}%</span></div>

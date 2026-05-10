@@ -17,9 +17,10 @@ export const handler = async (event) => {
   const env = resolveEnvConfig();
   const missingAdmin = missingEnvNames(env, ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey"]);
   const missingSendOffer = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey", "resendApiKey"]);
+  const missingAiFeatures = missingEnvNames(env, ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey", "openAiApiKey"]);
 
   return json(200, {
-    ok: missingAdmin.length === 0 && missingSendOffer.length === 0,
+    ok: missingAdmin.length === 0 && missingSendOffer.length === 0 && missingAiFeatures.length === 0,
     checks: {
       adminUsers: {
         ok: missingAdmin.length === 0,
@@ -28,6 +29,10 @@ export const handler = async (event) => {
       sendOffer: {
         ok: missingSendOffer.length === 0,
         missing: missingSendOffer,
+      },
+      aiFeatures: {
+        ok: missingAiFeatures.length === 0,
+        missing: missingAiFeatures,
       },
     },
     hint: "Ustaw brakujące zmienne w Netlify -> Site configuration -> Environment variables i zrób nowy deploy.",

@@ -142,6 +142,27 @@ export async function getRetailers() {
   return data;
 }
 
+export async function generateCompanyDescriptionAI({ company_id = null, company }) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error("Brak aktywnej sesji.");
+
+  const res = await fetch("/.netlify/functions/ai-company-description", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      company_id,
+      company,
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error || "Nie udalo sie wygenerowac opisu firmy.");
+  return json;
+}
+
 export async function createRetailer(retailer) {
   const row = toRetailerDbRow(retailer);
   const { data, error } = await supabase
@@ -1042,6 +1063,24 @@ export async function markFmMessageRead(id) {
     .update({ read_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
+}
+
+export async function suggestAdminChatReplyAI({ participant, thread }) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error("Brak aktywnej sesji admina.");
+
+  const res = await fetch("/.netlify/functions/ai-admin-chat-suggestion", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ participant, thread }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error || "Nie udalo sie wygenerowac podpowiedzi odpowiedzi.");
+  return json;
 }
 
 // ===================================================================

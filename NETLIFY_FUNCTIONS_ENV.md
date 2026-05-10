@@ -21,6 +21,20 @@ Używane przez:
 Używane przez:
 - `/.netlify/functions/send-offer`
 
+## Dodatkowo dla funkcji AI
+
+- `OPENAI_API_KEY`
+
+Opcjonalnie:
+- `OPENAI_MODEL`
+
+Jeśli `OPENAI_MODEL` nie jest ustawione, funkcje użyją domyślnie:
+- `gpt-4.1-mini`
+
+Używane przez:
+- `/.netlify/functions/ai-company-description`
+- `/.netlify/functions/ai-admin-chat-suggestion`
+
 ## Opcjonalne, ale zalecane
 
 - `B2B_APP_URL`
@@ -37,6 +51,7 @@ Możesz otworzyć:
 Zobaczysz:
 - czy konfiguracja dla adminowych funkcji jest kompletna,
 - czy konfiguracja dla `send-offer` jest kompletna,
+- czy konfiguracja dla funkcji AI jest kompletna,
 - jakich zmiennych brakuje.
 
 ## Gdzie to ustawić
