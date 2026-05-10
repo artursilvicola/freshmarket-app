@@ -3162,7 +3162,12 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
           <div style={{ flex:1 }}>
             <SimplePhotoUploader
               bucket="company-logos"
-              pathPrefix={c.id || "tmp"}
+              /* [B2B Round 5.7] No "tmp" fallback. If c.id is missing (company
+                 not loaded yet), uploader's own guard `if (!pathPrefix)` will
+                 show "Brak ścieżki — komponent źle skonfigurowany" instead of
+                 silently uploading to a shared `tmp/` folder where multiple
+                 suppliers would overwrite each other. */
+              pathPrefix={c.id || ""}
               value={c.logo || null}
               onChange={(newUrl) => u("logo", newUrl)}
               multi={false}
@@ -3469,7 +3474,12 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <Alrt type="info">Pierwsze zdjęcie (główne) trafia do nagłówka maila kupca. Zdjęcie opakowania handlowego jest wymagane — kupiec i logistyka muszą widzieć dokładnie co dostają.</Alrt>
           <SimplePhotoUploader
             bucket="offer-photos"
-            pathPrefix={co?.id || "tmp"}
+            /* [B2B Round 5.7] Same as company logo above — drop the "tmp"
+               fallback. RLS for offer-photos checks first-segment ===
+               app_company_id(); a shared "tmp/" folder would have failed RLS
+               anyway for non-admin users. Empty pathPrefix triggers
+               uploader's own guard with a clear error toast. */
+            pathPrefix={co?.id || ""}
             subFolder={`offer-${f.id || "new"}`}
             value={f.photos || []}
             onChange={(newPhotos) => u("photos", newPhotos)}
@@ -5427,8 +5437,16 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                     </div>
                     <div style={{flex:1}}>
                       <SimplePhotoUploader
-                        bucket="company-logos"
-                        pathPrefix={`retailer-${r.id}`}
+                        /* [B2B Round 5.7] Retailer logos own bucket + clean ID.
+                           Previously uploaded to `company-logos/retailer-{id}/...`
+                           which mixed retailer files with company logos and
+                           bypassed RLS only via is_admin() because the prefix
+                           string never matched app_company_id(). Now: dedicated
+                           `retailer-logos` bucket (migration 020), pathPrefix is
+                           the bare retailer.id so the convention matches:
+                              retailer-logos/<retailer_id>/<filename> */
+                        bucket="retailer-logos"
+                        pathPrefix={r.id != null ? String(r.id) : ""}
                         value={r.logo_url || null}
                         onChange={(newUrl) => updateRetailer(r.id, { logo_url: newUrl })}
                         multi={false}
