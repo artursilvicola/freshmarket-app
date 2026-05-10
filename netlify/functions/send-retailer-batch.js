@@ -1,0 +1,269 @@
+/**
+ * Netlify Function: send-retailer-batch
+ * POST /.netlify/functions/send-retailer-batch
+ * Body: { retailer_id: number, send_ids: number[], dry_run?: boolean }
+ *
+ * [B2B Round pipeline-retailer-email-mvp]
+ *
+ * Wysyła ZBIORCZY mail do jednej sieci handlowej z listą zatwierdzonych
+ * ofert. Endpoint:
+ *   1. Auth: tylko admin (sprawdzane przez profile.role).
+ *   2. Wczytuje legacy_sends WHERE retailer_id = X AND legacy_id IN (...)
+ *      I status = 'approved'. Każdy inny status (sent / rejected / queued
+ *      bez moderacji / pending_moderation) jest odrzucany — to bramka
+ *      anti-duplicate.
+ *   3. Wczytuje legacy_offers po offer_legacy_id i companies po
+ *      legacy_supplier_id (bo to jest klucz w jsonb data.supplierId).
+ *   4. Wczytuje retailer + buyers (active + email + role='buyer').
+ *   5. Renderuje HTML mail (shared/render-retailer-email.js).
+ *   6. Wysyła ten sam mail do każdego aktywnego kupca przez Resend
+ *      (każdy buyer = osobne wywołanie Resend, ale ta sama treść).
+ *   7. Po sukcesie aktualizuje legacy_sends.status='sent' oraz
+ *      data.status='sent' + data.sentAt. Robi to atomowo per send_id —
+ *      jeśli choć jeden Resend się powiódł, marker idzie. Jeśli żaden,
+ *      status zostaje 'approved' i admin może spróbować ponownie.
+ *   8. Zwraca {ok, sent_count, buyer_count, send_ids_marked, errors[]}.
+ *
+ * dry_run=true zwraca tylko podgląd (ile sendsów, ilu kupców, subject,
+ * pierwsze ~3KB HTMLa) bez wysyłki — przydatne do preview po stronie UI
+ * jeśli kiedyś chcemy mieć render server-side. MVP używa client-side
+ * preview, ale endpoint jest ready.
+ */
+
+import { createClient } from "@supabase/supabase-js";
+import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
+import { renderRetailerEmail, buildSubject } from "./_shared/render-retailer-email.js";
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+export const handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
+  if (event.httpMethod !== "POST") return json(405, { error: "Method Not Allowed" });
+
+  const env = resolveEnvConfig();
+  const required = ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey", "resendApiKey"];
+  const missing = missingEnvNames(env, required);
+  if (missing.length) return json(500, envErrorPayload("send-retailer-batch", missing));
+
+  // ── Auth: admin only ─────────────────────────────────────────────────
+  const authHeader = event.headers.authorization || event.headers.Authorization;
+  if (!authHeader?.startsWith("Bearer ")) return json(401, { error: "Brak nagłówka Authorization" });
+  const token = authHeader.slice(7);
+
+  const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const { data: userData, error: userErr } = await supaUser.auth.getUser(token);
+  if (userErr || !userData?.user) return json(401, { error: "Nieprawidłowy token" });
+
+  const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+  const { data: caller, error: callerErr } = await supaSvc
+    .from("profiles")
+    .select("id, role, name, email")
+    .eq("id", userData.user.id)
+    .maybeSingle();
+  if (callerErr || !caller) return json(403, { error: "Nie znaleziono profilu użytkownika" });
+  if (caller.role !== "admin") {
+    return json(403, { error: "Tylko admin może wysyłać zbiorcze maile do sieci." });
+  }
+
+  // ── Body ─────────────────────────────────────────────────────────────
+  let body;
+  try {
+    body = JSON.parse(event.body || "{}");
+  } catch {
+    return json(400, { error: "Niepoprawny JSON" });
+  }
+
+  const retailerId = Number(body.retailer_id);
+  const sendIds = Array.isArray(body.send_ids) ? body.send_ids.map(Number).filter(Number.isFinite) : [];
+  const dryRun = !!body.dry_run;
+
+  if (!retailerId) return json(400, { error: "Brak retailer_id" });
+  if (!sendIds.length) return json(400, { error: "send_ids jest puste — nie ma czego wysłać." });
+
+  // ── Retailer + active buyers ─────────────────────────────────────────
+  const { data: retailer, error: retErr } = await supaSvc
+    .from("retailers")
+    .select(`id, name, country, color, bg, logo_url,
+             buyers:profiles!fk_profiles_retailer(id, role, name, email, active, fm26_active)`)
+    .eq("id", retailerId)
+    .maybeSingle();
+  if (retErr || !retailer) return json(404, { error: "Sieć handlowa nie znaleziona." });
+
+  const activeBuyers = (retailer.buyers || []).filter(
+    (b) => b && b.role === "buyer" && b.active && b.email && b.email.includes("@")
+  );
+  if (!activeBuyers.length) {
+    return json(400, {
+      error: `Sieć ${retailer.name} nie ma żadnego aktywnego kupca z e-mailem. Najpierw uzupełnij Buyer w "Sieci".`,
+    });
+  }
+
+  // ── Sends: tylko approved + należące do tej sieci ────────────────────
+  const { data: sendsRaw, error: sendsErr } = await supaSvc
+    .from("legacy_sends")
+    .select("legacy_id, retailer_id, status, data")
+    .in("legacy_id", sendIds);
+  if (sendsErr) return json(500, { error: "Błąd odczytu sends: " + sendsErr.message });
+
+  const eligible = (sendsRaw || []).filter(
+    (s) => Number(s.retailer_id) === retailerId && s.status === "approved"
+  );
+  const skipped = (sendsRaw || []).filter((s) => !eligible.includes(s));
+
+  if (!eligible.length) {
+    return json(400, {
+      error: "Brak ofert gotowych do wysyłki — wszystkie są odrzucone, w moderacji albo już wysłane.",
+      skipped_statuses: skipped.map((s) => ({ legacy_id: s.legacy_id, status: s.status })),
+    });
+  }
+
+  // ── Offers (legacy_offers.data jsonb) ────────────────────────────────
+  const offerIds = [...new Set(eligible.map((s) => (s.data || {}).offerId).filter((x) => x != null))];
+  const offersMap = new Map();
+  if (offerIds.length) {
+    const { data: offerRows } = await supaSvc
+      .from("legacy_offers")
+      .select("legacy_id, data")
+      .in("legacy_id", offerIds);
+    for (const row of offerRows || []) {
+      offersMap.set(row.legacy_id, row.data || {});
+    }
+  }
+
+  // ── Companies (po legacy_supplier_id, fallback po fmId / id UUID) ────
+  // sends.data.supplierId może być stringiem typu "sup-s1" (legacy_supplier_id)
+  // albo UUID-em (companies.id) zależnie od tego, jak supplier dodał ofertę.
+  const supplierKeys = [...new Set(eligible.map((s) => (s.data || {}).supplierId).filter(Boolean))];
+  const companiesMap = new Map();
+  if (supplierKeys.length) {
+    // próba 1: legacy_supplier_id
+    const { data: byLegacy } = await supaSvc
+      .from("companies")
+      .select("id, legacy_supplier_id, legacy_fm_id, name, country, logo_url, description_short, description")
+      .in("legacy_supplier_id", supplierKeys);
+    for (const co of byLegacy || []) {
+      if (co.legacy_supplier_id) companiesMap.set(co.legacy_supplier_id, co);
+      if (co.id) companiesMap.set(co.id, co);
+    }
+    // próba 2: id UUID dla kluczy które nie zostały złapane przez legacy_supplier_id
+    const unresolvedKeys = supplierKeys.filter((k) => !companiesMap.has(k));
+    const uuidKeys = unresolvedKeys.filter((k) => typeof k === "string" && k.length === 36);
+    if (uuidKeys.length) {
+      const { data: byUuid } = await supaSvc
+        .from("companies")
+        .select("id, legacy_supplier_id, legacy_fm_id, name, country, logo_url, description_short, description")
+        .in("id", uuidKeys);
+      for (const co of byUuid || []) {
+        companiesMap.set(co.id, co);
+        if (co.legacy_supplier_id) companiesMap.set(co.legacy_supplier_id, co);
+      }
+    }
+  }
+
+  // ── Render HTML ──────────────────────────────────────────────────────
+  const month = monthLabel();
+  const { html, subject } = renderRetailerEmail({
+    retailer,
+    sends: eligible,
+    offers: offersMap,
+    companies: companiesMap,
+    buyerCount: activeBuyers.length,
+    month,
+    appUrl: env.b2bAppUrl,
+  });
+
+  if (dryRun) {
+    return json(200, {
+      ok: true,
+      dry_run: true,
+      subject,
+      offer_count: eligible.length,
+      buyer_count: activeBuyers.length,
+      buyers: activeBuyers.map((b) => ({ name: b.name, email: b.email })),
+      html_preview: html.slice(0, 3000),
+    });
+  }
+
+  // ── Wysyłka przez Resend (po jednej wiadomości na buyera) ────────────
+  const resendResults = [];
+  for (const buyer of activeBuyers) {
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "Fresh Market <newsletter@freshmarket.eu>",
+          to: [buyer.email],
+          subject,
+          html,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.text();
+        resendResults.push({ buyer: buyer.email, ok: false, status: res.status, detail });
+      } else {
+        const r = await res.json().catch(() => ({}));
+        resendResults.push({ buyer: buyer.email, ok: true, message_id: r.id || null });
+      }
+    } catch (e) {
+      resendResults.push({ buyer: buyer.email, ok: false, status: 0, detail: e?.message || String(e) });
+    }
+  }
+
+  const anySent = resendResults.some((r) => r.ok);
+  let markedSendIds = [];
+
+  if (anySent) {
+    const sentAtIso = new Date().toISOString();
+    const sentAtDate = sentAtIso.slice(0, 10);
+    // Update jeden po drugim — kolizji nie ma (legacy_id unique).
+    for (const s of eligible) {
+      const newData = {
+        ...(s.data || {}),
+        status: "sent",
+        sentAt: sentAtDate,
+        sent_at: sentAtIso,
+        daysLeft: 14,
+      };
+      const { error: upErr } = await supaSvc
+        .from("legacy_sends")
+        .update({ status: "sent", data: newData })
+        .eq("legacy_id", s.legacy_id);
+      if (!upErr) markedSendIds.push(s.legacy_id);
+    }
+  }
+
+  return json(200, {
+    ok: anySent,
+    sent_count: eligible.length,
+    buyer_count: activeBuyers.length,
+    buyers_succeeded: resendResults.filter((r) => r.ok).map((r) => r.buyer),
+    buyers_failed: resendResults.filter((r) => !r.ok),
+    send_ids_marked: markedSendIds,
+    skipped: skipped.map((s) => ({ legacy_id: s.legacy_id, status: s.status })),
+    subject,
+  });
+};
+
+function monthLabel() {
+  const months = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+  const d = new Date();
+  return `${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function json(statusCode, payload) {
+  return {
+    statusCode,
+    headers: { ...cors, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  };
+}

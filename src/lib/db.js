@@ -1088,6 +1088,33 @@ export async function markFmMessageRead(id) {
   if (error) throw error;
 }
 
+// [B2B Round pipeline-retailer-email-mvp]
+// Wysłanie zbiorczego maila (wielu ofert, jedna sieć) do wszystkich
+// aktywnych kupców tej sieci. Endpoint po stronie netlify aktualizuje
+// legacy_sends.status='sent' tylko dla send_ids które przeszły jako
+// 'approved' i należą do retailer_id.
+export async function sendRetailerBatch({ retailer_id, send_ids, dry_run = false }) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error("Brak aktywnej sesji admina.");
+
+  const res = await fetch("/.netlify/functions/send-retailer-batch", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ retailer_id, send_ids, dry_run }),
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    const err = new Error(json?.error || "Nie udało się wysłać maila.");
+    err.payload = json;
+    throw err;
+  }
+  return json;
+}
+
 export async function suggestAdminChatReplyAI({ participant, thread }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;

@@ -29,6 +29,8 @@ import {
   markFmMessageRead as dbMarkFmMessageRead,
   generateCompanyDescriptionAI as dbGenerateCompanyDescriptionAI,
   suggestAdminChatReplyAI as dbSuggestAdminChatReplyAI,
+  // [B2B Round pipeline-retailer-email-mvp] Wysyłka zbiorcza przez admina
+  sendRetailerBatch as dbSendRetailerBatch,
   // [B2B Round 5] Per-action save lifecycle helpers
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
@@ -2624,7 +2626,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers}/>;
-    if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
+    if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
@@ -5190,7 +5192,7 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
 }
 
 /* ── Admin Pipeline: tabs Moderacja / Wysłane+Tracking ──────────────────── */
-function PageAdminPipeline({ sends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies }) {
+function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies }) {
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -5222,7 +5224,26 @@ const [expandedRetailers, setExpandedRetailers] = useState(() => {
   return (
     <div>
       {previewOffer&&<OfferPreviewModal offer={previewOffer} co={(companies||[]).find(c=>c.id===previewOffer?.supplierId)||COMPANY_INIT} onClose={()=>setPreviewOffer(null)}/>}
-      {emailPreview&&<EmailNewsletterModal retailer={emailPreview.retailer} sends={emailPreview.sends} offers={offers} supplierCo={emailPreview.supplierCo||COMPANY_INIT} onClose={()=>setEmailPreview(null)}/>}
+      {emailPreview&&<EmailNewsletterModal
+        retailer={emailPreview.retailer}
+        sends={emailPreview.sends}
+        offers={offers}
+        companies={companies}
+        fl={fl}
+        onClose={()=>setEmailPreview(null)}
+        onSent={(markedIds, sentAt) => {
+          // Round pipeline-retailer-email-mvp: po sukcesie aktualizujemy
+          // lokalny state — pipelina przeładuje wybór i pozycje wysłanych
+          // przejdą do statusu "sent". setSends sam zsync'uje DB przez
+          // bulkUpsertLegacySends (ale i tak backend już to zrobił).
+          if (!markedIds || !markedIds.length) return;
+          const idSet = new Set(markedIds.map(Number));
+          setSends?.(prev => prev.map(s => idSet.has(Number(s.id))
+            ? { ...s, status: "sent", sentAt, daysLeft: 14 }
+            : s
+          ));
+        }}
+      />}
       {histSend&&<Modal title={`Historia: ${getOffer(histSend.offerId,offers)?.product}`} onClose={()=>setHistoryId(null)}>
         {(histSend.confirmHistory||[]).length===0?<div style={{ color:"#94a3b8",textAlign:"center",padding:16 }}>Brak historii.</div>:(histSend.confirmHistory||[]).map((h,i)=>(
           <div key={i} style={{ display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #f1f5f9" }}>
@@ -6010,31 +6031,156 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   );
 }
 
-function EmailNewsletterModal({ retailer, sends, offers, supplierCo, onClose }) {
-  const sendDate = sends[0]?.sendDate || "2026-05-06";
-  const monthName = "Maj 2026";
-  const premSends = [...sends].filter(s=>{ const o=getOffer(s.offerId,offers); return o?.tier==="premium"; }).sort((a,b)=>(a.pos||99)-(b.pos||99));
-  const stdSends  = [...sends].filter(s=>{ const o=getOffer(s.offerId,offers); return o?.tier!=="premium"; }).sort((a,b)=>(a.pos||99)-(b.pos||99));
+// [B2B Round pipeline-retailer-email-mvp]
+// Modal podglądu zbiorczego maila do JEDNEJ sieci + ręczna wysyłka.
+//   - filtrujemy do `status==='approved'` (rejected / pending / queued nie idą)
+//   - pokazujemy ile ofert + ilu kupców zostanie zaadresowanych
+//   - "Wyślij" wywołuje /.netlify/functions/send-retailer-batch który
+//     wysyła Resendem do każdego aktywnego kupca i ustawia status='sent'
+//   - po sukcesie callback `onSent(markedIds, sentAt)` aktualizuje state
+//     parenta — pozycje wysłane znikają z moderacji i pojawiają się w
+//     zakładce "Wysłane & Tracking"
+//   - guard anti-duplicate: button disabled w trakcie wysyłki + backend
+//     ponownie waliduje status (żeby kliknięcie 2x na zafrozzonej karcie
+//     nie wysłało dwa razy)
+function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose, onSent }) {
+  const monthName = (() => {
+    const months = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+    const d = new Date();
+    return `${months[d.getMonth()]} ${d.getFullYear()}`;
+  })();
+
+  // Tylko zatwierdzone wchodzą do mailingu — inaczej kupiec dostałby
+  // ofertę odrzuconą lub jeszcze niemoderowaną.
+  const approvedSends = (sends || []).filter(s => s.status === "approved");
+  const skippedCount = (sends || []).length - approvedSends.length;
+
+  // Sortowanie: premium na górze, potem standard, w obu po `pos`.
+  const premSends = approvedSends.filter(s => { const o = getOffer(s.offerId, offers); return o?.tier === "premium"; }).sort((a,b)=>(a.pos||99)-(b.pos||99));
+  const stdSends  = approvedSends.filter(s => { const o = getOffer(s.offerId, offers); return o?.tier !== "premium"; }).sort((a,b)=>(a.pos||99)-(b.pos||99));
   const allSorted = [...premSends, ...stdSends];
-  const sCo = supplierCo || COMPANY_INIT;
+
+  // Aktywni kupcy tej sieci — to do nich pójdą maile.
+  const activeBuyers = (retailer?.buyers || []).filter(b =>
+    b && b.role === "buyer" && b.active && b.email && String(b.email).includes("@")
+  );
+
+  // Helper: znajdź firmę dostawcy dla danej oferty (firmy są w state legacy
+  // jako lista — szukamy po legacy_supplier_id / id / fmId).
+  const findSupplierCo = (supplierId) => {
+    if (!supplierId) return COMPANY_INIT;
+    return (companies || []).find(c => legacyKeyMatchesCompany(supplierId, c)) || COMPANY_INIT;
+  };
+
+  const [sendingState, setSendingState] = useState("idle"); // idle | confirm | sending | success | error
+  const [sendResult, setSendResult] = useState(null);
+
+  const offerCount = allSorted.length;
+  const buyerCount = activeBuyers.length;
+  const subjectLine = `Fresh Market PreConnect – ${offerCount} ${offerCount === 1 ? "oferta" : offerCount < 5 ? "oferty" : "ofert"} dla ${retailer?.name || ""}`;
+  const buyerLine = buyerCount === 1
+    ? `Ta wiadomość trafi do 1 kupca z sieci ${retailer?.name || ""} i zawiera ${offerCount} ${offerCount===1?"ofertę":offerCount<5?"oferty":"ofert"}.`
+    : `Ta wiadomość trafi do ${buyerCount} kupców sieci ${retailer?.name || ""} i zawiera ${offerCount} ${offerCount===1?"ofertę":offerCount<5?"oferty":"ofert"}.`;
+
+  // Pusta sieć / brak ofert / brak kupców — pokaż komunikat zamiast pustego maila
+  if (offerCount === 0) {
+    return (
+      <Modal title={`E-mail dla ${retailer?.name || "sieci"}`} onClose={onClose}>
+        <Alrt type="warning">
+          {skippedCount > 0
+            ? <>Brak ofert <strong>zatwierdzonych</strong> dla tej sieci. {skippedCount} pozycji jest w innym statusie (do moderacji / odrzucona / wysłana). Najpierw zatwierdź propozycje w Pipeline.</>
+            : <>Ta sieć nie ma żadnych propozycji w kolejce.</>
+          }
+        </Alrt>
+        <div style={{ display:"flex",justifyContent:"flex-end",marginTop:12 }}>
+          <Btn outline onClick={onClose}>Zamknij</Btn>
+        </div>
+      </Modal>
+    );
+  }
+  if (buyerCount === 0) {
+    return (
+      <Modal title={`E-mail dla ${retailer?.name || "sieci"}`} onClose={onClose}>
+        <Alrt type="warning">
+          Sieć <strong>{retailer?.name}</strong> nie ma aktywnego kupca z e-mailem. Najpierw dodaj kupca w „Sieci" → wybierz tę sieć → „Kupcy".
+        </Alrt>
+        <div style={{ display:"flex",justifyContent:"flex-end",marginTop:12 }}>
+          <Btn outline onClick={onClose}>Zamknij</Btn>
+        </div>
+      </Modal>
+    );
+  }
+
+  async function doSend() {
+    setSendingState("sending");
+    setSendResult(null);
+    try {
+      const result = await dbSendRetailerBatch({
+        retailer_id: retailer.id,
+        send_ids: allSorted.map(s => Number(s.id)).filter(Number.isFinite),
+      });
+      setSendResult(result);
+      if (result.ok) {
+        setSendingState("success");
+        const sentAt = new Date().toISOString().slice(0, 10);
+        onSent?.(result.send_ids_marked || [], sentAt);
+        const failedCount = (result.buyers_failed || []).length;
+        if (failedCount > 0) {
+          fl?.(`Wysłano do ${result.buyer_count - failedCount}/${result.buyer_count} kupców · ${result.send_ids_marked?.length || 0} ofert oznaczonych jako wysłane. ${failedCount} buyer(ów) nie udało się.`, "warning");
+        } else {
+          fl?.(`Wysłano! ${result.buyer_count} kupiec(ów) · ${result.send_ids_marked?.length || 0} ofert oznaczonych jako wysłane.`);
+        }
+        // Auto-close po 1.5s
+        setTimeout(() => onClose?.(), 1500);
+      } else {
+        setSendingState("error");
+        fl?.(result.error || "Wysyłka nie powiodła się.", "warning");
+      }
+    } catch (e) {
+      console.warn("[sendRetailerBatch]", e);
+      setSendResult(e?.payload || { error: e?.message });
+      setSendingState("error");
+      fl?.(e?.message || "Nie udało się wysłać maila.", "warning");
+    }
+  }
 
   return (
     <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.65)",zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",overflowY:"auto" }}>
       <div style={{ background:"#f1f5f9",borderRadius:16,width:"100%",maxWidth:660,boxShadow:"0 24px 80px rgba(0,0,0,0.4)" }}>
         <div style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 18px",background:"#1e3a5f",borderRadius:"16px 16px 0 0" }}>
           <div style={{ flex:1 }}>
-            <div style={{ color:"white",fontWeight:700,fontSize:14 }}>Podgląd e-mail Preconnect</div>
-            <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",marginTop:2 }}>Do: {retailer?.buyer} · {retailer?.email} · Wysyłka: {sendDate}</div>
+            <div style={{ color:"white",fontWeight:700,fontSize:14 }}>E-mail dla {retailer?.name}</div>
+            <div style={{ fontSize:11,color:"rgba(255,255,255,0.55)",marginTop:2 }}>{buyerLine}</div>
           </div>
-          <Btn sm onClick={onClose} style={{ background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)" }}><X size={13}/> Zamknij</Btn>
+          {sendingState === "success"
+            ? <span style={{ background:"#10b981",color:"white",fontSize:12,fontWeight:700,padding:"6px 12px",borderRadius:7 }}>✓ Wysłano</span>
+            : <>
+                <Btn sm onClick={onClose} disabled={sendingState === "sending"} style={{ background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)" }}>Anuluj</Btn>
+                <Btn sm onClick={doSend} disabled={sendingState === "sending"} style={{ background:"#10b981",color:"white",border:"none",fontWeight:700 }}>
+                  {sendingState === "sending"
+                    ? <><RefreshCw size={12} style={{ animation:"spin 1s linear infinite" }}/> Wysyłam…</>
+                    : <><Send size={12}/> Wyślij ({offerCount})</>
+                  }
+                </Btn>
+              </>
+          }
         </div>
         <div style={{ background:"#dde3ea",padding:"8px 14px",borderBottom:"1px solid #b8c4ce" }}>
-          {[["Od","Preconnect Fresh Market <newsletter@freshmarket.eu>"],["Do",`${retailer?.buyer} <${retailer?.email}>`],["Temat",`🍎 Preconnect ${monthName} – ${allSorted.length} ${allSorted.length===1?"propozycja":allSorted.length<5?"propozycje":"propozycji"} dla ${retailer?.name}`],["Data",`${sendDate}, godz. 08:00`]].map(([k,v])=>(
+          {[
+            ["Od", "Fresh Market <newsletter@freshmarket.eu>"],
+            ["Do", activeBuyers.map(b => `${b.name || b.email} <${b.email}>`).join(", ")],
+            ["Temat", subjectLine],
+          ].map(([k,v])=>(
             <div key={k} style={{ display:"flex",gap:8,padding:"3px 0",fontSize:12 }}>
               <span style={{ color:"#64748b",minWidth:40,fontWeight:600 }}>{k}:</span>
-              <span style={{ color:"#1e293b",flex:1 }}>{v}</span>
+              <span style={{ color:"#1e293b",flex:1,wordBreak:"break-word" }}>{v}</span>
             </div>
           ))}
+          {skippedCount > 0 && (
+            <div style={{ marginTop:6,fontSize:11,color:"#92400e",background:"#fef3c7",border:"1px solid #fde68a",padding:"5px 10px",borderRadius:6 }}>
+              Pominięto {skippedCount} {skippedCount===1?"propozycję":skippedCount<5?"propozycje":"propozycji"} (nie są zatwierdzone — odrzucone, w moderacji lub już wysłane).
+            </div>
+          )}
         </div>
         <div style={{ background:"#ececec",padding:"20px 12px",overflowY:"auto",maxHeight:"calc(100vh - 180px)" }}>
           <div style={{ maxWidth:600,margin:"0 auto",fontFamily:"'Arial',Helvetica,sans-serif",fontSize:14,color:"#1a1a1a",lineHeight:1.5 }}>
@@ -6067,6 +6213,10 @@ function EmailNewsletterModal({ retailer, sends, offers, supplierCo, onClose }) 
               const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
               const allPack=[...(o.packaging||[]),o.customPackaging].filter(Boolean);
               const descParts=(o.description||"").split(/(\*\*[^*]+\*\*)/g);
+              // [B2B Round pipeline-retailer-email-mvp] Per-offer supplier lookup —
+              // wcześniej był jeden `sCo` dla wszystkich, co dla maila zbiorczego
+              // (oferty od wielu firm) pokazywałoby błędną firmę.
+              const co = findSupplierCo(s.supplierId);
               return (
                 <div key={s.id}>
                   {isFirstStd&&premSends.length>0&&(
@@ -6076,13 +6226,22 @@ function EmailNewsletterModal({ retailer, sends, offers, supplierCo, onClose }) 
                   )}
                   <div style={{ background:"white",borderLeft:`4px solid ${isPrem?"#fbbf24":"#e2e8f0"}`,borderRight:`4px solid ${isPrem?"#fbbf24":"#e2e8f0"}`,borderBottom:"1px solid #f1f5f9",padding:"18px 24px" }}>
                     <div style={{ display:"flex",gap:10,alignItems:"flex-start",marginBottom:12 }}>
-                      <span style={{ fontSize:24,lineHeight:1 }}>{CEMOJI[o.category]||"📦"}</span>
+                      {co?.logo
+                        ? <img src={co.logo} alt={co.name||""} style={{ width:42,height:42,borderRadius:8,objectFit:"contain",background:"white",border:"1px solid #e2e8f0",padding:2,flexShrink:0 }}/>
+                        : <div style={{ width:42,height:42,borderRadius:8,background:"#f1f5f9",color:"#64748b",fontWeight:700,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>{(co?.name||"•").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
+                      }
                       <div style={{ flex:1 }}>
+                        <div style={{ fontSize:11,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:2 }}>{co?.name || "Dostawca Fresh Market"}</div>
                         <div style={{ fontWeight:700,fontSize:16,color:"#0f172a",lineHeight:1.3 }}>{o.title||o.product}</div>
                         <div style={{ fontSize:12,color:"#64748b",marginTop:3 }}>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin} · pozycja {s.pos||idx+1} · {o.volume} {o.volumeUnit}</div>
                       </div>
                       {isPrem&&<span style={{ background:"#d97706",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20,whiteSpace:"nowrap",flexShrink:0 }}>⭐ PREMIUM</span>}
                     </div>
+                    {Array.isArray(o.photos)&&o.photos[0]&&(
+                      <div style={{ marginBottom:12 }}>
+                        <img src={typeof o.photos[0]==="string"?o.photos[0]:o.photos[0].url} alt="" style={{ width:"100%",maxWidth:552,height:"auto",borderRadius:8,border:"1px solid #f1f5f9",display:"block" }}/>
+                      </div>
+                    )}
                     <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:12 }}>
                       {[["Wolumen",`${o.volume} ${o.volumeUnit}`],["Min. zamówienie",o.minOrder||"—"],o.from&&["Dostępność",`${o.from.slice(0,7)}–${o.to?.slice(0,7)||"?"}`],allPack.length>0&&["Opakowanie",allPack.slice(0,2).join(", ")]].filter(Boolean).map(([lbl,val])=>(
                         <div key={lbl} style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",flex:"1 1 100px" }}>
@@ -6092,17 +6251,19 @@ function EmailNewsletterModal({ retailer, sends, offers, supplierCo, onClose }) 
                       ))}
                     </div>
                     {allCerts.length>0&&<div style={{ display:"flex",gap:5,flexWrap:"wrap",marginBottom:12 }}>{allCerts.map(c=><span key={c} style={{ background:"#d1fae5",color:"#047857",fontSize:11,fontWeight:600,padding:"2px 9px",borderRadius:20,border:"1px solid #6ee7b7" }}>✓ {c}</span>)}</div>}
-                    <div style={{ fontSize:13,color:"#475569",lineHeight:1.8,marginBottom:16,padding:"10px 14px",background:isPrem?"#fffbeb":"#f8fafc",borderRadius:7,borderLeft:`3px solid ${isPrem?"#fbbf24":"#e2e8f0"}` }}>
-                      {descParts.map((part,i)=>{ const m=part.match(/^\*\*([^*]+)\*\*$/); return m?<strong key={i} style={{ fontWeight:700,color:"#1e293b",display:"block",marginTop:i>0?4:0 }}>{m[1]}</strong>:<span key={i} style={{ whiteSpace:"pre-line" }}>{part}</span>; })}
-                    </div>
+                    {o.description&&(
+                      <div style={{ fontSize:13,color:"#475569",lineHeight:1.8,marginBottom:16,padding:"10px 14px",background:isPrem?"#fffbeb":"#f8fafc",borderRadius:7,borderLeft:`3px solid ${isPrem?"#fbbf24":"#e2e8f0"}` }}>
+                        {descParts.map((part,i)=>{ const m=part.match(/^\*\*([^*]+)\*\*$/); return m?<strong key={i} style={{ fontWeight:700,color:"#1e293b",display:"block",marginTop:i>0?4:0 }}>{m[1]}</strong>:<span key={i} style={{ whiteSpace:"pre-line" }}>{part}</span>; })}
+                      </div>
+                    )}
                     <div style={{ display:"flex",gap:10,alignItems:"center" }}>
                       <div style={{ flex:1,padding:"8px 10px",background:"#f1f5f9",borderRadius:7,fontSize:11 }}>
-                        <div style={{ fontWeight:700,color:"#1e293b",marginBottom:1 }}>{sCo.name} · {FLAGS[sCo.country]} {CNAMES[sCo.country]}</div>
-                        <div style={{ color:"#64748b" }}>{sCo.contacts?.[0]?.phone} · {sCo.contacts?.[0]?.email}</div>
+                        <div style={{ fontWeight:700,color:"#1e293b",marginBottom:1 }}>{co?.name||"—"}{co?.country?<> · {FLAGS[co.country]} {CNAMES[co.country]||co.country}</>:null}</div>
+                        {co?.description_short && <div style={{ color:"#475569",fontSize:11,marginTop:2 }}>{co.description_short}</div>}
                       </div>
                       <div style={{ flexShrink:0 }}>
-                        <div style={{ background:isPrem?"#d97706":"#0d9488",color:"white",padding:"9px 18px",borderRadius:7,fontWeight:700,fontSize:12,textAlign:"center",cursor:"pointer" }}>
-                          {o.cta?.includes("samples")?"📦 Poproś o próbki":o.cta?.includes("rfq")?"📋 Zapytaj o cenę i wolumen":o.cta?.includes("meet_fm")?"🤝 Umów spotkanie":"📩 Kontakt"}
+                        <div style={{ background:isPrem?"#d97706":"#0d9488",color:"white",padding:"9px 18px",borderRadius:7,fontWeight:700,fontSize:12,textAlign:"center" }}>
+                          {o.cta?.includes("samples")?"Poproś o próbki":o.cta?.includes("rfq")?"Zapytaj o cenę":o.cta?.includes("meet_fm")?"Umów spotkanie":"Zobacz ofertę"}
                         </div>
                       </div>
                     </div>
