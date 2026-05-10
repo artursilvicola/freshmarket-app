@@ -37,6 +37,7 @@ import {
   saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
+import FreshMarketLogo from "../components/FreshMarketLogo";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -2637,7 +2638,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         {/* Sidebar */}
         <aside style={{ width:220,background:"#0f172a",flexShrink:0,display:"flex",flexDirection:"column" }}>
           <div style={{ padding:"14px 16px 10px",borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ color:"white",fontWeight:700,fontSize:15,display:"flex",alignItems:"center",gap:8 }}><span style={{ fontSize:18 }}>🍎</span> Fresh Market</div>
+            {/* [B2B Round branding-and-header-logos] zamiast emoji 🍎 + tekst —
+                inline SVG logo Fresh Market (variant="light", białe litery na
+                ciemnym sidebarze #0f172a). Sidebar = brand systemowy, zawsze FM. */}
+            <FreshMarketLogo variant="light" size={22} />
           </div>
           <nav style={{ flex:1,padding:"8px 8px",overflowY:"auto" }}>
             {/* ── DASHBOARD (not for buyer — their main page is Propozycje) ── */}

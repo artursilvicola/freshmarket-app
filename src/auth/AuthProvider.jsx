@@ -26,12 +26,14 @@ export function AuthProvider({ children }) {
     }
     // [B2B Round 2] Pobierz profil + JOIN do companies (legacy_fm_id, name, country)
     // + retailers (name) — to potrzebne w PreconnectFM App() do mapowania konta.
+    // [B2B Round branding-and-header-logos] dodano logo_url do obu JOIN-ów —
+    // panel dostawcy/kupca pokazuje logo bytu w nagłówku zamiast badge'a "FM".
     const { data, error } = await supabase
       .from("profiles")
       .select(`
         *,
-        company:companies(id, name, country, legacy_fm_id, legacy_supplier_id, pkg_plan),
-        retailer:retailers(id, name, country)
+        company:companies(id, name, country, legacy_fm_id, legacy_supplier_id, pkg_plan, logo_url),
+        retailer:retailers(id, name, country, logo_url)
       `)
       .eq("id", userId)
       .maybeSingle();
@@ -54,6 +56,8 @@ export function AuthProvider({ children }) {
           country: data.company?.country || data.retailer?.country || null,
           pkg_plan: data.company?.pkg_plan || null,
           retailer_name: data.retailer?.name || null,
+          company_logo_url: data.company?.logo_url || null,
+          retailer_logo_url: data.retailer?.logo_url || null,
         }
       : null;
     setProfile(enriched);

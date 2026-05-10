@@ -1,85 +1,28 @@
 import { useAuth } from "../auth/AuthProvider";
 import LegacyApp from "../legacy/PreconnectFM";
+import PanelTopBar from "../components/PanelTopBar";
+import EntityLogo from "../components/EntityLogo";
 
 export default function BuyerPanel() {
   const { user, profile, signOut } = useAuth();
 
   return (
     <div style={{ minHeight: "100vh" }}>
-      <TopBar
+      <PanelTopBar
         title="Panel Kupca"
+        logo={
+          <EntityLogo
+            logoUrl={profile?.retailer_logo_url}
+            name={profile?.retailer_name}
+            bgColor="#2563eb"
+          />
+        }
         userLabel={profile?.name || user?.email}
         roleLabel="Kupiec"
         roleColor="#2563eb"
         onSignOut={signOut}
       />
       <LegacyApp initialRole="buyer" currentUser={profile} />
-    </div>
-  );
-}
-
-function TopBar({ title, userLabel, roleLabel, roleColor, onSignOut }) {
-  return (
-    <div
-      style={{
-        background: "white",
-        borderBottom: "1px solid #e2e8f0",
-        padding: "10px 20px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        position: "sticky",
-        top: 0,
-        zIndex: 100,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background: "#0d9488",
-            color: "white",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: 700,
-          }}
-        >
-          FM
-        </div>
-        <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span
-          style={{
-            background: roleColor,
-            color: "white",
-            fontSize: 11,
-            padding: "3px 8px",
-            borderRadius: 4,
-            fontWeight: 600,
-          }}
-        >
-          {roleLabel}
-        </span>
-        <span style={{ fontSize: 13, color: "#475569" }}>{userLabel}</span>
-        <button
-          onClick={onSignOut}
-          style={{
-            background: "none",
-            border: "1px solid #cbd5e1",
-            padding: "6px 12px",
-            borderRadius: 6,
-            cursor: "pointer",
-            fontSize: 13,
-            color: "#475569",
-          }}
-        >
-          Wyloguj
-        </button>
-      </div>
     </div>
   );
 }
