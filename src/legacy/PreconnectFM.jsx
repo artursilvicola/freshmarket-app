@@ -2562,11 +2562,22 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         company_id: co?.id || null,
         company: companyDraft || co,
       });
-      const patch = { description: result?.description || "" };
+      // [B2B Round adaptive-company-profile-ai] AI zwraca dwa opisy w jednym
+      // wywołaniu: krótki (2-3 zdania, do podglądu) i standardowy (4-6 zdań,
+      // główny opis profilu). Po regeneracji status review wraca na 'pending'
+      // — admin musi ponownie zatwierdzić.
+      const patch = {
+        description: result?.description || "",
+        description_short: result?.description_short || "",
+        ai_review_status: "pending",
+      };
       if (typeof applyDraft === "function") applyDraft(patch);
       else setCo(prev=>({ ...prev, ...patch }));
       setAiModal(false);
-      fl(result?.source?.website_used ? "AI przygotował opis na podstawie danych firmy i strony WWW." : "AI przygotował opis na podstawie danych firmy.");
+      const tierMsg = result?.richness === "rich" ? "(profil rozszerzony)"
+                    : result?.richness === "minimal" ? "(profil krótki — uzupełnij więcej danych dla bogatszego opisu)"
+                    : "";
+      fl(`${result?.source?.website_used ? "AI przygotował opis na podstawie danych firmy i strony WWW." : "AI przygotował opis na podstawie danych firmy."} ${tierMsg}`.trim());
     } catch (e) {
       console.warn("[generateCompanyDescriptionAI]", e);
       fl(e?.message || "Nie udało się wygenerować opisu firmy.", "warning");
@@ -2615,7 +2626,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
-    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies}/>;
+    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
@@ -3171,40 +3182,126 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
   );
 }
 
-/* ── Company (unchanged logic, cleaned up emoji) ────────────────────────── */
+/* ── Company ─────────────────────────────────────────────────────────────
+   [B2B Round adaptive-company-profile-ai]
+   Profil rozłożony na sekcje. Mała firma uzupełnia podstawy + jeden opis;
+   większa wypełnia rynki/zaplecze/materiały i AI generuje bogatszy profil.
+   Pola strukturalne idą do `c.profile_data` (jsonb). Dwa opisy AI
+   (description_short + description) są na top-level i można je edytować
+   ręcznie po wygenerowaniu.
+*/
+const CUSTOMER_TYPE_OPTIONS = [
+  ["retail", "Retail"],
+  ["wholesale", "Hurt"],
+  ["horeca", "HoReCa"],
+  ["processing", "Przetwórstwo"],
+  ["export", "Eksport"],
+];
+const PARTNERSHIP_OPTIONS = [
+  ["programy_stale", "Programy stałe"],
+  ["spot", "Spot"],
+  ["promocje", "Promocje"],
+  ["sezonowe_akcje", "Sezonowe akcje"],
+];
+const CAPABILITY_OPTIONS = [
+  ["sortownia", "Sortownia"],
+  ["pakowalnia", "Pakowalnia"],
+  ["chlodnia", "Chłodnia"],
+  ["linia_optyczna", "Linia optyczna"],
+  ["etykietowanie", "Etykietowanie"],
+  ["konfekcjonowanie", "Konfekcjonowanie"],
+  ["retail_ready", "Przygotowanie pod retail"],
+  ["wlasna_logistyka", "Własna logistyka"],
+  ["partner_logistyczny", "Partner logistyczny"],
+];
+const EMPLOYEES_OPTIONS = [
+  ["", "—"],
+  ["1-10", "1–10"],
+  ["11-50", "11–50"],
+  ["51-200", "51–200"],
+  ["201-500", "201–500"],
+  ["500+", "500+"],
+];
+
+// Czy URL prowadzi do PDF-a (nie obrazka). Używane przy renderowaniu
+// listy materiałów — PDF dostaje ikonę pliku, obrazek thumbnail.
+function materialIsPdf(url) {
+  if (!url) return false;
+  return /\.pdf(\?|$)/i.test(url);
+}
+
 function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers }) {
   const [c,setC]=useState({...co}); const [showPreview,setShowPreview]=useState(false);
-  const logoRef=useRef(); const pdfRef=useRef();
-  const u=(k,v)=>setC(prev=>({...prev,[k]:v}));
+  const u = (k, v) => setC(prev => ({ ...prev, [k]: v }));
+  // Pomocnik do edycji zagnieżdżonych pól w profile_data.
+  // setPd("offer", "private_label", true) -> {profile_data: {offer: {private_label: true}}}
+  const setPd = (section, key, val) => setC(prev => ({
+    ...prev,
+    profile_data: {
+      ...(prev.profile_data || {}),
+      [section]: { ...((prev.profile_data || {})[section] || {}), [key]: val },
+    },
+  }));
+  const setPdRoot = (key, val) => setC(prev => ({
+    ...prev,
+    profile_data: { ...(prev.profile_data || {}), [key]: val },
+  }));
+  const pd = c.profile_data || {};
+  const basics = pd.basics || {};
+  const offer = pd.offer || {};
+  const trade = pd.trade || {};
+  const ops = pd.operations || {};
+  const materials = Array.isArray(pd.materials) ? pd.materials : [];
+  const supplierPitch = typeof pd.supplier_pitch === "string" ? pd.supplier_pitch : "";
+
   const calcCompleteness=(d)=>{
-    let pts=0, max=100;
+    let pts=0;
     if(d.logo) pts+=20;
     if(d.name) pts+=10;
     if(d.country) pts+=5;
     if(d.city) pts+=5;
     if(d.website) pts+=5;
     if(d.phone) pts+=5;
-    if(d.description&&d.description.length>50) pts+=15;
-    if((d.types||[]).length>0) pts+=10;
-    if((d.categories||[]).length>0) pts+=10;
-    if((d.contacts||[]).some(ct=>ct.phone)) pts+=10;
-    if((d.certs||[]).length>0) pts+=5;
+    if(d.description&&d.description.length>50) pts+=10;
+    if(d.description_short&&d.description_short.length>20) pts+=5;
+    if((d.types||[]).length>0) pts+=8;
+    if((d.categories||[]).length>0) pts+=8;
+    if((d.contacts||[]).some(ct=>ct.phone)) pts+=8;
+    if((d.certs||[]).length>0) pts+=4;
+    // Bonus za rozszerzony profil — 7 punktów rozdzielonych na sekcje
+    const dpd = d.profile_data || {};
+    if (Array.isArray(dpd.trade?.export_countries) && dpd.trade.export_countries.length) pts+=2;
+    if (Array.isArray(dpd.operations?.capabilities) && dpd.operations.capabilities.length) pts+=2;
+    if (Array.isArray(dpd.materials) && dpd.materials.length) pts+=2;
+    if (typeof dpd.supplier_pitch === "string" && dpd.supplier_pitch.trim()) pts+=1;
     return Math.min(100,pts);
   };
   const completeness = calcCompleteness(c);
+
+  // Helper: tekst CSV → array kodów krajów upper-case
+  const parseCountryList = (txt) => (txt || "")
+    .split(/[,;\s]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(Boolean);
+  const exportCountriesText = Array.isArray(trade.export_countries)
+    ? trade.export_countries.join(", ")
+    : "";
+
   return (
     <div style={{ maxWidth:840 }}>
       {showPreview&&<CompanyPreviewModal co={c} offers={offers} role="supplier" onClose={()=>setShowPreview(false)}/>}
       {/* AI banner */}
       <div style={{ background:"#eff6ff",border:"1px solid #93c5fd",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",gap:10,alignItems:"flex-start" }}>
         <Bot size={18} color="#3b82f6" style={{ flexShrink:0,marginTop:1 }}/>
-        <div style={{ flex:1,fontSize:13,color:"#1e40af" }}><strong>AI Auto-fill</strong> — podaj adres WWW, a AI przygotuje opis firmy na podstawie Twoich danych i treści strony.</div>
+        <div style={{ flex:1,fontSize:13,color:"#1e40af" }}>
+          <strong>AI Auto-fill</strong> — AI wygeneruje krótki i standardowy opis firmy na podstawie Twoich danych, materiałów i strony WWW. Im więcej uzupełnisz pól poniżej (zaplecze, rynki, certyfikaty), tym bogatszy będzie profil.
+        </div>
         <div style={{ display:"flex",gap:6 }}>
           <Btn sm onClick={()=>setAiModal(true)} style={{ background:"#3b82f6",color:"white",border:"none" }}><Sparkles size={12}/> Generuj AI</Btn>
           <Btn sm outline onClick={()=>setShowPreview(true)}><Eye size={12}/> Podgląd</Btn>
         </div>
       </div>
-      {aiModal&&<div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={()=>!aiLoad&&setAiModal(false)}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:14,padding:24,maxWidth:420,width:"90%" }}><h3 style={{ marginBottom:14 }}>AI Auto-fill</h3><div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>AI wykorzysta dane firmy z profilu oraz treść Twojej strony, aby zaproponować gotowy opis do dalszej edycji.</div><Inp label="Strona WWW" value={c.website} onChange={e=>u("website",e.target.value)}/>{aiLoad&&<Alrt type="success"><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> Analizuję stronę i przygotowuję opis...</Alrt>}<div style={{ display:"flex",gap:8 }}><Btn primary onClick={()=>void runAI(c, patch => setC(prev=>({ ...prev, ...patch })))} disabled={aiLoad} full style={{ background:"#3b82f6" }}>Generuj</Btn><Btn outline onClick={()=>setAiModal(false)} disabled={aiLoad}>Anuluj</Btn></div></div></div>}
+      {aiModal&&<div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={()=>!aiLoad&&setAiModal(false)}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:14,padding:24,maxWidth:420,width:"90%" }}><h3 style={{ marginBottom:14 }}>AI Auto-fill</h3><div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>AI wykorzysta dane firmy z profilu, profil rozszerzony i treść Twojej strony, aby zaproponować dwa opisy: krótki (do podglądu) i standardowy (główny opis profilu).</div><Inp label="Strona WWW" value={c.website} onChange={e=>u("website",e.target.value)}/>{aiLoad&&<Alrt type="success"><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> Analizuję stronę i przygotowuję opisy...</Alrt>}<div style={{ display:"flex",gap:8 }}><Btn primary onClick={()=>void runAI(c, patch => setC(prev=>({ ...prev, ...patch })))} disabled={aiLoad} full style={{ background:"#3b82f6" }}>Generuj</Btn><Btn outline onClick={()=>setAiModal(false)} disabled={aiLoad}>Anuluj</Btn></div></div></div>}
       {/* Completeness */}
       <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 16px",marginBottom:14 }}>
         <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}><span>Kompletność profilu</span><span style={{ fontWeight:700,color:completeness>=80?"#059669":"#d97706" }}>{completeness}%</span></div>
@@ -3217,11 +3314,6 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
           <div style={{ flex:1 }}>
             <SimplePhotoUploader
               bucket="company-logos"
-              /* [B2B Round 5.7] No "tmp" fallback. If c.id is missing (company
-                 not loaded yet), uploader's own guard `if (!pathPrefix)` will
-                 show "Brak ścieżki — komponent źle skonfigurowany" instead of
-                 silently uploading to a shared `tmp/` folder where multiple
-                 suppliers would overwrite each other. */
               pathPrefix={c.id || ""}
               value={c.logo || null}
               onChange={(newUrl) => u("logo", newUrl)}
@@ -3236,7 +3328,30 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
         <Row><Inp label="Nazwa firmy" required value={c.name} onChange={e=>u("name",e.target.value)}/><Inp label="NIP/VAT" value={c.nip} onChange={e=>u("nip",e.target.value)}/></Row>
         <Row><Inp label="Kraj" value={c.country} onChange={e=>u("country",e.target.value)}><option value="">—</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</Inp><Inp label="Miasto" value={c.city} onChange={e=>u("city",e.target.value)}/></Row>
         <Row><Inp label="Strona WWW" value={c.website||""} onChange={e=>u("website",e.target.value)}/><Inp label="Telefon" value={c.phone||""} onChange={e=>u("phone",e.target.value)}/></Row>
-        <Inp label="Opis firmy" ta value={c.description} onChange={e=>u("description",e.target.value)}/>
+      </Card>
+      {/* Opisy AI — dwa warstwy: krótki (podgląd) + standardowy (główny) */}
+      <Card title="Opis firmy" icon={Bot} actions={
+        c.ai_review_status === "approved"
+          ? <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>✓ Zatwierdzony przez admina</span>
+          : c.ai_review_status === "edited"
+          ? <span style={{ fontSize:11,color:"#0d9488",background:"#ccfbf1",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>Edytowany</span>
+          : <span style={{ fontSize:11,color:"#92400e",background:"#fef3c7",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>Czeka na review</span>
+      }>
+        <Inp
+          label="Opis krótki (2–3 zdania, ~200–300 znaków)"
+          ta
+          value={c.description_short || ""}
+          onChange={e=>{ u("description_short", e.target.value); if (c.ai_review_status === "approved") u("ai_review_status", "edited"); }}
+          style={{ minHeight: 56 }}
+          hint="Pokazywany w karcie firmy u kupca i w podglądzie. Nie powtarzaj nazwy firmy — kupiec już ją widzi."
+        />
+        <Inp
+          label="Opis standardowy (4–6 zdań, ~450–700 znaków)"
+          ta
+          value={c.description || ""}
+          onChange={e=>{ u("description", e.target.value); if (c.ai_review_status === "approved") u("ai_review_status", "edited"); }}
+          hint="Główny opis profilu. Generowany przez AI z Twoich danych — możesz go ręcznie poprawić."
+        />
       </Card>
       <Card title="Typ firmy i kategorie" icon={Leaf}>
         <div style={{ marginBottom:12 }}>
@@ -3247,7 +3362,89 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
           <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Kategorie produktowe</label>
           <TagToggle items={[["owoce","Owoce"],["warzywa","Warzywa"],["kwiaty","Kwiaty"],["zioła","Zioła"],["inne","Inne"]]} active={c.categories} onChange={v=>u("categories",v)}/>
         </div>
-        <Row><Inp label="Produkty" value={c.products||""} onChange={e=>u("products",e.target.value)}/><Inp label="Rynki" value={c.markets||""} onChange={e=>u("markets",e.target.value)}/></Row>
+        <Row><Inp label="Produkty" value={c.products||""} onChange={e=>u("products",e.target.value)}/><Inp label="Rynki sprzedaży" value={c.markets||""} onChange={e=>u("markets",e.target.value)}/></Row>
+      </Card>
+      {/* Profil rozszerzony — sekcje opcjonalne, każda dodaje sygnał dla AI */}
+      <Card title="Profil rozszerzony — podstawy" icon={Building2}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>Pola opcjonalne. Im więcej wypełnisz, tym bogatszy profil dla kupca.</div>
+        <Row>
+          <Inp
+            label="Rok założenia"
+            type="number"
+            value={basics.founded_year || ""}
+            onChange={e=>setPd("basics", "founded_year", e.target.value ? parseInt(e.target.value, 10) : null)}
+          />
+          <Inp
+            label="Liczba pracowników"
+            value={basics.employees || ""}
+            onChange={e=>setPd("basics", "employees", e.target.value || null)}
+          >
+            {EMPLOYEES_OPTIONS.map(([k,v])=>(<option key={k} value={k}>{v}</option>))}
+          </Inp>
+        </Row>
+      </Card>
+      <Card title="Profil rozszerzony — oferta" icon={Tag}>
+        <Row>
+          <Inp label="Produkty całoroczne" value={offer.products_year_round || ""} onChange={e=>setPd("offer","products_year_round",e.target.value||null)} hint="np. jabłka, gruszki, kapusta"/>
+          <Inp label="Produkty sezonowe" value={offer.products_seasonal || ""} onChange={e=>setPd("offer","products_seasonal",e.target.value||null)} hint="np. truskawki (V–VII), wiśnie (VI–VII)"/>
+        </Row>
+        <div style={{ marginBottom:12 }}>
+          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Typ obsługiwanych klientów</label>
+          <TagToggle items={CUSTOMER_TYPE_OPTIONS} active={offer.customer_types || []} onChange={v=>setPd("offer","customer_types",v)}/>
+        </div>
+        <label style={{ display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer" }}>
+          <input type="checkbox" checked={!!offer.private_label} onChange={e=>setPd("offer","private_label",e.target.checked)} />
+          <span>Oferujemy markę własną / private label</span>
+        </label>
+      </Card>
+      <Card title="Profil rozszerzony — handel i rynki" icon={Send}>
+        <Inp
+          label="Kraje eksportu (kody ISO oddzielone przecinkami)"
+          value={exportCountriesText}
+          onChange={e=>setPd("trade","export_countries", parseCountryList(e.target.value))}
+          hint="np. DE, CZ, SK, FR, NL"
+        />
+        <Inp label="Główne rynki (opisowo)" value={trade.main_markets || ""} onChange={e=>setPd("trade","main_markets",e.target.value||null)} hint="np. EU Środkowa, kraje DACH, rynek krajowy"/>
+        <div style={{ marginBottom:12 }}>
+          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Typ współpracy</label>
+          <TagToggle items={PARTNERSHIP_OPTIONS} active={trade.partnership_types || []} onChange={v=>setPd("trade","partnership_types",v)}/>
+        </div>
+        <Inp label="Typowe wolumeny" value={trade.typical_volumes || ""} onChange={e=>setPd("trade","typical_volumes",e.target.value||null)} hint="np. 10–50 ton tygodniowo, 1–2 TIR-y dziennie"/>
+      </Card>
+      <Card title="Profil rozszerzony — zaplecze operacyjne" icon={ShieldCheck}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>Zaznacz, czym dysponujesz lub co jesteś w stanie zaoferować.</div>
+        <TagToggle items={CAPABILITY_OPTIONS} active={ops.capabilities || []} onChange={v=>setPd("operations","capabilities",v)}/>
+      </Card>
+      <Card title="Materiały (PDF, katalogi, zdjęcia)" icon={Award}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>Wgraj katalog handlowy, broszurę, zdjęcia zakładu / pakowania / produktów. Kupiec zobaczy je w podglądzie profilu.</div>
+        <SimplePhotoUploader
+          bucket="company-materials"
+          pathPrefix={c.id || ""}
+          value={materials}
+          onChange={(newList) => setPdRoot("materials", newList)}
+          multi={true}
+          max={12}
+          accept="image/*,application/pdf"
+          label="Kliknij lub przeciągnij PDF / zdjęcie"
+        />
+        {materials.length > 0 && (
+          <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:10 }}>
+            {materials.filter(materialIsPdf).map(url => (
+              <a key={url} href={url} target="_blank" rel="noreferrer" style={{ fontSize:11,color:"#3b82f6",background:"#eff6ff",padding:"3px 8px",borderRadius:6,textDecoration:"none",border:"1px solid #bfdbfe" }}>
+                📄 PDF
+              </a>
+            ))}
+          </div>
+        )}
+      </Card>
+      <Card title="Co chcesz podkreślić kupcowi?" icon={Sparkles}>
+        <Inp
+          ta
+          value={supplierPitch}
+          onChange={e=>setPdRoot("supplier_pitch", e.target.value)}
+          hint="Wolny tekst — AI uwzględni jako sygnał Twoich priorytetów handlowych. Nie skopiuje dosłownie."
+          style={{ minHeight: 80 }}
+        />
       </Card>
       {(c.certs||[]).length>0&&<Card title="Certyfikaty" icon={ShieldCheck}>{c.certs.map((ct,i)=><div key={i} style={{ display:"flex",gap:10,padding:"8px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:6,fontSize:13,border:"1px solid #bbf7d0" }}><ShieldCheck size={13} color="#059669"/><strong style={{ color:"#0d9488" }}>{ct.type}</strong><span style={{ color:"#64748b" }}>Nr: {ct.number}</span><span style={{ marginLeft:"auto",color:"#059669" }}>do {ct.valid}</span></div>)}</Card>}
       <Card title="Kontakty" icon={Users}>
@@ -5590,11 +5787,79 @@ function PageAdminRetailers({ retailers, setRetailers }) {
 
 
 /* ── Admin Firmy: pakiety, limity, rozliczenia per firma ─────────────────── */
-function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies }) {
+function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies }) {
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
   const [expandedId, setExpandedId] = useState(null);
+  // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
+  // opisów AI: trwająca regeneracja, edycja inline, podgląd profilu kupca.
+  const [aiLoadingId, setAiLoadingId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editDraft, setEditDraft] = useState({ description_short: "", description: "" });
+  const [previewCompany, setPreviewCompany] = useState(null);
+
+  function patchCompany(id, patch) {
+    setCompanies?.(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+  }
+
+  async function regenerateForCompany(firmCo) {
+    if (!firmCo?.name) {
+      fl("Firma nie ma jeszcze nazwy — nie da się wygenerować opisu.", "warning");
+      return;
+    }
+    setAiLoadingId(firmCo.id);
+    try {
+      const result = await dbGenerateCompanyDescriptionAI({
+        company_id: firmCo.id,
+        company: firmCo,
+      });
+      patchCompany(firmCo.id, {
+        description: result?.description || "",
+        description_short: result?.description_short || "",
+        ai_review_status: "pending",
+      });
+      fl(`AI wygenerował opisy dla ${firmCo.name}. ${result?.richness === "rich" ? "(profil rozszerzony)" : result?.richness === "minimal" ? "(profil krótki)" : ""}`.trim());
+    } catch (e) {
+      fl(e?.message || "Nie udało się wygenerować opisu firmy.", "warning");
+    } finally {
+      setAiLoadingId(null);
+    }
+  }
+
+  function approveDescriptions(firmCo) {
+    patchCompany(firmCo.id, { ai_review_status: "approved" });
+    fl(`Profil firmy ${firmCo.name} zatwierdzony.`);
+  }
+
+  function startEdit(firmCo) {
+    setEditingId(firmCo.id);
+    setEditDraft({
+      description_short: firmCo.description_short || "",
+      description: firmCo.description || "",
+    });
+  }
+  function saveEdit(firmCo) {
+    patchCompany(firmCo.id, {
+      description_short: editDraft.description_short || null,
+      description: editDraft.description || null,
+      ai_review_status: "edited",
+    });
+    setEditingId(null);
+    fl(`Opisy zapisane dla ${firmCo.name}.`);
+  }
+  function cancelEdit() {
+    setEditingId(null);
+    setEditDraft({ description_short: "", description: "" });
+  }
+
+  const reviewLabel = {
+    pending: ["Czeka na review", "#92400e", "#fef3c7"],
+    approved: ["✓ Zatwierdzony", "#059669", "#d1fae5"],
+    edited: ["Edytowany ręcznie", "#0d9488", "#ccfbf1"],
+    rejected: ["Odrzucony", "#dc2626", "#fee2e2"],
+  };
+
   return (
     <div>
       <div style={{ fontWeight:700,fontSize:15,marginBottom:14 }}>Firmy i limity pakietów</div>
@@ -5651,6 +5916,75 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     </select>
                   </div>
                 </div>
+                {/* [B2B Round adaptive-company-profile-ai] AI review block ─ */}
+                {firmCo?.name && setCompanies && (() => {
+                  const status = firmCo.ai_review_status || "pending";
+                  const [statusLabel, statusColor, statusBg] = reviewLabel[status] || reviewLabel.pending;
+                  const isEditing = editingId === firmCo.id;
+                  const isLoading = aiLoadingId === firmCo.id;
+                  return (
+                    <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",marginBottom:12,border:"1px solid #e2e8f0" }}>
+                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                          <Bot size={14} color="#3b82f6"/>
+                          <strong style={{ fontSize:12 }}>Opis AI</strong>
+                          <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 7px",borderRadius:4,fontWeight:600 }}>{statusLabel}</span>
+                        </div>
+                        <div style={{ display:"flex",gap:6 }}>
+                          <Btn sm outline onClick={()=>setPreviewCompany(firmCo)}><Eye size={11}/> Podgląd</Btn>
+                          {!isEditing && (
+                            <>
+                              <Btn sm outline onClick={()=>startEdit(firmCo)}>Edytuj</Btn>
+                              <Btn sm outline onClick={()=>regenerateForCompany(firmCo)} disabled={isLoading}>
+                                {isLoading ? <RefreshCw size={11} style={{ animation:"spin 1s linear infinite" }}/> : <Sparkles size={11}/>}
+                                {isLoading ? " Generuję…" : " Generuj AI"}
+                              </Btn>
+                              {status !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(firmCo)}>Zatwierdź</Btn>}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {isEditing ? (
+                        <>
+                          <Inp
+                            label="Opis krótki"
+                            ta
+                            value={editDraft.description_short}
+                            onChange={e=>setEditDraft(d=>({ ...d, description_short: e.target.value }))}
+                            style={{ minHeight:50,fontSize:12 }}
+                          />
+                          <Inp
+                            label="Opis standardowy"
+                            ta
+                            value={editDraft.description}
+                            onChange={e=>setEditDraft(d=>({ ...d, description: e.target.value }))}
+                            style={{ fontSize:12 }}
+                          />
+                          <div style={{ display:"flex",gap:6,justifyContent:"flex-end" }}>
+                            <Btn sm outline onClick={cancelEdit}>Anuluj</Btn>
+                            <Btn sm primary onClick={()=>saveEdit(firmCo)}>Zapisz</Btn>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {firmCo.description_short ? (
+                            <div style={{ fontSize:12,color:"#334155",marginBottom:6 }}>
+                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>Krótki:</span> {firmCo.description_short}
+                            </div>
+                          ) : null}
+                          {firmCo.description ? (
+                            <div style={{ fontSize:12,color:"#334155",lineHeight:1.6 }}>
+                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>Standard:</span> {firmCo.description}
+                            </div>
+                          ) : null}
+                          {!firmCo.description_short && !firmCo.description && (
+                            <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}>Brak opisów. Kliknij „Generuj AI", aby utworzyć.</div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>
                   <strong>Wysyłki ({firmSends.length}):</strong> {firmSends.length===0?"Brak wysyłek.":""}
                 </div>
@@ -5669,6 +6003,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
           </div>
         );
       })}
+      {previewCompany && (
+        <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" onClose={()=>setPreviewCompany(null)}/>
+      )}
     </div>
   );
 }
@@ -5805,16 +6142,189 @@ function ConfirmForm({ send, onConfirm }) {
   );
 }
 
+// [B2B Round adaptive-company-profile-ai]
+// Profil rozłożony na warstwy. Tier 1 (zawsze widoczny) — logo, nazwa, kraj,
+// krótki opis, typy, kategorie. Tier 2 (tylko jeśli są dane) — rynki,
+// zaplecze, materiały, certyfikaty, pitch, pełny opis. Pusta sekcja
+// ZNIKA — kupiec nie czyta nagłówków bez treści.
+const PARTNERSHIP_LABELS = {
+  programy_stale: "Programy stałe",
+  spot: "Spot",
+  promocje: "Promocje",
+  sezonowe_akcje: "Sezonowe akcje",
+};
+const CAPABILITY_LABELS = {
+  sortownia: "Sortownia",
+  pakowalnia: "Pakowalnia",
+  chlodnia: "Chłodnia",
+  linia_optyczna: "Linia optyczna",
+  etykietowanie: "Etykietowanie",
+  konfekcjonowanie: "Konfekcjonowanie",
+  retail_ready: "Retail-ready",
+  wlasna_logistyka: "Własna logistyka",
+  partner_logistyczny: "Partner logistyczny",
+};
+const CUSTOMER_TYPE_LABELS = {
+  retail: "Retail",
+  wholesale: "Hurt",
+  horeca: "HoReCa",
+  processing: "Przetwórstwo",
+  export: "Eksport",
+};
+
+function ProfileSection({ title, icon: Ic, children }) {
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:6,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:"#64748b" }}>
+        {Ic && <Ic size={12} color="#0d9488"/>}
+        <span>{title}</span>
+      </div>
+      <div style={{ fontSize:13,color:"#334155",lineHeight:1.55 }}>{children}</div>
+    </div>
+  );
+}
+
 function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role }) {
+  const pd = co.profile_data || {};
+  const basics = pd.basics || {};
+  const offer = pd.offer || {};
+  const trade = pd.trade || {};
+  const ops = pd.operations || {};
+  const materials = Array.isArray(pd.materials) ? pd.materials : [];
+  const supplierPitch = (typeof pd.supplier_pitch === "string" ? pd.supplier_pitch : "").trim();
+  const exportCountries = Array.isArray(trade.export_countries) ? trade.export_countries.filter(Boolean) : [];
+  const partnershipTypes = Array.isArray(trade.partnership_types) ? trade.partnership_types.filter(Boolean) : [];
+  const capabilities = Array.isArray(ops.capabilities) ? ops.capabilities.filter(Boolean) : [];
+  const customerTypes = Array.isArray(offer.customer_types) ? offer.customer_types.filter(Boolean) : [];
+  const certs = Array.isArray(co.certs) ? co.certs.filter(Boolean) : [];
+
+  const shortDesc = (co.description_short || "").trim();
+  const longDesc = (co.description || "").trim();
+  // Jeśli są oba — krótki na górze (tier 1), pełny niżej (tier 2). Jeśli
+  // jest tylko jeden, pokaż go raz w tier 1.
+  const tier1Desc = shortDesc || longDesc || "";
+  const tier2Desc = shortDesc && longDesc && shortDesc !== longDesc ? longDesc : "";
+
+  const hasMarkets = exportCountries.length > 0 || partnershipTypes.length > 0 || trade.main_markets || trade.typical_volumes || co.markets;
+  const hasOps = capabilities.length > 0;
+  const hasOffer = offer.products_year_round || offer.products_seasonal || customerTypes.length > 0 || offer.private_label;
+  const hasMaterials = materials.length > 0;
+  const hasCerts = certs.length > 0;
+
   return (
     <Modal title="Podgląd profilu firmy – widok kupca" onClose={onClose} wide>
-      <div style={{ display:"flex",gap:14,marginBottom:18,padding:14,background:"#f8fafc",borderRadius:10 }}>
-        {co.logo?<img src={co.logo} alt="" style={{ width:70,height:70,objectFit:"cover",borderRadius:10,flexShrink:0 }}/>:<div style={{ width:70,height:70,borderRadius:10,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Building2 size={28} color="#94a3b8"/></div>}
-        <div style={{ flex:1 }}><h3 style={{ margin:"0 0 3px" }}>{co.name}</h3><div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[co.country]||"🌐"} {CNAMES[co.country]||co.country} · {co.city} · {co.nip}</div>{co.website&&<div style={{ fontSize:12,color:"#3b82f6",marginTop:2 }}>{co.website}</div>}<div style={{ marginTop:7,display:"flex",gap:4,flexWrap:"wrap" }}>{(co.types||[]).map(t=><Badge key={t} color="#0d9488">{TYPE_LABELS[t]||t}</Badge>)}</div></div>
+      {/* ── TIER 1 ── zawsze widoczny: logo, nazwa, kraj, opis krótki, typy ── */}
+      <div style={{ display:"flex",gap:14,marginBottom:14,padding:14,background:"#f8fafc",borderRadius:10 }}>
+        {co.logo?<img src={co.logo} alt="" style={{ width:70,height:70,objectFit:"contain",borderRadius:10,flexShrink:0,background:"white",border:"1px solid #e2e8f0",padding:4 }}/>:<div style={{ width:70,height:70,borderRadius:10,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Building2 size={28} color="#94a3b8"/></div>}
+        <div style={{ flex:1 }}>
+          <h3 style={{ margin:"0 0 3px" }}>{co.name}</h3>
+          <div style={{ fontSize:12,color:"#64748b" }}>
+            {FLAGS[co.country]||"🌐"} {CNAMES[co.country]||co.country}
+            {co.city && <> · {co.city}</>}
+            {co.nip && <> · {co.nip}</>}
+            {basics.founded_year && <> · od {basics.founded_year}</>}
+            {basics.employees && <> · {basics.employees} pracowników</>}
+          </div>
+          {co.website&&<div style={{ fontSize:12,color:"#3b82f6",marginTop:2 }}>{co.website}</div>}
+          <div style={{ marginTop:7,display:"flex",gap:4,flexWrap:"wrap" }}>
+            {(co.types||[]).map(t=><Badge key={t} color="#0d9488">{TYPE_LABELS[t]||t}</Badge>)}
+            {(co.categories||[]).map(t=><Badge key={`c-${t}`} color="#65a30d" bg="#f7fee7">{CEMOJI[t]||""} {t}</Badge>)}
+          </div>
+        </div>
       </div>
-      <p style={{ color:"#475569",lineHeight:1.7,marginBottom:14,fontSize:13 }}>{co.description||"Brak opisu."}</p>
-      {(co.certs||[]).length>0&&<div style={{ marginBottom:14 }}>{co.certs.map((ct,i)=><div key={i} style={{ display:"flex",gap:10,padding:"7px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:5,fontSize:13,border:"1px solid #bbf7d0" }}><ShieldCheck size={13} color="#059669"/><strong style={{ color:"#0d9488" }}>{ct.type}</strong><span style={{ color:"#64748b" }}>Nr: {ct.number}</span><span style={{ marginLeft:"auto",color:"#059669" }}>do {ct.valid}</span></div>)}</div>}
-      {(co.contacts||[]).map((ct,i)=><div key={i} style={{ padding:10,background:"#f8fafc",borderRadius:7,marginBottom:7,border:"1px solid #e2e8f0" }}><div style={{ fontWeight:600,fontSize:13 }}>{ct.name}</div><div style={{ fontSize:12,color:"#64748b" }}>{ct.position} · {ct.phone} · {ct.email}</div></div>)}
+      {tier1Desc
+        ? <p style={{ color:"#1e293b",lineHeight:1.65,marginBottom:14,fontSize:13.5,fontWeight:500 }}>{tier1Desc}</p>
+        : <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic",marginBottom:14 }}>Firma nie dodała jeszcze opisu.</div>
+      }
+      {/* ── TIER 2 ── widoczne tylko, jeśli supplier coś podał ─────────────── */}
+      {(hasOffer || hasMarkets || hasOps || hasCerts || hasMaterials || tier2Desc || supplierPitch) && (
+        <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14 }}>
+          {hasOffer && (
+            <ProfileSection title="Oferta" icon={Tag}>
+              {offer.products_year_round && <div><strong style={{ color:"#0d9488" }}>Całoroczne:</strong> {offer.products_year_round}</div>}
+              {offer.products_seasonal && <div><strong style={{ color:"#0d9488" }}>Sezonowe:</strong> {offer.products_seasonal}</div>}
+              {customerTypes.length > 0 && (
+                <div style={{ marginTop:5,display:"flex",gap:4,flexWrap:"wrap" }}>
+                  {customerTypes.map(t=><Badge key={t} color="#0891b2" bg="#ecfeff">{CUSTOMER_TYPE_LABELS[t]||t}</Badge>)}
+                </div>
+              )}
+              {offer.private_label && <div style={{ marginTop:5,fontSize:12,color:"#059669" }}>✓ Marka własna / private label</div>}
+            </ProfileSection>
+          )}
+          {hasMarkets && (
+            <ProfileSection title="Rynki i handel" icon={Send}>
+              {exportCountries.length > 0 && (
+                <div style={{ marginBottom:4 }}>
+                  <strong style={{ color:"#0d9488" }}>Eksport: </strong>
+                  {exportCountries.map(cc => `${FLAGS[cc]||"🌐"} ${CNAMES[cc]||cc}`).join(" · ")}
+                </div>
+              )}
+              {trade.main_markets && <div><strong style={{ color:"#0d9488" }}>Główne rynki:</strong> {trade.main_markets}</div>}
+              {co.markets && !trade.main_markets && <div><strong style={{ color:"#0d9488" }}>Rynki:</strong> {co.markets}</div>}
+              {trade.typical_volumes && <div><strong style={{ color:"#0d9488" }}>Wolumeny:</strong> {trade.typical_volumes}</div>}
+              {partnershipTypes.length > 0 && (
+                <div style={{ marginTop:5,display:"flex",gap:4,flexWrap:"wrap" }}>
+                  {partnershipTypes.map(t=><Badge key={t} color="#7c3aed" bg="#f3f0ff">{PARTNERSHIP_LABELS[t]||t}</Badge>)}
+                </div>
+              )}
+            </ProfileSection>
+          )}
+          {hasOps && (
+            <ProfileSection title="Zaplecze operacyjne" icon={ShieldCheck}>
+              <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
+                {capabilities.map(t=><Badge key={t} color="#0d9488" bg="#ccfbf1">{CAPABILITY_LABELS[t]||t}</Badge>)}
+              </div>
+            </ProfileSection>
+          )}
+          {hasCerts && (
+            <ProfileSection title="Certyfikaty" icon={ShieldCheck}>
+              {certs.map((ct,i)=>(
+                <div key={i} style={{ display:"flex",gap:10,padding:"7px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:5,fontSize:13,border:"1px solid #bbf7d0" }}>
+                  <ShieldCheck size={13} color="#059669"/>
+                  <strong style={{ color:"#0d9488" }}>{ct.type}</strong>
+                  {ct.number && <span style={{ color:"#64748b" }}>Nr: {ct.number}</span>}
+                  {ct.valid && <span style={{ marginLeft:"auto",color:"#059669" }}>do {ct.valid}</span>}
+                </div>
+              ))}
+            </ProfileSection>
+          )}
+          {hasMaterials && (
+            <ProfileSection title="Materiały" icon={Award}>
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(120px, 1fr))",gap:8 }}>
+                {materials.map(url => {
+                  const isPdf = /\.pdf(\?|$)/i.test(url);
+                  return (
+                    <a key={url} href={url} target="_blank" rel="noreferrer" style={{ display:"block",aspectRatio:"4/3",borderRadius:8,overflow:"hidden",border:"1px solid #e2e8f0",background:"#f8fafc",position:"relative",textDecoration:"none" }}>
+                      {isPdf
+                        ? <div style={{ width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#3b82f6",fontSize:11,fontWeight:600 }}><span style={{ fontSize:28 }}>📄</span><span>PDF</span></div>
+                        : <img src={url} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
+                      }
+                    </a>
+                  );
+                })}
+              </div>
+            </ProfileSection>
+          )}
+          {tier2Desc && (
+            <ProfileSection title="Pełny opis" icon={Building2}>
+              <p style={{ color:"#475569",lineHeight:1.7,margin:0 }}>{tier2Desc}</p>
+            </ProfileSection>
+          )}
+          {supplierPitch && (
+            <ProfileSection title="Co podkreśla firma" icon={Sparkles}>
+              <div style={{ padding:"10px 12px",background:"#fef3c7",border:"1px solid #fde68a",borderRadius:8,fontSize:13,color:"#78350f",fontStyle:"italic" }}>
+                {supplierPitch}
+              </div>
+            </ProfileSection>
+          )}
+        </div>
+      )}
+      {(co.contacts||[]).length > 0 && (
+        <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,marginTop:6 }}>
+          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:"#64748b",marginBottom:6 }}>Kontakty</div>
+          {(co.contacts||[]).map((ct,i)=><div key={i} style={{ padding:10,background:"#f8fafc",borderRadius:7,marginBottom:7,border:"1px solid #e2e8f0" }}><div style={{ fontWeight:600,fontSize:13 }}>{ct.name}</div><div style={{ fontSize:12,color:"#64748b" }}>{ct.position} · {ct.phone} · {ct.email}</div></div>)}
+        </div>
+      )}
       {offers!==undefined&&(
         <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid #e2e8f0"}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>

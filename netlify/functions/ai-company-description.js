@@ -8,6 +8,14 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// [B2B Round adaptive-company-profile-ai]
+// Funkcja generuje DWA opisy w jednym wywołaniu:
+//   - description_short  (2-3 zdania) — szybki podgląd dla kupca, dashboardu
+//   - description        (4-6 zdań)  — główny opis na karcie firmy
+// Długość opisu jest dopasowywana do ilości danych — jeśli supplier podał
+// tylko nazwę i kraj, opis krótki ma 1 zdanie, a description ~2-3 zdania.
+// Jeśli supplier podał strukturę (zaplecze, rynki, certyfikaty), AI pisze
+// szerzej. NIGDY nie zmyśla brakujących faktów.
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
   if (event.httpMethod !== "POST") return json(405, { error: "Method Not Allowed" });
@@ -52,24 +60,165 @@ export const handler = async (event) => {
 
   const site = await fetchWebsiteSnippet(company.website);
   const prompt = buildCompanyPrompt(company, site);
-  const description = await openAiChat({
+  const richness = estimateDataRichness(company, site);
+
+  // JSON-mode prompt: AI zwraca {description_short, description} w jednym call
+  const raw = await openAiChat({
     apiKey: env.openAiApiKey,
     model: env.openAiModel,
-    system:
-      "Tworzysz krotkie, wiarygodne opisy firm B2B dla platformy Fresh Market. Piszesz po polsku. Nie zmyslasz faktow. Jesli czegos nie ma w danych, pomijasz to. Unikasz marketingowego nadmuchania i nie dodajesz certyfikatow, liczb ani krajow, ktorych nie ma w materiale.",
+    system: systemPrompt(),
     user: prompt,
-    temperature: 0.5,
+    temperature: 0.4,
+    responseFormat: { type: "json_object" },
   });
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    // Fallback: AI nie zwrócił JSON-a. Traktuj cały tekst jako description,
+    // a description_short zostaw puste — frontend wybierze description jako
+    // główny opis i nie pokaże short na karcie.
+    parsed = { description: cleanDescription(raw), description_short: "" };
+  }
 
   return json(200, {
     ok: true,
-    description: cleanDescription(description),
+    description: cleanDescription(parsed.description || ""),
+    description_short: cleanDescription(parsed.description_short || ""),
+    richness,
     source: {
       website_used: Boolean(site.text),
       website_url: site.finalUrl || company.website || null,
     },
   });
 };
+
+function systemPrompt() {
+  return [
+    "Tworzysz wiarygodne opisy firm B2B dla platformy Fresh Market (rynek owoce-warzywa-kwiaty).",
+    "Piszesz po polsku, językiem handlowym i konkretnym. Adresat: kupiec sieci handlowej.",
+    "ZASADY:",
+    "1. Nie zmyślasz faktów. Jeśli czegoś nie ma w danych, pomijasz. Nigdy nie wymyślasz krajów eksportu, certyfikatów, liczb pracowników ani volumenów.",
+    "2. Nie używasz pustego marketingu (np. 'lider', 'najlepszy', 'wieloletnie tradycje', jeśli to nie wynika z danych).",
+    "3. Skalujesz długość do ilości danych: mało danych → krótko; dużo danych → szerzej, ale nadal konkretnie.",
+    "4. Bez nagłówków, list punktowanych, emoji.",
+    "5. Akcent: typ firmy + co sprzedaje + dla kogo + na jakich rynkach + zaplecze/certyfikaty (tylko jeśli podane).",
+    "Zwracasz JSON: {\"description_short\": string, \"description\": string}.",
+    "description_short: 2-3 zdania, ~200-300 znaków, do podglądu kart i dashboardu kupca.",
+    "description: 4-6 zdań, ~450-700 znaków, główny opis profilu. Jeśli danych mało (sama nazwa, kraj, jeden typ) — wystarczy 2-3 zdania (~250-400 znaków).",
+  ].join("\n");
+}
+
+function buildCompanyPrompt(company, site) {
+  const contacts = (company.contacts || [])
+    .map((ct) => [ct?.role, ct?.name, ct?.position, ct?.email, ct?.phone].filter(Boolean).join(" | "))
+    .filter(Boolean)
+    .join("\n");
+  const certs = (company.certs || [])
+    .map((ct) => [ct?.type, ct?.number, ct?.valid].filter(Boolean).join(" | "))
+    .filter(Boolean)
+    .join("\n");
+
+  // Strukturalne dane z profile_data (round adaptive-company-profile-ai)
+  const pd = company.profile_data || {};
+  const basics = pd.basics || {};
+  const offer = pd.offer || {};
+  const trade = pd.trade || {};
+  const ops = pd.operations || {};
+  const materials = Array.isArray(pd.materials) ? pd.materials : [];
+  const supplierPitch = typeof pd.supplier_pitch === "string" ? pd.supplier_pitch.trim() : "";
+
+  const lines = [
+    "Wygeneruj opis profilu firmy. Zwróć JSON z dwoma polami: description_short i description.",
+    "",
+    "DANE FIRMY:",
+    `Nazwa: ${company.name || "-"}`,
+    `Kraj: ${company.country || "-"}`,
+    `Miasto: ${company.city || "-"}`,
+    `WWW: ${company.website || "-"}`,
+    `Typ firmy: ${(company.types || []).join(", ") || "-"}`,
+    `Kategorie produktowe: ${(company.categories || []).join(", ") || "-"}`,
+    `Produkty (wolny tekst): ${company.products || "-"}`,
+    `Rynki sprzedaży (wolny tekst): ${company.markets || "-"}`,
+    `Sezonowość: ${company.seasonality || "-"}`,
+  ];
+
+  if (basics.founded_year) lines.push(`Rok założenia: ${basics.founded_year}`);
+  if (basics.employees) lines.push(`Liczba pracowników: ${basics.employees}`);
+
+  if (offer.products_year_round) lines.push(`Produkty całoroczne: ${offer.products_year_round}`);
+  if (offer.products_seasonal) lines.push(`Produkty sezonowe: ${offer.products_seasonal}`);
+  if (typeof offer.private_label === "boolean") lines.push(`Marka własna / private label: ${offer.private_label ? "tak" : "nie"}`);
+  if (Array.isArray(offer.customer_types) && offer.customer_types.length) {
+    lines.push(`Typ obsługiwanych klientów: ${offer.customer_types.join(", ")}`);
+  }
+
+  if (Array.isArray(trade.export_countries) && trade.export_countries.length) {
+    lines.push(`Kraje eksportu: ${trade.export_countries.join(", ")}`);
+  }
+  if (trade.main_markets) lines.push(`Główne rynki: ${trade.main_markets}`);
+  if (Array.isArray(trade.partnership_types) && trade.partnership_types.length) {
+    lines.push(`Typ współpracy: ${trade.partnership_types.join(", ")}`);
+  }
+  if (trade.typical_volumes) lines.push(`Typowe wolumeny: ${trade.typical_volumes}`);
+
+  if (Array.isArray(ops.capabilities) && ops.capabilities.length) {
+    lines.push(`Zaplecze operacyjne: ${ops.capabilities.join(", ")}`);
+  }
+
+  if (materials.length) {
+    lines.push(`Liczba dostarczonych materiałów (PDF/zdjęcia): ${materials.length}`);
+  }
+
+  if (supplierPitch) {
+    lines.push("");
+    lines.push("PODKREŚLENIE OD FIRMY (priorytet handlowy do uwzględnienia, ale bez kopiowania dosłownie):");
+    lines.push(supplierPitch);
+  }
+
+  lines.push("");
+  lines.push(contacts ? `Kontakty:\n${contacts}` : "Kontakty: -");
+  lines.push(certs ? `Certyfikaty:\n${certs}` : "Certyfikaty: -");
+  lines.push(site.text ? `Fragment strony WWW:\n${site.text}` : "Fragment strony WWW: -");
+
+  return lines.join("\n");
+}
+
+// Heurystyka: ile danych firma realnie podała. Używana w odpowiedzi do
+// frontendu (richness=tier) — ale głównie do diagnostyki, AI i tak skaluje
+// się przez prompt.
+function estimateDataRichness(company, site) {
+  let score = 0;
+  if (company.name) score += 1;
+  if (company.country) score += 1;
+  if (company.city) score += 1;
+  if (company.website) score += 1;
+  if ((company.types || []).length) score += 1;
+  if ((company.categories || []).length) score += 1;
+  if (company.products) score += 1;
+  if (company.markets) score += 1;
+  if ((company.contacts || []).length) score += 1;
+  if ((company.certs || []).length) score += 2;
+  if (site.text) score += 2;
+
+  const pd = company.profile_data || {};
+  if (pd.basics?.founded_year) score += 1;
+  if (pd.basics?.employees) score += 1;
+  if (pd.offer?.products_year_round) score += 1;
+  if (pd.offer?.products_seasonal) score += 1;
+  if (Array.isArray(pd.offer?.customer_types) && pd.offer.customer_types.length) score += 1;
+  if (Array.isArray(pd.trade?.export_countries) && pd.trade.export_countries.length) score += 2;
+  if (pd.trade?.typical_volumes) score += 1;
+  if (Array.isArray(pd.trade?.partnership_types) && pd.trade.partnership_types.length) score += 1;
+  if (Array.isArray(pd.operations?.capabilities) && pd.operations.capabilities.length) score += 2;
+  if (Array.isArray(pd.materials) && pd.materials.length) score += 2;
+  if (typeof pd.supplier_pitch === "string" && pd.supplier_pitch.trim()) score += 1;
+
+  if (score < 5) return "minimal";
+  if (score < 12) return "standard";
+  return "rich";
+}
 
 function normalizeCompany(company) {
   return {
@@ -86,40 +235,10 @@ function normalizeCompany(company) {
     markets: text(company.markets),
     contacts: Array.isArray(company.contacts) ? company.contacts : [],
     certs: Array.isArray(company.certs) ? company.certs : [],
+    profile_data: company.profile_data && typeof company.profile_data === "object"
+      ? company.profile_data
+      : {},
   };
-}
-
-function buildCompanyPrompt(company, site) {
-  const contacts = company.contacts
-    .map((ct) => [ct?.role, ct?.name, ct?.position, ct?.email, ct?.phone].filter(Boolean).join(" | "))
-    .filter(Boolean)
-    .join("\n");
-  const certs = company.certs
-    .map((ct) => [ct?.type, ct?.number, ct?.valid].filter(Boolean).join(" | "))
-    .filter(Boolean)
-    .join("\n");
-
-  return [
-    "Napisz gotowy do wklejenia opis firmy do profilu dostawcy.",
-    "Forma: 3-5 zdan, 450-700 znakow, naturalny jezyk, konkret biznesowy.",
-    "Cel: kupiec ma szybko zrozumiec czym firma sie zajmuje, co sprzedaje, na jakich rynkach dziala i jakiego typu wspolprace obsluguje.",
-    "Nie uzywaj naglowkow, punktow ani emoji.",
-    "",
-    "DANE FIRMY:",
-    `Nazwa: ${company.name || "-"}`,
-    `Kraj: ${company.country || "-"}`,
-    `Miasto: ${company.city || "-"}`,
-    `WWW: ${company.website || "-"}`,
-    `Telefon: ${company.phone || "-"}`,
-    `Typ firmy: ${(company.types || []).join(", ") || "-"}`,
-    `Kategorie: ${(company.categories || []).join(", ") || "-"}`,
-    `Produkty: ${company.products || "-"}`,
-    `Sezonowosc: ${company.seasonality || "-"}`,
-    `Rynki: ${company.markets || "-"}`,
-    contacts ? `Kontakty:\n${contacts}` : "Kontakty: -",
-    certs ? `Certyfikaty:\n${certs}` : "Certyfikaty: -",
-    site.text ? `Fragment strony WWW:\n${site.text}` : "Fragment strony WWW: -",
-  ].join("\n");
 }
 
 function cleanDescription(textValue) {

@@ -83,9 +83,32 @@ export async function getCompany(id) {
 }
 
 export async function updateCompany(id, patch) {
+  // [B2B Round adaptive-company-profile-ai] Whitelist columns. patch może
+  // pochodzić ze stanu komponentu z dodatkowymi kluczami legacy (logo, pkg,
+  // contacts, certs jako relacje), które nie istnieją w companies. Daj tu
+  // explicite nazwy kolumn i tylko te, jeżeli patch je definiuje.
+  const allowed = [
+    "name", "nip", "country", "city", "phone", "website",
+    "description", "description_short",
+    "types", "categories", "products", "seasonality", "markets",
+    "completeness", "logo_url",
+    "pkg_plan", "pkg_expiry", "fm_passport_completeness",
+    "profile_data", "ai_review_status",
+  ];
+  const row = {};
+  for (const k of allowed) if (k in patch) row[k] = patch[k];
+  // Aliasy z legacy shape — łatwiej dla callerów które trzymają stary kształt
+  if ("logo" in patch && !("logo_url" in row)) row.logo_url = patch.logo;
+  if ("pkg" in patch && !("pkg_plan" in row)) row.pkg_plan = patch.pkg;
+  if ("pkgExpiry" in patch && !("pkg_expiry" in row)) row.pkg_expiry = patch.pkgExpiry;
+  if (Object.keys(row).length === 0) {
+    // Nic do zapisania — zwróć aktualny rekord żeby caller mógł kontynuować.
+    return await getCompany(id);
+  }
+  row.updated_at = new Date().toISOString();
   const { data, error } = await supabase
     .from("companies")
-    .update(patch)
+    .update(row)
     .eq("id", id)
     .select()
     .single();
@@ -1090,6 +1113,9 @@ export async function suggestAdminChatReplyAI({ participant, thread }) {
 export async function bulkUpsertCompanies(companies) {
   if (!companies || !companies.length) return [];
   // Mapuj legacy fmId → legacy_fm_id w DB
+  // [B2B Round adaptive-company-profile-ai] Round-trip nowych pól:
+  //   description_short, profile_data (jsonb), ai_review_status. Te pola
+  //   są w legacy state jako top-level keys o tej samej nazwie.
   const rows = companies.map((c) => ({
     id: c.id && c.id.length === 36 ? c.id : undefined,
     legacy_fm_id: c.fmId || null,
@@ -1100,6 +1126,7 @@ export async function bulkUpsertCompanies(companies) {
     phone: c.phone || null,
     website: c.website || null,
     description: c.description || null,
+    description_short: c.description_short || null,
     types: c.types || [],
     categories: c.categories || [],
     products: c.products || null,
@@ -1109,6 +1136,8 @@ export async function bulkUpsertCompanies(companies) {
     logo_url: c.logo || null,
     pkg_plan: c.pkg || null,
     pkg_expiry: c.pkgExpiry || null,
+    profile_data: c.profile_data && typeof c.profile_data === "object" ? c.profile_data : {},
+    ai_review_status: c.ai_review_status || "pending",
   }));
   const { data, error } = await supabase
     .from("companies")
