@@ -3511,8 +3511,8 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
       </Card>
       {/* Opisy AI — dwa warstwy: krótki (podgląd) + standardowy (główny) */}
       <Card title="Opis firmy" icon={Bot} actions={
-        c.ai_review_status === "approved"
-          ? <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>✓ Zatwierdzony przez admina</span>
+        true
+          ? <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>Gotowy do wyświetlenia</span>
           : c.ai_review_status === "edited"
           ? <span style={{ fontSize:11,color:"#0d9488",background:"#ccfbf1",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>Edytowany</span>
           : <span style={{ fontSize:11,color:"#92400e",background:"#fef3c7",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>Czeka na review</span>
