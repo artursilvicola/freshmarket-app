@@ -40,6 +40,10 @@ import {
   refundUnreadExpiredLegacySends as dbRefundUnreadExpiredLegacySends,
   // [B2B Round supplier-FM-UX] Confirm supplier's FM chain selection
   saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
+  // [B2B Round prod-rollout / faza 2] Real packages/capacity from DB
+  getAllCompanyCapacity as dbGetAllCompanyCapacity,
+  // [B2B Round prod-rollout / faza 3] PayU integration
+  createPayuOrder as dbCreatePayuOrder,
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 import FreshMarketLogo from "../components/FreshMarketLogo";
@@ -1633,6 +1637,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     }
   };
   const [limits, setLimits] = useState(LIMITS_INIT);
+  // [B2B Round prod-rollout / faza 2] dbCapacity = pełna lista firm z view
+  // company_capacity (companies + sum z packages). Zastępuje LIMITS_INIT mock
+  // w admin panelu firm. refreshCapacity() wołane po każdej zmianie statusu /
+  // zakupie pakietu, żeby UI nie był rozsynchronizowany z bazą.
+  const [dbCapacity, setDbCapacity] = useState([]);
+  const refreshCapacity = useCallback(async () => {
+    try {
+      const rows = await dbGetAllCompanyCapacity();
+      setDbCapacity(rows);
+    } catch (e) { console.warn("[refresh company_capacity]", e); }
+  }, []);
+  useEffect(() => { if (companiesLoaded) refreshCapacity(); }, [companiesLoaded, refreshCapacity]);
   const [walletMap, setWalletMap] = useState({
     "sup-s1":  { balance:160, transactions:[{id:1,desc:"Zakup pakietu Premium 10",amount:-600,date:"2026-01-15",type:"debit"},{id:2,desc:"Doładowanie",amount:760,date:"2026-01-15",type:"credit"}] },
     "sup-s5":  { balance:120, transactions:[{id:1,desc:"Zakup pakietu Standard 10",amount:-400,date:"2026-02-01",type:"debit"},{id:2,desc:"Doładowanie",amount:520,date:"2026-02-01",type:"credit"}] },
@@ -2685,7 +2701,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
-    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies}/>;
+    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
@@ -4338,14 +4354,21 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   const sel = getPlanById(selected) || PRICING_PLANS[2];
   const rem = Math.max(0, pkgMax - pkgUsed);
 
-  function handleOrder() {
+  // [B2B Round prod-rollout / faza 3] Realne PayU zamiast mocka buyPackage().
+  // Wywołuje Netlify function create-payu-order, dostaje redirectUri do
+  // hosted checkout i przekierowuje przeglądarkę. Po finalizacji PayU notify
+  // wywoła purchase_package RPC i user wróci na /zakup-ok.
+  async function handleOrder() {
     setPaying(true);
-    setTimeout(() => {
-      buyPackage(selected, payMethod);
+    try {
+      const { redirectUri } = await dbCreatePayuOrder(selected);
+      if (!redirectUri) throw new Error("PayU nie zwrócił adresu przekierowania");
+      // Redirect przed setPaying(false), żeby nie migotać UI.
+      window.location.href = redirectUri;
+    } catch (e) {
       setPaying(false);
-      setPaid(true);
-      setTimeout(() => { setShowModal(false); setPaid(false); }, 2800);
-    }, 1800);
+      fl(`Błąd inicjalizacji płatności: ${e?.message || "spróbuj ponownie"}`, "error");
+    }
   }
 
   return (
@@ -6009,7 +6032,7 @@ const ACCOUNT_STATUS_LABELS = {
   suspended:      ["Wstrzymane",                "#dc2626", "#fee2e2"],
 };
 
-function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies }) {
+function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity }) {
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -6028,6 +6051,16 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
 
   function patchCompany(id, patch) {
     setCompanies?.(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+    // Po zmianie account_status / preconnect_enabled / fm_b2b_enabled odśwież
+    // view company_capacity, żeby filtry i countery były zsynchronizowane.
+    if (refreshCapacity && (
+      "account_status" in patch ||
+      "preconnect_enabled" in patch ||
+      "fm_b2b_enabled" in patch ||
+      "pkg_plan" in patch
+    )) {
+      refreshCapacity();
+    }
   }
 
   async function regenerateForCompany(firmCo) {
@@ -6137,29 +6170,35 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     rejected: ["Odrzucony", "#dc2626", "#fee2e2"],
   };
 
-  // Filtruj listę: w trybie "pending" budujemy ją z companies (bazy), nie z
-  // limits — LIMITS_INIT to legacy mock i nie ma w nim self-registered firm.
-  // Tryb "all" zostaje na limits, żeby nie ruszać przepływu pakietów.
-  const pendingCompanies = (companies || []).filter(c => c.account_status === "pending_review");
+  // [B2B Round prod-rollout / faza 2] Iterujemy po dbCapacity (view
+  // company_capacity z bazy: companies + sum z packages), nie po LIMITS_INIT.
+  // To pokazuje pełną listę firm + realne qty_used/qty_total z packages.
+  // Fallback do `limits` (mock) tylko gdy dbCapacity jeszcze nie załadowane,
+  // żeby uniknąć migotu pustego stanu przy pierwszym renderze.
+  const capacitySource = (dbCapacity && dbCapacity.length > 0) ? dbCapacity : [];
+  const allLims = capacitySource.map(c => ({
+    id: c.id,
+    name: c.name,
+    country: c.country || "—",
+    pkg: c.pkg_plan || "—",
+    max: Number(c.qty_total || 0),
+    used: Number(c.qty_used || 0),
+    pkgExpiry: c.pkg_expiry ? String(c.pkg_expiry).slice(0, 10) : "—",
+  }));
+  const pendingCount = capacitySource.filter(c => c.account_status === "pending_review").length;
   const visibleLims = filter === "pending"
-    ? pendingCompanies.map(co => ({
-        id: co.id,
-        name: co.name,
-        country: co.country || "—",
-        pkg: co.pkg_plan || "—",
-        max: 0,
-        used: 0,
-        pkgExpiry: co.pkg_expiry || "—",
-      }))
-    : (limits || []);
-  const pendingCount = pendingCompanies.length;
+    ? allLims.filter(lim => {
+        const co = capacitySource.find(c => c.id === lim.id);
+        return co?.account_status === "pending_review";
+      })
+    : allLims;
 
   return (
     <div>
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap" }}>
         <div style={{ fontWeight:700,fontSize:15 }}>Firmy, statusy i limity pakietów</div>
         <div style={{ display:"flex",gap:6 }}>
-          <button onClick={()=>setFilter("all")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="all"?"2px solid #0d9488":"1px solid #e2e8f0",background:filter==="all"?"rgba(13,148,136,0.05)":"white",fontSize:12,fontWeight:filter==="all"?600:500,cursor:"pointer",fontFamily:"inherit" }}>Wszystkie ({(companies||[]).length})</button>
+          <button onClick={()=>setFilter("all")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="all"?"2px solid #0d9488":"1px solid #e2e8f0",background:filter==="all"?"rgba(13,148,136,0.05)":"white",fontSize:12,fontWeight:filter==="all"?600:500,cursor:"pointer",fontFamily:"inherit" }}>Wszystkie ({allLims.length})</button>
           <button onClick={()=>setFilter("pending")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="pending"?"2px solid #d97706":"1px solid #e2e8f0",background:filter==="pending"?"rgba(217,119,6,0.05)":"white",fontSize:12,fontWeight:filter==="pending"?600:500,cursor:"pointer",fontFamily:"inherit" }}>
             Do zatwierdzenia {pendingCount > 0 && <span style={{ background:"#d97706",color:"white",borderRadius:10,fontSize:10,padding:"1px 6px",marginLeft:4 }}>{pendingCount}</span>}
           </button>

@@ -517,6 +517,86 @@ export async function getPackages(companyId) {
   return data;
 }
 
+// [B2B Round prod-rollout / faza 2] Katalog dostępnych planów pakietów,
+// zastępuje hardcoded PRICING_PLANS w PreconnectFM.jsx. Czyta z tabeli
+// package_plans (seed w migracji 023).
+export async function getPackagePlans() {
+  const { data, error } = await supabase
+    .from("package_plans")
+    .select("*")
+    .eq("active", true)
+    .order("display_order", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+// [B2B Round prod-rollout / faza 2] View company_capacity zwraca dla każdej
+// firmy sumarycznie qty_total/qty_used/qty_remaining z aktywnych pakietów +
+// pola statusu (account_status, preconnect_enabled, fm_b2b_enabled). Używane
+// przez admin panel firm zamiast LIMITS_INIT (mock).
+export async function getAllCompanyCapacity() {
+  const { data, error } = await supabase
+    .from("company_capacity")
+    .select("*")
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function getCompanyCapacity(companyId) {
+  const { data, error } = await supabase
+    .from("company_capacity")
+    .select("*")
+    .eq("id", companyId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// [B2B Round prod-rollout / faza 3] PayU integration
+// Inicjuje zakup pakietu: woła Netlify function create-payu-order, dostaje
+// redirectUri do hosted checkout PayU. Frontend przekierowuje window.location.
+export async function createPayuOrder(planId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Musisz być zalogowany żeby kupić pakiet.");
+
+  const res = await fetch("/.netlify/functions/create-payu-order", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ plan_id: planId }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `PayU: błąd ${res.status}`);
+  if (!body.redirectUri) throw new Error("PayU: brak redirectUri w odpowiedzi");
+  return body;
+}
+
+// [B2B Round prod-rollout / faza 3] Czyta payu_orders dla supplier (RLS
+// dopuszcza widok własnych). Używane przez /zakup-ok do pokazania statusu.
+export async function getPayuOrderByExt(extOrderId) {
+  const { data, error } = await supabase
+    .from("payu_orders")
+    .select("id, status, plan_id, price_eur, currency, payu_order_id, ext_order_id, package_id, completed_at, failure_reason, created_at")
+    .eq("ext_order_id", extOrderId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function getMyPayuOrders(companyId, limit = 20) {
+  const { data, error } = await supabase
+    .from("payu_orders")
+    .select("*")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
 // ===================================================================
 // BUYER STARRED
 // ===================================================================
