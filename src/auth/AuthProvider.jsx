@@ -32,7 +32,7 @@ export function AuthProvider({ children }) {
       .from("profiles")
       .select(`
         *,
-        company:companies(id, name, country, legacy_fm_id, legacy_supplier_id, pkg_plan, logo_url),
+        company:companies!company_id(id, name, country, legacy_fm_id, legacy_supplier_id, pkg_plan, logo_url),
         retailer:retailers(id, name, country, logo_url)
       `)
       .eq("id", userId)
