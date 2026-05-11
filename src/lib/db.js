@@ -746,6 +746,20 @@ export async function loadLegacyOffers() {
 // the bulk variants in fire-and-forget mode for state-driven syncs.
 export async function upsertLegacyOffer(offer) {
   if (!offer || !offer.id) return;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    const res = await fetch("/.netlify/functions/upsert-legacy-offer", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ offer }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body?.error || `Nie udało się zapisać propozycji (${res.status})`);
+    return body?.offer || offer;
+  }
   const row = {
     legacy_id: offer.id,
     supplier_legacy_id: offer.supplierId || "",

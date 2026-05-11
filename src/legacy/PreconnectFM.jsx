@@ -2337,15 +2337,17 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     const newOffer = isUpdate
       ? { ...offers.find(o => o.id === d.id), ...d, status: st }
       : { ...d, id: genUniqueLegacyId(offers), supplierId: supplierKey, status: st };
+    let savedOffer = null;
     try {
-      await upsertLegacyOffer(newOffer);
+      savedOffer = await upsertLegacyOffer(newOffer);
     } catch (e) {
       fl(`Błąd zapisu propozycji: ${e?.message || "spróbuj ponownie"}`, "error");
       return;
     }
+    const persistedOffer = savedOffer || newOffer;
     _setOffersRaw(prev => isUpdate
-      ? prev.map(o => o.id === d.id ? newOffer : o)
-      : [...prev, newOffer]
+      ? prev.map(o => o.id === d.id ? persistedOffer : o)
+      : [...prev, persistedOffer]
     );
     fl(st === "active" ? "Propozycja opublikowana!" : "Szkic zapisany.");
     nav("offers");
