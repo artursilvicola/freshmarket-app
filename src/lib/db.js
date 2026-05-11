@@ -120,6 +120,54 @@ export async function updateCompany(id, patch) {
   return data;
 }
 
+export async function saveCompanyContacts(companyId, contacts = []) {
+  if (!companyId) throw new Error("Brak identyfikatora firmy.");
+
+  const { data: existing, error: loadError } = await supabase
+    .from("company_contacts")
+    .select("id")
+    .eq("company_id", companyId);
+  if (loadError) throw loadError;
+
+  const existingIds = new Set((existing || []).map((row) => row.id));
+  const rows = (Array.isArray(contacts) ? contacts : [])
+    .map((contact, index) => ({
+      id: contact.id && existingIds.has(contact.id) ? contact.id : undefined,
+      company_id: companyId,
+      role: normalizeText(contact.role) || "sales",
+      name: normalizeText(contact.name),
+      position: normalizeText(contact.position),
+      phone: normalizeText(contact.phone),
+      email: normalizeEmail(contact.email),
+      sort_order: index,
+    }))
+    .filter((contact) => contact.name || contact.position || contact.phone || contact.email);
+
+  const keptExistingIds = new Set(rows.map((row) => row.id).filter(Boolean));
+  const idsToDelete = [...existingIds].filter((id) => !keptExistingIds.has(id));
+
+  let saved = [];
+  if (rows.length) {
+    const { data, error } = await supabase
+      .from("company_contacts")
+      .upsert(rows, { onConflict: "id" })
+      .select()
+      .order("sort_order", { ascending: true });
+    if (error) throw error;
+    saved = data || [];
+  }
+
+  await Promise.all(idsToDelete.map(async (id) => {
+    const { error } = await supabase
+      .from("company_contacts")
+      .delete()
+      .eq("id", id);
+    if (error) throw error;
+  }));
+
+  return saved;
+}
+
 // ===================================================================
 // RETAILERS
 // ===================================================================

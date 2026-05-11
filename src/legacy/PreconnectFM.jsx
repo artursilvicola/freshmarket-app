@@ -12,7 +12,7 @@ import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
   loadLegacySends, upsertLegacySend, bulkUpsertLegacySends, deleteLegacySend,
   // [B2B Round 2.1] Replace localStorage for FM 2026 state
-  getCompanies as dbGetCompanies, bulkUpsertCompanies,
+  getCompanies as dbGetCompanies, bulkUpsertCompanies, saveCompanyContacts as dbSaveCompanyContacts,
   getRetailers as dbGetRetailers, bulkUpsertRetailers,
   createBuyerAccount as dbCreateBuyerAccount,
   adminUpdateBuyerAccount as dbAdminUpdateBuyerAccount, updateOwnBuyerProfile as dbUpdateOwnBuyerProfile,
@@ -2670,7 +2670,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 
   function renderPage(){
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey}/>;
-    if(pg==="company")      return <PageCompany co={co} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers}/>;
+    if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
     if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
@@ -3351,8 +3351,8 @@ function materialIsPdf(url) {
   return /\.pdf(\?|$)/i.test(url);
 }
 
-function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers }) {
-  const [c,setC]=useState({...co}); const [showPreview,setShowPreview]=useState(false);
+function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers }) {
+  const [c,setC]=useState({...co, contacts:Array.isArray(co.contacts)?co.contacts:[]}); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
   const u = (k, v) => setC(prev => ({ ...prev, [k]: v }));
   // Pomocnik do edycji zagnieżdżonych pól w profile_data.
   // setPd("offer", "private_label", true) -> {profile_data: {offer: {private_label: true}}}
@@ -3375,6 +3375,19 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
   const materials = Array.isArray(pd.materials) ? pd.materials : [];
   const supplierPitch = typeof pd.supplier_pitch === "string" ? pd.supplier_pitch : "";
 
+  const contactRoles = [["sales","Handlowy"],["quality","Jakościowy"],["logistics","Logistyka"],["management","Zarząd"],["other","Inny"]];
+  const normalizeContacts=(list=[]) => (Array.isArray(list)?list:[])
+    .map((ct,i)=>({
+      ...ct,
+      role: ct.role || "sales",
+      name: (ct.name || "").trim(),
+      position: (ct.position || "").trim(),
+      phone: (ct.phone || "").trim(),
+      email: (ct.email || "").trim(),
+      sort_order: i,
+    }))
+    .filter(ct=>ct.name || ct.position || ct.phone || ct.email);
+  const contacts = Array.isArray(c.contacts) ? c.contacts : [];
   const calcCompleteness=(d)=>{
     let pts=0;
     if(d.logo) pts+=20;
@@ -3397,7 +3410,7 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
     if (typeof dpd.supplier_pitch === "string" && dpd.supplier_pitch.trim()) pts+=1;
     return Math.min(100,pts);
   };
-  const completeness = calcCompleteness(c);
+
 
   // Helper: tekst CSV → array kodów krajów upper-case
   const parseCountryList = (txt) => (txt || "")
@@ -3408,6 +3421,27 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
     ? trade.export_countries.join(", ")
     : "";
 
+  const completeness = calcCompleteness({...c, contacts:normalizeContacts(contacts)});
+  const addContact=(role="sales")=>u("contacts",[...contacts,{ role, name:"", position:"", phone:"", email:"" }]);
+  const updateContact=(i,patch)=>u("contacts",contacts.map((ct,idx)=>idx===i?{...ct,...patch}:ct));
+  const removeContact=(i)=>u("contacts",contacts.filter((_,idx)=>idx!==i));
+  const saveProfile=async()=>{
+    if(!c.logo){fl("Wgraj logo firmy.","warning");return;}
+    const nextContacts = normalizeContacts(contacts);
+    const id = c.id || companyId;
+    const next = {...c, id:id||c.id, contacts:nextContacts, completeness:calcCompleteness({...c, contacts:nextContacts})};
+    setSaving(true);
+    try {
+      const savedContacts = id ? await dbSaveCompanyContacts(id, nextContacts) : nextContacts;
+      const savedProfile = {...next, contacts:savedContacts, completeness:calcCompleteness({...next, contacts:savedContacts})};
+      setCo(savedProfile);
+      fl("Profil zapisany.");
+    } catch(e) {
+      fl(`Nie udało się zapisać kontaktów: ${e?.message || e}`,"error");
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
     <div style={{ maxWidth:840 }}>
       {showPreview&&<CompanyPreviewModal co={c} offers={offers} role="supplier" onClose={()=>setShowPreview(false)}/>}
@@ -3568,21 +3602,36 @@ function PageCompany({ co, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers
         />
       </Card>
       {(c.certs||[]).length>0&&<Card title="Certyfikaty" icon={ShieldCheck}>{c.certs.map((ct,i)=><div key={i} style={{ display:"flex",gap:10,padding:"8px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:6,fontSize:13,border:"1px solid #bbf7d0" }}><ShieldCheck size={13} color="#059669"/><strong style={{ color:"#0d9488" }}>{ct.type}</strong><span style={{ color:"#64748b" }}>Nr: {ct.number}</span><span style={{ marginLeft:"auto",color:"#059669" }}>do {ct.valid}</span></div>)}</Card>}
-      <Card title="Kontakty" icon={Users}>
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12 }}>
-          {(c.contacts||[]).map((ct,i)=>(
-            <div key={i} style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
-              <div style={{ fontSize:11,color:"#94a3b8",marginBottom:6 }}>{ct.role==="sales"?"Handlowy":"Jakościowy"}</div>
-              <Inp label="Imię i nazwisko" value={ct.name} onChange={e=>{ const nw=[...c.contacts]; nw[i]={...nw[i],name:e.target.value}; u("contacts",nw); }}/>
-              <Inp label="Telefon" value={ct.phone||""} onChange={e=>{ const nw=[...c.contacts]; nw[i]={...nw[i],phone:e.target.value}; u("contacts",nw); }}/>
-              <Inp label="Email" value={ct.email} onChange={e=>{ const nw=[...c.contacts]; nw[i]={...nw[i],email:e.target.value}; u("contacts",nw); }}/>
-            </div>
-          ))}
-        </div>
+      <Card title="Kontakty" icon={Users} actions={<Btn sm outline onClick={()=>addContact()}><Plus size={12}/> Dodaj kontakt</Btn>}>
+        {contacts.length===0 ? (
+          <div style={{ padding:"14px 16px",background:"#f8fafc",border:"1px dashed #cbd5e1",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12 }}>
+            <div style={{ fontSize:13,color:"#64748b" }}>Dodaj osobę kontaktową widoczną dla kupców.</div>
+            <Btn sm primary onClick={()=>addContact()}><Plus size={12}/> Dodaj pierwszy kontakt</Btn>
+          </div>
+        ) : (
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:12 }}>
+            {contacts.map((ct,i)=>(
+              <div key={ct.id||i} style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
+                <div style={{ display:"flex",alignItems:"flex-start",gap:8 }}>
+                  <Inp label="Rola" value={ct.role||"sales"} onChange={e=>updateContact(i,{role:e.target.value})} style={{ minWidth:0 }}>
+                    {contactRoles.map(([value,label])=><option key={value} value={value}>{label}</option>)}
+                  </Inp>
+                  <button type="button" title="Usuń kontakt" onClick={()=>removeContact(i)} style={{ marginTop:23,width:32,height:32,borderRadius:8,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0 }}>
+                    <X size={14}/>
+                  </button>
+                </div>
+                <Inp label="Imię i nazwisko" value={ct.name||""} onChange={e=>updateContact(i,{name:e.target.value})}/>
+                <Inp label="Stanowisko" value={ct.position||""} onChange={e=>updateContact(i,{position:e.target.value})}/>
+                <Inp label="Telefon" value={ct.phone||""} onChange={e=>updateContact(i,{phone:e.target.value})}/>
+                <Inp label="Email" value={ct.email||""} onChange={e=>updateContact(i,{email:e.target.value})}/>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
       <div style={{ display:"flex",gap:8,justifyContent:"flex-end",marginBottom:24 }}>
         <Btn outline onClick={()=>setShowPreview(true)}><Eye size={13}/> Podgląd kupca</Btn>
-        <Btn primary onClick={()=>{ if(!c.logo){fl("Wgraj logo firmy.","warning");return;} setCo({...c,completeness:calcCompleteness(c)}); fl("Profil zapisany."); }}>Zapisz profil</Btn>
+        <Btn primary disabled={saving} onClick={()=>void saveProfile()}>{saving?"Zapisywanie...":"Zapisz profil"}</Btn>
       </div>
     </div>
   );
