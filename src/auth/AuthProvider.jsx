@@ -111,6 +111,16 @@ export function AuthProvider({ children }) {
     if (error) throw error;
   }, []);
 
+  // [B2B Round auth-forgot-password] Wyslij email z linkiem do resetu hasla.
+  // Supabase wysle email z tokenem recovery; po kliknieciu uzytkownik laduje
+  // na /reset-password (auto-sign-in z PASSWORD_RECOVERY event) i ustawia nowe.
+  const sendPasswordReset = useCallback(async (email) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + "/reset-password",
+    });
+    if (error) throw error;
+  }, []);
+
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
     setProfile(null);
@@ -129,6 +139,7 @@ export function AuthProvider({ children }) {
     signIn,
     signUp,
     sendMagicLink,
+    sendPasswordReset,
     signOut,
     refreshProfile,
   };

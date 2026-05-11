@@ -5,6 +5,7 @@ import LoginPage from "./auth/LoginPage";
 import RegisterPage from "./auth/RegisterPage";
 import RegisterSupplierPage from "./auth/RegisterSupplierPage";
 import PurchaseReturnPage from "./auth/PurchaseReturnPage";
+import ResetPasswordPage from "./auth/ResetPasswordPage";
 import AdminPanel from "./panels/AdminPanel";
 import SupplierPanel from "./panels/SupplierPanel";
 import BuyerPanel from "./panels/BuyerPanel";
@@ -20,6 +21,9 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* [B2B Round auth-forgot-password] Strona resetu hasla.
+              Uzytkownik laduje tu po kliknieciu linku z emaila. */}
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           {/* [B2B Round supplier-onboarding-access-and-communication] Publiczna
               self-registration dostawcy. Konto trafia do account_status='pending_review'
               — dostawca może zalogować się i uzupełniać profil, ale gating w
