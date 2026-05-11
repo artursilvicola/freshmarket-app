@@ -96,8 +96,10 @@ export default function LoginPage() {
         </form>
 
         <div style={S.footer}>
-          Konta B2B sa tworzone przez administratora po zatwierdzeniu rejestracji
-          na <a href="https://freshmarket.eu/registration" style={S.link}>freshmarket.eu/registration</a>.
+          {/* [B2B Round supplier-onboarding-access-and-communication] Self-register
+              dostawcy. Konto trafia do stanu "pending_review" — admin zatwierdza
+              osobno. Buyer dalej idzie przez admina (nie ma self-register dla kupców). */}
+          Nie masz konta dostawcy? <Link to="/zarejestruj-dostawce" style={S.link}>Zarejestruj firmę</Link>
         </div>
       </div>
     </div>

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import LoginPage from "./auth/LoginPage";
 import RegisterPage from "./auth/RegisterPage";
+import RegisterSupplierPage from "./auth/RegisterSupplierPage";
 import AdminPanel from "./panels/AdminPanel";
 import SupplierPanel from "./panels/SupplierPanel";
 import BuyerPanel from "./panels/BuyerPanel";
@@ -18,9 +19,12 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          {/* [B2B Round supplier-onboarding-access-and-communication] Publiczna
+              self-registration dostawcy. Konto trafia do account_status='pending_review'
+              — dostawca może zalogować się i uzupełniać profil, ale gating w
+              SupplierPanel blokuje wysyłki i Spotkania B2B do czasu zatwierdzenia. */}
+          <Route path="/zarejestruj-dostawce" element={<RegisterSupplierPage />} />
           {/* /register jest dostepny tylko dla zalogowanego admina (B2B Round 2). */}
-          {/* Publiczna rejestracja odbywa sie na freshmarket.eu/registration ->        */}
-          {/* admin akceptuje uczestnika i tworzy konto B2B przez ten ekran.            */}
           <Route
             path="/register"
             element={

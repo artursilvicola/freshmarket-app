@@ -31,6 +31,9 @@ import {
   suggestAdminChatReplyAI as dbSuggestAdminChatReplyAI,
   // [B2B Round pipeline-retailer-email-mvp] Wysyłka zbiorcza przez admina
   sendRetailerBatch as dbSendRetailerBatch,
+  // [B2B Round supplier-onboarding-access-and-communication]
+  notifySupplier as dbNotifySupplier,
+  getPendingSupplierCount as dbGetPendingSupplierCount,
   // [B2B Round 5] Per-action save lifecycle helpers
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
@@ -2334,6 +2337,26 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }
 
   async function sendToChain(oId, rId) {
+    // [B2B Round supplier-onboarding-access-and-communication]
+    // Trzy bramki dostępu, każda z innym komunikatem dla supplera:
+    //   1. Konto musi być zatwierdzone (account_status='active')
+    //   2. PreConnect musi być włączony (preconnect_enabled=true)
+    //   3. Pakiet musi mieć kredyty (rem > 0)
+    if (account.role === "supplier" && co?.id) {
+      const status = co.account_status || "active";
+      if (status === "pending_review") {
+        fl("Konto czeka na zatwierdzenie przez administratora. Po aktywacji odblokujemy wysyłkę ofert.", "warning");
+        return;
+      }
+      if (status === "rejected" || status === "suspended") {
+        fl("Konto jest aktualnie nieaktywne. Skontaktuj się z newsletter@freshmarket.eu.", "error");
+        return;
+      }
+      if (!co.preconnect_enabled) {
+        fl("PreConnect nie jest jeszcze aktywny dla Twojej firmy. Administrator włącza moduł indywidualnie.", "warning");
+        return;
+      }
+    }
     if (rem <= 0) {
       fl(`Brak dostępnych kredytów w pakiecie (${pkgUsed}/${pkgMax} wykorzystanych). Doładuj pakiet w "Finanse".`, "error");
       return;
@@ -2359,6 +2382,21 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return;
     }
     _setSendsRaw(prev => [...prev, newSend]);
+    // [B2B Round supplier-onboarding-access-and-communication]
+    // Email D — fire-and-forget. Resolveuje retailer name dla template.
+    const retailer = (retailers || []).find(r => r.id === rId);
+    const offer = (offers || []).find(o => o.id === oId);
+    if (co?.id) {
+      void dbNotifySupplier({
+        template: "offer_to_moderation",
+        company_id: co.id,
+        payload: {
+          companyName: co.name,
+          offerTitle: offer?.title || offer?.product || `Oferta #${oId}`,
+          retailerName: retailer?.name || null,
+        },
+      });
+    }
     fl("Propozycja dodana do kolejki moderacji.");
     nav("wysylki");
   }
@@ -2374,6 +2412,26 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return;
     }
     _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
+    // [B2B Round supplier-onboarding-access-and-communication]
+    // Email E — informuj supplera, że jego oferta została zaakceptowana.
+    // Tylko dla 'approve' (rejected nie wysyłamy maila — admin może komunikować
+    // ręcznie albo przez chat w panelu; nie chcemy spamować rejection).
+    if (act === "approve") {
+      const offer = (offers || []).find(o => o.id === cur.offerId);
+      const retailer = (retailers || []).find(r => r.id === cur.retailerId);
+      const supplierCo = (companies || []).find(c => legacyKeyMatchesCompany(cur.supplierId, c));
+      if (supplierCo?.id) {
+        void dbNotifySupplier({
+          template: "offer_approved",
+          company_id: supplierCo.id,
+          payload: {
+            companyName: supplierCo.name,
+            offerTitle: offer?.title || offer?.product || `Oferta #${cur.offerId}`,
+            retailerName: retailer?.name || null,
+          },
+        });
+      }
+    }
     fl(act === "approve" ? "Propozycja zatwierdzona" : "Propozycja odrzucona");
   }
 
@@ -2678,8 +2736,13 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>Fresh Market 2026</span>
               </div>
-              {!fmSettings.schedulingOpen
-                ? <div onClick={()=>nav("fm-sched")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:"#475569",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13 }}>
+              {/* [B2B Round supplier-onboarding-access-and-communication]
+                  Dwie warstwy locka:
+                    1. fmSettings.schedulingOpen — globalny flag (admin otwiera fazę)
+                    2. co.fm_b2b_enabled — per-supplier (admin dopuszcza firmę do FM B2B)
+                  Jedno LUB drugie = lock. Tooltip mówi czego brakuje. */}
+              {!fmSettings.schedulingOpen || !co?.fm_b2b_enabled
+                ? <div title={!co?.fm_b2b_enabled ? "Spotkania B2B są aktywowane indywidualnie przez administratora dla Twojej firmy." : "Faza Spotkań B2B nie jest jeszcze otwarta."} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:"#475569",borderRadius:8,marginBottom:1,cursor:"not-allowed",fontSize:13 }}>
                     <Calendar size={14}/><span style={{ opacity:0.5 }}>Spotkania FM 2026</span>
                     <span style={{ marginLeft:"auto",fontSize:10,color:"#475569" }}>🔒</span>
                   </div>
@@ -2729,11 +2792,21 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>Admin</span>
               </div>
-              {[[Layers,"Pipeline","a-pipeline"],[Store,"Sieci","a-retailers"],[Building2,"Firmy","a-firmy"]].map(([Ic,label,key])=>(
-                <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
-                  <Ic size={14}/><span>{label}</span>
-                </div>
-              ))}
+              {[[Layers,"Pipeline","a-pipeline"],[Store,"Sieci","a-retailers"],[Building2,"Firmy","a-firmy"]].map(([Ic,label,key])=>{
+                // [B2B Round supplier-onboarding-access-and-communication]
+                // Badge przy "Firmy" pokazuje liczbę dostawców czekających na
+                // zatwierdzenie. Liczone z lokalnego state companies (po
+                // bulkUpsert wraca z DB więc badge jest świeży).
+                const pendingForFirmy = key === "a-firmy"
+                  ? (companies || []).filter(c => c.account_status === "pending_review").length
+                  : 0;
+                return (
+                  <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
+                    <Ic size={14}/><span>{label}</span>
+                    {pendingForFirmy>0 && <span title={`${pendingForFirmy} firm czeka na zatwierdzenie`} style={{ marginLeft:"auto",background:"#d97706",color:"white",borderRadius:10,fontSize:9,fontWeight:700,padding:"1px 6px",flexShrink:0 }}>{pendingForFirmy}</span>}
+                  </div>
+                );
+              })}
               {(()=>{
                 const unread = messages.filter(m=>m.toId==="admin"&&!m.read).length;
                 return (
@@ -2759,6 +2832,52 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         </aside>
         {/* Main content */}
         <main style={{ flex:1,minWidth:0,padding:"20px 24px" }}>
+          {/* [B2B Round supplier-onboarding-access-and-communication]
+              Banner statusu konta — pokazuje supplerowi co aktualnie ma odblokowane.
+              Dla 'active' z full uprawnieniami banner się nie pokazuje (nie spamujemy
+              komunikatami zalogowanego seniorowi). Dla pending / partial / off
+              widać dlaczego niektóre rzeczy są zablokowane. */}
+          {role === "supplier" && co?.id && (() => {
+            const status = co.account_status || "active";
+            const preOk = !!co.preconnect_enabled;
+            const fmOk = !!co.fm_b2b_enabled;
+            // Pełna aktywacja + oba moduły = nic nie pokazuj
+            if (status === "active" && preOk && fmOk) return null;
+            if (status === "pending_review") {
+              return <div style={{ background:"#fef3c7",border:"1.5px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
+                <Clock size={16} color="#92400e" style={{ flexShrink:0,marginTop:2 }}/>
+                <div style={{ flex:1,fontSize:13,color:"#78350f" }}>
+                  <strong>Konto oczekuje na zatwierdzenie</strong> — możesz uzupełnić profil firmy, wgrać logo i certyfikaty. Po aktywacji przez administratora odblokujemy wysyłkę ofert do sieci (PreConnect) oraz Spotkania B2B.
+                </div>
+              </div>;
+            }
+            if (status === "rejected") {
+              return <div style={{ background:"#fee2e2",border:"1.5px solid #fecaca",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
+                <AlertTriangle size={16} color="#dc2626" style={{ flexShrink:0,marginTop:2 }}/>
+                <div style={{ flex:1,fontSize:13,color:"#991b1b" }}>
+                  <strong>Rejestracja nie została aktywowana.</strong>{co.status_note ? ` ${co.status_note}` : ""} Skontaktuj się z <a href="mailto:newsletter@freshmarket.eu" style={{color:"#0d9488"}}>newsletter@freshmarket.eu</a>.
+                </div>
+              </div>;
+            }
+            if (status === "suspended") {
+              return <div style={{ background:"#fee2e2",border:"1.5px solid #fecaca",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
+                <AlertTriangle size={16} color="#dc2626" style={{ flexShrink:0,marginTop:2 }}/>
+                <div style={{ flex:1,fontSize:13,color:"#991b1b" }}>
+                  <strong>Konto zostało wstrzymane.</strong>{co.status_note ? ` ${co.status_note}` : ""} Profil firmy pozostaje dostępny, wysyłki i Spotkania B2B są zablokowane do czasu wyjaśnienia.
+                </div>
+              </div>;
+            }
+            // status === "active" ale któryś moduł off — komunikat informacyjny
+            const offBits = [];
+            if (!preOk) offBits.push("PreConnect (wysyłka ofert do sieci) jest jeszcze nieaktywny");
+            if (!fmOk) offBits.push("Spotkania B2B Fresh Market 2026 są aktywowane indywidualnie przez administratora");
+            return <div style={{ background:"#eff6ff",border:"1.5px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
+              <Info size={16} color="#3b82f6" style={{ flexShrink:0,marginTop:2 }}/>
+              <div style={{ flex:1,fontSize:12,color:"#1e3a5f" }}>
+                Konto jest aktywne. {offBits.join(". ")}.
+              </div>
+            </div>;
+          })()}
           {account.role==="supplier"&&pg!=="fm-sched"&&activeRefunds.map(n=>(
             <div key={n.id} style={{ background:"#fffbeb",border:"1.5px solid #fbbf24",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
               <RotateCcw size={16} color="#d97706" style={{ flexShrink:0,marginTop:2 }}/>
@@ -5808,11 +5927,24 @@ function PageAdminRetailers({ retailers, setRetailers }) {
 
 
 /* ── Admin Firmy: pakiety, limity, rozliczenia per firma ─────────────────── */
+// [B2B Round supplier-onboarding-access-and-communication]
+const ACCOUNT_STATUS_LABELS = {
+  pending_review: ["Czeka na zatwierdzenie", "#92400e", "#fef3c7"],
+  active:         ["✓ Aktywne",                 "#059669", "#d1fae5"],
+  rejected:       ["Odrzucone",                 "#dc2626", "#fee2e2"],
+  suspended:      ["Wstrzymane",                "#dc2626", "#fee2e2"],
+};
+
 function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies }) {
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
   const [expandedId, setExpandedId] = useState(null);
+  // [B2B Round supplier-onboarding-access-and-communication]
+  // Filtr listy: "all" | "pending" — admin chce szybko zobaczyć tylko nowe rejestracje.
+  const [filter, setFilter] = useState("all");
+  const [statusNoteDraft, setStatusNoteDraft] = useState({}); // { [companyId]: "powód" }
+  const [savingStatusId, setSavingStatusId] = useState(null);
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
   // opisów AI: trwająca regeneracja, edycja inline, podgląd profilu kupca.
   const [aiLoadingId, setAiLoadingId] = useState(null);
@@ -5874,6 +6006,56 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     setEditDraft({ description_short: "", description: "" });
   }
 
+  // [B2B Round supplier-onboarding-access-and-communication]
+  // Zmiana account_status / preconnect_enabled / fm_b2b_enabled ZAWSZE
+  // przelatuje przez setCompanies → bulkUpsertCompanies (DB sync) plus
+  // wysyła powiadomienie mailem zależnie od typu zmiany.
+  async function changeAccountStatus(firmCo, newStatus) {
+    setSavingStatusId(firmCo.id);
+    const note = (statusNoteDraft[firmCo.id] || "").trim() || null;
+    const patch = {
+      account_status: newStatus,
+      status_note: note,
+    };
+    // Aktywacja → włącz PreConnect domyślnie (FM B2B zostaje opt-in adminskim).
+    if (newStatus === "active") {
+      patch.preconnect_enabled = true;
+      patch.approved_at = new Date().toISOString();
+    }
+    patchCompany(firmCo.id, patch);
+    setStatusNoteDraft(prev => ({ ...prev, [firmCo.id]: "" }));
+    // Email transactional fire-and-forget
+    const tplName = newStatus === "active" ? "account_activated"
+                  : newStatus === "rejected" ? "account_rejected"
+                  : newStatus === "suspended" ? "account_suspended"
+                  : null;
+    if (tplName) {
+      const result = await dbNotifySupplier({
+        template: tplName,
+        company_id: firmCo.id,
+        payload: {
+          companyName: firmCo.name,
+          preconnectEnabled: newStatus === "active" ? true : !!firmCo.preconnect_enabled,
+          fmB2bEnabled: !!firmCo.fm_b2b_enabled,
+          statusNote: note,
+        },
+      });
+      if (result.ok) {
+        fl(`Status firmy ${firmCo.name} → ${newStatus}. Mail wysłany.`);
+      } else {
+        fl(`Status firmy ${firmCo.name} → ${newStatus}. (Mail nie został wysłany — sprawdź konfigurację.)`, "warning");
+      }
+    } else {
+      fl(`Status firmy ${firmCo.name} → ${newStatus}.`);
+    }
+    setSavingStatusId(null);
+  }
+
+  function toggleAccessFlag(firmCo, key, value) {
+    patchCompany(firmCo.id, { [key]: value });
+    fl(`${key === "preconnect_enabled" ? "PreConnect" : "Spotkania B2B"} ${value ? "aktywny" : "wyłączony"} dla ${firmCo.name}.`);
+  }
+
   const reviewLabel = {
     pending: ["Czeka na review", "#92400e", "#fef3c7"],
     approved: ["✓ Zatwierdzony", "#059669", "#d1fae5"],
@@ -5881,10 +6063,30 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     rejected: ["Odrzucony", "#dc2626", "#fee2e2"],
   };
 
+  // Filtruj listę: w trybie "pending" pokazujemy tylko firmy w pending_review
+  // (resolved przez companies, bo limits mają tylko pkg info).
+  const visibleLims = (limits || []).filter(lim => {
+    if (filter !== "pending") return true;
+    const co = (companies || []).find(c => c.id === lim.id);
+    return (co?.account_status || "active") === "pending_review";
+  });
+  const pendingCount = (companies || []).filter(c => c.account_status === "pending_review").length;
+
   return (
     <div>
-      <div style={{ fontWeight:700,fontSize:15,marginBottom:14 }}>Firmy i limity pakietów</div>
-      {limits.map(lim=>{
+      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap" }}>
+        <div style={{ fontWeight:700,fontSize:15 }}>Firmy, statusy i limity pakietów</div>
+        <div style={{ display:"flex",gap:6 }}>
+          <button onClick={()=>setFilter("all")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="all"?"2px solid #0d9488":"1px solid #e2e8f0",background:filter==="all"?"rgba(13,148,136,0.05)":"white",fontSize:12,fontWeight:filter==="all"?600:500,cursor:"pointer",fontFamily:"inherit" }}>Wszystkie ({(companies||[]).length})</button>
+          <button onClick={()=>setFilter("pending")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="pending"?"2px solid #d97706":"1px solid #e2e8f0",background:filter==="pending"?"rgba(217,119,6,0.05)":"white",fontSize:12,fontWeight:filter==="pending"?600:500,cursor:"pointer",fontFamily:"inherit" }}>
+            Do zatwierdzenia {pendingCount > 0 && <span style={{ background:"#d97706",color:"white",borderRadius:10,fontSize:10,padding:"1px 6px",marginLeft:4 }}>{pendingCount}</span>}
+          </button>
+        </div>
+      </div>
+      {visibleLims.length === 0 && (
+        <Alrt type="info">{filter === "pending" ? "Brak firm oczekujących na zatwierdzenie." : "Brak firm w systemie."}</Alrt>
+      )}
+      {visibleLims.map(lim=>{
         const isExpanded = expandedId===lim.id;
         // [B2B Round 5.5] Resolve firm by lim.id (UUID), then match sends across
         // all legacy_supplier_id formats. Falls back to id-only match if company
@@ -5900,8 +6102,20 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 {lim.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
               </div>
               <div style={{ flex:1,minWidth:0 }}>
-                <div style={{ fontWeight:700,fontSize:14 }}>{lim.name}</div>
-                <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{lim.country} · Pakiet: {lim.pkg} · Ważny do: {lim.pkgExpiry}</div>
+                <div style={{ fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:6 }}>
+                  {lim.name}
+                  {/* [B2B Round supplier-onboarding-access-and-communication] Status badge */}
+                  {(() => {
+                    const status = firmCo?.account_status || "active";
+                    const [lbl, color, bg] = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+                    return <span style={{ fontSize:10,color,background:bg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{lbl}</span>;
+                  })()}
+                </div>
+                <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
+                  {lim.country} · Pakiet: {lim.pkg} · Ważny do: {lim.pkgExpiry}
+                  {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>· PreConnect off</span>}
+                  {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>· FM B2B</span>}
+                </div>
               </div>
               <div style={{ textAlign:"right",flexShrink:0 }}>
                 <div style={{ fontWeight:700,fontSize:16,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{used}/{lim.max}</div>
@@ -5911,6 +6125,69 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
             </div>
             {isExpanded&&(
               <div style={{ padding:"0 16px 16px",borderTop:"1px solid #f1f5f9" }}>
+                {/* [B2B Round supplier-onboarding-access-and-communication]
+                    Sekcja statusu konta + dwie flagi dostępu (PreConnect, Spotkania B2B).
+                    To jest najważniejsze dla admina po rozwinięciu — dlatego idzie NA GÓRĘ
+                    expanded view, przed pakietem i AI opisem. */}
+                {firmCo?.name && setCompanies && (() => {
+                  const status = firmCo.account_status || "active";
+                  const [statusLbl, statusColor, statusBg] = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+                  const isPending = status === "pending_review";
+                  const isSaving = savingStatusId === firmCo.id;
+                  const note = statusNoteDraft[firmCo.id] ?? (firmCo.status_note || "");
+                  return (
+                    <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",margin:"14px 0 12px",border:"1px solid #e2e8f0" }}>
+                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
+                        <div style={{ fontWeight:700,fontSize:12,color:"#334155",display:"flex",alignItems:"center",gap:8 }}>
+                          Status & dostęp
+                          <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{statusLbl}</span>
+                          {firmCo.approved_at && status === "active" && <span style={{ fontSize:10,color:"#94a3b8" }}>· od {String(firmCo.approved_at).slice(0,10)}</span>}
+                        </div>
+                      </div>
+                      {/* Pole notatki (powód odrzucenia/zawieszenia, lub komentarz aktywacji) */}
+                      {(isPending || status === "rejected" || status === "suspended") && (
+                        <textarea
+                          value={note}
+                          onChange={(e) => setStatusNoteDraft((prev) => ({ ...prev, [firmCo.id]: e.target.value }))}
+                          placeholder="Notatka dla supplera (powód odrzucenia/zawieszenia, instrukcja co poprawić). Pojawi się w mailu."
+                          style={{ width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:48,marginBottom:10,boxSizing:"border-box" }}
+                        />
+                      )}
+                      {/* Akcje statusu — różne zestawy w zależności od stanu */}
+                      <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:12 }}>
+                        {isPending && (
+                          <>
+                            <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>✓ Zatwierdź konto</Btn>
+                            <Btn sm onClick={()=>changeAccountStatus(firmCo, "rejected")} disabled={isSaving} style={{ background:"#dc2626",color:"white",border:"none" }}>Odrzuć</Btn>
+                          </>
+                        )}
+                        {status === "active" && (
+                          <Btn sm outline onClick={()=>changeAccountStatus(firmCo, "suspended")} disabled={isSaving} style={{ color:"#dc2626",borderColor:"#fecaca" }}>Wstrzymaj konto</Btn>
+                        )}
+                        {(status === "rejected" || status === "suspended") && (
+                          <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>Aktywuj ponownie</Btn>
+                        )}
+                      </div>
+                      {/* Dwie niezależne flagi dostępu — admin ustawia osobno */}
+                      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
+                        <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.preconnect_enabled?"rgba(13,148,136,0.06)":"white",border:`1px solid ${firmCo.preconnect_enabled?"#0d9488":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
+                          <input type="checkbox" checked={!!firmCo.preconnect_enabled} onChange={(e) => toggleAccessFlag(firmCo, "preconnect_enabled", e.target.checked)} />
+                          <div>
+                            <div style={{ fontWeight:600,color:"#0f172a" }}>PreConnect</div>
+                            <div style={{ color:"#64748b",fontSize:10 }}>Wysyłka ofert do sieci</div>
+                          </div>
+                        </label>
+                        <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.fm_b2b_enabled?"rgba(124,58,237,0.06)":"white",border:`1px solid ${firmCo.fm_b2b_enabled?"#7c3aed":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
+                          <input type="checkbox" checked={!!firmCo.fm_b2b_enabled} onChange={(e) => toggleAccessFlag(firmCo, "fm_b2b_enabled", e.target.checked)} />
+                          <div>
+                            <div style={{ fontWeight:600,color:"#0f172a" }}>Spotkania B2B</div>
+                            <div style={{ color:"#64748b",fontSize:10 }}>Fresh Market 2026</div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{ margin:"14px 0 10px",background:"#f8fafc",borderRadius:8,padding:"10px 14px" }}>
                   <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12 }}>
                     <span style={{ color:"#64748b" }}>Wykorzystanie pakietu</span>

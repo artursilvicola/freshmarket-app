@@ -33,6 +33,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { renderRetailerEmail, buildSubject } from "./_shared/render-retailer-email.js";
+import { tplOfferSentToRetailer } from "./_shared/supplier-email-templates.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -239,6 +240,65 @@ export const handler = async (event) => {
         .update({ status: "sent", data: newData })
         .eq("legacy_id", s.legacy_id);
       if (!upErr) markedSendIds.push(s.legacy_id);
+    }
+
+    // [B2B Round supplier-onboarding-access-and-communication]
+    // Email F — powiadom każdego dostawcę, że jego oferta została wysłana
+    // do sieci. Jeden mail per (dostawca, oferta). Fire-and-forget — błędy
+    // logujemy ale nie wstrzymujemy odpowiedzi.
+    const supplierEmailsByCompanyId = new Map();
+    const supplierIdToCompanyId = new Map();
+    for (const co of companiesMap.values()) {
+      if (co?.id && !supplierEmailsByCompanyId.has(co.id)) {
+        supplierEmailsByCompanyId.set(co.id, null);
+        supplierIdToCompanyId.set(co.legacy_supplier_id, co.id);
+        supplierIdToCompanyId.set(co.id, co.id);
+      }
+    }
+    if (supplierEmailsByCompanyId.size) {
+      const companyIds = [...supplierEmailsByCompanyId.keys()];
+      const { data: ownerProfiles } = await supaSvc
+        .from("profiles")
+        .select("name, email, role, active, company_id")
+        .in("company_id", companyIds)
+        .eq("role", "supplier");
+      for (const p of ownerProfiles || []) {
+        if (p.active && p.email && !supplierEmailsByCompanyId.get(p.company_id)) {
+          supplierEmailsByCompanyId.set(p.company_id, p);
+        }
+      }
+      for (const s of eligible) {
+        const supplierKey = (s.data || {}).supplierId;
+        const companyId = supplierIdToCompanyId.get(supplierKey);
+        const owner = companyId ? supplierEmailsByCompanyId.get(companyId) : null;
+        if (!owner?.email) continue;
+        const offer = offersMap.get((s.data || {}).offerId) || {};
+        const co = companiesMap.get(supplierKey) || companiesMap.get(companyId) || {};
+        const tpl = tplOfferSentToRetailer({
+          companyName: co.name || "",
+          contactName: owner.name || null,
+          offerTitle: offer.title || offer.product || `Oferta`,
+          retailerName: retailer.name || "",
+          sentAt: sentAtDate,
+          appUrl: env.b2bAppUrl,
+        });
+        try {
+          await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${env.resendApiKey}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              from: "Fresh Market <newsletter@freshmarket.eu>",
+              to: [owner.email],
+              subject: tpl.subject,
+              html: tpl.html,
+            }),
+          });
+        } catch (e) {
+          // Logujemy ale nie blokujemy odpowiedzi — kupiec już dostał maila,
+          // status sends jest zapisany. Notyfikacja do supplera to nice-to-have.
+          console.warn("[email_supplier_offer_sent]", owner.email, e?.message || e);
+        }
+      }
     }
   }
 

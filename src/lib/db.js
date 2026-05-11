@@ -83,10 +83,10 @@ export async function getCompany(id) {
 }
 
 export async function updateCompany(id, patch) {
-  // [B2B Round adaptive-company-profile-ai] Whitelist columns. patch może
-  // pochodzić ze stanu komponentu z dodatkowymi kluczami legacy (logo, pkg,
-  // contacts, certs jako relacje), które nie istnieją w companies. Daj tu
-  // explicite nazwy kolumn i tylko te, jeżeli patch je definiuje.
+  // [B2B Round adaptive-company-profile-ai + supplier-onboarding-access-and-communication]
+  // Whitelist kolumn. patch może pochodzić ze stanu komponentu z dodatkowymi
+  // kluczami legacy (logo, pkg, contacts, certs jako relacje), które nie
+  // istnieją w companies. Daj tu explicite nazwy kolumn i tylko te.
   const allowed = [
     "name", "nip", "country", "city", "phone", "website",
     "description", "description_short",
@@ -94,6 +94,10 @@ export async function updateCompany(id, patch) {
     "completeness", "logo_url",
     "pkg_plan", "pkg_expiry", "fm_passport_completeness",
     "profile_data", "ai_review_status",
+    // Round supplier-onboarding-access-and-communication: trzy warstwy
+    // uprawnień + audit
+    "account_status", "preconnect_enabled", "fm_b2b_enabled",
+    "approved_at", "approved_by", "status_note",
   ];
   const row = {};
   for (const k of allowed) if (k in patch) row[k] = patch[k];
@@ -1088,6 +1092,72 @@ export async function markFmMessageRead(id) {
   if (error) throw error;
 }
 
+// [B2B Round supplier-onboarding-access-and-communication]
+// Lista firm oczekujących na zatwierdzenie przez admina. Używana w panelu
+// admina (badge w nawigacji + filtr listy firm).
+export async function getPendingSupplierCount() {
+  const { count, error } = await supabase
+    .from("companies")
+    .select("*", { count: "exact", head: true })
+    .eq("account_status", "pending_review");
+  if (error) {
+    console.warn("[getPendingSupplierCount]", error.message);
+    return 0;
+  }
+  return count || 0;
+}
+
+// [B2B Round supplier-onboarding-access-and-communication]
+// Wywołuje zewnętrzny Netlify endpoint do wysłania maila transakcyjnego
+// dostawcy. Templates: A registration_accepted, B account_activated,
+// C account_rejected/suspended, D offer_to_moderation, E offer_approved,
+// F offer_sent_to_retailer, G offer_expired.
+// Fire-and-forget — nie blokujemy UI gdy email padnie. Loguje warning
+// w konsoli i wraca z {ok:false} bez throwa.
+export async function notifySupplier({ template, company_id, payload }) {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) return { ok: false, error: "no_session" };
+
+    const res = await fetch("/.netlify/functions/send-supplier-notification", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ template, company_id, payload: payload || {} }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.warn("[notifySupplier]", template, json?.error || res.status);
+      return { ok: false, error: json?.error || `HTTP ${res.status}` };
+    }
+    return json;
+  } catch (e) {
+    console.warn("[notifySupplier]", template, e?.message || e);
+    return { ok: false, error: e?.message };
+  }
+}
+
+// [B2B Round supplier-onboarding-access-and-communication]
+// Self-registration: tworzy nowe konto dostawcy + firmę w stanie
+// pending_review. Nie wymaga auth (publiczny endpoint).
+export async function selfRegisterSupplier({ email, password, company_name, country, contact_name, contact_phone, nip }) {
+  const res = await fetch("/.netlify/functions/register-supplier-self", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, company_name, country, contact_name, contact_phone, nip }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(json?.error || "Nie udało się zarejestrować konta.");
+    err.payload = json;
+    throw err;
+  }
+  return json;
+}
+
 // [B2B Round pipeline-retailer-email-mvp]
 // Wysłanie zbiorczego maila (wielu ofert, jedna sieć) do wszystkich
 // aktywnych kupców tej sieci. Endpoint po stronie netlify aktualizuje
@@ -1165,6 +1235,14 @@ export async function bulkUpsertCompanies(companies) {
     pkg_expiry: c.pkgExpiry || null,
     profile_data: c.profile_data && typeof c.profile_data === "object" ? c.profile_data : {},
     ai_review_status: c.ai_review_status || "pending",
+    // [B2B Round supplier-onboarding-access-and-communication] Round-trip
+    // status pól. Stary kod nie ustawiał ich, więc undefined → DB użyje
+    // defaultów z migracji 022. Dla istniejących rekordów backfill już
+    // ustawił sensowne wartości.
+    account_status: c.account_status || undefined,
+    preconnect_enabled: typeof c.preconnect_enabled === "boolean" ? c.preconnect_enabled : undefined,
+    fm_b2b_enabled: typeof c.fm_b2b_enabled === "boolean" ? c.fm_b2b_enabled : undefined,
+    status_note: c.status_note ?? undefined,
   }));
   const { data, error } = await supabase
     .from("companies")
