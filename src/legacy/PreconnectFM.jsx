@@ -16,6 +16,7 @@ import {
   getRetailers as dbGetRetailers, bulkUpsertRetailers,
   createBuyerAccount as dbCreateBuyerAccount,
   adminUpdateBuyerAccount as dbAdminUpdateBuyerAccount, updateOwnBuyerProfile as dbUpdateOwnBuyerProfile,
+  updateOwnSupplierProfile as dbUpdateOwnSupplierProfile, changeOwnPassword as dbChangeOwnPassword,
   getFmSettings as dbGetFmSettings, saveFmSettings as dbSaveFmSettings,
   getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
   getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
@@ -2666,7 +2667,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // ── Navigation ─────────────────────────────────────────────────────────
   // Supplier: 5 items  |  Buyer: 2 items  |  Admin: 4 items
   const menuItems = {
-    supplier: [[Home,"Dashboard","dashboard"],[Building2,"Firma","company"],[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"]],
+    supplier: [[Home,"Dashboard","dashboard"],[Building2,"Firma","company"],[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"],[User,"Mój profil","profile"]],
     buyer:    [[Send,"Propozycje asortymentowe","b-offers"],[Building2,"Dostawcy","b-katalog"],[Heart,"Zapisane","b-saved"],[User,"Mój Profil","b-profile"]],
     admin:    [[Home,"Dashboard","a-dash"],[Layers,"Pipeline","a-pipeline"],[Store,"Sieci","a-retailers"],[Building2,"Firmy","a-firmy"]],
   };
@@ -2692,6 +2693,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
     if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} retailers={retailers} accountId={mySupplierKey}/>;
+    if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies}/>;
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }}/>;
@@ -2742,7 +2744,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>PreConnect</span>
               </div>
-              {[[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"],[Building2,"Twoja firma","company"]].map(([Ic,label,key])=>(
+              {[[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"],[Building2,"Twoja firma","company"],[User,"Mój profil","profile"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
                   {key==="finanse"&&wallet.balance>0&&<span style={{ marginLeft:"auto",background:"#059669",color:"white",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 6px" }}>{wallet.balance}€</span>}
@@ -5012,7 +5014,124 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
       </Card>
       <Card title="Subskrypcja mailingowa" icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>Zgoda na mailing Preconnect</div><div style={{ fontSize:12,color:"#64748b" }}>Raz w miesiącu, w pierwszy wtorek. Zgodę można wycofać w każdej chwili.</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>Subskrypcja aktywna · Następny mailing: 6 maja 2026</div>}</Card>
       <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl("Profil zapisany."); }}>Zapisz</Btn></div>
+      <ChangePasswordSection fl={fl}/>
     </div>
+  );
+}
+
+// [B2B Round profile-supplier-self-edit] Strona "Mój profil" dla dostawcy.
+// Pokazuje email (read-only), nazwę firmy (read-only), edytowalne pola:
+// imię/nazwisko, telefon, stanowisko. Sekcja zmiany hasła (3 pola: aktualne,
+// nowe, potwierdzenie nowego). Zapis przez dbUpdateOwnSupplierProfile -> RLS
+// pozwala self-edit (profiles.id = auth.uid()).
+function PageSupplierProfile({ account, co, fl }) {
+  const initial = {
+    name: account?.name || "",
+    email: account?.email || "",
+    phone: account?.phone || "",
+    position: account?.position || "",
+  };
+  const [p, setP] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const u = (k, v) => setP((prev) => ({ ...prev, [k]: v }));
+  async function save() {
+    if (!account?.id) { fl("Brak ID użytkownika — zaloguj się ponownie."); return; }
+    if (!p.name?.trim()) { fl("Imię i nazwisko są wymagane."); return; }
+    try {
+      setSaving(true);
+      await dbUpdateOwnSupplierProfile(account.id, {
+        name: p.name, phone: p.phone, position: p.position,
+      });
+      fl("Profil zapisany.");
+    } catch (e) {
+      fl("Błąd zapisu: " + (e?.message || "nieznany"));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <h2 style={{ marginBottom: 16, fontSize: 16 }}>Mój profil</h2>
+      <Card title="Dane konta" icon={User}>
+        <Row>
+          <Inp label="Imię i nazwisko" required value={p.name} onChange={(e) => u("name", e.target.value)} />
+          <Inp label="Stanowisko" value={p.position} onChange={(e) => u("position", e.target.value)} />
+        </Row>
+        <Row>
+          <Inp label="Firma" value={co?.name || account?.name || ""} readOnly />
+          <Inp label="Email (zmiana przez administratora)" type="email" value={p.email} readOnly />
+        </Row>
+        <Inp label="Telefon" value={p.phone} onChange={(e) => u("phone", e.target.value)} />
+        <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
+          Email i dane firmy są zarządzane przez administratora Fresh Market. Możesz samodzielnie zmienić imię/nazwisko, stanowisko, telefon i hasło.
+        </div>
+      </Card>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+        <Btn primary onClick={save} disabled={saving}>{saving ? "Zapisywanie..." : "Zapisz"}</Btn>
+      </div>
+      <ChangePasswordSection fl={fl} />
+    </div>
+  );
+}
+
+// [B2B Round profile-self-password-change] Wspólna sekcja zmiany hasła dla
+// dostawcy i kupca. 3 pola: aktualne, nowe (min 8 zn.), potwierdzenie.
+// Walidacja:
+//   - aktualne hasło niewidoczne, sprawdzane przez signInWithPassword (re-auth)
+//   - nowe hasło min 8 znaków, musi być zgodne z potwierdzeniem
+//   - po sukcesie pola resetowane, flash potwierdzenia
+function ChangePasswordSection({ fl }) {
+  const [cur, setCur] = useState("");
+  const [nw, setNw] = useState("");
+  const [cf, setCf] = useState("");
+  const [showCur, setShowCur] = useState(false);
+  const [showNw, setShowNw] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!cur || !nw || !cf) { fl("Wypełnij wszystkie pola."); return; }
+    if (nw.length < 8) { fl("Nowe hasło musi mieć minimum 8 znaków."); return; }
+    if (nw !== cf) { fl("Nowe hasło i potwierdzenie nie są takie same."); return; }
+    try {
+      setBusy(true);
+      await dbChangeOwnPassword(cur, nw);
+      setCur(""); setNw(""); setCf("");
+      fl("Hasło zmienione pomyślnie.");
+    } catch (e) {
+      fl("Błąd: " + (e?.message || "nie udało się zmienić hasła"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const InputPwd = ({ label, value, onChange, show, setShow }) => (
+    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+      <Inp label={label} type={show ? "text" : "password"} value={value} onChange={onChange} />
+      <button
+        type="button"
+        onClick={() => setShow(!show)}
+        title={show ? "Ukryj hasło" : "Pokaż hasło"}
+        style={{ position: "absolute", right: 8, top: 26, padding: "4px 8px", background: "transparent", border: "none", cursor: "pointer", color: "#64748b", fontSize: 11 }}
+      >
+        {show ? "ukryj" : "pokaż"}
+      </button>
+    </div>
+  );
+
+  return (
+    <Card title="Zmiana hasła" icon={Lock}>
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
+        Wpisz aktualne hasło i nowe (minimum 8 znaków). Po zmianie nadal będziesz zalogowany na tym urządzeniu.
+      </div>
+      <InputPwd label="Aktualne hasło" value={cur} onChange={(e) => setCur(e.target.value)} show={showCur} setShow={setShowCur} />
+      <Row>
+        <InputPwd label="Nowe hasło (min 8 znaków)" value={nw} onChange={(e) => setNw(e.target.value)} show={showNw} setShow={setShowNw} />
+        <Inp label="Powtórz nowe hasło" type={showNw ? "text" : "password"} value={cf} onChange={(e) => setCf(e.target.value)} />
+      </Row>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12, marginBottom: 24 }}>
+        <Btn primary onClick={submit} disabled={busy}>{busy ? "Zmienianie..." : "Zmień hasło"}</Btn>
+      </div>
+    </Card>
   );
 }
 

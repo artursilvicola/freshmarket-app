@@ -307,6 +307,50 @@ export async function updateOwnBuyerProfile(id, patch) {
   return data;
 }
 
+// [B2B Round profile-supplier-self-edit] Dostawca edytuje wlasne dane konta
+// (imie/nazwisko, telefon, stanowisko). Email read-only (zmiana wymaga admina).
+// RLS: profiles UPDATE policy zezwala na self-edit gdzie id = auth.uid().
+export async function updateOwnSupplierProfile(id, patch) {
+  if (!id) throw new Error("updateOwnSupplierProfile wymaga id");
+  const row = {
+    name: normalizeText(patch.name),
+    phone: normalizeText(patch.phone),
+    position: normalizeText(patch.position),
+    updated_at: new Date().toISOString(),
+  };
+  if (!row.name) throw new Error("Imię i nazwisko są wymagane.");
+  const { data, error } = await supabase
+    .from("profiles")
+    .update(row)
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// [B2B Round profile-self-password-change] Zmiana hasla przez zalogowanego
+// uzytkownika. Wymaga re-auth (sprawdzenie aktualnego hasla via
+// signInWithPassword) zeby nie pozwolic na hijack sesji. Po sukcesie wola
+// supabase.auth.updateUser z nowym haslem.
+export async function changeOwnPassword(currentPassword, newPassword) {
+  if (!currentPassword) throw new Error("Wpisz aktualne hasło.");
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error("Nowe hasło musi mieć minimum 8 znaków.");
+  }
+  const { data: sessionData } = await supabase.auth.getSession();
+  const email = sessionData?.session?.user?.email;
+  if (!email) throw new Error("Brak aktywnej sesji.");
+  const { error: signErr } = await supabase.auth.signInWithPassword({
+    email,
+    password: currentPassword,
+  });
+  if (signErr) throw new Error("Nieprawidłowe aktualne hasło.");
+  const { error: updErr } = await supabase.auth.updateUser({ password: newPassword });
+  if (updErr) throw new Error(updErr.message || "Nie udało się zmienić hasła.");
+  return { ok: true };
+}
+
 export async function createBuyerAccount({
   email,
   name,
