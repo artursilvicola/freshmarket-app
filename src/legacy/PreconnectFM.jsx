@@ -12,7 +12,7 @@ import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
   loadLegacySends, upsertLegacySend, bulkUpsertLegacySends, deleteLegacySend,
   // [B2B Round 2.1] Replace localStorage for FM 2026 state
-  getCompanies as dbGetCompanies, bulkUpsertCompanies, saveCompanyContacts as dbSaveCompanyContacts,
+  getCompanies as dbGetCompanies, updateCompany as dbUpdateCompany, bulkUpsertCompanies, saveCompanyContacts as dbSaveCompanyContacts,
   getRetailers as dbGetRetailers, bulkUpsertRetailers,
   createBuyerAccount as dbCreateBuyerAccount,
   adminUpdateBuyerAccount as dbAdminUpdateBuyerAccount, updateOwnBuyerProfile as dbUpdateOwnBuyerProfile,
@@ -2624,12 +2624,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       });
       // [B2B Round adaptive-company-profile-ai] AI zwraca dwa opisy w jednym
       // wywołaniu: krótki (2-3 zdania, do podglądu) i standardowy (4-6 zdań,
-      // główny opis profilu). Po regeneracji status review wraca na 'pending'
-      // — admin musi ponownie zatwierdzić.
+      // główny opis profilu). Dostawca może zapisać go od razu bez review.
       const patch = {
         description: result?.description || "",
         description_short: result?.description_short || "",
-        ai_review_status: "pending",
+        ai_review_status: "edited",
       };
       if (typeof applyDraft === "function") applyDraft(patch);
       else setCo(prev=>({ ...prev, ...patch }));
@@ -3429,9 +3428,35 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
     if(!c.logo){fl("Wgraj logo firmy.","warning");return;}
     const nextContacts = normalizeContacts(contacts);
     const id = c.id || companyId;
-    const next = {...c, id:id||c.id, contacts:nextContacts, completeness:calcCompleteness({...c, contacts:nextContacts})};
+    const next = {
+      ...c,
+      id:id||c.id,
+      contacts:nextContacts,
+      ai_review_status:"approved",
+      completeness:calcCompleteness({...c, contacts:nextContacts}),
+    };
+    const companyPatch = {
+      name: next.name,
+      nip: next.nip || null,
+      country: next.country || null,
+      city: next.city || null,
+      phone: next.phone || null,
+      website: next.website || null,
+      description: next.description || null,
+      description_short: next.description_short || null,
+      types: next.types || [],
+      categories: next.categories || [],
+      products: next.products || null,
+      seasonality: next.seasonality || null,
+      markets: next.markets || null,
+      completeness: next.completeness || 0,
+      logo: next.logo || null,
+      profile_data: next.profile_data && typeof next.profile_data === "object" ? next.profile_data : {},
+      ai_review_status: "approved",
+    };
     setSaving(true);
     try {
+      if (id) await dbUpdateCompany(id, companyPatch);
       const savedContacts = id ? await dbSaveCompanyContacts(id, nextContacts) : nextContacts;
       const savedProfile = {...next, contacts:savedContacts, completeness:calcCompleteness({...next, contacts:savedContacts})};
       setCo(savedProfile);
@@ -3496,7 +3521,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           label="Opis krótki (2–3 zdania, ~200–300 znaków)"
           ta
           value={c.description_short || ""}
-          onChange={e=>{ u("description_short", e.target.value); if (c.ai_review_status === "approved") u("ai_review_status", "edited"); }}
+          onChange={e=>setC(prev=>({ ...prev, description_short:e.target.value, ai_review_status:"edited" }))}
           style={{ minHeight: 56 }}
           hint="Pokazywany w karcie firmy u kupca i w podglądzie. Nie powtarzaj nazwy firmy — kupiec już ją widzi."
         />
@@ -3504,7 +3529,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           label="Opis standardowy (4–6 zdań, ~450–700 znaków)"
           ta
           value={c.description || ""}
-          onChange={e=>{ u("description", e.target.value); if (c.ai_review_status === "approved") u("ai_review_status", "edited"); }}
+          onChange={e=>setC(prev=>({ ...prev, description:e.target.value, ai_review_status:"edited" }))}
           hint="Główny opis profilu. Generowany przez AI z Twoich danych — możesz go ręcznie poprawić."
         />
       </Card>
