@@ -6063,14 +6063,22 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     rejected: ["Odrzucony", "#dc2626", "#fee2e2"],
   };
 
-  // Filtruj listę: w trybie "pending" pokazujemy tylko firmy w pending_review
-  // (resolved przez companies, bo limits mają tylko pkg info).
-  const visibleLims = (limits || []).filter(lim => {
-    if (filter !== "pending") return true;
-    const co = (companies || []).find(c => c.id === lim.id);
-    return (co?.account_status || "active") === "pending_review";
-  });
-  const pendingCount = (companies || []).filter(c => c.account_status === "pending_review").length;
+  // Filtruj listę: w trybie "pending" budujemy ją z companies (bazy), nie z
+  // limits — LIMITS_INIT to legacy mock i nie ma w nim self-registered firm.
+  // Tryb "all" zostaje na limits, żeby nie ruszać przepływu pakietów.
+  const pendingCompanies = (companies || []).filter(c => c.account_status === "pending_review");
+  const visibleLims = filter === "pending"
+    ? pendingCompanies.map(co => ({
+        id: co.id,
+        name: co.name,
+        country: co.country || "—",
+        pkg: co.pkg_plan || "—",
+        max: 0,
+        used: 0,
+        pkgExpiry: co.pkg_expiry || "—",
+      }))
+    : (limits || []);
+  const pendingCount = pendingCompanies.length;
 
   return (
     <div>
