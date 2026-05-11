@@ -15,6 +15,16 @@ export function resolveEnvConfig() {
   const openAiModel = getFirstEnv("OPENAI_MODEL") || "gpt-4.1-mini";
   const b2bAppUrl = getFirstEnv("B2B_APP_URL") || "https://freshmarketb2b.netlify.app";
 
+  // [B2B Round prod-rollout / faza 3] PayU integration
+  // PAYU_ENV controls which API endpoint to hit: 'sandbox' (secure.snd.payu.com)
+  // or 'production' (secure.payu.com). Default sandbox while we're still wiring
+  // the flow. Switch to 'production' once live merchant POS is configured.
+  const payuEnv = getFirstEnv("PAYU_ENV") || "sandbox";
+  const payuPosId = getFirstEnv("PAYU_POS_ID");
+  const payuSecondKey = getFirstEnv("PAYU_SECOND_KEY");        // do weryfikacji notify (SHA-256 HMAC)
+  const payuClientId = getFirstEnv("PAYU_OAUTH_CLIENT_ID");    // OAuth client_credentials
+  const payuClientSecret = getFirstEnv("PAYU_OAUTH_CLIENT_SECRET");
+
   return {
     supabaseUrl,
     supabaseAnonKey,
@@ -23,6 +33,11 @@ export function resolveEnvConfig() {
     openAiApiKey,
     openAiModel,
     b2bAppUrl,
+    payuEnv,
+    payuPosId,
+    payuSecondKey,
+    payuClientId,
+    payuClientSecret,
   };
 }
 
@@ -35,6 +50,11 @@ export function missingEnvNames(config, requiredKeys = []) {
     openAiApiKey: "OPENAI_API_KEY",
     openAiModel: "OPENAI_MODEL",
     b2bAppUrl: "B2B_APP_URL",
+    payuEnv: "PAYU_ENV",
+    payuPosId: "PAYU_POS_ID",
+    payuSecondKey: "PAYU_SECOND_KEY",
+    payuClientId: "PAYU_OAUTH_CLIENT_ID",
+    payuClientSecret: "PAYU_OAUTH_CLIENT_SECRET",
   };
 
   return requiredKeys

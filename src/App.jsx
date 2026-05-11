@@ -4,6 +4,7 @@ import { ProtectedRoute } from "./auth/ProtectedRoute";
 import LoginPage from "./auth/LoginPage";
 import RegisterPage from "./auth/RegisterPage";
 import RegisterSupplierPage from "./auth/RegisterSupplierPage";
+import PurchaseReturnPage from "./auth/PurchaseReturnPage";
 import AdminPanel from "./panels/AdminPanel";
 import SupplierPanel from "./panels/SupplierPanel";
 import BuyerPanel from "./panels/BuyerPanel";
@@ -24,6 +25,9 @@ export default function App() {
               — dostawca może zalogować się i uzupełniać profil, ale gating w
               SupplierPanel blokuje wysyłki i Spotkania B2B do czasu zatwierdzenia. */}
           <Route path="/zarejestruj-dostawce" element={<RegisterSupplierPage />} />
+          {/* [B2B Round prod-rollout / faza 3] PayU continueUrl — sprawdza status
+              po stronie payu_orders i pokazuje wynik. Wymaga zalogowania. */}
+          <Route path="/zakup-ok" element={<PurchaseReturnPage />} />
           {/* /register jest dostepny tylko dla zalogowanego admina (B2B Round 2). */}
           <Route
             path="/register"
