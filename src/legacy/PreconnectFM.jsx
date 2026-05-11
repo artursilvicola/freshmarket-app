@@ -542,6 +542,18 @@ function RetailerLogo({ retailer, size=40 }) {
   }
   return <div style={{ width:size,height:size,borderRadius:Math.round(size*0.22),background:retailer.bg||"#f1f5f9",border:`2px solid ${retailer.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:Math.round(size*0.3),color:retailer.color,flexShrink:0,letterSpacing:-1 }}>{retailer.initials}</div>;
 }
+function CompanyLogo({ company, size=40 }) {
+  if (!company) return null;
+  const logo = company.logo || company.logo_url;
+  const initials = (company.name || "?").split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  return (
+    <div style={{ width:size,height:size,borderRadius:Math.round(size*0.22),background:logo?"white":"#1e3a5f",border:logo?"1px solid #e2e8f0":"none",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:Math.round(size*0.32),color:"white",flexShrink:0,overflow:"hidden" }}>
+      {logo
+        ? <img src={logo} alt={company.name || ""} style={{ width:"100%",height:"100%",objectFit:"contain",padding:3,boxSizing:"border-box" }}/>
+        : initials}
+    </div>
+  );
+}
 function Modal({ title, onClose, children, wide }) {
   return <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16 }} onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:16,maxWidth:wide?820:500,width:"100%",maxHeight:"92vh",overflow:"auto" }}><div style={{ padding:"16px 20px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"white",zIndex:1 }}><strong style={{ fontSize:15 }}>{title}</strong><button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",padding:4 }}><X size={18}/></button></div><div style={{ padding:20 }}>{children}</div></div></div>;
 }
@@ -5415,7 +5427,15 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
   }
   const [tab,setTab]=useState("mod");
   const modSends=sends.filter(s=>["pending_moderation","approved","queued"].includes(s.status));
-const [expandedRetailers, setExpandedRetailers] = useState(() => {
+  const sentSends=sends.filter(s=>["sent","read","read_manual"].includes(s.status));
+  const [autoOpenedTracking, setAutoOpenedTracking] = useState(false);
+  useEffect(() => {
+    if (!autoOpenedTracking && tab === "mod" && modSends.length === 0 && sentSends.length > 0) {
+      setTab("track");
+      setAutoOpenedTracking(true);
+    }
+  }, [autoOpenedTracking, tab, modSends.length, sentSends.length]);
+  const [expandedRetailers, setExpandedRetailers] = useState(() => {
     const withPending = modSends
       .filter(s => s.status === "pending_moderation")
       .map(s => s.retailerId);
@@ -5428,7 +5448,6 @@ const [expandedRetailers, setExpandedRetailers] = useState(() => {
   const [historyId,setHistoryId]=useState(null);
   const [emailPreview,setEmailPreview]=useState(null); // { retailerId, sends[] }
 
-    const sentSends=sends.filter(s=>["sent","read","read_manual"].includes(s.status));
   const ap=sends.filter(s=>s.status==="approved").length;
 
   // Group mod by retailer
@@ -5481,10 +5500,10 @@ const [expandedRetailers, setExpandedRetailers] = useState(() => {
       {tab==="mod"&&<>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
           <div style={{ fontSize:12,color:"#64748b" }}>Edytuj pozycję (nr 1 = na górze u kupca). Wysyłka: <strong>6 maja 2026 (wt.)</strong></div>
-          <Btn primary onClick={sendApproved} disabled={ap===0} style={{ background:ap>0?"#059669":"#94a3b8" }}><Send size={13}/> Wyślij zatwierdzone ({ap})</Btn>
+          <Btn primary onClick={sendApproved} disabled={ap===0} style={{ background:ap>0?"#059669":"#e2e8f0",color:ap>0?"white":"#475569",border:ap>0?"none":"1px solid #cbd5e1" }}><Send size={13}/> Wyślij zatwierdzone ({ap})</Btn>
         </div>
         {sends.some(s=>s.status==="pending_moderation")&&<Alrt type="warning"><strong>{sends.filter(s=>s.status==="pending_moderation").length}</strong> propozycji czeka na moderację.</Alrt>}
-        {Object.keys(byR).length===0&&<Alrt>Brak propozycji w kolejkach.</Alrt>}
+        {Object.keys(byR).length===0&&<Alrt>Brak propozycji w kolejkach. {sentSends.length>0&&<button onClick={()=>setTab("track")} style={{ marginLeft:8,padding:"4px 10px",borderRadius:6,border:"1px solid #bfdbfe",background:"white",color:"#1e40af",fontWeight:700,cursor:"pointer",fontFamily:"inherit" }}>Pokaż Wysłane & Tracking ({sentSends.length})</button>}</Alrt>}
         {Object.entries(byR).map(([rid,ss])=>{
           const r=getRetailerLive(+rid);
           const isOpen=expandedRetailers.has(+rid);
@@ -6220,9 +6239,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         return (
           <div key={lim.id} style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:12,marginBottom:10,overflow:"hidden" }}>
             <div style={{ display:"flex",gap:12,alignItems:"center",padding:"12px 16px",cursor:"pointer" }} onClick={()=>setExpandedId(isExpanded?null:lim.id)}>
-              <div style={{ width:36,height:36,borderRadius:8,background:"#1e3a5f",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,color:"white",flexShrink:0 }}>
-                {lim.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
-              </div>
+              <CompanyLogo company={firmCo?.name ? firmCo : lim} size={36}/>
               <div style={{ flex:1,minWidth:0 }}>
                 <div style={{ fontWeight:700,fontSize:14,display:"flex",alignItems:"center",gap:6 }}>
                   {lim.name}
