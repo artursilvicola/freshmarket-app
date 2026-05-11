@@ -469,7 +469,6 @@ function nowStr()               { return new Date().toISOString().slice(0,16).re
 
 // Nowy model cenowy: pakiety wysyłek (1 wysyłka = 1 oferta do 1 sieci/dystrybutora)
 const PRICING_PLANS=[
-  { id:"std_1",  tier:"STANDARD", qty:1,  price:50,   perSend:50, discount:0,  color:"#3b82f6", bg:"#eff6ff" },
   { id:"std_5",  tier:"STANDARD", qty:5,  price:225,  perSend:45, discount:10, color:"#0d9488", bg:"#f0fdf4" },
   { id:"std_10", tier:"STANDARD", qty:10, price:400,  perSend:40, discount:20, color:"#7c3aed", bg:"#faf5ff", popular:true },
   { id:"std_20", tier:"STANDARD", qty:20, price:700,  perSend:35, discount:30, color:"#1e3a5f", bg:"#f1f5f9" },
@@ -4346,12 +4345,12 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
 }
 
 function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax, pkgUsed }) {
-  const [selected, setSelected] = useState(co.pkg||"std_10");
+  const [selected, setSelected] = useState(co.pkg||"std_5");
   const [showModal, setShowModal] = useState(false);
   const [payMethod, setPayMethod] = useState("karta");
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
-  const sel = getPlanById(selected) || PRICING_PLANS[2];
+  const sel = getPlanById(selected) || getPlanById("std_5") || PRICING_PLANS[0];
   const rem = Math.max(0, pkgMax - pkgUsed);
 
   // [B2B Round prod-rollout / faza 3] Realne PayU zamiast mocka buyPackage().
@@ -6328,6 +6327,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>PAKIET</label>
                     <select value={lim.pkg} onChange={e=>updateLimit(lim.id,{pkg:e.target.value})}
                       style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}>
+                      <option value="std_5">Standard 5</option>
                       <option value="std_10">Standard 10</option>
                       <option value="std_20">Standard 20</option>
                       <option value="prem_10">Premium 10</option>

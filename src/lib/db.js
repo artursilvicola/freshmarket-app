@@ -1372,15 +1372,35 @@ export async function bulkUpsertCompanies(companies) {
     fm_b2b_enabled: typeof c.fm_b2b_enabled === "boolean" ? c.fm_b2b_enabled : undefined,
     status_note: c.status_note ?? undefined,
   }));
-  const { data, error } = await supabase
-    .from("companies")
-    .upsert(rows, { onConflict: "legacy_fm_id" })
-    .select();
-  if (error) {
-    console.warn("[bulkUpsertCompanies]", error.message);
-    return [];
+  const byId = rows.filter((row) => row.id);
+  const byLegacyId = rows.filter((row) => !row.id);
+  const saved = [];
+
+  if (byId.length) {
+    const { data, error } = await supabase
+      .from("companies")
+      .upsert(byId, { onConflict: "id" })
+      .select();
+    if (error) {
+      console.warn("[bulkUpsertCompanies:id]", error.message);
+    } else {
+      saved.push(...(data || []));
+    }
   }
-  return data;
+
+  if (byLegacyId.length) {
+    const { data, error } = await supabase
+      .from("companies")
+      .upsert(byLegacyId, { onConflict: "legacy_fm_id" })
+      .select();
+    if (error) {
+      console.warn("[bulkUpsertCompanies:legacy_fm_id]", error.message);
+    } else {
+      saved.push(...(data || []));
+    }
+  }
+
+  return saved;
 }
 
 // ===================================================================
