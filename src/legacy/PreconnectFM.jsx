@@ -48,6 +48,9 @@ import {
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+// [B2B Round prod-rollout / email-open-tracking] Potrzebny do auth.getSession()
+// gdy wołamy /.netlify/functions/notify-supplier-read z auth tokenem.
+import { supabase } from "../lib/supabase";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -2617,6 +2620,26 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       ? { ...x, status: "read", readAt: ts, readType: "auto_buyer_open" }
       : x
     ));
+
+    // [B2B Round prod-rollout / email-open-tracking] Powiadom dostawcę mailem
+    // że jego oferta została zobaczona w aplikacji. Fire-and-forget — nie
+    // blokujemy renderu strony jeśli endpoint padnie. Helper jest idempotent
+    // po data.supplierNotifiedAt, więc refresh strony przez buyera nie spamuje.
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        fetch("/.netlify/functions/notify-supplier-read", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ legacy_id: send.id }),
+        }).catch((e) => console.warn("[notify-supplier-read]", e?.message || e));
+      }
+    } catch (e) {
+      console.warn("[notify-supplier-read setup]", e?.message || e);
+    }
   }
   // [B2B Round supplier-FM-UX] Confirm supplier's FM 2026 chain selection.
   // Resolves the company by fmId (or legacySupplierId fallback), persists
@@ -5854,7 +5877,10 @@ const [expandedRetailers, setExpandedRetailers] = useState(() => {
   const [historyId,setHistoryId]=useState(null);
   const [emailPreview,setEmailPreview]=useState(null); // { retailerId, sends[] }
 
-    const sentSends=sends.filter(s=>["sent","read","read_manual"].includes(s.status));
+    // [B2B Round prod-rollout / email-open-tracking] 'opened' = kupiec
+    // otworzył maila przez Resend webhook (ale jeszcze nie kliknął w aplikacji).
+    // Admin widzi w tab "Wysłane & Tracking" wszystkie statusy post-wysyłki.
+    const sentSends=sends.filter(s=>["sent","opened","read","read_manual"].includes(s.status));
   const ap=sends.filter(s=>s.status==="approved").length;
 
   // Group mod by retailer

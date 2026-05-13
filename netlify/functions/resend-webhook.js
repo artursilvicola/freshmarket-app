@@ -38,6 +38,7 @@
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
+import { notifySupplierOfferRead } from "./_shared/supplier-read-notify.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -143,6 +144,7 @@ export const handler = async (event) => {
 
   const openedAt = new Date().toISOString();
   const updated = [];
+  const supplierNotifications = [];
   for (const row of rows) {
     // Idempotency: jeśli email_opened_at już ustawiony, nie nadpisujemy daty.
     // Bumpujemy status tylko z 'sent' → 'opened' (nie psuje np. już 'read').
@@ -163,12 +165,26 @@ export const handler = async (event) => {
       .eq("id", row.id);
     if (upErr) {
       console.error("[resend-webhook] update error", row.legacy_id, upErr.message);
-    } else {
-      updated.push({ legacy_id: row.legacy_id, was: row.status, now: newStatus });
+      continue;
+    }
+    updated.push({ legacy_id: row.legacy_id, was: row.status, now: newStatus });
+
+    // [B2B Round prod-rollout / email-open-tracking] Powiadom dostawcę że
+    // jego oferta została zobaczona. Tylko gdy ZMIENIAMY status (sent→opened).
+    // Jeśli status był wcześniej już opened/read — helper i tak no-op'uje
+    // przez data.supplierNotifiedAt, ale lepiej unikać niepotrzebnych fetch.
+    if (row.status === "sent") {
+      const notifResult = await notifySupplierOfferRead({
+        supaSvc,
+        env,
+        legacyId: row.legacy_id,
+        openedVia: "email",
+      });
+      supplierNotifications.push({ legacy_id: row.legacy_id, ...notifResult });
     }
   }
 
-  return reply(200, { ok: true, message_id: messageId, updated });
+  return reply(200, { ok: true, message_id: messageId, updated, notifications: supplierNotifications });
 };
 
 function reply(statusCode, payload) {
