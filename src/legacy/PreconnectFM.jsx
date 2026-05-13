@@ -16,6 +16,7 @@ import {
   getRetailers as dbGetRetailers, bulkUpsertRetailers,
   createBuyerAccount as dbCreateBuyerAccount,
   adminUpdateBuyerAccount as dbAdminUpdateBuyerAccount, updateOwnBuyerProfile as dbUpdateOwnBuyerProfile,
+  updateOwnSupplierProfile as dbUpdateOwnSupplierProfile, changeOwnPassword as dbChangeOwnPassword,
   getFmSettings as dbGetFmSettings, saveFmSettings as dbSaveFmSettings,
   getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
   getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
@@ -47,6 +48,9 @@ import {
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+// [B2B Round prod-rollout / email-open-tracking] Potrzebny do auth.getSession()
+// gdy wołamy /.netlify/functions/notify-supplier-read z auth tokenem.
+import { supabase } from "../lib/supabase";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -67,17 +71,21 @@ const STATUS_TIPS = {
   rejected: "Propozycja odrzucona przez administratora."
 };
 
+// [B2B Round prod-rollout / UX] Codex feedback: pełne etykiety zamiast skrótów
+// "Dost. · Nieprzecz." — w UI mamy miejsce na pełny tekst, badge i tak był
+// nieczytelny. STATUS_TIPS (linia ~60) zostaje aktywne jako title= wszędzie
+// gdzie pokazujemy STATUS_MAP.
 const STATUS_MAP = {
-  queued:             ["W kolejce",          "#ca8a04"],
-  pending_moderation: ["Do moderacji",       "#ca8a04"],
-  approved:           ["Zatwierdzona",       "#2563eb"],
-  rejected:           ["Odrzucona",          "#dc2626"],
-  sent:               ["Dost. · Nieprzecz.", "#ea580c"],
-  opened:             ["Dost. · Przeczytana","#7c3aed"],
-  read:               ["Dost. · Przeczytana","#059669"],
-  read_manual:        ["Dost. · Przeczyt. ✓","#047857"],
-  unread_expired:     ["Wygasła – Zwrot",    "#dc2626"],
-  refunded:           ["Zwrot kredytu",      "#64748b"],
+  queued:             ["W kolejce",                "#ca8a04"],
+  pending_moderation: ["Do moderacji",             "#ca8a04"],
+  approved:           ["Zatwierdzona",             "#2563eb"],
+  rejected:           ["Odrzucona",                "#dc2626"],
+  sent:               ["Dostarczona, nieodczytana","#ea580c"],
+  opened:             ["Odczytana",                "#7c3aed"],
+  read:               ["Odczytana",                "#059669"],
+  read_manual:        ["Odczytana ✓",              "#047857"],
+  unread_expired:     ["Wygasła, kredyt zwrócony", "#dc2626"],
+  refunded:           ["Zwrot kredytu",            "#64748b"],
 };
 
 const CTA_MAP = { samples:"Poproś o próbkę", spec:"Poproś o specyfikację", rfq:"Zapytaj o cenę i wolumen", call:"Umów rozmowę", long_term:"Zapytaj o program sezonowy", meet_fm:"Umów spotkanie na Fresh Market" };
@@ -455,6 +463,56 @@ function getSupplierOfferLabel(o) {
   const priv = getInternalOfferTitle(o);
   return priv && priv !== pub ? `${priv} | ${pub}` : pub;
 }
+// [B2B Round prod-rollout / UX] Helper: następny pierwszy wtorek miesiąca.
+// Wysyłki do sieci jedziemy w pierwszy wtorek każdego miesiąca (zasada
+// produktowa). Jeśli pierwszy wtorek bieżącego miesiąca już minął — zwraca
+// pierwszy wtorek następnego miesiąca. Format: 'YYYY-MM-DD'.
+// Używane jako fallback gdy retailer.next_send jest pusty albo wskazuje
+// datę z przeszłości (np. seed sprzed kilku miesięcy).
+function getNextFirstTuesday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const candidate = (year, monthIdx) => {
+    const first = new Date(year, monthIdx, 1);
+    const dow = first.getDay(); // 0=Sun, 2=Tue
+    const offset = (2 - dow + 7) % 7;
+    return new Date(year, monthIdx, 1 + offset);
+  };
+  let d = candidate(today.getFullYear(), today.getMonth());
+  if (d < today) {
+    const m = today.getMonth() + 1;
+    d = candidate(m > 11 ? today.getFullYear() + 1 : today.getFullYear(), m > 11 ? 0 : m);
+  }
+  // Format YYYY-MM-DD bez UTC-shifta
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
+}
+
+// Zwraca next_send retailera, ale jeśli pusty lub w przeszłości — fallback
+// do getNextFirstTuesday(). Pozwala adminowi nadpisać per-retailer (np.
+// inny mailing day dla konkretnej sieci), a domyślnie pokazuje sensowną
+// datę bez ręcznego utrzymania seed-data.
+function effectiveNextSend(rawNextSend) {
+  if (!rawNextSend) return getNextFirstTuesday();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const parsed = new Date(rawNextSend);
+  if (isNaN(parsed.getTime()) || parsed < today) return getNextFirstTuesday();
+  return rawNextSend;
+}
+
+// Format daty po polsku: "2026-06-02" → "2 czerwca 2026 (wt.)"
+function formatPolishDate(isoDate) {
+  if (!isoDate) return "";
+  const months = ["stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","września","października","listopada","grudnia"];
+  const days = ["ndz.","pon.","wt.","śr.","czw.","pt.","sob."];
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return isoDate;
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()} (${days[d.getDay()]})`;
+}
+
 function getRetailerCats(r) {
   if (r && r.cats && r.cats.length > 0) return r.cats;
   if (r && r.buyers && r.buyers.length > 0) {
@@ -743,6 +801,17 @@ function hasRefundMarker(send) {
 }
 function getRefundAmount(send) {
   const raw = send?.refundAmount ?? send?.data?.refundAmount ?? send?.price ?? send?.data?.price ?? 0;
+  const amount = Number(raw);
+  return Number.isFinite(amount) ? amount : 0;
+}
+function hasChargeMarker(send) {
+  return Boolean(send?.chargeAt || send?.chargeTxId || send?.billingStatus === "charged" || send?.data?.chargeAt || send?.data?.chargeTxId || send?.data?.billingStatus === "charged");
+}
+function isSeenOrCharged(send) {
+  return ["opened", "read", "read_manual"].includes(send?.status) || hasChargeMarker(send);
+}
+function getChargeAmount(send, fallback = 0) {
+  const raw = send?.chargeAmount ?? send?.data?.chargeAmount ?? send?.price ?? send?.data?.price ?? fallback;
   const amount = Number(raw);
   return Number.isFinite(amount) ? amount : 0;
 }
@@ -1510,6 +1579,32 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     })();
     return () => { canceled = true; };
   }, []);
+
+  // [B2B Round prod-rollout / email-open-tracking] Deep-link z mailem:
+  // ?send=<legacy_id> w URL → po załadowaniu sends otwórz PageBuyerDetail
+  // dla tej konkretnej oferty. To zamyka pętlę email→app→read tracking.
+  // Działa tylko dla buyerów — supplier dostaje #404 w aplikacji.
+  useEffect(() => {
+    if (!sendsLoaded) return;
+    if (typeof window === "undefined" || !window.location) return;
+    const params = new URLSearchParams(window.location.search);
+    const sendIdParam = params.get("send");
+    if (!sendIdParam) return;
+    // Sprzątamy URL żeby nie loopować po nav'igacji
+    try {
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, "", cleanUrl);
+    } catch (e) {}
+    // Próbujemy znaleźć po legacy_id (bigint) lub po .id (string/number)
+    const target = (sends || []).find(s =>
+      String(s.id) === sendIdParam || String(s.legacy_id) === sendIdParam
+    );
+    if (target) {
+      // setSid + setPg poprzez nav — nawigujemy do detalu
+      setPg("b-detail");
+      setSid(target.id);
+    }
+  }, [sendsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
   // [B2B Round 5] See setOffers note. Hot-path callers (sendToChain,
   // moderate, sendApproved, confirmManual, undoConfirm) await per-action
   // upsertLegacySend and surface errors via fl(). This wrapper is fallback.
@@ -2536,19 +2631,91 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // closure from PageBuyerDetail — NOT a stale sends.find() lookup. Uses
   // SECURITY DEFINER RPC because buyer RLS only allows SELECT on legacy_sends.
   // Idempotent at the RPC level — RPC no-ops if status is already past 'sent'.
-  async function markSendOpened(send) {
-    if (!send || send.status !== "sent") return;
+  function applySeenResultsToState(results = []) {
+    const ok = (results || []).filter(r => r?.ok && r?.legacy_id && r?.data);
+    if (!ok.length) return;
+    const byId = new Map(ok.map(r => [Number(r.legacy_id), r]));
+    _setSendsRaw(prev => prev.map(s => {
+      const r = byId.get(Number(s.id));
+      if (!r) return s;
+      const d = r.data || {};
+      return {
+        ...s,
+        ...d,
+        id: s.id,
+        status: r.status || d.status || s.status,
+        seenAt: d.seenAt || s.seenAt,
+        seenChannel: d.seenChannel || s.seenChannel,
+        chargeAt: d.chargeAt || s.chargeAt,
+        packageId: d.packageId || s.packageId,
+        chargeTxId: d.chargeTxId || s.chargeTxId,
+        chargeAmount: d.chargeAmount ?? s.chargeAmount,
+        chargeCurrency: d.chargeCurrency || s.chargeCurrency,
+        billingStatus: d.billingStatus || s.billingStatus,
+      };
+    }));
+  }
+
+  async function markBuyerPreconnectSeen(sendList, channel = "app_list") {
+    const candidates = (sendList || []).filter(s => s && ["sent", "opened"].includes(s.status));
+    if (!candidates.length) return;
     try {
-      await dbMarkLegacySendRead(send.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch("/.netlify/functions/mark-buyer-preconnect-seen", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ legacy_ids: candidates.map(s => s.id), channel }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) applySeenResultsToState(body.results || []);
+      else console.warn("[mark-buyer-preconnect-seen]", body?.error || res.status);
     } catch (e) {
-      console.warn("[markSendOpened]", e?.message || e);
-      return;
+      console.warn("[mark-buyer-preconnect-seen]", e?.message || e);
+    }
+  }
+
+  async function markSendOpened(send) {
+    if (!send || !["sent", "opened"].includes(send.status)) return;
+    if (send.status === "sent") {
+      try {
+        await dbMarkLegacySendRead(send.id);
+      } catch (e) {
+        console.warn("[markSendOpened]", e?.message || e);
+        return;
+      }
     }
     const ts = nowStr();
     _setSendsRaw(s => s.map(x => x.id === send.id
       ? { ...x, status: "read", readAt: ts, readType: "auto_buyer_open" }
       : x
     ));
+
+    // [B2B Round prod-rollout / email-open-tracking] Powiadom dostawcę mailem
+    // że jego oferta została zobaczona w aplikacji. Fire-and-forget — nie
+    // blokujemy renderu strony jeśli endpoint padnie. Helper jest idempotent
+    // po data.supplierNotifiedAt, więc refresh strony przez buyera nie spamuje.
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        fetch("/.netlify/functions/notify-supplier-read", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ legacy_id: send.id }),
+        })
+          .then(async (res) => res.ok ? res.json().catch(() => ({})) : {})
+          .then((body) => applySeenResultsToState(body.results || []))
+          .catch((e) => console.warn("[notify-supplier-read]", e?.message || e));
+      }
+    } catch (e) {
+      console.warn("[notify-supplier-read setup]", e?.message || e);
+    }
   }
   // [B2B Round supplier-FM-UX] Confirm supplier's FM 2026 chain selection.
   // Resolves the company by fmId (or legacySupplierId fallback), persists
@@ -2679,7 +2846,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // ── Navigation ─────────────────────────────────────────────────────────
   // Supplier: 5 items  |  Buyer: 2 items  |  Admin: 4 items
   const menuItems = {
-    supplier: [[Home,"Dashboard","dashboard"],[Building2,"Firma","company"],[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"]],
+    supplier: [[Home,"Dashboard","dashboard"],[Building2,"Firma","company"],[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"],[User,"Mój profil","profile"]],
     buyer:    [[Send,"Propozycje asortymentowe","b-offers"],[Building2,"Dostawcy","b-katalog"],[Heart,"Zapisane","b-saved"],[User,"Mój Profil","b-profile"]],
     admin:    [[Home,"Dashboard","a-dash"],[Layers,"Pipeline","a-pipeline"],[Store,"Sieci","a-retailers"],[Building2,"Firmy","a-firmy"]],
   };
@@ -2697,7 +2864,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }
 
   function renderPage(){
-    if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey}/>;
+    if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
     if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey}/>;
@@ -2705,9 +2872,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
     if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} retailers={retailers} accountId={mySupplierKey}/>;
+    if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
-    if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies}/>;
-    if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }}/>;
+    if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
+    if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
@@ -2755,7 +2923,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>PreConnect</span>
               </div>
-              {[[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"],[Building2,"Twoja firma","company"]].map(([Ic,label,key])=>(
+              {[[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"],[Building2,"Twoja firma","company"],[User,"Mój profil","profile"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
                   {key==="finanse"&&wallet.balance>0&&<span style={{ marginLeft:"auto",background:"#059669",color:"white",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 6px" }}>{wallet.balance}€</span>}
@@ -2872,11 +3040,16 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             // Pełna aktywacja + oba moduły = nic nie pokazuj
             if (status === "active" && preOk && fmOk) return null;
             if (status === "pending_review") {
+              const mailSubj = encodeURIComponent(`Aktywacja konta — ${co.name || "Fresh Market B2B"}`);
+              const mailBody = encodeURIComponent(`Dzień dobry,\n\nProszę o aktywację konta firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B (PreConnect + Spotkania FM 2026).\n\nDziękuję.`);
               return <div style={{ background:"#fef3c7",border:"1.5px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
                 <Clock size={16} color="#92400e" style={{ flexShrink:0,marginTop:2 }}/>
                 <div style={{ flex:1,fontSize:13,color:"#78350f" }}>
-                  <strong>Konto oczekuje na zatwierdzenie</strong> — możesz uzupełnić profil firmy, wgrać logo i certyfikaty. Po aktywacji przez administratora odblokujemy wysyłkę ofert do sieci (PreConnect) oraz Spotkania B2B.
+                  <strong>Konto oczekuje na zatwierdzenie.</strong> Możesz uzupełnić profil firmy, wgrać logo i certyfikaty. Po aktywacji przez administratora odblokujemy wysyłkę ofert do sieci (PreConnect) oraz Spotkania B2B.
                 </div>
+                <a href={`mailto:newsletter@freshmarket.eu?subject=${mailSubj}&body=${mailBody}`} style={{ padding:"7px 12px",background:"#d97706",color:"white",borderRadius:7,fontSize:12,fontWeight:600,textDecoration:"none",flexShrink:0,whiteSpace:"nowrap" }}>
+                  Napisz do admina
+                </a>
               </div>;
             }
             if (status === "rejected") {
@@ -2895,15 +3068,21 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 </div>
               </div>;
             }
-            // status === "active" ale któryś moduł off — komunikat informacyjny
+            // status === "active" ale któryś moduł off — komunikat informacyjny z CTA
             const offBits = [];
             if (!preOk) offBits.push("PreConnect (wysyłka ofert do sieci) jest jeszcze nieaktywny");
             if (!fmOk) offBits.push("Spotkania B2B Fresh Market 2026 są aktywowane indywidualnie przez administratora");
+            const missingMods = [!preOk && "PreConnect", !fmOk && "Spotkania FM 2026"].filter(Boolean).join(" + ");
+            const mailSubj = encodeURIComponent(`Aktywacja ${missingMods} — ${co.name || "Fresh Market B2B"}`);
+            const mailBody = encodeURIComponent(`Dzień dobry,\n\nProszę o aktywację modułów ${missingMods} dla firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B.\n\nDziękuję.`);
             return <div style={{ background:"#eff6ff",border:"1.5px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
               <Info size={16} color="#3b82f6" style={{ flexShrink:0,marginTop:2 }}/>
               <div style={{ flex:1,fontSize:12,color:"#1e3a5f" }}>
-                Konto jest aktywne. {offBits.join(". ")}.
+                <strong>Konto jest aktywne.</strong> {offBits.join(". ")}.
               </div>
+              <a href={`mailto:newsletter@freshmarket.eu?subject=${mailSubj}&body=${mailBody}`} style={{ padding:"6px 12px",background:"#3b82f6",color:"white",borderRadius:7,fontSize:11,fontWeight:600,textDecoration:"none",flexShrink:0,whiteSpace:"nowrap" }}>
+                Poproś o aktywację
+              </a>
             </div>;
           })()}
           {account.role==="supplier"&&pg!=="fm-sched"&&activeRefunds.map(n=>(
@@ -2931,7 +3110,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Dashboard: 2 main blocks — PreConnect + FM 2026 ────────────────────── */
-function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId }) {
+function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed }) {
   const mySends    = (sends||[]).filter(s=>!s.supplierId||s.supplierId===accountId);
   const confirmed  = mySends.filter(s=>["read","read_manual"].includes(s.status)).length;
   const pending    = mySends.filter(s=>s.status==="sent").length;
@@ -2941,8 +3120,101 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
   const fmOpen = fmSettings?.schedulingOpen;
   const [howOpenSup, setHowOpenSup] = useState(false);
 
+  // [B2B Round prod-rollout / UX] Checklist startowa — 5 kroków do pełnej
+  // gotowości supplera. Pokazuje się dopóki co najmniej jeden krok jest do
+  // zrobienia. Po wszystkich ✓ — chowamy całą kartę (LS flag).
+  const onboardingDoneLs = typeof window !== "undefined" && window.localStorage
+    ? window.localStorage.getItem("fm_supplier_onboard_dismissed") === "1"
+    : false;
+  const [hideOnboarding, setHideOnboarding] = useState(onboardingDoneLs);
+  const myOffersCount = (offers || []).filter(o => !o.supplierId || o.supplierId === accountId).length;
+  const mySendsCount = (sends || []).filter(s => !s.supplierId || s.supplierId === accountId).length;
+  const onbSteps = [
+    {
+      key: "profile",
+      label: "Uzupełnij dane firmy",
+      hint: "Nazwa, NIP, kraj, krótki opis — minimum żeby kupiec wiedział kogo dotyczy oferta.",
+      done: !!(co?.name && co?.country && (co?.description || co?.description_short)),
+      cta: "Otwórz profil firmy",
+      goto: "company",
+    },
+    {
+      key: "logo",
+      label: "Wgraj logo firmy",
+      hint: "Pokazuje się w mailu do kupca i przy ofertach. PNG/JPG, kwadrat ~400×400 px.",
+      done: !!(co?.logo_url || co?.logo),
+      cta: "Wgraj logo",
+      goto: "company",
+    },
+    {
+      key: "offer",
+      label: "Dodaj pierwszą propozycję",
+      hint: "Produkt + krótka specyfikacja + 1-3 zdjęcia. To podstawa wysyłki do sieci.",
+      done: myOffersCount > 0,
+      cta: "Dodaj propozycję",
+      goto: "offers",
+    },
+    {
+      key: "package",
+      label: "Aktywuj pakiet wysyłek",
+      hint: "Każda wysyłka do sieci kosztuje 1 kredyt z pakietu. Bez pakietu nie wyślesz.",
+      done: Number(pkgMax || 0) > 0 || Number(rem || 0) > 0,
+      cta: "Wybierz pakiet",
+      goto: "finanse",
+    },
+    {
+      key: "send",
+      label: "Wyślij propozycję do sieci",
+      hint: "Wybierz sieć z listy w Wysyłkach i kliknij Wyślij. Pierwsza wysyłka = punkt zwrotny.",
+      done: mySendsCount > 0,
+      cta: "Wyślij propozycję",
+      goto: "wysylki",
+    },
+  ];
+  const onbDoneCount = onbSteps.filter(s => s.done).length;
+  const allOnbDone = onbDoneCount === onbSteps.length;
+  function dismissOnboarding() {
+    try { window.localStorage.setItem("fm_supplier_onboard_dismissed", "1"); } catch (e) {}
+    setHideOnboarding(true);
+  }
+
   return (
     <div style={{ maxWidth:860 }}>
+
+      {/* ── Checklist startowa — 5 kroków do gotowości ── */}
+      {!hideOnboarding && !allOnbDone && (
+        <div style={{ marginBottom:16,background:"white",borderRadius:12,border:"1px solid #e2e8f0",padding:"16px 18px" }}>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
+            <div style={{ fontWeight:700,fontSize:14,color:"#1e293b" }}>
+              Zacznij tutaj <span style={{ color:"#64748b",fontWeight:500,marginLeft:6 }}>({onbDoneCount}/{onbSteps.length})</span>
+            </div>
+            <div style={{ flex:1,height:6,background:"#f1f5f9",borderRadius:99,margin:"0 14px",overflow:"hidden" }}>
+              <div style={{ width:`${(onbDoneCount/onbSteps.length)*100}%`,height:"100%",background:"#0d9488",transition:"width 0.3s" }}/>
+            </div>
+            <button onClick={dismissOnboarding} title="Schowaj checklistę" style={{ background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4 }}>
+              <X size={14}/>
+            </button>
+          </div>
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            {onbSteps.map(step => (
+              <div key={step.key} style={{ display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:step.done?"#f0fdf4":"#f8fafc",borderRadius:8,border:`1px solid ${step.done?"#bbf7d0":"#e2e8f0"}` }}>
+                <div style={{ width:22,height:22,borderRadius:"50%",background:step.done?"#0d9488":"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1 }}>
+                  {step.done ? <CheckCircle size={14} color="white"/> : <span style={{ fontSize:11,fontWeight:700,color:"#64748b" }}>{onbSteps.indexOf(step)+1}</span>}
+                </div>
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ fontWeight:600,fontSize:13,color:step.done?"#065f46":"#1e293b" }}>{step.label}</div>
+                  {!step.done && <div style={{ fontSize:12,color:"#64748b",marginTop:2,lineHeight:1.5 }}>{step.hint}</div>}
+                </div>
+                {!step.done && (
+                  <button onClick={()=>nav(step.goto)} style={{ padding:"6px 12px",background:"#0d9488",color:"white",border:"none",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",flexShrink:0,fontFamily:"inherit" }}>
+                    {step.cta}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Jak to działa? — Supplier ── */}
       <div style={{ marginBottom:20,background:"white",borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden" }}>
@@ -3120,8 +3392,20 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
   const ao = offers.filter(o => o.status==="active" && (!o.supplierId || o.supplierId===accountId));
   const pct = Math.min(100, Math.round(pkgUsed / pkgMax * 100));
 
+  // [B2B Round prod-rollout / UX] Modal potwierdzenia kosztu — supplier widzi
+  // "Pobierzemy 1 wysyłkę. Zostanie X/Y" przed faktyczną wysyłką. Buduje
+  // zaufanie i eliminuje przypadkowe kliknięcia. Codex feedback P0.
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
+
   function doSend() {
-    if (so && sr) { sendToChain(+so, +sr); setView("list"); setSo(""); setSr(""); setTab("pending"); }
+    if (!so || !sr) return;
+    setShowSendConfirm(true);
+  }
+
+  function confirmAndSend() {
+    sendToChain(+so, +sr);
+    setShowSendConfirm(false);
+    setView("list"); setSo(""); setSr(""); setTab("pending");
   }
 
   function startSendTo(retailerId) {
@@ -3208,7 +3492,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                   {/* Buyer info - NO personal data shown to supplier */}
                   <div style={{ padding:"8px 10px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0",fontSize:12 }}>
                     <div style={{ display:"flex",gap:14,color:"#64748b",alignItems:"center" }}>
-                      <span style={{ display:"flex",gap:4,alignItems:"center" }}><Calendar size={10}/> Mailing: {r.nextSend}</span>
+                      <span style={{ display:"flex",gap:4,alignItems:"center" }}><Calendar size={10}/> Mailing: {effectiveNextSend(r.nextSend)}</span>
                       <span style={{ display:"flex",gap:4,alignItems:"center" }}><Users size={10}/> Kupiec kategorii: {getRetailerCats(r).join(", ")}</span>
                     </div>
                     {hasSent && <div style={{ marginTop:4,color:"#059669" }}>{rRead}/{rSends.length} propozycji przeczytanych</div>}
@@ -3262,7 +3546,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                     <div style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ fontSize:10,fontWeight:700,color:"#0d9488" }}>🌐 Dla kupca:</span><span style={{ fontSize:12 }}>{getPublicOfferTitle(o)}</span></div>
                     <div style={{ color:"#64748b",marginTop:3,fontSize:11 }}>{o?.volume} {o?.volumeUnit} · {FLAGS[o?.origin]||"🌐"}</div>
                   </div>
-                  <div style={{ display:"flex",alignItems:"center",gap:8 }}><RetailerLogo retailer={r} size={28}/><div><div style={{ fontWeight:600 }}>{r?.name}</div><div style={{ color:"#64748b" }}>Wysyłka: {r?.nextSend}</div></div></div>
+                  <div style={{ display:"flex",alignItems:"center",gap:8 }}><RetailerLogo retailer={r} size={28}/><div><div style={{ fontWeight:600 }}>{r?.name}</div><div style={{ color:"#64748b" }}>Wysyłka: {effectiveNextSend(r?.nextSend)}</div></div></div>
                 </div>
               );
             })()}
@@ -3327,6 +3611,64 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           })}
         </div>
       )}
+
+      {/* [B2B Round prod-rollout / UX] Send-cost confirmation modal — Codex P0.
+          Pokazuje supplerowi DOKŁADNIE co się stanie po kliknięciu Wyślij:
+          ile wysyłek zostanie pobranych z pakietu, ile pozostanie, ile to
+          kosztuje per send. Bez ukrytych kosztów. */}
+      {showSendConfirm && (() => {
+        const selectedOffer = offers.find(o => o.id === +so);
+        const selectedRetailer = (retailers || []).find(r => r.id === +sr);
+        const perSendCost = getPlanById(co?.pkg)?.perSend || 40;
+        const remainingAfter = Math.max(0, (rem || 0) - 1);
+        return (
+          <div style={{ position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16 }} onClick={()=>setShowSendConfirm(false)}>
+            <div style={{ background:"white",borderRadius:14,padding:28,maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }} onClick={(e)=>e.stopPropagation()}>
+              <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:16 }}>
+                <div style={{ width:40,height:40,borderRadius:10,background:"#0d9488",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                  <Send size={18} color="white"/>
+                </div>
+                <div>
+                  <div style={{ fontWeight:700,fontSize:16,color:"#0f172a" }}>Potwierdź wysyłkę</div>
+                  <div style={{ fontSize:12,color:"#64748b" }}>Zaraz pobierzemy 1 wysyłkę z pakietu</div>
+                </div>
+              </div>
+
+              <div style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
+                <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13 }}>
+                  <span style={{ color:"#64748b" }}>Propozycja</span>
+                  <strong style={{ color:"#1e293b",textAlign:"right" }}>{selectedOffer?.title || selectedOffer?.product || `#${so}`}</strong>
+                </div>
+                <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
+                  <span style={{ color:"#64748b" }}>Sieć handlowa</span>
+                  <strong style={{ color:"#1e293b",textAlign:"right" }}>{selectedRetailer?.name || `#${sr}`}</strong>
+                </div>
+                <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
+                  <span style={{ color:"#64748b" }}>Koszt wysyłki</span>
+                  <strong style={{ color:"#1e293b" }}>1 wysyłka ({perSendCost} EUR)</strong>
+                </div>
+                <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
+                  <span style={{ color:"#64748b" }}>Po wysyłce zostanie</span>
+                  <strong style={{ color: remainingAfter<=1 ? "#d97706" : "#059669" }}>{remainingAfter}/{pkgMax} wysyłek</strong>
+                </div>
+              </div>
+
+              <div style={{ fontSize:12,color:"#64748b",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 12px",marginBottom:18,lineHeight:1.5 }}>
+                <strong style={{ color:"#065f46" }}>⭐ Złota zasada 14 dni:</strong> jeśli kupiec nie otworzy propozycji w ciągu 14 dni, kredyt automatycznie wraca na Twój portfel.
+              </div>
+
+              <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+                <button onClick={()=>setShowSendConfirm(false)} style={{ padding:"10px 18px",background:"white",color:"#475569",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14,fontWeight:500,cursor:"pointer",fontFamily:"inherit" }}>
+                  Anuluj
+                </button>
+                <button onClick={confirmAndSend} style={{ padding:"10px 18px",background:"#0d9488",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"flex",gap:6,alignItems:"center" }}>
+                  <Send size={13}/> Wyślij propozycję
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -3886,11 +4228,11 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <Inp label="Region / miejscowość" value={f.region||""} onChange={e=>u("region",e.target.value)} placeholder="np. Mazowsze, Almería, Naivasha"/>
           </Row>
           <Row>
-            <Inp label="Typ propozycji" required value={f.offerType||""} onChange={e=>u("offerType",e.target.value)} style={errStyle("offerType")}>
+            <Inp label="Typ propozycji" required value={f.offerType||""} onChange={e=>u("offerType",e.target.value)} style={errStyle("offerType")} hint="Program stały = całoroczna dostępność. Sezonowa = wąskie okno. Pod promocję = jednorazowy listing z lepszą ceną. Spot = nadwyżka produkcji.">
               <option value="">— wybierz —</option>
               <option>Program stały</option><option>Propozycja sezonowa</option><option>Propozycja pod promocję</option><option>Testowy listing</option><option>Dostawa spot / uzupełnienie braków</option>
             </Inp>
-            <Inp label="Rola produktu na półce" required value={f.positioning||""} onChange={e=>u("positioning",e.target.value)} style={errStyle("positioning")}>
+            <Inp label="Rola produktu na półce" required value={f.positioning||""} onChange={e=>u("positioning",e.target.value)} style={errStyle("positioning")} hint="Codzienna = mainstream. Premium = wyższa cena i jakość. Promocja = niska cena z etykietą. Bio = certyfikat. Lokalne = z kraju sieci. Shelf-ready = w opakowaniu RSP.">
               <option value="">— wybierz —</option>
               <option>Codzienna półka</option><option>Premium</option><option>Promocja</option><option>Bio / ekologiczne</option><option>Lokalne / regionalne</option><option>Sezonowe</option><option>Wygodne opakowanie / gotowe na półkę</option>
             </Inp>
@@ -3900,8 +4242,8 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
         <Card title="B. Specyfikacja jakościowa" icon={Award}>
           <Alrt type="info">Pola w tej sekcji są opcjonalne — uzupełnij tylko jeśli to ważne dla Twojego produktu i kupca. <strong>Skupiamy się na podstawowej specyfikacji</strong>, szczegóły handlowe ustalisz po kontakcie.</Alrt>
           <Row>
-            <Inp label="Kaliber / rozmiar" value={f.size||""} onChange={e=>u("size",e.target.value)} placeholder="np. 70–80 mm, M, 50 cm (kwiaty)" hint="opcjonalne"/>
-            <Inp label="Klasa jakości" value={f.qualityClass||""} onChange={e=>u("qualityClass",e.target.value)} hint="opcjonalne">
+            <Inp label="Kaliber / rozmiar" value={f.size||""} onChange={e=>u("size",e.target.value)} placeholder="np. jabłka 70-80 mm · borówki 12+ mm · cytrusy 6 (cal.) · róże 50-60 cm" hint="Standard branżowy lub miara, w której podajesz wielkość produktu."/>
+            <Inp label="Klasa jakości" value={f.qualityClass||""} onChange={e=>u("qualityClass",e.target.value)} hint="Klasa I = standard EU (większość obrotu). Extra = top EU. Premium/A = własne klasy sieci. Inna = certyfikaty branżowe (np. GlobalGAP grade).">
               <option value="">— wybierz —</option><option>Klasa I</option><option>Klasa Extra</option><option>Premium</option><option>A</option><option>Inna</option>
             </Inp>
           </Row>
@@ -3937,7 +4279,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
         {f.category==="kwiaty"&&<Card title="C. Parametry kwiatowe" icon={Leaf}>
           <Row>
             <Inp label="Długość pędu" required value={f.stemLength||""} onChange={e=>u("stemLength",e.target.value)} placeholder="np. 50 cm, 60 cm"/>
-            <Inp label="Faza otwarcia" required value={f.openingPhase||""} onChange={e=>u("openingPhase",e.target.value)} placeholder="np. cut stage 2, pąk zamknięty"/>
+            <Inp label="Faza otwarcia" required value={f.openingPhase||""} onChange={e=>u("openingPhase",e.target.value)} placeholder="np. pąk zamknięty (stage 1), półotwarty (stage 3), pełny (stage 5)" hint="Stadium rozwoju kwiatu w momencie zbioru. Możesz wpisać po polsku."/>
           </Row>
           <Row>
             <Inp label="Liczba szt. w pęczku / bukiecie" required type="number" value={f.bouquetCount||""} onChange={e=>u("bouquetCount",e.target.value)} placeholder="np. 10"/>
@@ -3984,6 +4326,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <div style={{ padding:errors.availabilityModel?"8px":0,borderRadius:8,...(errors.availabilityModel?{border:"2px solid #dc2626",background:"#fef2f2"}:{}) }}>
               <RadioGroup name="avail" options={["Całorocznie","Sezonowo","Krótkie okno","Tylko promo / spot"]} val={f.availabilityModel||""} onChange={v=>u("availabilityModel",v)}/>
             </div>
+            <div style={{ fontSize:11,color:"#94a3b8",marginTop:5 }}>Całorocznie = stabilna dostawa 12 mies. Sezonowo = produkt w określonym oknie (np. truskawki V-VII). Krótkie okno = kilka tygodni. Spot = jednorazowa partia, bez kontynuacji.</div>
             {errors.availabilityModel&&<div style={{fontSize:11,color:"#dc2626",marginTop:3}}>⚠ To pole jest wymagane</div>}
           </div>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14 }}>
@@ -4092,7 +4435,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <Inp label="Waluta" value={f.currency||"EUR"} onChange={e=>u("currency",e.target.value)}>
               <option>PLN</option><option>EUR</option><option>USD</option>
             </Inp>
-            <Inp label="Cena orientacyjna" type="number" value={f.priceOffer||""} onChange={e=>u("priceOffer",e.target.value)} placeholder="np. 2.40 (opcjonalne)" hint="opcjonalne"/>
+            <Inp label="Cena orientacyjna" type="number" value={f.priceOffer||""} onChange={e=>u("priceOffer",e.target.value)} placeholder="np. 2.40 — cena min. z poprzedniego tygodnia" hint="Opcjonalne. Pokazuje kupcowi rząd wielkości — finalna cena zostaje do uzgodnienia bilateralnie. Wpływ INCOTERMS: DAP/DDP zwykle wyżej, EXW niżej."/>
             <Inp label="Jednostka ceny" value={f.priceUnit||"kg"} onChange={e=>u("priceUnit",e.target.value)}>
               <option>kg</option><option>szt.</option><option>karton</option><option>paleta</option><option>pęczek</option><option>bukiet</option>
             </Inp>
@@ -4135,6 +4478,21 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
       {/* ════ STEP 3: PREZENTACJA ════ */}
       {step===3&&<>
         <Alrt type="warning"><strong>Nie pisz:</strong> wysoka jakość · konkurencyjna cena · indywidualne podejście · wieloletnie doświadczenie.<br/><strong>Pisz konkretnie:</strong> standard partii, wolumen, logistyka, cena, czas reakcji, korzyść dla kupca.</Alrt>
+
+        {/* [B2B Round prod-rollout / UX] Codex feedback: krótki przykład dobrej
+            oferty w jednej linii — pokazuje strukturę "produkt + kaliber + klasa
+            + wolumen + logistyka", którą kupiec rozumie od razu. */}
+        <details style={{ marginBottom:16,background:"#f0fdfa",border:"1px solid #99f6e4",borderRadius:10,padding:"10px 14px" }}>
+          <summary style={{ cursor:"pointer",fontSize:13,fontWeight:600,color:"#0d9488",userSelect:"none" }}>📋 Pokaż przykład dobrej oferty (1 zdanie)</summary>
+          <div style={{ marginTop:10,fontSize:13,color:"#134e4a",lineHeight:1.6 }}>
+            <div style={{ padding:"10px 12px",background:"white",borderRadius:8,fontFamily:"ui-monospace, SF Mono, monospace",fontSize:12,color:"#1e293b",border:"1px solid #ccfbf1",marginBottom:8 }}>
+              „Jabłka Gala 70-80 mm, klasa I, 100 t/mies., dostawa DAP do centrum dystrybucji"
+            </div>
+            <div style={{ fontSize:11,color:"#64748b",lineHeight:1.5 }}>
+              Każde pole konkretne i mierzalne: <strong>produkt + odmiana + kaliber + klasa + wolumen + logistyka</strong>. Kupiec wie od razu czego się spodziewać. Tego samego ducha trzymaj się w 3 pytaniach poniżej — operacyjnie, w liczbach.
+            </div>
+          </div>
+        </details>
 
         <Card title="A. Co Cię wyróżnia?" icon={CheckCircle}>
           <Alrt type="success">
@@ -4227,14 +4585,14 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
   const [tab,setTab]=useState("saldo");
 
   const allSent=sends.filter(s=>(!s.supplierId||s.supplierId===accountId)&&!["queued","pending_moderation","rejected"].includes(s.status));
-  const confirmed=allSent.filter(s=>["read","read_manual"].includes(s.status));
+  const confirmed=allSent.filter(isSeenOrCharged);
   const allExpired=allSent.filter(s=>s.status==="unread_expired");
   const expired=allExpired.filter(hasRefundMarker);
   const refundedExpired = expired;
   const pendingRefunds = allExpired.filter(s => !hasRefundMarker(s));
   const pkgOpt=PKG_OPTS.find(p=>p.id===co.pkg)||PKG_OPTS[2];
-  const pct=Math.min(100,Math.round(allSent.length/pkgOpt.max*100));
-  const totalEarned=confirmed.length*pkgOpt.perSend;
+  const pct=Math.min(100,Math.round(confirmed.length/pkgOpt.max*100));
+  const totalEarned=confirmed.reduce((sum, s) => sum + getChargeAmount(s, pkgOpt.perSend), 0);
   const totalRefunds=refundedExpired.reduce((sum, s) => sum + getRefundAmount(s), 0);
 
   return (
@@ -4283,7 +4641,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
             </div>
             <div style={{ flex:1,minWidth:200 }}>
               <div style={{ display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5 }}>
-                <span style={{ color:"#64748b" }}>Uzyto: {allSent.length}/{pkgOpt.max} wysylek</span>
+                <span style={{ color:"#64748b" }}>Uzyto: {confirmed.length}/{pkgOpt.max} wysylek</span>
                 <span style={{ fontWeight:600,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{pct}%</span>
               </div>
               <div style={{ background:"#e2e8f0",borderRadius:4,height:8,overflow:"hidden" }}><div style={{ height:"100%",background:pct>=90?"#dc2626":pct>=70?"#d97706":"#0d9488",borderRadius:4,width:`${pct}%` }}/></div>
@@ -4334,7 +4692,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           <table style={{ width:"100%",borderCollapse:"collapse" }}>
             <thead><tr style={{ background:"#f8fafc" }}>{["Propozycja","Siec","Tier","Data","Status","Kwota"].map(h=><th key={h} style={{ padding:"10px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap" }}>{h}</th>)}</tr></thead>
             <tbody>
-              {allSent.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); const sc=STATUS_MAP[s.status]; const isConf=["read","read_manual"].includes(s.status); return (
+              {allSent.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); const sc=STATUS_MAP[s.status]; const isConf=isSeenOrCharged(s); const amount=getChargeAmount(s, pkgOpt.perSend); return (
                 <tr key={s.id} style={{ background:s.status==="unread_expired"?"#fef9f9":isConf?"#f0fdf4":"white" }}>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontSize:13 }}><div style={{ display:"flex",gap:5,alignItems:"center" }}>{CEMOJI[o?.category]} <strong>{o?.title||o?.product}</strong></div></td>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}><div style={{ display:"flex",gap:6,alignItems:"center" }}><RetailerLogo retailer={r} size={16}/><span style={{ fontSize:12 }}>{r?.name}</span></div></td>
@@ -4344,7 +4702,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
                     <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
                     {(s.status==="pending_moderation"||s.status==="queued")&&<Info size={11} color={sc?.[1]} style={{verticalAlign:"middle"}}/>}
                   </span></td>
-                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>+{getRefundAmount(s)} EUR</span>:<span style={{ color:"#d97706" }}>zwrot w toku</span>):isConf?<span style={{ color:"#1e293b" }}>{pkgOpt.perSend} EUR</span>:<span style={{ color:"#94a3b8" }}>oczekuje</span>}</td>
+                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>+{getRefundAmount(s)} EUR</span>:<span style={{ color:"#d97706" }}>zwrot w toku</span>):isConf?<span style={{ color:"#1e293b" }}>{amount} EUR</span>:<span style={{ color:"#94a3b8" }}>oczekuje</span>}</td>
                 </tr>
               );})}
               {allSent.length===0&&<tr><td colSpan={6} style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>Brak wysylek.</td></tr>}
@@ -4488,6 +4846,44 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       <div style={{ display:"flex",gap:10,padding:"12px 16px",background:"#f0fdf4",borderRadius:10,marginBottom:20,border:"1px solid #bbf7d0",fontSize:13,color:"#047857" }}>
         <ShieldCheck size={16} color="#059669" style={{ flexShrink:0,marginTop:1 }}/>
         <div>Gwarancja 14 dni — brak odczytu przez kupca = automatyczny zwrot kredytu na portfel. Kupujesz wysyłki, nie ryzyko.</div>
+      </div>
+
+      {/* [B2B Round prod-rollout / UX] Codex feedback: jasne porównanie
+          Standard vs Premium. Uczciwe — bez obietnic których nie potwierdzimy.
+          Realne różnice: pozycja w mailu, oznaczenie "Premium", cena/szt. */}
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:22 }}>
+        <div style={{ background:"white",border:"1px solid #bfdbfe",borderRadius:10,padding:"14px 16px" }}>
+          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:10 }}>
+            <span style={{ background:"#dbeafe",color:"#1e40af",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700 }}>STANDARD</span>
+            <span style={{ fontSize:12,color:"#64748b",fontWeight:600 }}>40-30 EUR / wysyłka</span>
+          </div>
+          <ul style={{ margin:0,paddingLeft:18,fontSize:12,color:"#475569",lineHeight:1.7 }}>
+            <li><strong>Pozycja środkowa</strong> w newsletterze do kupca</li>
+            <li>Pełna treść propozycji + Twoje zdjęcia i logo</li>
+            <li>Moderacja przed wysyłką (24h SLA)</li>
+            <li>Gwarancja 14 dni — zwrot przy braku odczytu</li>
+          </ul>
+          <div style={{ marginTop:10,padding:"7px 10px",background:"#eff6ff",borderRadius:6,fontSize:11,color:"#1e3a5f",lineHeight:1.5 }}>
+            <strong>Kiedy wybrać:</strong> chcesz dużo wysyłek po niższej cenie/szt. — najlepsze dla wolumenowych dostawców.
+          </div>
+        </div>
+
+        <div style={{ background:"white",border:"2px solid #fde68a",borderRadius:10,padding:"14px 16px",position:"relative" }}>
+          <div style={{ position:"absolute",top:-8,right:14,background:"#d97706",color:"white",fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:10,letterSpacing:0.5 }}>⭐ TOP POZYCJA</div>
+          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:10 }}>
+            <span style={{ background:"#fef3c7",color:"#92400e",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700 }}>PREMIUM</span>
+            <span style={{ fontSize:12,color:"#92400e",fontWeight:600 }}>80-45 EUR / wysyłka</span>
+          </div>
+          <ul style={{ margin:0,paddingLeft:18,fontSize:12,color:"#475569",lineHeight:1.7 }}>
+            <li><strong>Twoja propozycja jako pierwsza</strong> w newsletterze</li>
+            <li>Oznaczenie <span style={{ background:"#fef3c7",color:"#92400e",padding:"1px 6px",borderRadius:4,fontSize:10,fontWeight:700 }}>Premium</span> w mailu — wyróżnienie wizualne</li>
+            <li>Pełna treść + zdjęcia + logo (jak Standard)</li>
+            <li>Gwarancja 14 dni — zwrot przy braku odczytu</li>
+          </ul>
+          <div style={{ marginTop:10,padding:"7px 10px",background:"#fffbeb",borderRadius:6,fontSize:11,color:"#78350f",lineHeight:1.5 }}>
+            <strong>Kiedy wybrać:</strong> stawiasz na widoczność i chcesz żeby kupiec zobaczył Cię od razu — najlepsze dla premium produktów, kategorii nowych dla sieci, kluczowych okien sezonu.
+          </div>
+        </div>
       </div>
 
       {/* Standard table */}
@@ -4711,7 +5107,7 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
 }
 
 
-function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetailerId, retailers, companies, initialFilter }) {
+function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetailerId, retailers, companies, initialFilter, onSeenList }) {
   const STATUS_VISIBLE = ["sent","read","read_manual","opened","unread_expired"];
   const mySends = buyerRetailerId ? (sends||[]).filter(s => {
     if(!STATUS_VISIBLE.includes(s.status)) return false;
@@ -4730,6 +5126,19 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
     }
     return true;
   }) : [];
+  const seenListRef = useRef(new Set());
+  const seenListKey = mySends
+    .filter(s => ["sent","opened"].includes(s.status))
+    .map(s => s.id)
+    .sort((a,b) => Number(a) - Number(b))
+    .join(",");
+  useEffect(() => {
+    if (typeof onSeenList !== "function" || !seenListKey) return;
+    const candidates = mySends.filter(s => ["sent","opened"].includes(s.status) && !seenListRef.current.has(s.id));
+    if (!candidates.length) return;
+    candidates.forEach(s => seenListRef.current.add(s.id));
+    onSeenList(candidates, "app_list");
+  }, [seenListKey, onSeenList]); // eslint-disable-line react-hooks/exhaustive-deps
   const getDisplayCo = (s) => getSupplierCo(s, offers, companies);
   const [filters,setFilters]=useState({ category:"",country:"",cert:"",volumeMin:"",packaging:"",starred:initialFilter?.starred||false,verified:false,withPhotos:false,companyType:"" });
   const visible=mySends.filter(s=>!["queued","pending_moderation","approved","rejected"].includes(s.status));
@@ -5025,7 +5434,124 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
       </Card>
       <Card title="Subskrypcja mailingowa" icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>Zgoda na mailing Preconnect</div><div style={{ fontSize:12,color:"#64748b" }}>Raz w miesiącu, w pierwszy wtorek. Zgodę można wycofać w każdej chwili.</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>Subskrypcja aktywna · Następny mailing: 6 maja 2026</div>}</Card>
       <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl("Profil zapisany."); }}>Zapisz</Btn></div>
+      <ChangePasswordSection fl={fl}/>
     </div>
+  );
+}
+
+// [B2B Round profile-supplier-self-edit] Strona "Mój profil" dla dostawcy.
+// Pokazuje email (read-only), nazwę firmy (read-only), edytowalne pola:
+// imię/nazwisko, telefon, stanowisko. Sekcja zmiany hasła (3 pola: aktualne,
+// nowe, potwierdzenie nowego). Zapis przez dbUpdateOwnSupplierProfile -> RLS
+// pozwala self-edit (profiles.id = auth.uid()).
+function PageSupplierProfile({ account, co, fl }) {
+  const initial = {
+    name: account?.name || "",
+    email: account?.email || "",
+    phone: account?.phone || "",
+    position: account?.position || "",
+  };
+  const [p, setP] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const u = (k, v) => setP((prev) => ({ ...prev, [k]: v }));
+  async function save() {
+    if (!account?.id) { fl("Brak ID użytkownika — zaloguj się ponownie."); return; }
+    if (!p.name?.trim()) { fl("Imię i nazwisko są wymagane."); return; }
+    try {
+      setSaving(true);
+      await dbUpdateOwnSupplierProfile(account.id, {
+        name: p.name, phone: p.phone, position: p.position,
+      });
+      fl("Profil zapisany.");
+    } catch (e) {
+      fl("Błąd zapisu: " + (e?.message || "nieznany"));
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <h2 style={{ marginBottom: 16, fontSize: 16 }}>Mój profil</h2>
+      <Card title="Dane konta" icon={User}>
+        <Row>
+          <Inp label="Imię i nazwisko" required value={p.name} onChange={(e) => u("name", e.target.value)} />
+          <Inp label="Stanowisko" value={p.position} onChange={(e) => u("position", e.target.value)} />
+        </Row>
+        <Row>
+          <Inp label="Firma" value={co?.name || account?.name || ""} readOnly />
+          <Inp label="Email (zmiana przez administratora)" type="email" value={p.email} readOnly />
+        </Row>
+        <Inp label="Telefon" value={p.phone} onChange={(e) => u("phone", e.target.value)} />
+        <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
+          Email i dane firmy są zarządzane przez administratora Fresh Market. Możesz samodzielnie zmienić imię/nazwisko, stanowisko, telefon i hasło.
+        </div>
+      </Card>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+        <Btn primary onClick={save} disabled={saving}>{saving ? "Zapisywanie..." : "Zapisz"}</Btn>
+      </div>
+      <ChangePasswordSection fl={fl} />
+    </div>
+  );
+}
+
+// [B2B Round profile-self-password-change] Wspólna sekcja zmiany hasła dla
+// dostawcy i kupca. 3 pola: aktualne, nowe (min 8 zn.), potwierdzenie.
+// Walidacja:
+//   - aktualne hasło niewidoczne, sprawdzane przez signInWithPassword (re-auth)
+//   - nowe hasło min 8 znaków, musi być zgodne z potwierdzeniem
+//   - po sukcesie pola resetowane, flash potwierdzenia
+function ChangePasswordSection({ fl }) {
+  const [cur, setCur] = useState("");
+  const [nw, setNw] = useState("");
+  const [cf, setCf] = useState("");
+  const [showCur, setShowCur] = useState(false);
+  const [showNw, setShowNw] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!cur || !nw || !cf) { fl("Wypełnij wszystkie pola."); return; }
+    if (nw.length < 8) { fl("Nowe hasło musi mieć minimum 8 znaków."); return; }
+    if (nw !== cf) { fl("Nowe hasło i potwierdzenie nie są takie same."); return; }
+    try {
+      setBusy(true);
+      await dbChangeOwnPassword(cur, nw);
+      setCur(""); setNw(""); setCf("");
+      fl("Hasło zmienione pomyślnie.");
+    } catch (e) {
+      fl("Błąd: " + (e?.message || "nie udało się zmienić hasła"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const InputPwd = ({ label, value, onChange, show, setShow }) => (
+    <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+      <Inp label={label} type={show ? "text" : "password"} value={value} onChange={onChange} />
+      <button
+        type="button"
+        onClick={() => setShow(!show)}
+        title={show ? "Ukryj hasło" : "Pokaż hasło"}
+        style={{ position: "absolute", right: 8, top: 26, padding: "4px 8px", background: "transparent", border: "none", cursor: "pointer", color: "#64748b", fontSize: 11 }}
+      >
+        {show ? "ukryj" : "pokaż"}
+      </button>
+    </div>
+  );
+
+  return (
+    <Card title="Zmiana hasła" icon={Lock}>
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
+        Wpisz aktualne hasło i nowe (minimum 8 znaków). Po zmianie nadal będziesz zalogowany na tym urządzeniu.
+      </div>
+      <InputPwd label="Aktualne hasło" value={cur} onChange={(e) => setCur(e.target.value)} show={showCur} setShow={setShowCur} />
+      <Row>
+        <InputPwd label="Nowe hasło (min 8 znaków)" value={nw} onChange={(e) => setNw(e.target.value)} show={showNw} setShow={setShowNw} />
+        <Inp label="Powtórz nowe hasło" type={showNw ? "text" : "password"} value={cf} onChange={(e) => setCf(e.target.value)} />
+      </Row>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12, marginBottom: 24 }}>
+        <Btn primary onClick={submit} disabled={busy}>{busy ? "Zmienianie..." : "Zmień hasło"}</Btn>
+      </div>
+    </Card>
   );
 }
 
@@ -5427,7 +5953,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
   }
   const [tab,setTab]=useState("mod");
   const modSends=sends.filter(s=>["pending_moderation","approved","queued"].includes(s.status));
-  const sentSends=sends.filter(s=>["sent","read","read_manual"].includes(s.status));
+  const sentSends=sends.filter(s=>["sent","opened","read","read_manual"].includes(s.status));
   const [autoOpenedTracking, setAutoOpenedTracking] = useState(false);
   useEffect(() => {
     if (!autoOpenedTracking && tab === "mod" && modSends.length === 0 && sentSends.length > 0) {
@@ -5448,6 +5974,8 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
   const [historyId,setHistoryId]=useState(null);
   const [emailPreview,setEmailPreview]=useState(null); // { retailerId, sends[] }
 
+    // otworzył maila przez Resend webhook (ale jeszcze nie kliknął w aplikacji).
+    // Admin widzi w tab "Wysłane & Tracking" wszystkie statusy post-wysyłki.
   const ap=sends.filter(s=>s.status==="approved").length;
 
   // Group mod by retailer
@@ -5456,6 +5984,34 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
   Object.keys(byR).forEach(k=>{ byR[k].sort((a,b)=>(a.pos||99)-(b.pos||99)); });
 
   const histSend=historyId?sends.find(s=>s.id===historyId):null;
+  const settlementRows = sentSends.map(s => {
+    const o = getOffer(s.offerId, offers);
+    const supplierCo = getSupplierCo(s, offers, companies);
+    const r = getRetailerLive(s.retailerId);
+    const fallback = getPlanById(supplierCo?.pkg || supplierCo?.pkg_plan)?.perSend || Number(s.price || 0) || 0;
+    return {
+      send: s,
+      offer: o,
+      retailer: r,
+      supplier: supplierCo,
+      charged: hasChargeMarker(s),
+      seen: isSeenOrCharged(s),
+      amount: getChargeAmount(s, fallback),
+      billingStatus: s.billingStatus || s.data?.billingStatus || (hasChargeMarker(s) ? "charged" : "waiting"),
+    };
+  });
+  const settlementsBySupplier = settlementRows.reduce((acc, row) => {
+    const key = row.supplier?.id || row.send.supplierId || "unknown";
+    if (!acc[key]) acc[key] = { supplier: row.supplier, rows: [], charged: 0, waiting: 0, amount: 0 };
+    acc[key].rows.push(row);
+    if (row.charged) {
+      acc[key].charged += 1;
+      acc[key].amount += row.amount;
+    } else {
+      acc[key].waiting += 1;
+    }
+    return acc;
+  }, {});
 
   return (
     <div>
@@ -5499,7 +6055,12 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
       {/* MODERACJA TAB */}
       {tab==="mod"&&<>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-          <div style={{ fontSize:12,color:"#64748b" }}>Edytuj pozycję (nr 1 = na górze u kupca). Wysyłka: <strong>6 maja 2026 (wt.)</strong></div>
+          <div style={{ fontSize:12,color:"#64748b" }}>Edytuj pozycję (nr 1 = na górze u kupca). Wysyłka: <strong>{formatPolishDate(effectiveNextSend(null))}</strong></div>
+          {/* [B2B Round prod-rollout / UX] Bug fix: poprzednio inline style ustawiał
+              background na #94a3b8 (szary) gdy ap===0, a Btn w disabled state ma color
+              też #94a3b8 — tekst zlewał się z tłem, widać było pusty szary prostokąt.
+              Teraz inline style tylko gdy są zatwierdzone, w disabled state Btn
+              używa swoich defaults (bg #e2e8f0, color #94a3b8 — kontrast OK). */}
           <Btn primary onClick={sendApproved} disabled={ap===0} style={{ background:ap>0?"#059669":"#e2e8f0",color:ap>0?"white":"#475569",border:ap>0?"none":"1px solid #cbd5e1" }}><Send size={13}/> Wyślij zatwierdzone ({ap})</Btn>
         </div>
         {sends.some(s=>s.status==="pending_moderation")&&<Alrt type="warning"><strong>{sends.filter(s=>s.status==="pending_moderation").length}</strong> propozycji czeka na moderację.</Alrt>}
@@ -5553,8 +6114,50 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
         <Alrt type={sentSends.filter(s=>s.status==="sent").length>0?"warning":"success"}>
           {sentSends.filter(s=>s.status==="sent").length>0?<><strong>{sentSends.filter(s=>s.status==="sent").length}</strong> propozycji czeka na potwierdzenie odczytu (14 dni).</>:"Wszystkie dostarczone propozycje mają potwierdzenie."}
         </Alrt>
-        {sentSends.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); const isAuto=s.status==="read"; const isConf=["read","read_manual"].includes(s.status); const histLen=(s.confirmHistory||[]).length; return (
-          <Card key={s.id} style={{ borderLeft:`3px solid ${s.status==="sent"?"#ea580c":isAuto?"#059669":"#047857"}`,marginBottom:10 }}>
+        <Card title="Rozliczenia dostawców" icon={CreditCard}>
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:12 }}>
+            <div style={{ padding:"10px 12px",background:"#ecfdf5",border:"1px solid #bbf7d0",borderRadius:8 }}>
+              <div style={{ fontSize:10,color:"#047857",textTransform:"uppercase",fontWeight:800 }}>Rozliczone</div>
+              <div style={{ fontSize:22,fontWeight:900,color:"#059669" }}>{settlementRows.filter(r=>r.charged).length}</div>
+              <div style={{ fontSize:11,color:"#047857" }}>{settlementRows.filter(r=>r.charged).reduce((sum,r)=>sum+r.amount,0)} EUR w pakietach</div>
+            </div>
+            <div style={{ padding:"10px 12px",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:8 }}>
+              <div style={{ fontSize:10,color:"#c2410c",textTransform:"uppercase",fontWeight:800 }}>Czeka</div>
+              <div style={{ fontSize:22,fontWeight:900,color:"#ea580c" }}>{settlementRows.filter(r=>!r.charged).length}</div>
+              <div style={{ fontSize:11,color:"#c2410c" }}>wysłane, ale jeszcze nie zobaczone / brak pakietu</div>
+            </div>
+          </div>
+          {Object.values(settlementsBySupplier).length===0 ? (
+            <div style={{ color:"#94a3b8",fontSize:13 }}>Brak wysłanych propozycji do rozliczenia.</div>
+          ) : (
+            <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+              {Object.values(settlementsBySupplier).map(group => (
+                <div key={group.supplier?.id || group.rows[0]?.send?.supplierId || "unknown"} style={{ border:"1px solid #e2e8f0",borderRadius:8,overflow:"hidden" }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0" }}>
+                    <CompanyLogo company={group.supplier} size={26}/>
+                    <div style={{ flex:1,fontWeight:800,fontSize:12 }}>{group.supplier?.name || "Dostawca"}</div>
+                    <Badge color="#059669" bg="#ecfdf5">{group.charged} rozliczone</Badge>
+                    {group.waiting>0&&<Badge color="#d97706" bg="#fffbeb">{group.waiting} czeka</Badge>}
+                    <strong style={{ fontSize:12,color:"#0f172a" }}>{group.amount} EUR</strong>
+                  </div>
+                  {group.rows.slice(0,4).map(row => (
+                    <div key={row.send.id} style={{ display:"grid",gridTemplateColumns:"1.4fr 1fr auto",gap:8,alignItems:"center",padding:"7px 10px",fontSize:12,borderTop:"1px solid #f1f5f9" }}>
+                      <span>{CEMOJI[row.offer?.category]} <strong>{row.offer?.title || row.offer?.product || "Oferta"}</strong></span>
+                      <span style={{ color:"#64748b" }}>{row.retailer?.name || "Sieć"}</span>
+                      {row.charged
+                        ? <Badge color="#059669" bg="#ecfdf5">Rozliczona {row.amount} EUR</Badge>
+                        : <Badge color={row.billingStatus==="no_package_available"?"#dc2626":"#d97706"} bg={row.billingStatus==="no_package_available"?"#fef2f2":"#fffbeb"}>{row.billingStatus==="no_package_available"?"Brak pakietu":"Czeka"}</Badge>
+                      }
+                    </div>
+                  ))}
+                  {group.rows.length>4&&<div style={{ padding:"6px 10px",fontSize:11,color:"#94a3b8" }}>+{group.rows.length-4} więcej</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+        {sentSends.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); const isAuto=s.status==="read"; const isEmail=s.status==="opened"; const isConf=isSeenOrCharged(s); const histLen=(s.confirmHistory||[]).length; return (
+          <Card key={s.id} style={{ borderLeft:`3px solid ${s.status==="sent"?"#ea580c":isEmail?"#7c3aed":isAuto?"#059669":"#047857"}`,marginBottom:10 }}>
             <div style={{ display:"flex",gap:10,alignItems:"center",marginBottom:isConf?0:10,flexWrap:"wrap" }}>
               <RetailerLogo retailer={r} size={28}/>
               <div style={{ flex:1 }}>
@@ -5567,7 +6170,8 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
                 </div>}
               </div>
               <div style={{ display:"flex",gap:5,flexShrink:0 }}>
-                {isConf?<Badge color={isAuto?"#059669":"#047857"}>{isAuto?"Auto (pixel)":"Manual"}</Badge>:<Badge color="#ea580c">Nieprzeczytana</Badge>}
+                {isConf?<Badge color={isEmail?"#7c3aed":isAuto?"#059669":"#047857"}>{isEmail?"Mail otwarty":isAuto?"Lista/app":"Manual"}</Badge>:<Badge color="#ea580c">Nieprzeczytana</Badge>}
+                {hasChargeMarker(s)&&<Badge color="#059669" bg="#ecfdf5">Rozliczona</Badge>}
                 <Btn sm outline onClick={()=>setPreviewOffer(o)}><Eye size={10}/></Btn>
                 <Btn sm outline onClick={()=>setHistoryId(s.id)} style={{ position:"relative" }}><Clock size={10}/>{histLen>0&&<span style={{ position:"absolute",top:-4,right:-4,background:"#2563eb",color:"white",borderRadius:"50%",fontSize:9,width:14,height:14,display:"flex",alignItems:"center",justifyContent:"center" }}>{histLen}</span>}</Btn>
                 {isConf&&<Btn sm danger onClick={()=>undoConfirm(s.id)} style={{ fontSize:11 }}><RotateCcw size={10}/> Cofnij</Btn>}
@@ -5575,8 +6179,9 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
             </div>
             {!isConf&&s.status==="sent"&&<ConfirmForm send={s} onConfirm={(id,rt,note)=>{ confirmManual(id,rt,note); fl("Potwierdzenie zapisane."); }}/>}
             {isConf&&<div style={{ padding:"8px 10px",background:"#f8fafc",borderRadius:7,fontSize:12,marginTop:4 }}>
-              {isAuto?<span style={{ color:"#059669" }}>Automatyczne – pixel tracking</span>:<><strong>{s.readType==="manual_phone"?"Telefon":s.readType==="manual_email"?"E-mail":"Spotkanie"}</strong>{s.manualNote&&<span style={{ color:"#64748b" }}> · {s.manualNote}</span>}</>}
-              {s.readAt&&<span style={{ marginLeft:10,color:"#047857" }}>✓ {s.readAt}</span>}
+              {isEmail?<span style={{ color:"#7c3aed" }}>Kupiec otworzył mail zbiorczy z ofertami</span>:isAuto?<span style={{ color:"#059669" }}>Kupiec zobaczył ofertę w PreConnect</span>:<><strong>{s.readType==="manual_phone"?"Telefon":s.readType==="manual_email"?"E-mail":"Spotkanie"}</strong>{s.manualNote&&<span style={{ color:"#64748b" }}> · {s.manualNote}</span>}</>}
+              {hasChargeMarker(s)&&<span style={{ marginLeft:10,color:"#059669" }}>Rozliczenie: {getChargeAmount(s, Number(s.price||0))} EUR</span>}
+              {(s.readAt||s.seenAt||s.emailOpenedAt)&&<span style={{ marginLeft:10,color:"#047857" }}>✓ {s.readAt||s.seenAt||s.emailOpenedAt}</span>}
             </div>}
           </Card>
         );})}
@@ -5595,7 +6200,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
   const [filterActive, setFilterActive]   = useState("all");
   const [showForm, setShowForm]           = useState(false);
   const [formError, setFormError]         = useState({});
-  const EMPTY_RETAILER = {name:"",country:"PL",active:true,fm26ChainId:null,fm26Active:false,nextSend:"2026-05-06",color:"#0d9488",bg:"#f0fdfa",initials:"",description:"",buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]};
+  const EMPTY_RETAILER = {name:"",country:"PL",active:true,fm26ChainId:null,fm26Active:false,nextSend:getNextFirstTuesday(),color:"#0d9488",bg:"#f0fdfa",initials:"",description:"",buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]};
   const [newR, setNewR]     = useState({...EMPTY_RETAILER});
   const [expandedId, setExpandedId] = useState(null);
   const [savedIds, setSavedIds]     = useState({});
@@ -5918,7 +6523,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                   <span style={{fontSize:12,color:"#64748b"}}>{FLAGS[r.country]||"🌐"} {CNAMES[r.country]||r.country}</span>
                   {allCats.map(c=><Badge key={c} color="#0d9488">{CEMOJI[c]} {c}</Badge>)}
                 </div>
-                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{(r.buyers||[]).filter(b=>b.active!==false).length} kupców aktywnych · Wysyłka: {r.nextSend||"—"}</div>
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{(r.buyers||[]).filter(b=>b.active!==false).length} kupców aktywnych · Wysyłka: {effectiveNextSend(r.nextSend)}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                 {isSaved&&<span style={{fontSize:11,color:"#059669",fontWeight:600}}>✅ Zapisano</span>}
@@ -5967,7 +6572,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,margin:"14px 0"}}>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NAZWA</label><input value={r.name||""} onChange={e=>updateRetailer(r.id,{name:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
-                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NASTĘPNA WYSYŁKA</label><input type="date" value={r.nextSend||""} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NASTĘPNA WYSYŁKA <span style={{color:"#94a3b8",fontWeight:400,textTransform:"none"}}>(domyślnie pierwszy wtorek miesiąca)</span></label><input type="date" value={effectiveNextSend(r.nextSend)} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                 </div>
                 <div style={{marginBottom:14}}>
                   <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>OPIS / NOTATKA ADMINA</label>
@@ -6432,7 +7037,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     <div key={s.id} style={{ display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9",fontSize:12 }}>
                       <span style={{ fontSize:14 }}>{CEMOJI[o?.category]||"📦"}</span>
                       <div style={{ flex:1 }}>{o?.title||o?.product||"Propozycja"} → {r?.name||"—"}</div>
-                      <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
+                      <span title={STATUS_TIPS[s.status]||""} style={{ cursor:"help" }}>
+                        <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
+                      </span>
                     </div>
                   );
                 })}

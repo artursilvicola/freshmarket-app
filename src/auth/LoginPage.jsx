@@ -3,12 +3,14 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 
 export default function LoginPage() {
-  const { signIn, sendMagicLink, user } = useAuth();
+  const { signIn, sendMagicLink, sendPasswordReset, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [mode, setMode] = useState("password"); // 'password' | 'magic'
+  // [B2B Round auth-forgot-password] 3 tryby: password (zwykle logowanie),
+  // magic (link zalogowania), forgot (reset hasla przez email)
+  const [mode, setMode] = useState("password"); // 'password' | 'magic' | 'forgot'
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
   const [err, setErr] = useState(null);
@@ -29,9 +31,12 @@ export default function LoginPage() {
         await signIn(email, password);
         const redirectTo = location.state?.from?.pathname || "/";
         navigate(redirectTo, { replace: true });
-      } else {
+      } else if (mode === "magic") {
         await sendMagicLink(email);
         setMsg("Link logowania wysłany na maila. Sprawdź skrzynkę.");
+      } else if (mode === "forgot") {
+        await sendPasswordReset(email);
+        setMsg("Link do resetu hasła wysłany na maila. Sprawdź skrzynkę (także folder spam).");
       }
     } catch (e) {
       setErr(e.message || "Błąd logowania");
@@ -83,12 +88,32 @@ export default function LoginPage() {
           {msg && <div style={S.ok}>{msg}</div>}
 
           <button type="submit" disabled={busy} style={S.btn}>
-            {busy ? "..." : mode === "password" ? "Zaloguj się" : "Wyślij link"}
+            {busy
+              ? "..."
+              : mode === "password"
+                ? "Zaloguj się"
+                : mode === "forgot"
+                  ? "Wyślij link resetu hasła"
+                  : "Wyślij link logowania"}
           </button>
+
+          {mode === "password" && (
+            <button
+              type="button"
+              onClick={() => { setMode("forgot"); setErr(null); setMsg(null); }}
+              style={{ ...S.btnLink, marginTop: 0 }}
+            >
+              Zapomniałeś hasła?
+            </button>
+          )}
 
           <button
             type="button"
-            onClick={() => setMode(mode === "password" ? "magic" : "password")}
+            onClick={() => {
+              setErr(null); setMsg(null);
+              if (mode === "password") setMode("magic");
+              else setMode("password");
+            }}
             style={S.btnLink}
           >
             {mode === "password" ? "Albo zaloguj przez magic link" : "Wróć do logowania hasłem"}

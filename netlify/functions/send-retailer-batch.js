@@ -223,6 +223,14 @@ export const handler = async (event) => {
   const anySent = resendResults.some((r) => r.ok);
   let markedSendIds = [];
 
+  // [B2B Round prod-rollout / email-open-tracking] Zapisujemy resend_message_id
+  // z pierwszego pomyślnego maila do tego retailera. Wszystkie legacy_sends
+  // tego batcha dostają ten sam message_id — bo mail jest ZBIORCZY (zawiera
+  // wszystkie oferty do tego retailera). Jak buyer otworzy ten mail, webhook
+  // wykryje otwarcie po message_id i marki wszystkie powiązane sends jako
+  // 'opened'. To match z intencją "ktoś z sieci to widział".
+  const firstSuccessfulMessageId = resendResults.find((r) => r.ok && r.message_id)?.message_id || null;
+
   if (anySent) {
     const sentAtIso = new Date().toISOString();
     const sentAtDate = sentAtIso.slice(0, 10);
@@ -235,9 +243,13 @@ export const handler = async (event) => {
         sent_at: sentAtIso,
         daysLeft: 14,
       };
+      const updatePayload = { status: "sent", data: newData };
+      if (firstSuccessfulMessageId) {
+        updatePayload.resend_message_id = firstSuccessfulMessageId;
+      }
       const { error: upErr } = await supaSvc
         .from("legacy_sends")
-        .update({ status: "sent", data: newData })
+        .update(updatePayload)
         .eq("legacy_id", s.legacy_id);
       if (!upErr) markedSendIds.push(s.legacy_id);
     }

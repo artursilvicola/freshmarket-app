@@ -173,6 +173,24 @@ export function tplOfferSentToRetailer({ companyName, offerTitle, retailerName, 
   return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl }) };
 }
 
+// ── H. Offer read by buyer ────────────────────────────────────────────────
+// [B2B Round prod-rollout / email-open-tracking]
+// Wysyłane gdy kupiec otworzy ofertę — z maila (Resend webhook) ALBO przez
+// klik w panelu (markSendOpened RPC). Dostawca dostaje informację że jego
+// propozycja została zobaczona, bez czekania na "Potwierdzam odczyt" manualne.
+export function tplOfferReadByBuyer({ companyName, offerTitle, retailerName, openedVia, openedAt, appUrl }) {
+  const channel = openedVia === "email" ? "otworzył mail z propozycją" : "otworzył ofertę w panelu";
+  const subject = `Fresh Market – ${retailerName || "sieć"} zobaczyła Twoją ofertę`;
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock("Dzień dobry,")}
+  ${pBlock(`Kupiec sieci <strong>${esc(retailerName || "")}</strong> ${channel} <strong>${esc(offerTitle)}</strong>${openedAt ? ` (${esc(openedAt)})` : ""}.`)}
+  ${pBlock("To pierwszy sygnał zainteresowania. Jeśli kupiec nie potwierdzi w 14 dni, kredyt wróci na portfel. W międzyczasie miej gotowy pełen dossier — referencje, certyfikaty, kalendarz dostaw.")}
+  ${ctaButton("Zobacz w panelu", `${appUrl}/dostawca`, "#7c3aed")}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, accent: "#7c3aed", body, appUrl }) };
+}
+
 // ── G. Offer expired ──────────────────────────────────────────────────────
 export function tplOfferExpired({ companyName, offerTitle, retailerName, refunded, appUrl }) {
   const subject = "Fresh Market – oferta wygasła";
@@ -215,6 +233,7 @@ export function pickTemplate(name, payload) {
     case "offer_to_moderation":    return tplOfferToModeration(payload);
     case "offer_approved":         return tplOfferApproved(payload);
     case "offer_sent_to_retailer": return tplOfferSentToRetailer(payload);
+    case "offer_read_by_buyer":    return tplOfferReadByBuyer(payload);
     case "offer_expired":          return tplOfferExpired(payload);
     case "admin_new_registration": return tplAdminNewRegistration(payload);
     default:                       return null;
