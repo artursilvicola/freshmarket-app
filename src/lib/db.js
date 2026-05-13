@@ -747,6 +747,70 @@ export async function saveFmSettings(settings) {
   return normalizeFmSettings(data);
 }
 
+// [B2B Round prod-rollout / branding]
+// Pobierz tylko brand_logo_url z fm_settings. Funkcja DOSTĘPNA bez logowania
+// (RLS na fm_settings ma public read po migracji 029) — strony Login/Register
+// też potrzebują tego URL żeby pokazać brand zamiast placeholder "FM".
+//
+// Zwraca: { brandLogoUrl: string | null }
+export async function getBrandSettings() {
+  try {
+    const { data, error } = await supabase
+      .from("fm_settings")
+      .select("brand_logo_url")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) return { brandLogoUrl: null };
+    return { brandLogoUrl: data?.brand_logo_url || null };
+  } catch (e) {
+    console.warn("[getBrandSettings]", e?.message || e);
+    return { brandLogoUrl: null };
+  }
+}
+
+// Upload pliku logo do storage bucket "brand-assets" i zapis URL w fm_settings.
+// Wywołane TYLKO z UI admina (RLS pozwala tylko adminowi).
+//
+// file: File (z <input type="file">)
+// Zwraca: { ok: true, url } albo { ok: false, error }
+export async function uploadBrandLogo(file) {
+  if (!file) return { ok: false, error: "Brak pliku" };
+  const ext = (file.name?.split(".").pop() || "png").toLowerCase();
+  // Path: brand/logo-<timestamp>.<ext> — timestamp zapobiega cache problem'om
+  // w przeglądarce (każdy upload to nowy URL).
+  const objectPath = `brand/logo-${Date.now()}.${ext}`;
+  const { error: upErr } = await supabase.storage
+    .from("brand-assets")
+    .upload(objectPath, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || `image/${ext}`,
+    });
+  if (upErr) return { ok: false, error: upErr.message };
+
+  const { data: pub } = supabase.storage.from("brand-assets").getPublicUrl(objectPath);
+  const url = pub?.publicUrl || null;
+  if (!url) return { ok: false, error: "Nie udało się pobrać public URL" };
+
+  // Zapisz URL w fm_settings (single row). Wykorzystuje istniejący saveFmSettings —
+  // pobiera obecne settings, mergeuje brand_logo_url, zapisuje z powrotem.
+  const existing = await getFmSettings();
+  if (existing?.id) {
+    const { error: updErr } = await supabase
+      .from("fm_settings")
+      .update({ brand_logo_url: url, updated_at: new Date().toISOString() })
+      .eq("id", existing.id);
+    if (updErr) return { ok: false, error: `Upload OK, ale zapis URL: ${updErr.message}` };
+  } else {
+    const { error: insErr } = await supabase
+      .from("fm_settings")
+      .insert({ brand_logo_url: url });
+    if (insErr) return { ok: false, error: `Upload OK, ale insert: ${insErr.message}` };
+  }
+  return { ok: true, url };
+}
+
 export async function getFmPrefs(retailerId) {
   const { data, error } = await supabase
     .from("fm_prefs")

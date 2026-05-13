@@ -45,6 +45,8 @@ import {
   getAllCompanyCapacity as dbGetAllCompanyCapacity,
   // [B2B Round prod-rollout / faza 3] PayU integration
   createPayuOrder as dbCreatePayuOrder,
+  // [B2B Round prod-rollout / branding] Brand logo upload (admin)
+  getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 import FreshMarketLogo from "../components/FreshMarketLogo";
@@ -2877,6 +2879,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
       : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
     if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
+    if(pg==="a-branding")   return <PageAdminBranding fl={fl}/>;
     return null;
   }
 
@@ -3006,6 +3009,15 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div onClick={()=>nav("a-fm")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-fm"?"white":"#64748b",background:navKey==="a-fm"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-fm"?600:400 }}>
                 <Settings size={14}/><span>FM Spotkania</span>
                 <span style={{ marginLeft:"auto",background:fmSettings.planPublished?"rgba(5,150,105,0.3)":fmSettings.schedulingOpen?"rgba(37,99,235,0.3)":"rgba(220,38,38,0.25)",color:fmSettings.planPublished?"#6ee7b7":fmSettings.schedulingOpen?"#93c5fd":"#fca5a5",borderRadius:8,fontSize:9,fontWeight:700,padding:"2px 6px" }}>{fmSettings.planPublished?"Opublikowany":fmSettings.schedulingOpen?"Aktywna":"Zamknięta"}</span>
+              </div>
+              {/* [B2B Round prod-rollout / branding] Sekcja "System" — globalne
+                  ustawienia całej aplikacji. Brand = logo Fresh Market podmieniane
+                  przez admina (zamiast zielone-jabłko-SVG fallback). */}
+              <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>System</span>
+              </div>
+              <div onClick={()=>nav("a-branding")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-branding"?"white":"#64748b",background:navKey==="a-branding"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-branding"?600:400 }}>
+                <Sparkles size={14}/><span>Branding</span>
               </div>
             </>}
           </nav>
@@ -9631,6 +9643,212 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
           })()}
         </div>
       )}
+    </div>
+  );
+}
+
+// =============================================================================
+// PageAdminBranding — [B2B Round prod-rollout / branding]
+// =============================================================================
+// Admin upload/podgląd logo Fresh Market (zastępuje zielone-jabłko-SVG fallback).
+//
+// Flow:
+//   1. Czytamy aktualny brand_logo_url z fm_settings (db.getBrandSettings).
+//   2. Admin wybiera plik (PNG/JPG/SVG/WEBP, ≤1 MB — limit z migracji 029).
+//   3. Pokazujemy live preview przed uploadem (URL.createObjectURL).
+//   4. Klik "Zapisz" → uploadBrandLogo → bucket "brand-assets" + update fm_settings.
+//   5. Po zapisie: aktualizujemy lokalny URL + force-remount FreshMarketLogo
+//      przez key prop (żeby po uploadzie sidebar zobaczył nowy URL bez F5).
+//
+// FreshMarketLogo w sidebarze ma własny useEffect który po remoncie pobierze
+// nowy brand URL z DB. Ale żeby uniknąć opóźnienia, przekazujemy też brandUrl
+// jako prop — ale to wymaga zmiany na poziomie sidebar nav, więc na razie tylko
+// pokazujemy adminowi toast "Załadowane — odśwież stronę żeby zobaczyć w
+// sidebarze" (rozwiązanie 80/20 — pełny live-update wymaga liftingu state w górę).
+// =============================================================================
+function PageAdminBranding({ fl }) {
+  const [currentUrl, setCurrentUrl] = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [file, setFile]             = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [uploading, setUploading]   = useState(false);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { brandLogoUrl } = await dbGetBrandSettings();
+        if (!cancelled) setCurrentUrl(brandLogoUrl || null);
+      } catch (e) {
+        if (!cancelled) console.warn("[PageAdminBranding] load", e?.message || e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!file) { setPreviewUrl(null); return; }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  const onPick = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    // Walidacja — UI side. Server również walidoje przez storage bucket.
+    const allowed = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
+    if (!allowed.includes(f.type)) {
+      fl?.("Niedozwolony format. Użyj PNG, JPG, SVG lub WEBP.", "error");
+      e.target.value = "";
+      return;
+    }
+    if (f.size > 1024 * 1024) {
+      fl?.("Plik za duży. Maks. 1 MB.", "error");
+      e.target.value = "";
+      return;
+    }
+    setFile(f);
+  };
+
+  const onUpload = async () => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const res = await dbUploadBrandLogo(file);
+      if (!res.ok) {
+        fl?.("❌ Błąd uploadu: " + (res.error || "nieznany"), "error");
+        return;
+      }
+      setCurrentUrl(res.url);
+      setFile(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      fl?.("✓ Logo zapisane. Odśwież stronę (F5), żeby zobaczyć w sidebarze i nagłówkach.", "success");
+    } catch (e) {
+      fl?.("❌ Wyjątek: " + (e?.message || String(e)), "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#0f172a" }}>Branding</h1>
+        <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+          Logo Fresh Market wyświetlane w sidebarach, nagłówkach paneli oraz na stronach logowania i rejestracji.
+        </div>
+      </div>
+
+      {/* Aktualne logo */}
+      <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18, marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+          Aktualne logo
+        </div>
+        {loading ? (
+          <div style={{ fontSize: 13, color: "#94a3b8" }}>Ładuję...</div>
+        ) : currentUrl ? (
+          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+            <div style={{ background: "#0f172a", borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center" }}>
+              <img src={currentUrl} alt="Aktualne logo" style={{ height: 32, width: "auto", display: "block" }} />
+            </div>
+            <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center" }}>
+              <img src={currentUrl} alt="Aktualne logo (jasne tło)" style={{ height: 32, width: "auto", display: "block" }} />
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", flex: 1 }}>
+              Renderujemy logo zarówno na ciemnym (sidebar admina/supplier/buyer) jak i jasnym tle (panel topbar, /login).
+              Jeśli widzisz tylko jedno z dwóch dobrze — może warto użyć wersji z przezroczystym tłem (PNG/SVG).
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400e", flex: 1 }}>
+              ⚠ Brak loga w bazie. Aktualnie używamy fallback SVG (zielone jabłko) — wgraj logo poniżej, żeby je zastąpić.
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Upload */}
+      <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+          Wgraj nowe logo
+        </div>
+        <div style={{ fontSize: 12, color: "#475569", marginBottom: 12, lineHeight: 1.55 }}>
+          <strong>Format:</strong> PNG, JPG, SVG, WEBP — maks. 1 MB.
+          <br/>
+          <strong>Zalecane:</strong> przezroczyste tło (PNG/SVG), wysokość ≥ 64 px, format poziomy lub kwadratowy.
+          <br/>
+          <strong>Nazwa pliku:</strong> jeśli zawiera słowo <code>wordmark</code>, nie będziemy dodawać tekstu "Fresh Market" obok logo (logo już zawiera nazwę).
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/svg+xml,image/webp"
+          onChange={onPick}
+          style={{ fontSize: 13, marginBottom: 12, display: "block" }}
+        />
+
+        {previewUrl && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+              Podgląd
+            </div>
+            <div style={{ display: "flex", gap: 12 }}>
+              <div style={{ background: "#0f172a", borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center" }}>
+                <img src={previewUrl} alt="Podgląd na ciemnym tle" style={{ height: 32, width: "auto", display: "block" }} />
+              </div>
+              <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center" }}>
+                <img src={previewUrl} alt="Podgląd na jasnym tle" style={{ height: 32, width: "auto", display: "block" }} />
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
+              {file?.name} — {Math.round((file?.size || 0) / 1024)} KB
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={onUpload}
+            disabled={!file || uploading}
+            style={{
+              padding: "9px 16px",
+              background: !file || uploading ? "#cbd5e1" : "#0d9488",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: !file || uploading ? "not-allowed" : "pointer",
+            }}
+          >
+            {uploading ? "Zapisuję..." : "Zapisz logo"}
+          </button>
+          {file && !uploading && (
+            <button
+              onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+              style={{ padding: "9px 16px", background: "white", color: "#64748b", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            >
+              Anuluj
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 18, padding: "12px 14px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+        <strong style={{ color: "#475569" }}>💡 Gdzie zobaczę zmiany?</strong>
+        <br/>• Sidebar (lewy panel) — sekcja branding na górze
+        <br/>• Nagłówek panelu (PanelTopBar) — admin, dostawca, kupiec
+        <br/>• Strony /login, /rejestracja-dostawcy, /zakup-ok
+        <br/>• Czat (prawy dolny róg)
+        <br/><br/>
+        Po uploadzie odśwież stronę (F5) — nowy URL podpinamy raz na load.
+      </div>
     </div>
   );
 }
