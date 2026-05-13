@@ -1029,34 +1029,54 @@ function resolveFMRoute(fmSettings) {
 /* ══════════════════════════════════════════════════════════════════════════
    KNOWLEDGE BASE — baza wiedzy do asystenta AI w czacie admina
 ══════════════════════════════════════════════════════════════════════════ */
+// [B2B Round prod-rollout / AI knowledge base]
+// LEGACY HARDCODED FALLBACK — używany TYLKO gdy ai-admin-chat-suggestion
+// (Netlify Function z pełnym kompendium markdown w docs/) padnie albo zwróci
+// pusty string. W normalnym flow GPT czyta `docs/*.md` jako system prompt i
+// generuje konkretną odpowiedź — ten fallback to "lepsze niż nic" jak coś
+// pójdzie nie tak.
+//
+// UWAGI:
+// - Treść tutaj MA BYĆ OGÓLNA, bez wymyślania liczb (cenniki, daty, zasady).
+//   Nieaktualny tekst może uderzyć w dostawcę zanim admin zauważy.
+// - Po migracji 028 (seen-based billing) nie obiecujemy już "14-dniowego
+//   zwrotu kredytu" — kredyt pobiera się gdy kupiec ZOBACZY ofertę.
+//   Stary tekst o "14 dni zwrotu" został usunięty świadomie.
+// - Pytania o CENĘ UDZIAŁU W EVENCIE → skieruj do strony /registration
+//   albo do Oksany; pełen cennik jest w docs/FRESH_MARKET_EVENT_2026_KOMPENDIUM.md
+//   i tylko AI go zna (zbyt duży żeby tu kopiować).
 const KNOWLEDGE_BASE = [
   {
     keywords: ["korekt", "zmieni", "zmienić", "zamieni", "zamienić", "popraw", "poprawić", "przenieś", "przeniesc"],
-    answer: "Wybory partnerów FM można zmieniać do 16 września 2026. Po tym terminie wybory są zamknięte i plan układa administrator. Jeśli chcesz zgłosić zmianę po zamknięciu, napisz do administratora przez Chat — Oksana Kozłowska odpowie najszybciej jak to możliwe."
+    answer: "Wybory partnerów FM można zmieniać do 16 września 2026. Po tym terminie plan układa administrator. Jeśli chcesz zgłosić zmianę po zamknięciu, napisz do nas przez Chat — odpowiemy najszybciej jak to możliwe."
   },
   {
-    keywords: ["kiedy", "zaplacic", "zapłacić", "zwrot", "pieniadze", "pieniądze", "portfel", "token", "koszt", "cena", "ile"],
-    answer: "W ramach systemu PreConnect gwarantujemy, że kupiec zapozna się z Twoją propozycją. Jeśli nie otworzy jej w ciągu 14 dni, pobrana kwota automatycznie wróci na Twój wirtualny portfel w postaci tokenów na kolejne wysyłki."
+    keywords: ["cena udzialu", "cena udziału", "ile kosztuje udzial", "ile kosztuje udział", "koszt udzialu", "koszt udziału", "registration", "rejestracja"],
+    answer: "Pełen cennik udziału we Fresh Market 2026 (pakiety Standard / Business / Premium, ceny w PLN i EUR, early bird) znajdziesz na stronie https://freshmarket.eu/registration. W razie pytań indywidualnych napisz na newsletter@freshmarket.eu — wrócimy z konkretami."
   },
   {
     keywords: ["algorytm", "jak działa", "jak przydziela", "spotkania", "numer", "numerek", "kolejka", "matching"],
-    answer: "Algorytm matchingu Fresh Market działa w 3 rundach: najpierw wzajemne dopasowania (⭐+✅), potem gwiazdki z szansą, na końcu rezerwy. Scheduling przydziela numery kolejkowe tak, żeby firmy Premium miały spotkania w slotach 1–20, a Business pierwsze w 1–10, drugie w 11–20."
+    answer: "Algorytm matchingu działa w 3 rundach: wzajemne dopasowania (⭐+✅), potem gwiazdki z szansą, na końcu rezerwy. Plan z numerami spotkań publikujemy 22 września po fazie korekt admina."
   },
   {
     keywords: ["preferencje", "wybrać", "wybrac", "sieć", "sieci", "gwiazdka", "gwiazda", "rezerwow", "rezerwowa", "rezerwę"],
-    answer: "Do 16 września 2026 możesz wybierać sieci handlowe (⭐ główne, max 5) i dowolną liczbę rezerwowych (👍). Możesz też zmieniać odpowiedzi dowolną ilość razy. Po zamknięciu zmian jedyną drogą jest kontakt z administratorem przez Chat."
+    answer: "Do 16 września 2026 możesz wybierać sieci handlowe — ⭐ główne (maks. 5) oraz dowolną liczbę rezerwowych (👍). Zmiany dowolnie do tej daty. Po zamknięciu — kontakt z adminem przez Chat."
   },
   {
-    keywords: ["pakiet", "premium", "business", "standard", "plan", "kupic", "kupić"],
-    answer: "Dostępne pakiety to Premium (10 wysyłek, sloty 1–20 w FM) oraz Business (10 wysyłek, sloty 1–10 i 11–20). Pakiet możesz dokupić w zakładce Finanse. Po zakupie wysyłki są ważne do końca roku pakietowego."
+    keywords: ["pakiet wysylek", "pakiet wysyłek", "kredyt", "wysylka kredyt", "wysyłka kredyt", "tokeny preconnect"],
+    answer: "Pakiety wysyłek PreConnect (Standard / Premium) kupujesz w zakładce Finanse w panelu dostawcy. Kredyt jest pobierany dopiero gdy kupiec faktycznie zobaczy Twoją propozycję — w skrzynce mailowej lub bezpośrednio w panelu. Szczegóły w Finanse → Pakiety."
   },
   {
-    keywords: ["harmonogram", "plan spotkań", "kiedy", "data", "wrzesień", "termin", "event", "targ", "targi"],
-    answer: "Fresh Market 2026 odbędzie się 24 września w Ożarowie Mazowieckim. Plan spotkań (z numerami kolejkowymi) zostanie opublikowany przez administratora 22 września po zakończeniu Fazy Korekt."
+    keywords: ["harmonogram", "plan spotkań", "kiedy event", "data eventu", "termin eventu", "kiedy targi", "gdzie targi"],
+    answer: "Fresh Market 2026: 24 września 2026, Ożarów Mazowiecki (MCC Mazurkas). Plan spotkań z numerami publikujemy 22 września po fazie korekt admina."
   },
   {
     keywords: ["kontakt", "telefon", "email", "oksana", "administrator", "pomoc", "problem", "blad", "błąd"],
-    answer: "W sprawach pilnych możesz skontaktować się bezpośrednio z administratorem: Oksana Kozłowska · oksana@freshmarket.eu · +48 603 811 818. Staramy się odpowiadać w ciągu 24 godzin roboczych."
+    answer: "W pilnych sprawach: Oksana Kozłowska · oksana@freshmarket.eu · +48 603 811 818. Odpowiadamy w ciągu 24 godzin roboczych."
+  },
+  {
+    keywords: ["aktywacja", "aktywować", "aktywuj", "zatwierdzenie", "zatwierdź"],
+    answer: "Aktywacja konta odbywa się indywidualnie przez administratora. Sprawdzamy zgłoszenia codziennie — daj nam chwilę. Jeśli mija ponad 2 dni robocze, daj znać tutaj na czacie."
   },
 ];
 

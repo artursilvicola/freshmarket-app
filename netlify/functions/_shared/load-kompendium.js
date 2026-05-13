@@ -24,8 +24,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// [B2B Round prod-rollout / AI knowledge base]
+// Netlify Functions z esbuild bundlerem czasem deploy'ują jako CJS, gdzie
+// `import.meta.url` jest undefined → fileURLToPath rzuca TypeError przy load
+// modułu i cały endpoint zwraca 502. Wrapujemy w try/catch + dorzucamy
+// process.cwd() jako pewny fallback, plus /var/task (root Netlify functions
+// runtime).
+let __dirname = "";
+try {
+  if (typeof import.meta !== "undefined" && import.meta.url) {
+    __dirname = path.dirname(fileURLToPath(import.meta.url));
+  }
+} catch (e) {
+  __dirname = "";
+}
 
 // Lista plików kompendium ładowanych do system promptu (kolejność = kolejność
 // w prompt). Każdy plik MUSI być w `included_files` w netlify.toml.
@@ -47,19 +59,22 @@ let cachedLoaded = null;
 
 function tryPaths(relativeName, basename) {
   // Heurystyki dla różnych konfiguracji bundle Netlify Functions:
-  //   1) Z katalogu funkcji wstecz do root: ../../docs/X.md
-  //   2) Z root bundle (Netlify czasem flatten'uje): docs/X.md
-  //   3) Obok funkcji (gdy included_files bundlowane lokalnie): X.md
-  //   4) Absolute /var/task root
-  const candidates = [
-    path.resolve(__dirname, "..", "..", relativeName),
-    path.resolve(__dirname, "..", relativeName),
-    path.resolve(__dirname, relativeName),
-    path.resolve(__dirname, basename),
+  const candidates = [];
+  if (__dirname) {
+    candidates.push(
+      path.resolve(__dirname, "..", "..", relativeName),
+      path.resolve(__dirname, "..", relativeName),
+      path.resolve(__dirname, relativeName),
+      path.resolve(__dirname, basename),
+    );
+  }
+  candidates.push(
     path.resolve(process.cwd(), relativeName),
+    path.resolve(process.cwd(), basename),
     path.resolve("/var/task", relativeName),
     path.resolve("/var/task", basename),
-  ];
+    path.resolve("/var/task/docs", basename),
+  );
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate)) {
