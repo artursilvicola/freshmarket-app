@@ -3008,16 +3008,26 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             // Pełna aktywacja + oba moduły = nic nie pokazuj
             if (status === "active" && preOk && fmOk) return null;
             if (status === "pending_review") {
-              const mailSubj = encodeURIComponent(`Aktywacja konta — ${co.name || "Fresh Market B2B"}`);
-              const mailBody = encodeURIComponent(`Dzień dobry,\n\nProszę o aktywację konta firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B (PreConnect + Spotkania FM 2026).\n\nDziękuję.`);
+              const lsKey = `fm_activation_sent_pending_${account.id}`;
+              const alreadySent = typeof window !== "undefined" && window.localStorage?.getItem(lsKey) === "1";
+              const onClick = async () => {
+                const template = `Proszę o aktywację konta firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B.\n\nProfil mam uzupełniony i czekam na decyzję. Daj znać, jeśli coś jeszcze trzeba uzupełnić.`;
+                const saved = await sendChatMessage(template);
+                if (saved) {
+                  try { window.localStorage?.setItem(lsKey, "1"); } catch (e) {}
+                  fl("✓ Wiadomość wysłana do administratora. Odpowiedź pojawi się w czacie (prawy dolny róg).", "success");
+                } else {
+                  fl("Nie udało się wysłać wiadomości. Spróbuj ponownie lub napisz bezpośrednio: newsletter@freshmarket.eu", "error");
+                }
+              };
               return <div style={{ background:"#fef3c7",border:"1.5px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
                 <Clock size={16} color="#92400e" style={{ flexShrink:0,marginTop:2 }}/>
                 <div style={{ flex:1,fontSize:13,color:"#78350f" }}>
                   <strong>Konto oczekuje na zatwierdzenie.</strong> Możesz uzupełnić profil firmy, wgrać logo i certyfikaty. Po aktywacji przez administratora odblokujemy wysyłkę ofert do sieci (PreConnect) oraz Spotkania B2B.
                 </div>
-                <a href={`mailto:newsletter@freshmarket.eu?subject=${mailSubj}&body=${mailBody}`} style={{ padding:"7px 12px",background:"#d97706",color:"white",borderRadius:7,fontSize:12,fontWeight:600,textDecoration:"none",flexShrink:0,whiteSpace:"nowrap" }}>
-                  Napisz do admina
-                </a>
+                <button onClick={onClick} disabled={alreadySent} style={{ padding:"7px 12px",background:alreadySent?"#d1d5db":"#d97706",color:alreadySent?"#6b7280":"white",borderRadius:7,fontSize:12,fontWeight:600,border:"none",cursor:alreadySent?"default":"pointer",flexShrink:0,whiteSpace:"nowrap",fontFamily:"inherit" }}>
+                  {alreadySent ? "✓ Wysłano" : "Napisz do admina"}
+                </button>
               </div>;
             }
             if (status === "rejected") {
@@ -3041,16 +3051,26 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             if (!preOk) offBits.push("PreConnect (wysyłka ofert do sieci) jest jeszcze nieaktywny");
             if (!fmOk) offBits.push("Spotkania B2B Fresh Market 2026 są aktywowane indywidualnie przez administratora");
             const missingMods = [!preOk && "PreConnect", !fmOk && "Spotkania FM 2026"].filter(Boolean).join(" + ");
-            const mailSubj = encodeURIComponent(`Aktywacja ${missingMods} — ${co.name || "Fresh Market B2B"}`);
-            const mailBody = encodeURIComponent(`Dzień dobry,\n\nProszę o aktywację modułów ${missingMods} dla firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B.\n\nDziękuję.`);
+            const lsKey = `fm_activation_sent_modules_${account.id}_${missingMods}`;
+            const alreadySent = typeof window !== "undefined" && window.localStorage?.getItem(lsKey) === "1";
+            const onClick = async () => {
+              const template = `Proszę o aktywację modułów ${missingMods} dla firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B.\n\nMoje konto jest aktywne, ale wybrane moduły jeszcze nie. Czy mogę dostać dostęp?`;
+              const saved = await sendChatMessage(template);
+              if (saved) {
+                try { window.localStorage?.setItem(lsKey, "1"); } catch (e) {}
+                fl("✓ Prośba wysłana do administratora. Odpowiedź pojawi się w czacie (prawy dolny róg).", "success");
+              } else {
+                fl("Nie udało się wysłać wiadomości. Spróbuj ponownie lub napisz bezpośrednio: newsletter@freshmarket.eu", "error");
+              }
+            };
             return <div style={{ background:"#eff6ff",border:"1.5px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
               <Info size={16} color="#3b82f6" style={{ flexShrink:0,marginTop:2 }}/>
               <div style={{ flex:1,fontSize:12,color:"#1e3a5f" }}>
                 <strong>Konto jest aktywne.</strong> {offBits.join(". ")}.
               </div>
-              <a href={`mailto:newsletter@freshmarket.eu?subject=${mailSubj}&body=${mailBody}`} style={{ padding:"6px 12px",background:"#3b82f6",color:"white",borderRadius:7,fontSize:11,fontWeight:600,textDecoration:"none",flexShrink:0,whiteSpace:"nowrap" }}>
-                Poproś o aktywację
-              </a>
+              <button onClick={onClick} disabled={alreadySent} style={{ padding:"6px 12px",background:alreadySent?"#d1d5db":"#3b82f6",color:alreadySent?"#6b7280":"white",borderRadius:7,fontSize:11,fontWeight:600,border:"none",cursor:alreadySent?"default":"pointer",flexShrink:0,whiteSpace:"nowrap",fontFamily:"inherit" }}>
+                {alreadySent ? "✓ Wysłano" : "Poproś o aktywację"}
+              </button>
             </div>;
           })()}
           {account.role==="supplier"&&pg!=="fm-sched"&&activeRefunds.map(n=>(
