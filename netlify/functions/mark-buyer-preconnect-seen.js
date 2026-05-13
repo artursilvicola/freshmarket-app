@@ -58,6 +58,10 @@ export const handler = async (event) => {
     notifySupplier: true,
   });
 
+  // [TEMP DEBUG] dispatchnij pełen result + notificationSummary do Netlify log
+  // żebyśmy mogli zobaczyć dlaczego mail H nie wysyłany. Usunąć po diagnozie.
+  try { console.log("[mark-buyer-preconnect-seen RESULT]", JSON.stringify(result, null, 2)); } catch (e) {}
+
   return json(200, result);
 };
 

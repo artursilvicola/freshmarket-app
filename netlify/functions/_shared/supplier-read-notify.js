@@ -147,6 +147,7 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       .maybeSingle();
 
     if (!owner?.email) {
+      try { console.log("[notifySupplierOffersRead OWNER_NOT_FOUND]", JSON.stringify({ company_id: group.company.id, company_name: group.company.name })); } catch (e) {}
       notifications.push({
         ok: false,
         status: "error",
@@ -155,6 +156,7 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       });
       continue;
     }
+    try { console.log("[notifySupplierOffersRead OWNER]", JSON.stringify({ company_id: group.company.id, owner_email: owner.email, offer_count: group.offers.length })); } catch (e) {}
 
     const openedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
     const tpl = pickTemplate("offers_read_by_buyer", {
@@ -173,6 +175,7 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
     }
 
     const sent = await sendResendEmail({ env, to: owner.email, subject: tpl.subject, html: tpl.html });
+    try { console.log("[notifySupplierOffersRead RESEND]", JSON.stringify({ to: owner.email, subject: tpl.subject, ok: sent.ok, reason: sent.reason, message_id: sent.message_id })); } catch (e) {}
     if (!sent.ok) {
       notifications.push({
         ok: false,
@@ -209,6 +212,8 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
   }
 
   const sentCount = notifications.filter((n) => n.status === "sent").length;
+  // [TEMP DEBUG] usunąć po diagnostyce - widoczne w Netlify Functions log
+  try { console.log("[notifySupplierOffersRead DONE]", JSON.stringify({ openedVia, sentCount, total: notifications.length, notifications })); } catch (e) {}
   return {
     ok: notifications.every((n) => n.ok),
     status: sentCount ? "sent" : "error",
