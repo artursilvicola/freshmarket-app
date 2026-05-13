@@ -83,6 +83,7 @@ export const handler = async (event) => {
     ok: true,
     suggestion: cleanSuggestion(suggestion),
     kompendium_loaded: km.ok,
+    kompendium_files: km.loaded,
   });
 };
 
@@ -122,9 +123,13 @@ function buildSystemPrompt(kompendiumContent) {
 
   introRules.push(
     "",
-    "═══════════════════════════════════════════════════════════════════",
-    "BAZA WIEDZY PRECONNECT (pełne kompendium — czytaj przed każdą odpowiedzią):",
-    "═══════════════════════════════════════════════════════════════════",
+    "BAZA WIEDZY składa się z DWÓCH CZĘŚCI — czytaj OBYDWIE przed każdą odpowiedzią:",
+    "  • CZĘŚĆ A — Kompendium PreConnect (panel B2B): role, workflow, pakiety wysyłek, FAQ techniczne.",
+    "  • CZĘŚĆ B — Kompendium Fresh Market 2026 (event): cennik uczestnictwa, pakiety Standard/Business/Premium, stoiska, agenda, FAQ klienta.",
+    "",
+    "Pytania o panel B2B / oferty / wysyłki → CZĘŚĆ A.",
+    "Pytania o cenę udziału / pakiety / stoiska / agendę / fakturę → CZĘŚĆ B.",
+    "Jeśli pytanie mieszane — łącz obie części.",
     "",
     kompendiumContent.trim()
   );

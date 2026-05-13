@@ -22,4 +22,7 @@
   # Bez tego markdown nie trafia do bundle Netlify Functions i fs.readFileSync
   # rzuci ENOENT. Edycje pliku → commit → następna inwokacja funkcji czyta
   # świeżą wersję (Netlify rebuilduje funkcje przy każdym deployu).
-  included_files = ["docs/PRECONNECT_KOMPENDIUM_DLA_GPT.md"]
+  included_files = [
+    "docs/PRECONNECT_KOMPENDIUM_DLA_GPT.md",
+    "docs/FRESH_MARKET_EVENT_2026_KOMPENDIUM.md",
+  ]

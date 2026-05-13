@@ -27,26 +27,38 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const RELATIVE_NAME = "docs/PRECONNECT_KOMPENDIUM_DLA_GPT.md";
-const BASENAME = "PRECONNECT_KOMPENDIUM_DLA_GPT.md";
+// Lista plików kompendium ładowanych do system promptu (kolejność = kolejność
+// w prompt). Każdy plik MUSI być w `included_files` w netlify.toml.
+const KOMPENDIUM_FILES = [
+  {
+    relativeName: "docs/PRECONNECT_KOMPENDIUM_DLA_GPT.md",
+    basename: "PRECONNECT_KOMPENDIUM_DLA_GPT.md",
+    headerLabel: "CZĘŚĆ A — Kompendium PreConnect (panel B2B, role, workflow, pakiety wysyłek)",
+  },
+  {
+    relativeName: "docs/FRESH_MARKET_EVENT_2026_KOMPENDIUM.md",
+    basename: "FRESH_MARKET_EVENT_2026_KOMPENDIUM.md",
+    headerLabel: "CZĘŚĆ B — Kompendium Fresh Market 2026 (event: cennik, pakiety uczestnictwa, stoiska, agenda, FAQ)",
+  },
+];
 
-let cached = null;
-let resolveError = null;
+let cachedContent = null;
+let cachedLoaded = null;
 
-function tryPaths() {
-  // Heurystyki dla różnych konfiguracji bundle:
+function tryPaths(relativeName, basename) {
+  // Heurystyki dla różnych konfiguracji bundle Netlify Functions:
   //   1) Z katalogu funkcji wstecz do root: ../../docs/X.md
   //   2) Z root bundle (Netlify czasem flatten'uje): docs/X.md
   //   3) Obok funkcji (gdy included_files bundlowane lokalnie): X.md
-  //   4) Absolute root: /var/task/docs/X.md
+  //   4) Absolute /var/task root
   const candidates = [
-    path.resolve(__dirname, "..", "..", RELATIVE_NAME),
-    path.resolve(__dirname, "..", RELATIVE_NAME),
-    path.resolve(__dirname, RELATIVE_NAME),
-    path.resolve(__dirname, BASENAME),
-    path.resolve(process.cwd(), RELATIVE_NAME),
-    path.resolve("/var/task", RELATIVE_NAME),
-    path.resolve("/var/task", BASENAME),
+    path.resolve(__dirname, "..", "..", relativeName),
+    path.resolve(__dirname, "..", relativeName),
+    path.resolve(__dirname, relativeName),
+    path.resolve(__dirname, basename),
+    path.resolve(process.cwd(), relativeName),
+    path.resolve("/var/task", relativeName),
+    path.resolve("/var/task", basename),
   ];
   for (const candidate of candidates) {
     try {
@@ -61,22 +73,50 @@ function tryPaths() {
   return null;
 }
 
-export function loadKompendium() {
-  if (cached) return { ok: true, content: cached };
-  if (resolveError) return { ok: false, content: "", reason: resolveError };
+function stripBom(text) {
+  if (!text) return text;
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
 
-  const found = tryPaths();
-  if (!found) {
-    resolveError = "kompendium_not_found";
-    console.warn("[load-kompendium] file not found in any candidate path. __dirname=", __dirname, "cwd=", process.cwd());
-    return { ok: false, content: "", reason: resolveError };
+function loadOnce() {
+  if (cachedContent !== null || cachedLoaded !== null) return;
+
+  const parts = [];
+  const loaded = [];
+  for (const file of KOMPENDIUM_FILES) {
+    const found = tryPaths(file.relativeName, file.basename);
+    if (!found) {
+      console.warn("[load-kompendium] missing:", file.relativeName);
+      loaded.push({ file: file.relativeName, ok: false, reason: "not_found" });
+      continue;
+    }
+    try {
+      const raw = stripBom(fs.readFileSync(found, "utf8")).trim();
+      parts.push(
+        "═══════════════════════════════════════════════════════════════════",
+        file.headerLabel,
+        "═══════════════════════════════════════════════════════════════════",
+        "",
+        raw,
+        ""
+      );
+      loaded.push({ file: file.relativeName, ok: true, path: found, bytes: raw.length });
+    } catch (e) {
+      console.warn("[load-kompendium] read error", file.relativeName, e?.message || e);
+      loaded.push({ file: file.relativeName, ok: false, reason: e?.message || String(e) });
+    }
   }
-  try {
-    cached = fs.readFileSync(found, "utf8");
-    return { ok: true, content: cached, path: found };
-  } catch (e) {
-    resolveError = e?.message || String(e);
-    console.warn("[load-kompendium] read error", resolveError);
-    return { ok: false, content: "", reason: resolveError };
-  }
+
+  cachedContent = parts.length ? parts.join("\n") : "";
+  cachedLoaded = loaded;
+}
+
+export function loadKompendium() {
+  loadOnce();
+  const anyOk = (cachedLoaded || []).some((entry) => entry.ok);
+  return {
+    ok: anyOk,
+    content: cachedContent || "",
+    loaded: cachedLoaded || [],
+  };
 }
