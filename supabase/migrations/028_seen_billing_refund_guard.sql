@@ -35,6 +35,7 @@ begin
     from public.legacy_sends s
     join public.companies c
       on c.legacy_supplier_id = s.supplier_legacy_id
+      or c.id::text = s.supplier_legacy_id
     where s.status = 'unread_expired'
       and coalesce(s.data->>'refundAt', '') = ''
       and (

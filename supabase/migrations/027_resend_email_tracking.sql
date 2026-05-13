@@ -1,5 +1,5 @@
 -- ============================================================================
--- 026 — Resend email open tracking (legacy_sends)
+-- 027 - Resend email open tracking (legacy_sends)
 -- [B2B Round prod-rollout / email-open-tracking]
 --
 -- Cel:
@@ -29,9 +29,10 @@ alter table legacy_sends
 alter table legacy_sends
   add column if not exists email_opened_at timestamptz;
 
--- Unikalny indeks częściowy — szybki lookup z webhooka po message_id,
--- ignoruje wpisy bez tego pola (legacy + nowe niewysłane).
-create unique index if not exists ux_legacy_sends_resend_message_id
+-- Jeden mail zbiorczy zawiera wiele ofert, więc kilka legacy_sends może mieć
+-- ten sam resend_message_id. To musi być zwykły indeks, nie UNIQUE.
+drop index if exists ux_legacy_sends_resend_message_id;
+create index if not exists idx_legacy_sends_resend_message_id
   on legacy_sends(resend_message_id) where resend_message_id is not null;
 
 -- Indeks na email_opened_at — do dashboardów statystyk admina (kto otwiera, kto nie)
