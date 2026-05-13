@@ -11,6 +11,9 @@ export function resolveEnvConfig() {
   const supabaseAnonKey = getFirstEnv("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY");
   const supabaseServiceRoleKey = getFirstEnv("SUPABASE_SERVICE_ROLE_KEY");
   const resendApiKey = getFirstEnv("RESEND_API_KEY");
+  // [B2B Round prod-rollout / email-open-tracking] Resend webhooks używają
+  // Svix signature scheme — wymaga signing secret z dashboardu Resend.
+  const resendWebhookSecret = getFirstEnv("RESEND_WEBHOOK_SECRET");
   const openAiApiKey = getFirstEnv("OPENAI_API_KEY");
   const openAiModel = getFirstEnv("OPENAI_MODEL") || "gpt-4.1-mini";
   const b2bAppUrl = getFirstEnv("B2B_APP_URL") || "https://freshmarketb2b.netlify.app";
@@ -30,6 +33,7 @@ export function resolveEnvConfig() {
     supabaseAnonKey,
     supabaseServiceRoleKey,
     resendApiKey,
+    resendWebhookSecret,
     openAiApiKey,
     openAiModel,
     b2bAppUrl,
@@ -47,6 +51,7 @@ export function missingEnvNames(config, requiredKeys = []) {
     supabaseAnonKey: "SUPABASE_ANON_KEY (lub VITE_SUPABASE_ANON_KEY)",
     supabaseServiceRoleKey: "SUPABASE_SERVICE_ROLE_KEY",
     resendApiKey: "RESEND_API_KEY",
+    resendWebhookSecret: "RESEND_WEBHOOK_SECRET",
     openAiApiKey: "OPENAI_API_KEY",
     openAiModel: "OPENAI_MODEL",
     b2bAppUrl: "B2B_APP_URL",

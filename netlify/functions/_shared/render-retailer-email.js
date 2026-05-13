@@ -147,7 +147,14 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl) {
                  : cta.includes("rfq")     ? "Zapytaj o cenę i wolumen"
                  : cta.includes("meet_fm") ? "Umów spotkanie"
                  : "Zobacz ofertę";
-  const ctaUrl = `${appUrl}/admin/oferty/${esc(offer.id || "")}`;
+  // [B2B Round prod-rollout / email-open-tracking] Deep-link do panelu kupca,
+  // z konkretnym send_id w query — PreconnectFM przy boot otwiera detal oferty.
+  // Wcześniej link wskazywał /admin/oferty/{offerId} — kupiec nie ma roli admin
+  // i lądował na "Konto bez roli" zamiast w aplikacji.
+  const sendIdForLink = send.legacy_id || data.id || "";
+  const ctaUrl = sendIdForLink
+    ? `${appUrl}/kupiec?send=${esc(sendIdForLink)}`
+    : `${appUrl}/kupiec`;
 
   const companyName = company?.name || "Dostawca Fresh Market";
   const companyLogo = company?.logo_url || company?.logo || null;

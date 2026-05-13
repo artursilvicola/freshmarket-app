@@ -460,6 +460,46 @@ function getSupplierOfferLabel(o) {
   const priv = getInternalOfferTitle(o);
   return priv && priv !== pub ? `${priv} | ${pub}` : pub;
 }
+// [B2B Round prod-rollout / UX] Helper: następny pierwszy wtorek miesiąca.
+// Wysyłki do sieci jedziemy w pierwszy wtorek każdego miesiąca (zasada
+// produktowa). Jeśli pierwszy wtorek bieżącego miesiąca już minął — zwraca
+// pierwszy wtorek następnego miesiąca. Format: 'YYYY-MM-DD'.
+// Używane jako fallback gdy retailer.next_send jest pusty albo wskazuje
+// datę z przeszłości (np. seed sprzed kilku miesięcy).
+function getNextFirstTuesday() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const candidate = (year, monthIdx) => {
+    const first = new Date(year, monthIdx, 1);
+    const dow = first.getDay(); // 0=Sun, 2=Tue
+    const offset = (2 - dow + 7) % 7;
+    return new Date(year, monthIdx, 1 + offset);
+  };
+  let d = candidate(today.getFullYear(), today.getMonth());
+  if (d < today) {
+    const m = today.getMonth() + 1;
+    d = candidate(m > 11 ? today.getFullYear() + 1 : today.getFullYear(), m > 11 ? 0 : m);
+  }
+  // Format YYYY-MM-DD bez UTC-shifta
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
+}
+
+// Zwraca next_send retailera, ale jeśli pusty lub w przeszłości — fallback
+// do getNextFirstTuesday(). Pozwala adminowi nadpisać per-retailer (np.
+// inny mailing day dla konkretnej sieci), a domyślnie pokazuje sensowną
+// datę bez ręcznego utrzymania seed-data.
+function effectiveNextSend(rawNextSend) {
+  if (!rawNextSend) return getNextFirstTuesday();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const parsed = new Date(rawNextSend);
+  if (isNaN(parsed.getTime()) || parsed < today) return getNextFirstTuesday();
+  return rawNextSend;
+}
+
 function getRetailerCats(r) {
   if (r && r.cats && r.cats.length > 0) return r.cats;
   if (r && r.buyers && r.buyers.length > 0) {
@@ -1504,6 +1544,32 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     })();
     return () => { canceled = true; };
   }, []);
+
+  // [B2B Round prod-rollout / email-open-tracking] Deep-link z mailem:
+  // ?send=<legacy_id> w URL → po załadowaniu sends otwórz PageBuyerDetail
+  // dla tej konkretnej oferty. To zamyka pętlę email→app→read tracking.
+  // Działa tylko dla buyerów — supplier dostaje #404 w aplikacji.
+  useEffect(() => {
+    if (!sendsLoaded) return;
+    if (typeof window === "undefined" || !window.location) return;
+    const params = new URLSearchParams(window.location.search);
+    const sendIdParam = params.get("send");
+    if (!sendIdParam) return;
+    // Sprzątamy URL żeby nie loopować po nav'igacji
+    try {
+      const cleanUrl = window.location.pathname + window.location.hash;
+      window.history.replaceState({}, "", cleanUrl);
+    } catch (e) {}
+    // Próbujemy znaleźć po legacy_id (bigint) lub po .id (string/number)
+    const target = (sends || []).find(s =>
+      String(s.id) === sendIdParam || String(s.legacy_id) === sendIdParam
+    );
+    if (target) {
+      // setSid + setPg poprzez nav — nawigujemy do detalu
+      setPg("b-detail");
+      setSid(target.id);
+    }
+  }, [sendsLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
   // [B2B Round 5] See setOffers note. Hot-path callers (sendToChain,
   // moderate, sendApproved, confirmManual, undoConfirm) await per-action
   // upsertLegacySend and surface errors via fl(). This wrapper is fallback.
@@ -3317,7 +3383,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                   {/* Buyer info - NO personal data shown to supplier */}
                   <div style={{ padding:"8px 10px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0",fontSize:12 }}>
                     <div style={{ display:"flex",gap:14,color:"#64748b",alignItems:"center" }}>
-                      <span style={{ display:"flex",gap:4,alignItems:"center" }}><Calendar size={10}/> Mailing: {r.nextSend}</span>
+                      <span style={{ display:"flex",gap:4,alignItems:"center" }}><Calendar size={10}/> Mailing: {effectiveNextSend(r.nextSend)}</span>
                       <span style={{ display:"flex",gap:4,alignItems:"center" }}><Users size={10}/> Kupiec kategorii: {getRetailerCats(r).join(", ")}</span>
                     </div>
                     {hasSent && <div style={{ marginTop:4,color:"#059669" }}>{rRead}/{rSends.length} propozycji przeczytanych</div>}
@@ -3371,7 +3437,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                     <div style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ fontSize:10,fontWeight:700,color:"#0d9488" }}>🌐 Dla kupca:</span><span style={{ fontSize:12 }}>{getPublicOfferTitle(o)}</span></div>
                     <div style={{ color:"#64748b",marginTop:3,fontSize:11 }}>{o?.volume} {o?.volumeUnit} · {FLAGS[o?.origin]||"🌐"}</div>
                   </div>
-                  <div style={{ display:"flex",alignItems:"center",gap:8 }}><RetailerLogo retailer={r} size={28}/><div><div style={{ fontWeight:600 }}>{r?.name}</div><div style={{ color:"#64748b" }}>Wysyłka: {r?.nextSend}</div></div></div>
+                  <div style={{ display:"flex",alignItems:"center",gap:8 }}><RetailerLogo retailer={r} size={28}/><div><div style={{ fontWeight:600 }}>{r?.name}</div><div style={{ color:"#64748b" }}>Wysyłka: {effectiveNextSend(r?.nextSend)}</div></div></div>
                 </div>
               );
             })()}
@@ -5926,7 +5992,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
   const [filterActive, setFilterActive]   = useState("all");
   const [showForm, setShowForm]           = useState(false);
   const [formError, setFormError]         = useState({});
-  const EMPTY_RETAILER = {name:"",country:"PL",active:true,fm26ChainId:null,fm26Active:false,nextSend:"2026-05-06",color:"#0d9488",bg:"#f0fdfa",initials:"",description:"",buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]};
+  const EMPTY_RETAILER = {name:"",country:"PL",active:true,fm26ChainId:null,fm26Active:false,nextSend:getNextFirstTuesday(),color:"#0d9488",bg:"#f0fdfa",initials:"",description:"",buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]};
   const [newR, setNewR]     = useState({...EMPTY_RETAILER});
   const [expandedId, setExpandedId] = useState(null);
   const [savedIds, setSavedIds]     = useState({});
@@ -6249,7 +6315,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                   <span style={{fontSize:12,color:"#64748b"}}>{FLAGS[r.country]||"🌐"} {CNAMES[r.country]||r.country}</span>
                   {allCats.map(c=><Badge key={c} color="#0d9488">{CEMOJI[c]} {c}</Badge>)}
                 </div>
-                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{(r.buyers||[]).filter(b=>b.active!==false).length} kupców aktywnych · Wysyłka: {r.nextSend||"—"}</div>
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{(r.buyers||[]).filter(b=>b.active!==false).length} kupców aktywnych · Wysyłka: {effectiveNextSend(r.nextSend)}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                 {isSaved&&<span style={{fontSize:11,color:"#059669",fontWeight:600}}>✅ Zapisano</span>}
@@ -6298,7 +6364,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,margin:"14px 0"}}>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NAZWA</label><input value={r.name||""} onChange={e=>updateRetailer(r.id,{name:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
-                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NASTĘPNA WYSYŁKA</label><input type="date" value={r.nextSend||""} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NASTĘPNA WYSYŁKA <span style={{color:"#94a3b8",fontWeight:400,textTransform:"none"}}>(domyślnie pierwszy wtorek miesiąca)</span></label><input type="date" value={effectiveNextSend(r.nextSend)} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                 </div>
                 <div style={{marginBottom:14}}>
                   <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>OPIS / NOTATKA ADMINA</label>
