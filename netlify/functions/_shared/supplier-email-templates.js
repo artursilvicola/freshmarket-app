@@ -161,34 +161,91 @@ export function tplOfferApproved({ companyName, offerTitle, retailerName, appUrl
 }
 
 // ── F. Offer sent to retailer ────────────────────────────────────────────
-export function tplOfferSentToRetailer({ companyName, offerTitle, retailerName, sentAt, appUrl }) {
-  const subject = `Fresh Market – oferta została wysłana do ${retailerName || "sieci"}`;
+function offerItemsList(offers = []) {
+  const items = (offers || []).filter(Boolean);
+  if (!items.length) return "";
+  const visible = items.slice(0, 8);
+  const extra = items.length - visible.length;
+  return `<ul style="color:#334155;font-size:14px;line-height:1.7;padding-left:18px;margin:8px 0 12px;">
+    ${visible.map((o) => `<li><strong>${esc(o.title || o.offerTitle || o.product || "Oferta")}</strong></li>`).join("")}
+    ${extra > 0 ? `<li>+ ${extra} kolejne</li>` : ""}
+  </ul>`;
+}
+
+function pluralOffers(count) {
+  const n = Math.abs(Number(count || 0));
+  if (n === 1) return "ofertę";
+  const last = n % 10;
+  const lastTwo = n % 100;
+  if (last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)) return "oferty";
+  return "ofert";
+}
+
+export function tplOffersSentToRetailer({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl }) {
+  const count = Number(offerCount || (offers || []).length || 1);
+  const subject = count === 1
+    ? `Fresh Market – oferta została wysłana do ${retailerName || "sieci"}`
+    : `Fresh Market – wysłaliśmy ${count} ${pluralOffers(count)} do ${retailerName || "sieci"}`;
+  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }]);
+  const intro = count === 1
+    ? `Twoja oferta została wysłana do sieci <strong>${esc(retailerName || "")}</strong>${sentAt ? ` w dniu ${esc(sentAt)}` : ""}.`
+    : `Wysłaliśmy do sieci <strong>${esc(retailerName || "")}</strong> <strong>${count} ${pluralOffers(count)}</strong>${sentAt ? ` w dniu ${esc(sentAt)}` : ""}.`;
   const body = `
 <tr><td style="padding:24px 32px 8px;">
   ${pBlock("Dzień dobry,")}
-  ${pBlock(`Twoja oferta <strong>${esc(offerTitle)}</strong> została wysłana do sieci <strong>${esc(retailerName || "")}</strong>${sentAt ? ` w dniu ${esc(sentAt)}` : ""}.`)}
-  ${pBlock("Kupiec w sieci ma 14 dni na reakcję. Status śledź w panelu — zakładka Wysyłki.")}
+  ${pBlock(intro)}
+  ${list}
+  ${pBlock("Kupiec otrzymał zbiorczy mail Fresh Market PreConnect. Gdy otworzy mail albo wejdzie na listę ofert w panelu, oznaczymy wysyłkę jako dostarczoną i pokażemy rozliczenie w panelu.")}
   ${ctaButton("Zobacz w panelu", `${appUrl}/dostawca`, "#059669")}
 </td></tr>`;
   return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl }) };
 }
 
+export function tplOfferSentToRetailer(payload) {
+  return tplOffersSentToRetailer({
+    ...payload,
+    offers: payload?.offers || [{ title: payload?.offerTitle }],
+    offerCount: payload?.offerCount || 1,
+  });
+}
+
 // ── H. Offer read by buyer ────────────────────────────────────────────────
 // [B2B Round prod-rollout / email-open-tracking]
-// Wysyłane gdy kupiec otworzy ofertę — z maila (Resend webhook) ALBO przez
-// klik w panelu (markSendOpened RPC). Dostawca dostaje informację że jego
-// propozycja została zobaczona, bez czekania na "Potwierdzam odczyt" manualne.
-export function tplOfferReadByBuyer({ companyName, offerTitle, retailerName, openedVia, openedAt, appUrl }) {
-  const channel = openedVia === "email" ? "otworzył mail z propozycją" : "otworzył ofertę w panelu";
-  const subject = `Fresh Market – ${retailerName || "sieć"} zobaczyła Twoją ofertę`;
+// Wysyłane gdy kupiec zobaczy ofertę: otworzy mail, wejdzie na listę
+// PreConnect albo otworzy szczegóły w panelu. To jest zdarzenie dostarczenia
+// i rozliczenia, więc nie obiecujemy późniejszego zwrotu kredytu.
+export function tplOffersReadByBuyer({ companyName, offerTitle, offers, offerCount, retailerName, openedVia, openedAt, appUrl }) {
+  const count = Number(offerCount || (offers || []).length || 1);
+  const channel = openedVia === "email"
+    ? "otworzył mail Fresh Market PreConnect z Twoimi propozycjami"
+    : openedVia === "app_list"
+      ? "wszedł na listę ofert PreConnect i zobaczył Twoje propozycje"
+      : "otworzył Twoją propozycję w panelu PreConnect";
+  const subject = count === 1
+    ? `Fresh Market – ${retailerName || "sieć"} zobaczyła Twoją ofertę`
+    : `Fresh Market – ${retailerName || "sieć"} zobaczyła Twoje oferty`;
+  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }]);
+  const intro = count === 1
+    ? `Kupiec sieci <strong>${esc(retailerName || "")}</strong> ${channel}${openedAt ? ` (${esc(openedAt)})` : ""}.`
+    : `Kupiec sieci <strong>${esc(retailerName || "")}</strong> ${channel}${openedAt ? ` (${esc(openedAt)})` : ""}. Zobaczone oferty:`;
   const body = `
 <tr><td style="padding:24px 32px 8px;">
   ${pBlock("Dzień dobry,")}
-  ${pBlock(`Kupiec sieci <strong>${esc(retailerName || "")}</strong> ${channel} <strong>${esc(offerTitle)}</strong>${openedAt ? ` (${esc(openedAt)})` : ""}.`)}
-  ${pBlock("To pierwszy sygnał zainteresowania. Jeśli kupiec nie potwierdzi w 14 dni, kredyt wróci na portfel. W międzyczasie miej gotowy pełen dossier — referencje, certyfikaty, kalendarz dostaw.")}
+  ${pBlock(intro)}
+  ${list}
+  ${pBlock("To oznacza, że wysyłka została dostarczona. Rozliczenie z pakietu jest widoczne w panelu Fresh Market PreConnect.")}
+  ${pBlock("Nie musisz nic robić od razu — miej tylko pod ręką aktualne ceny, wolumeny, certyfikaty i kalendarz dostaw, jeśli kupiec poprosi o szczegóły.")}
   ${ctaButton("Zobacz w panelu", `${appUrl}/dostawca`, "#7c3aed")}
 </td></tr>`;
   return { subject, html: shell({ title: subject, accent: "#7c3aed", body, appUrl }) };
+}
+
+export function tplOfferReadByBuyer(payload) {
+  return tplOffersReadByBuyer({
+    ...payload,
+    offers: payload?.offers || [{ title: payload?.offerTitle }],
+    offerCount: payload?.offerCount || 1,
+  });
 }
 
 // ── G. Offer expired ──────────────────────────────────────────────────────
@@ -233,7 +290,9 @@ export function pickTemplate(name, payload) {
     case "offer_to_moderation":    return tplOfferToModeration(payload);
     case "offer_approved":         return tplOfferApproved(payload);
     case "offer_sent_to_retailer": return tplOfferSentToRetailer(payload);
+    case "offers_sent_to_retailer": return tplOffersSentToRetailer(payload);
     case "offer_read_by_buyer":    return tplOfferReadByBuyer(payload);
+    case "offers_read_by_buyer":   return tplOffersReadByBuyer(payload);
     case "offer_expired":          return tplOfferExpired(payload);
     case "admin_new_registration": return tplAdminNewRegistration(payload);
     default:                       return null;

@@ -2505,21 +2505,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return;
     }
     _setSendsRaw(prev => [...prev, newSend]);
-    // [B2B Round supplier-onboarding-access-and-communication]
-    // Email D — fire-and-forget. Resolveuje retailer name dla template.
-    const retailer = (retailers || []).find(r => r.id === rId);
-    const offer = (offers || []).find(o => o.id === oId);
-    if (co?.id) {
-      void dbNotifySupplier({
-        template: "offer_to_moderation",
-        company_id: co.id,
-        payload: {
-          companyName: co.name,
-          offerTitle: offer?.title || offer?.product || `Oferta #${oId}`,
-          retailerName: retailer?.name || null,
-        },
-      });
-    }
+    // Status moderacji pokazujemy w panelu. Nie wysyłamy tu maila, żeby
+    // dostawca nie dostawał osobnej wiadomości po każdej dodanej ofercie.
     fl("Propozycja dodana do kolejki moderacji.");
     nav("wysylki");
   }
@@ -2535,26 +2522,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return;
     }
     _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
-    // [B2B Round supplier-onboarding-access-and-communication]
-    // Email E — informuj supplera, że jego oferta została zaakceptowana.
-    // Tylko dla 'approve' (rejected nie wysyłamy maila — admin może komunikować
-    // ręcznie albo przez chat w panelu; nie chcemy spamować rejection).
-    if (act === "approve") {
-      const offer = (offers || []).find(o => o.id === cur.offerId);
-      const retailer = (retailers || []).find(r => r.id === cur.retailerId);
-      const supplierCo = (companies || []).find(c => legacyKeyMatchesCompany(cur.supplierId, c));
-      if (supplierCo?.id) {
-        void dbNotifySupplier({
-          template: "offer_approved",
-          company_id: supplierCo.id,
-          payload: {
-            companyName: supplierCo.name,
-            offerTitle: offer?.title || offer?.product || `Oferta #${cur.offerId}`,
-            retailerName: retailer?.name || null,
-          },
-        });
-      }
-    }
+    // Akceptacja moderacji też zostaje jako status w panelu. Mail do dostawcy
+    // wysyłamy dopiero zbiorczo, gdy batch faktycznie wyjdzie do kupca.
     fl(act === "approve" ? "Propozycja zatwierdzona" : "Propozycja odrzucona");
   }
 

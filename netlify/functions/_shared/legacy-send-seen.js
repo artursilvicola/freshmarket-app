@@ -1,4 +1,4 @@
-import { notifySupplierOfferRead } from "./supplier-read-notify.js";
+import { notifySupplierOffersRead } from "./supplier-read-notify.js";
 
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ""));
@@ -137,6 +137,7 @@ export async function markLegacySendsSeen({
 
   const nowIso = new Date().toISOString();
   const results = [];
+  const notifyLegacyIds = [];
 
   for (const row of rows || []) {
     try {
@@ -188,14 +189,8 @@ export async function markLegacySendsSeen({
         .eq("id", row.id);
       if (upErr) throw upErr;
 
-      let notification = null;
       if (notifySupplier && !existingData.supplierNotifiedAt) {
-        notification = await notifySupplierOfferRead({
-          supaSvc,
-          env,
-          legacyId: row.legacy_id,
-          openedVia: channel === "email" ? "email" : "app",
-        });
+        notifyLegacyIds.push(row.legacy_id);
       }
 
       results.push({
@@ -205,12 +200,22 @@ export async function markLegacySendsSeen({
         status: nextStatus,
         data: nextData,
         billing,
-        notification,
+        notification: notifySupplier && !existingData.supplierNotifiedAt ? { status: "queued" } : null,
       });
     } catch (e) {
       results.push({ legacy_id: row.legacy_id, ok: false, status: "error", reason: e?.message || String(e) });
     }
   }
 
-  return { ok: true, results };
+  let notificationSummary = null;
+  if (notifyLegacyIds.length) {
+    notificationSummary = await notifySupplierOffersRead({
+      supaSvc,
+      env,
+      legacyIds: notifyLegacyIds,
+      openedVia: channel,
+    });
+  }
+
+  return { ok: true, results, notificationSummary };
 }

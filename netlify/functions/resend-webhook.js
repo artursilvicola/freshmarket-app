@@ -127,7 +127,7 @@ export const handler = async (event) => {
   // Find ALL legacy_sends z tym message_id (jeden batch = wiele sends ten sam
   // mail). Aktualizujemy każdy: jeśli status='sent' → 'opened', plus
   // email_opened_at (idempotent — `coalesce` z istniejącą wartością).
-  const { data: rows, error: selErr } = await supaSvc
+  let { data: rows, error: selErr } = await supaSvc
     .from("legacy_sends")
     .select("id, legacy_id, status, email_opened_at, data")
     .eq("resend_message_id", messageId);
@@ -135,6 +135,20 @@ export const handler = async (event) => {
   if (selErr) {
     console.error("[resend-webhook] select error", selErr);
     return reply(200, { error: "db_select_failed", message: selErr.message });
+  }
+
+  // Nowe batche wysyłają osobny email do każdego kupca tej samej sieci, więc
+  // legacy_sends przechowuje też listę message_id w JSONB data.resendMessageIds.
+  if (!rows || rows.length === 0) {
+    const alt = await supaSvc
+      .from("legacy_sends")
+      .select("id, legacy_id, status, email_opened_at, data")
+      .contains("data", { resendMessageIds: [messageId] });
+    if (alt.error) {
+      console.error("[resend-webhook] jsonb select error", alt.error);
+      return reply(200, { error: "db_select_failed", message: alt.error.message });
+    }
+    rows = alt.data || [];
   }
 
   if (!rows || rows.length === 0) {
@@ -151,50 +165,6 @@ export const handler = async (event) => {
   });
 
   return reply(200, { ok: true, message_id: messageId, ...result });
-
-  const openedAt = new Date().toISOString();
-  const updated = [];
-  const supplierNotifications = [];
-  for (const row of rows) {
-    // Idempotency: jeśli email_opened_at już ustawiony, nie nadpisujemy daty.
-    // Bumpujemy status tylko z 'sent' → 'opened' (nie psuje np. już 'read').
-    const newOpenedAt = row.email_opened_at || openedAt;
-    const newStatus = row.status === "sent" ? "opened" : row.status;
-    const newData = {
-      ...(row.data || {}),
-      status: newStatus,
-      emailOpenedAt: newOpenedAt,
-    };
-    const { error: upErr } = await supaSvc
-      .from("legacy_sends")
-      .update({
-        status: newStatus,
-        data: newData,
-        email_opened_at: newOpenedAt,
-      })
-      .eq("id", row.id);
-    if (upErr) {
-      console.error("[resend-webhook] update error", row.legacy_id, upErr.message);
-      continue;
-    }
-    updated.push({ legacy_id: row.legacy_id, was: row.status, now: newStatus });
-
-    // [B2B Round prod-rollout / email-open-tracking] Powiadom dostawcę że
-    // jego oferta została zobaczona. Tylko gdy ZMIENIAMY status (sent→opened).
-    // Jeśli status był wcześniej już opened/read — helper i tak no-op'uje
-    // przez data.supplierNotifiedAt, ale lepiej unikać niepotrzebnych fetch.
-    if (row.status === "sent") {
-      const notifResult = await notifySupplierOfferRead({
-        supaSvc,
-        env,
-        legacyId: row.legacy_id,
-        openedVia: "email",
-      });
-      supplierNotifications.push({ legacy_id: row.legacy_id, ...notifResult });
-    }
-  }
-
-  return reply(200, { ok: true, message_id: messageId, updated, notifications: supplierNotifications });
 };
 
 function reply(statusCode, payload) {

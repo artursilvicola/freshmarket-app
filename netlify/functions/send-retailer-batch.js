@@ -33,7 +33,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { renderRetailerEmail, buildSubject } from "./_shared/render-retailer-email.js";
-import { tplOfferSentToRetailer } from "./_shared/supplier-email-templates.js";
+import { tplOffersSentToRetailer } from "./_shared/supplier-email-templates.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -229,7 +229,10 @@ export const handler = async (event) => {
   // wszystkie oferty do tego retailera). Jak buyer otworzy ten mail, webhook
   // wykryje otwarcie po message_id i marki wszystkie powiązane sends jako
   // 'opened'. To match z intencją "ktoś z sieci to widział".
-  const firstSuccessfulMessageId = resendResults.find((r) => r.ok && r.message_id)?.message_id || null;
+  const successfulMessageIds = resendResults
+    .filter((r) => r.ok && r.message_id)
+    .map((r) => r.message_id);
+  const firstSuccessfulMessageId = successfulMessageIds[0] || null;
 
   if (anySent) {
     const sentAtIso = new Date().toISOString();
@@ -242,6 +245,8 @@ export const handler = async (event) => {
         sentAt: sentAtDate,
         sent_at: sentAtIso,
         daysLeft: 14,
+        resendMessageIds: successfulMessageIds,
+        resendBuyerEmails: resendResults.filter((r) => r.ok).map((r) => r.buyer),
       };
       const updatePayload = { status: "sent", data: newData };
       if (firstSuccessfulMessageId) {
@@ -255,9 +260,8 @@ export const handler = async (event) => {
     }
 
     // [B2B Round supplier-onboarding-access-and-communication]
-    // Email F — powiadom każdego dostawcę, że jego oferta została wysłana
-    // do sieci. Jeden mail per (dostawca, oferta). Fire-and-forget — błędy
-    // logujemy ale nie wstrzymujemy odpowiedzi.
+    // Email F — powiadom dostawcę zbiorczo per sieć/batch, żeby przy kilku
+    // ofertach nie wysyłać kilku niemal identycznych maili.
     const supplierEmailsByCompanyId = new Map();
     const supplierIdToCompanyId = new Map();
     for (const co of companiesMap.values()) {
@@ -279,6 +283,7 @@ export const handler = async (event) => {
           supplierEmailsByCompanyId.set(p.company_id, p);
         }
       }
+      const groupsByCompanyId = new Map();
       for (const s of eligible) {
         const supplierKey = (s.data || {}).supplierId;
         const companyId = supplierIdToCompanyId.get(supplierKey);
@@ -286,10 +291,24 @@ export const handler = async (event) => {
         if (!owner?.email) continue;
         const offer = offersMap.get((s.data || {}).offerId) || {};
         const co = companiesMap.get(supplierKey) || companiesMap.get(companyId) || {};
-        const tpl = tplOfferSentToRetailer({
-          companyName: co.name || "",
-          contactName: owner.name || null,
-          offerTitle: offer.title || offer.product || `Oferta`,
+        if (!groupsByCompanyId.has(companyId)) {
+          groupsByCompanyId.set(companyId, {
+            owner,
+            company: co,
+            offers: [],
+          });
+        }
+        groupsByCompanyId.get(companyId).offers.push({
+          title: offer.title || offer.product || `Oferta`,
+        });
+      }
+
+      for (const group of groupsByCompanyId.values()) {
+        const tpl = tplOffersSentToRetailer({
+          companyName: group.company?.name || "",
+          contactName: group.owner.name || null,
+          offers: group.offers,
+          offerCount: group.offers.length,
           retailerName: retailer.name || "",
           sentAt: sentAtDate,
           appUrl: env.b2bAppUrl,
@@ -300,7 +319,7 @@ export const handler = async (event) => {
             headers: { Authorization: `Bearer ${env.resendApiKey}`, "Content-Type": "application/json" },
             body: JSON.stringify({
               from: "Fresh Market <newsletter@freshmarket.eu>",
-              to: [owner.email],
+              to: [group.owner.email],
               subject: tpl.subject,
               html: tpl.html,
             }),
@@ -308,7 +327,7 @@ export const handler = async (event) => {
         } catch (e) {
           // Logujemy ale nie blokujemy odpowiedzi — kupiec już dostał maila,
           // status sends jest zapisany. Notyfikacja do supplera to nice-to-have.
-          console.warn("[email_supplier_offer_sent]", owner.email, e?.message || e);
+          console.warn("[email_supplier_offer_sent]", group.owner.email, e?.message || e);
         }
       }
     }
