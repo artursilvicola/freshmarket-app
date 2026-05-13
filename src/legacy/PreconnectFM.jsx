@@ -500,6 +500,16 @@ function effectiveNextSend(rawNextSend) {
   return rawNextSend;
 }
 
+// Format daty po polsku: "2026-06-02" → "2 czerwca 2026 (wt.)"
+function formatPolishDate(isoDate) {
+  if (!isoDate) return "";
+  const months = ["stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","września","października","listopada","grudnia"];
+  const days = ["ndz.","pon.","wt.","śr.","czw.","pt.","sob."];
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return isoDate;
+  return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()} (${days[d.getDay()]})`;
+}
+
 function getRetailerCats(r) {
   if (r && r.cats && r.cats.length > 0) return r.cats;
   if (r && r.buyers && r.buyers.length > 0) {
@@ -5896,8 +5906,13 @@ const [expandedRetailers, setExpandedRetailers] = useState(() => {
       {/* MODERACJA TAB */}
       {tab==="mod"&&<>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-          <div style={{ fontSize:12,color:"#64748b" }}>Edytuj pozycję (nr 1 = na górze u kupca). Wysyłka: <strong>6 maja 2026 (wt.)</strong></div>
-          <Btn primary onClick={sendApproved} disabled={ap===0} style={{ background:ap>0?"#059669":"#94a3b8" }}><Send size={13}/> Wyślij zatwierdzone ({ap})</Btn>
+          <div style={{ fontSize:12,color:"#64748b" }}>Edytuj pozycję (nr 1 = na górze u kupca). Wysyłka: <strong>{formatPolishDate(effectiveNextSend(null))}</strong></div>
+          {/* [B2B Round prod-rollout / UX] Bug fix: poprzednio inline style ustawiał
+              background na #94a3b8 (szary) gdy ap===0, a Btn w disabled state ma color
+              też #94a3b8 — tekst zlewał się z tłem, widać było pusty szary prostokąt.
+              Teraz inline style tylko gdy są zatwierdzone, w disabled state Btn
+              używa swoich defaults (bg #e2e8f0, color #94a3b8 — kontrast OK). */}
+          <Btn primary onClick={sendApproved} disabled={ap===0} style={ap>0 ? { background:"#059669" } : undefined}><Send size={13}/> Wyślij zatwierdzone ({ap})</Btn>
         </div>
         {sends.some(s=>s.status==="pending_moderation")&&<Alrt type="warning"><strong>{sends.filter(s=>s.status==="pending_moderation").length}</strong> propozycji czeka na moderację.</Alrt>}
         {Object.keys(byR).length===0&&<Alrt>Brak propozycji w kolejkach.</Alrt>}
