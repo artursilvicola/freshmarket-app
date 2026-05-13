@@ -1139,10 +1139,10 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
     <div style={{ position:"fixed", bottom:24, right:24, zIndex:3000 }}>
       {open && (
         <div style={{ position:"absolute", bottom:60, right:0, width:320, background:"white", borderRadius:14, boxShadow:"0 8px 40px rgba(0,0,0,0.18)", border:"1px solid #e2e8f0", display:"flex", flexDirection:"column", overflow:"hidden" }}>
-          {/* Header */}
+          {/* Header [B2B Round prod-rollout / branding] — emoji 🍎 zastąpione brandem */}
           <div style={{ background:"#0d9488", padding:"12px 16px", display:"flex", alignItems:"center", gap:10 }}>
             <div style={{ width:34, height:34, borderRadius:"50%", background:"rgba(255,255,255,0.2)", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-              <span style={{ fontSize:16 }}>🍎</span>
+              <FreshMarketLogo variant="light" size={20} showText={false} />
             </div>
             <div style={{ flex:1 }}>
               <div style={{ color:"white", fontWeight:700, fontSize:13 }}>Fresh Market Support</div>
@@ -7616,9 +7616,8 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
   return (
     <div style={{ position:"sticky",top:0,zIndex:999,background:"#0f172a",borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
       <div style={{ display:"flex",alignItems:"center",gap:10,padding:"6px 14px" }}>
-        {/* Logo */}
-        <span style={{ fontSize:16 }}>🍎</span>
-        <span style={{ color:"white",fontWeight:700,fontSize:13 }}>Fresh Market</span>
+        {/* Logo [B2B Round prod-rollout / branding] — emoji 🍎 zastąpione brandem */}
+        <FreshMarketLogo variant="light" size={18} showText={true} />
 
         {/* Active account badge */}
         <div style={{ display:"flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:20,background:ROLE_COLORS[account.role]+"22",border:`1px solid ${ROLE_COLORS[account.role]}55`,cursor:"pointer" }} onClick={()=>setOpen(!open)}>

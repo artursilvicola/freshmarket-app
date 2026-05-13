@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import FreshMarketLogo from "../components/FreshMarketLogo";
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -61,8 +62,9 @@ export default function ResetPasswordPage() {
   return (
     <div style={S.wrap}>
       <div style={S.card}>
+        {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>
-          <div style={S.logo}>FM</div>
+          <FreshMarketLogo variant="dark" size={44} showText={false} />
           <div>
             <h1 style={S.h1}>Reset hasła</h1>
             <p style={S.sub}>Ustaw nowe hasło do swojego konta</p>

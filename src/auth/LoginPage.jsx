@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
+import FreshMarketLogo from "../components/FreshMarketLogo";
 
 export default function LoginPage() {
   const { signIn, sendMagicLink, sendPasswordReset, user } = useAuth();
@@ -48,8 +49,11 @@ export default function LoginPage() {
   return (
     <div style={S.wrap}>
       <div style={S.card}>
+        {/* [B2B Round prod-rollout / branding] Zamiast placeholdera "FM" —
+            FreshMarketLogo (img z fm_settings.brand_logo_url, fallback SVG
+            jabłka). variant="dark" bo karta logowania ma białe tło. */}
         <div style={S.brand}>
-          <div style={S.logo}>FM</div>
+          <FreshMarketLogo variant="dark" size={44} showText={false} />
           <div>
             <h1 style={S.h1}>Fresh Market</h1>
             <p style={S.sub}>Panel B2B — owoce i warzywa</p>

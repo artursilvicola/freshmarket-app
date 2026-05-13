@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { selfRegisterSupplier } from "../lib/db";
 import { supabase } from "../lib/supabase";
+import FreshMarketLogo from "../components/FreshMarketLogo";
 
 /**
  * RegisterSupplierPage — publiczna self-registration dostawcy.
@@ -74,8 +75,9 @@ export default function RegisterSupplierPage() {
     return (
       <div style={S.wrap}>
         <div style={S.card}>
+          {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
           <div style={S.brand}>
-            <div style={S.logo}>FM</div>
+            <FreshMarketLogo variant="dark" size={44} showText={false} />
             <div>
               <h1 style={S.h1}>Rejestracja przyjęta</h1>
               <p style={S.sub}>Czekamy na decyzję administratora</p>
@@ -106,8 +108,9 @@ export default function RegisterSupplierPage() {
   return (
     <div style={S.wrap}>
       <div style={S.card}>
+        {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>
-          <div style={S.logo}>FM</div>
+          <FreshMarketLogo variant="dark" size={44} showText={false} />
           <div>
             <h1 style={S.h1}>Rejestracja dostawcy</h1>
             <p style={S.sub}>Fresh Market PreConnect</p>

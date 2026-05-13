@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import { getPayuOrderByExt } from "../lib/db";
+import FreshMarketLogo from "../components/FreshMarketLogo";
 
 /**
  * PurchaseReturnPage — landing po powrocie z PayU.
@@ -150,8 +151,9 @@ function Layout({ title, sub, children }) {
   return (
     <div style={S.wrap}>
       <div style={S.card}>
+        {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>
-          <div style={S.logo}>FM</div>
+          <FreshMarketLogo variant="dark" size={44} showText={false} />
           <div>
             <h1 style={S.h1}>{title}</h1>
             {sub && <p style={S.subText}>{sub}</p>}
