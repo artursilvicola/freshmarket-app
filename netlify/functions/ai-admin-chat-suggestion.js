@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { openAiChat } from "./_shared/openai.js";
+import { loadKompendium } from "./_shared/load-kompendium.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -61,20 +62,74 @@ export const handler = async (event) => {
 
   if (!thread.length) return json(400, { error: "Brak wiadomosci do analizy." });
 
+  // [B2B Round prod-rollout / AI knowledge base] Wczytaj kompendium PreConnect.
+  // Plik dołączony do bundle przez included_files w netlify.toml. Failure mode:
+  // jeśli plik niedostępny → fallback do minimalnych faktów hardcoded niżej.
+  const km = loadKompendium();
+  if (!km.ok) console.warn("[ai-admin-chat-suggestion] kompendium fallback:", km.reason);
+
+  const systemPrompt = buildSystemPrompt(km.content);
+  const userPrompt = buildSuggestionPrompt(participant, thread);
+
   const suggestion = await openAiChat({
     apiKey: env.openAiApiKey,
     model: env.openAiModel,
-    system:
-      "Pomagasz administratorowi Fresh Market odpisywac uczestnikom. Piszesz po polsku, krotko, konkretnie i uprzejmie. Nie obiecujesz rzeczy, ktorych nie ma w danych. Jesli pytanie dotyczy terminow lub supportu, mozesz oprzec sie tylko na podanych faktach.",
-    user: buildSuggestionPrompt(participant, thread),
-    temperature: 0.5,
+    system: systemPrompt,
+    user: userPrompt,
+    temperature: 0.4,
   });
 
   return json(200, {
     ok: true,
     suggestion: cleanSuggestion(suggestion),
+    kompendium_loaded: km.ok,
   });
 };
+
+// [B2B Round prod-rollout / AI knowledge base]
+// System prompt zawiera pełną bazę wiedzy o PreConnect (FM 2026, role, pakiety,
+// FAQ dostawców/kupców, słownik, ważne daty). Asystent generuje odpowiedzi
+// ZGODNIE z faktami w bazie, bez wymyślania. Jeśli plik niedostępny — używamy
+// minimalnego fallback'u, ale logujemy ostrzeżenie w Netlify.
+function buildSystemPrompt(kompendiumContent) {
+  const introRules = [
+    "Jesteś asystentem administratora Fresh Market. Pomagasz adminowi formułować odpowiedzi na pytania dostawców (suppliers) i kupców (buyers) w panelu PreConnect.",
+    "",
+    "ZASADY FORMATOWANIA:",
+    "- Odpowiadasz w języku rozmówcy (PL lub EN — zależnie od historii wiadomości).",
+    "- Styl: życzliwy, rzeczowy, biznesowy. 2–5 zdań. Bez bulletów, bez nagłówków, bez cudzysłowów.",
+    "- Bez podpisu na końcu (admin dodaje sam).",
+    "- Krótko: max 80 słów.",
+    "",
+    "ZASADY MERYTORYCZNE:",
+    "- Korzystaj WYŁĄCZNIE z faktów z bazy wiedzy poniżej.",
+    "- Nigdy nie obiecuj rzeczy nieoczywistych: spotkania 1:1 zależą od akceptacji kupców, finalny harmonogram od algorytmu i admina.",
+    "- Jeśli pytanie wykracza poza bazę wiedzy — odpowiedz uczciwie 'sprawdzę i wrócę' albo skieruj do organizatora (Oksana Kozłowska, oksana@freshmarket.eu).",
+    "- Nie wymyślaj cen, dat ani liczb — używaj tylko tych z bazy.",
+  ];
+
+  if (!kompendiumContent) {
+    introRules.push(
+      "",
+      "MINIMALNA BAZA FAKTÓW (fallback — pełna baza wiedzy nie załadowała się):",
+      "- Fresh Market 2026: 24 września 2026, Ożarów Mazowiecki, Ptak Warsaw Expo.",
+      "- Plan spotkań publikowany 22 września po korektach admina.",
+      "- Kontakt do organizatora: Oksana Kozłowska, oksana@freshmarket.eu, +48 603 811 818.",
+      "- PreConnect (app.freshmarket.eu / freshmarketb2b.netlify.app) = panel B2B z profilami firm, ofertami, matchmakingiem i harmonogramem spotkań."
+    );
+    return introRules.join("\n");
+  }
+
+  introRules.push(
+    "",
+    "═══════════════════════════════════════════════════════════════════",
+    "BAZA WIEDZY PRECONNECT (pełne kompendium — czytaj przed każdą odpowiedzią):",
+    "═══════════════════════════════════════════════════════════════════",
+    "",
+    kompendiumContent.trim()
+  );
+  return introRules.join("\n");
+}
 
 function buildSuggestionPrompt(participant, thread) {
   const history = thread
@@ -82,19 +137,13 @@ function buildSuggestionPrompt(participant, thread) {
     .join("\n");
 
   return [
-    "Przygotuj jedna gotowa odpowiedz administratora do wyslania w czacie.",
-    "Styl: zyczliwy, rzeczowy, 2-5 zdan, bez bulletow.",
-    "Jesli czegos nie da sie potwierdzic, napisz to uczciwie i zaproponuj bezpieczny kolejny krok.",
-    "Nie dodawaj podpisu, nie używaj cudzyslowow.",
+    `ROZMÓWCA: ${participant.name} (rola: ${participant.role}${participant.title ? `, ${participant.title}` : ""})`,
     "",
-    "FAKTY, KTORYCH MOZESZ UZYC:",
-    "- Fresh Market 2026 odbedzie sie 24 wrzesnia 2026 w Ozarowie Mazowieckim.",
-    "- Plan spotkan z numerami zostanie opublikowany 22 wrzesnia po korektach administratora.",
-    "- W pilnych sprawach mozna kontaktowac sie z administratorem: Oksana Kozlowska, oksana@freshmarket.eu, +48 603 811 818.",
-    "",
-    `ROZMOWCA: ${participant.name} (${participant.role}${participant.title ? `, ${participant.title}` : ""})`,
-    "HISTORIA WIADOMOSCI:",
+    "HISTORIA WIADOMOŚCI (od najstarszej):",
     history,
+    "",
+    "ZADANIE:",
+    "Przygotuj JEDNĄ gotową odpowiedź administratora do wysłania w czacie. Odnieś się do OSTATNIEJ wiadomości od rozmówcy. Stosuj zasady ze system prompt (styl, długość, fakty z bazy wiedzy).",
   ].join("\n");
 }
 

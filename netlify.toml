@@ -17,3 +17,9 @@
 # Funkcje serwerowe (dla wysyłki maili itp.)
 [functions]
   node_bundler = "esbuild"
+  # [B2B Round prod-rollout / AI knowledge base]
+  # Plik z bazą wiedzy dla GPT (asystent admina przy "Sformułuj odpowiedź AI").
+  # Bez tego markdown nie trafia do bundle Netlify Functions i fs.readFileSync
+  # rzuci ENOENT. Edycje pliku → commit → następna inwokacja funkcji czyta
+  # świeżą wersję (Netlify rebuilduje funkcje przy każdym deployu).
+  included_files = ["docs/PRECONNECT_KOMPENDIUM_DLA_GPT.md"]
