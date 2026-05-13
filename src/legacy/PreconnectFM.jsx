@@ -538,7 +538,6 @@ const PRICING_PLANS=[
   { id:"prem_50", tier:"PREMIUM", qty:50, price:2250, perSend:45, discount:44, color:"#78350f", bg:"#fef3c7" },
 ];
 const PKG_OPTS=[
-  { id:"std_1",   label:"Standard – 1 wysyłka",   max:1,  price:50,   perSend:50, tier:"STANDARD" },
   { id:"std_5",   label:"Standard – 5 wysyłek",   max:5,  price:225,  perSend:45, tier:"STANDARD" },
   { id:"std_10",  label:"Standard – 10 wysyłek",  max:10, price:400,  perSend:40, tier:"STANDARD" },
   { id:"std_20",  label:"Standard – 20 wysyłek",  max:20, price:700,  perSend:35, tier:"STANDARD" },
