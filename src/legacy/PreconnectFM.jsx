@@ -68,17 +68,21 @@ const STATUS_TIPS = {
   rejected: "Propozycja odrzucona przez administratora."
 };
 
+// [B2B Round prod-rollout / UX] Codex feedback: pełne etykiety zamiast skrótów
+// "Dost. · Nieprzecz." — w UI mamy miejsce na pełny tekst, badge i tak był
+// nieczytelny. STATUS_TIPS (linia ~60) zostaje aktywne jako title= wszędzie
+// gdzie pokazujemy STATUS_MAP.
 const STATUS_MAP = {
-  queued:             ["W kolejce",          "#ca8a04"],
-  pending_moderation: ["Do moderacji",       "#ca8a04"],
-  approved:           ["Zatwierdzona",       "#2563eb"],
-  rejected:           ["Odrzucona",          "#dc2626"],
-  sent:               ["Dost. · Nieprzecz.", "#ea580c"],
-  opened:             ["Dost. · Przeczytana","#7c3aed"],
-  read:               ["Dost. · Przeczytana","#059669"],
-  read_manual:        ["Dost. · Przeczyt. ✓","#047857"],
-  unread_expired:     ["Wygasła – Zwrot",    "#dc2626"],
-  refunded:           ["Zwrot kredytu",      "#64748b"],
+  queued:             ["W kolejce",                "#ca8a04"],
+  pending_moderation: ["Do moderacji",             "#ca8a04"],
+  approved:           ["Zatwierdzona",             "#2563eb"],
+  rejected:           ["Odrzucona",                "#dc2626"],
+  sent:               ["Dostarczona, nieodczytana","#ea580c"],
+  opened:             ["Odczytana",                "#7c3aed"],
+  read:               ["Odczytana",                "#059669"],
+  read_manual:        ["Odczytana ✓",              "#047857"],
+  unread_expired:     ["Wygasła, kredyt zwrócony", "#dc2626"],
+  refunded:           ["Zwrot kredytu",            "#64748b"],
 };
 
 const CTA_MAP = { samples:"Poproś o próbkę", spec:"Poproś o specyfikację", rfq:"Zapytaj o cenę i wolumen", call:"Umów rozmowę", long_term:"Zapytaj o program sezonowy", meet_fm:"Umów spotkanie na Fresh Market" };
@@ -2685,7 +2689,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }
 
   function renderPage(){
-    if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey}/>;
+    if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
     if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey}/>;
@@ -2861,11 +2865,16 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             // Pełna aktywacja + oba moduły = nic nie pokazuj
             if (status === "active" && preOk && fmOk) return null;
             if (status === "pending_review") {
+              const mailSubj = encodeURIComponent(`Aktywacja konta — ${co.name || "Fresh Market B2B"}`);
+              const mailBody = encodeURIComponent(`Dzień dobry,\n\nProszę o aktywację konta firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B (PreConnect + Spotkania FM 2026).\n\nDziękuję.`);
               return <div style={{ background:"#fef3c7",border:"1.5px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
                 <Clock size={16} color="#92400e" style={{ flexShrink:0,marginTop:2 }}/>
                 <div style={{ flex:1,fontSize:13,color:"#78350f" }}>
-                  <strong>Konto oczekuje na zatwierdzenie</strong> — możesz uzupełnić profil firmy, wgrać logo i certyfikaty. Po aktywacji przez administratora odblokujemy wysyłkę ofert do sieci (PreConnect) oraz Spotkania B2B.
+                  <strong>Konto oczekuje na zatwierdzenie.</strong> Możesz uzupełnić profil firmy, wgrać logo i certyfikaty. Po aktywacji przez administratora odblokujemy wysyłkę ofert do sieci (PreConnect) oraz Spotkania B2B.
                 </div>
+                <a href={`mailto:newsletter@freshmarket.eu?subject=${mailSubj}&body=${mailBody}`} style={{ padding:"7px 12px",background:"#d97706",color:"white",borderRadius:7,fontSize:12,fontWeight:600,textDecoration:"none",flexShrink:0,whiteSpace:"nowrap" }}>
+                  Napisz do admina
+                </a>
               </div>;
             }
             if (status === "rejected") {
@@ -2884,15 +2893,21 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 </div>
               </div>;
             }
-            // status === "active" ale któryś moduł off — komunikat informacyjny
+            // status === "active" ale któryś moduł off — komunikat informacyjny z CTA
             const offBits = [];
             if (!preOk) offBits.push("PreConnect (wysyłka ofert do sieci) jest jeszcze nieaktywny");
             if (!fmOk) offBits.push("Spotkania B2B Fresh Market 2026 są aktywowane indywidualnie przez administratora");
+            const missingMods = [!preOk && "PreConnect", !fmOk && "Spotkania FM 2026"].filter(Boolean).join(" + ");
+            const mailSubj = encodeURIComponent(`Aktywacja ${missingMods} — ${co.name || "Fresh Market B2B"}`);
+            const mailBody = encodeURIComponent(`Dzień dobry,\n\nProszę o aktywację modułów ${missingMods} dla firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B.\n\nDziękuję.`);
             return <div style={{ background:"#eff6ff",border:"1.5px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
               <Info size={16} color="#3b82f6" style={{ flexShrink:0,marginTop:2 }}/>
               <div style={{ flex:1,fontSize:12,color:"#1e3a5f" }}>
-                Konto jest aktywne. {offBits.join(". ")}.
+                <strong>Konto jest aktywne.</strong> {offBits.join(". ")}.
               </div>
+              <a href={`mailto:newsletter@freshmarket.eu?subject=${mailSubj}&body=${mailBody}`} style={{ padding:"6px 12px",background:"#3b82f6",color:"white",borderRadius:7,fontSize:11,fontWeight:600,textDecoration:"none",flexShrink:0,whiteSpace:"nowrap" }}>
+                Poproś o aktywację
+              </a>
             </div>;
           })()}
           {account.role==="supplier"&&pg!=="fm-sched"&&activeRefunds.map(n=>(
@@ -2920,7 +2935,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Dashboard: 2 main blocks — PreConnect + FM 2026 ────────────────────── */
-function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId }) {
+function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed }) {
   const mySends    = (sends||[]).filter(s=>!s.supplierId||s.supplierId===accountId);
   const confirmed  = mySends.filter(s=>["read","read_manual"].includes(s.status)).length;
   const pending    = mySends.filter(s=>s.status==="sent").length;
@@ -2930,8 +2945,101 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
   const fmOpen = fmSettings?.schedulingOpen;
   const [howOpenSup, setHowOpenSup] = useState(false);
 
+  // [B2B Round prod-rollout / UX] Checklist startowa — 5 kroków do pełnej
+  // gotowości supplera. Pokazuje się dopóki co najmniej jeden krok jest do
+  // zrobienia. Po wszystkich ✓ — chowamy całą kartę (LS flag).
+  const onboardingDoneLs = typeof window !== "undefined" && window.localStorage
+    ? window.localStorage.getItem("fm_supplier_onboard_dismissed") === "1"
+    : false;
+  const [hideOnboarding, setHideOnboarding] = useState(onboardingDoneLs);
+  const myOffersCount = (offers || []).filter(o => !o.supplierId || o.supplierId === accountId).length;
+  const mySendsCount = (sends || []).filter(s => !s.supplierId || s.supplierId === accountId).length;
+  const onbSteps = [
+    {
+      key: "profile",
+      label: "Uzupełnij dane firmy",
+      hint: "Nazwa, NIP, kraj, krótki opis — minimum żeby kupiec wiedział kogo dotyczy oferta.",
+      done: !!(co?.name && co?.country && (co?.description || co?.description_short)),
+      cta: "Otwórz profil firmy",
+      goto: "company",
+    },
+    {
+      key: "logo",
+      label: "Wgraj logo firmy",
+      hint: "Pokazuje się w mailu do kupca i przy ofertach. PNG/JPG, kwadrat ~400×400 px.",
+      done: !!(co?.logo_url || co?.logo),
+      cta: "Wgraj logo",
+      goto: "company",
+    },
+    {
+      key: "offer",
+      label: "Dodaj pierwszą propozycję",
+      hint: "Produkt + krótka specyfikacja + 1-3 zdjęcia. To podstawa wysyłki do sieci.",
+      done: myOffersCount > 0,
+      cta: "Dodaj propozycję",
+      goto: "offers",
+    },
+    {
+      key: "package",
+      label: "Aktywuj pakiet wysyłek",
+      hint: "Każda wysyłka do sieci kosztuje 1 kredyt z pakietu. Bez pakietu nie wyślesz.",
+      done: Number(pkgMax || 0) > 0 || Number(rem || 0) > 0,
+      cta: "Wybierz pakiet",
+      goto: "finanse",
+    },
+    {
+      key: "send",
+      label: "Wyślij propozycję do sieci",
+      hint: "Wybierz sieć z listy w Wysyłkach i kliknij Wyślij. Pierwsza wysyłka = punkt zwrotny.",
+      done: mySendsCount > 0,
+      cta: "Wyślij propozycję",
+      goto: "wysylki",
+    },
+  ];
+  const onbDoneCount = onbSteps.filter(s => s.done).length;
+  const allOnbDone = onbDoneCount === onbSteps.length;
+  function dismissOnboarding() {
+    try { window.localStorage.setItem("fm_supplier_onboard_dismissed", "1"); } catch (e) {}
+    setHideOnboarding(true);
+  }
+
   return (
     <div style={{ maxWidth:860 }}>
+
+      {/* ── Checklist startowa — 5 kroków do gotowości ── */}
+      {!hideOnboarding && !allOnbDone && (
+        <div style={{ marginBottom:16,background:"white",borderRadius:12,border:"1px solid #e2e8f0",padding:"16px 18px" }}>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
+            <div style={{ fontWeight:700,fontSize:14,color:"#1e293b" }}>
+              Zacznij tutaj <span style={{ color:"#64748b",fontWeight:500,marginLeft:6 }}>({onbDoneCount}/{onbSteps.length})</span>
+            </div>
+            <div style={{ flex:1,height:6,background:"#f1f5f9",borderRadius:99,margin:"0 14px",overflow:"hidden" }}>
+              <div style={{ width:`${(onbDoneCount/onbSteps.length)*100}%`,height:"100%",background:"#0d9488",transition:"width 0.3s" }}/>
+            </div>
+            <button onClick={dismissOnboarding} title="Schowaj checklistę" style={{ background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4 }}>
+              <X size={14}/>
+            </button>
+          </div>
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            {onbSteps.map(step => (
+              <div key={step.key} style={{ display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:step.done?"#f0fdf4":"#f8fafc",borderRadius:8,border:`1px solid ${step.done?"#bbf7d0":"#e2e8f0"}` }}>
+                <div style={{ width:22,height:22,borderRadius:"50%",background:step.done?"#0d9488":"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1 }}>
+                  {step.done ? <CheckCircle size={14} color="white"/> : <span style={{ fontSize:11,fontWeight:700,color:"#64748b" }}>{onbSteps.indexOf(step)+1}</span>}
+                </div>
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ fontWeight:600,fontSize:13,color:step.done?"#065f46":"#1e293b" }}>{step.label}</div>
+                  {!step.done && <div style={{ fontSize:12,color:"#64748b",marginTop:2,lineHeight:1.5 }}>{step.hint}</div>}
+                </div>
+                {!step.done && (
+                  <button onClick={()=>nav(step.goto)} style={{ padding:"6px 12px",background:"#0d9488",color:"white",border:"none",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",flexShrink:0,fontFamily:"inherit" }}>
+                    {step.cta}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Jak to działa? — Supplier ── */}
       <div style={{ marginBottom:20,background:"white",borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden" }}>
@@ -3109,8 +3217,20 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
   const ao = offers.filter(o => o.status==="active" && (!o.supplierId || o.supplierId===accountId));
   const pct = Math.min(100, Math.round(pkgUsed / pkgMax * 100));
 
+  // [B2B Round prod-rollout / UX] Modal potwierdzenia kosztu — supplier widzi
+  // "Pobierzemy 1 wysyłkę. Zostanie X/Y" przed faktyczną wysyłką. Buduje
+  // zaufanie i eliminuje przypadkowe kliknięcia. Codex feedback P0.
+  const [showSendConfirm, setShowSendConfirm] = useState(false);
+
   function doSend() {
-    if (so && sr) { sendToChain(+so, +sr); setView("list"); setSo(""); setSr(""); setTab("pending"); }
+    if (!so || !sr) return;
+    setShowSendConfirm(true);
+  }
+
+  function confirmAndSend() {
+    sendToChain(+so, +sr);
+    setShowSendConfirm(false);
+    setView("list"); setSo(""); setSr(""); setTab("pending");
   }
 
   function startSendTo(retailerId) {
@@ -3316,6 +3436,64 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           })}
         </div>
       )}
+
+      {/* [B2B Round prod-rollout / UX] Send-cost confirmation modal — Codex P0.
+          Pokazuje supplerowi DOKŁADNIE co się stanie po kliknięciu Wyślij:
+          ile wysyłek zostanie pobranych z pakietu, ile pozostanie, ile to
+          kosztuje per send. Bez ukrytych kosztów. */}
+      {showSendConfirm && (() => {
+        const selectedOffer = offers.find(o => o.id === +so);
+        const selectedRetailer = (retailers || []).find(r => r.id === +sr);
+        const perSendCost = getPlanById(co?.pkg)?.perSend || 40;
+        const remainingAfter = Math.max(0, (rem || 0) - 1);
+        return (
+          <div style={{ position:"fixed",inset:0,background:"rgba(15,23,42,0.6)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16 }} onClick={()=>setShowSendConfirm(false)}>
+            <div style={{ background:"white",borderRadius:14,padding:28,maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }} onClick={(e)=>e.stopPropagation()}>
+              <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:16 }}>
+                <div style={{ width:40,height:40,borderRadius:10,background:"#0d9488",display:"flex",alignItems:"center",justifyContent:"center" }}>
+                  <Send size={18} color="white"/>
+                </div>
+                <div>
+                  <div style={{ fontWeight:700,fontSize:16,color:"#0f172a" }}>Potwierdź wysyłkę</div>
+                  <div style={{ fontSize:12,color:"#64748b" }}>Zaraz pobierzemy 1 wysyłkę z pakietu</div>
+                </div>
+              </div>
+
+              <div style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
+                <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13 }}>
+                  <span style={{ color:"#64748b" }}>Propozycja</span>
+                  <strong style={{ color:"#1e293b",textAlign:"right" }}>{selectedOffer?.title || selectedOffer?.product || `#${so}`}</strong>
+                </div>
+                <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
+                  <span style={{ color:"#64748b" }}>Sieć handlowa</span>
+                  <strong style={{ color:"#1e293b",textAlign:"right" }}>{selectedRetailer?.name || `#${sr}`}</strong>
+                </div>
+                <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
+                  <span style={{ color:"#64748b" }}>Koszt wysyłki</span>
+                  <strong style={{ color:"#1e293b" }}>1 wysyłka ({perSendCost} EUR)</strong>
+                </div>
+                <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
+                  <span style={{ color:"#64748b" }}>Po wysyłce zostanie</span>
+                  <strong style={{ color: remainingAfter<=1 ? "#d97706" : "#059669" }}>{remainingAfter}/{pkgMax} wysyłek</strong>
+                </div>
+              </div>
+
+              <div style={{ fontSize:12,color:"#64748b",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 12px",marginBottom:18,lineHeight:1.5 }}>
+                <strong style={{ color:"#065f46" }}>⭐ Złota zasada 14 dni:</strong> jeśli kupiec nie otworzy propozycji w ciągu 14 dni, kredyt automatycznie wraca na Twój portfel.
+              </div>
+
+              <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+                <button onClick={()=>setShowSendConfirm(false)} style={{ padding:"10px 18px",background:"white",color:"#475569",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14,fontWeight:500,cursor:"pointer",fontFamily:"inherit" }}>
+                  Anuluj
+                </button>
+                <button onClick={confirmAndSend} style={{ padding:"10px 18px",background:"#0d9488",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"flex",gap:6,alignItems:"center" }}>
+                  <Send size={13}/> Wyślij propozycję
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -3875,11 +4053,11 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <Inp label="Region / miejscowość" value={f.region||""} onChange={e=>u("region",e.target.value)} placeholder="np. Mazowsze, Almería, Naivasha"/>
           </Row>
           <Row>
-            <Inp label="Typ propozycji" required value={f.offerType||""} onChange={e=>u("offerType",e.target.value)} style={errStyle("offerType")}>
+            <Inp label="Typ propozycji" required value={f.offerType||""} onChange={e=>u("offerType",e.target.value)} style={errStyle("offerType")} hint="Program stały = całoroczna dostępność. Sezonowa = wąskie okno. Pod promocję = jednorazowy listing z lepszą ceną. Spot = nadwyżka produkcji.">
               <option value="">— wybierz —</option>
               <option>Program stały</option><option>Propozycja sezonowa</option><option>Propozycja pod promocję</option><option>Testowy listing</option><option>Dostawa spot / uzupełnienie braków</option>
             </Inp>
-            <Inp label="Rola produktu na półce" required value={f.positioning||""} onChange={e=>u("positioning",e.target.value)} style={errStyle("positioning")}>
+            <Inp label="Rola produktu na półce" required value={f.positioning||""} onChange={e=>u("positioning",e.target.value)} style={errStyle("positioning")} hint="Codzienna = mainstream. Premium = wyższa cena i jakość. Promocja = niska cena z etykietą. Bio = certyfikat. Lokalne = z kraju sieci. Shelf-ready = w opakowaniu RSP.">
               <option value="">— wybierz —</option>
               <option>Codzienna półka</option><option>Premium</option><option>Promocja</option><option>Bio / ekologiczne</option><option>Lokalne / regionalne</option><option>Sezonowe</option><option>Wygodne opakowanie / gotowe na półkę</option>
             </Inp>
@@ -3889,8 +4067,8 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
         <Card title="B. Specyfikacja jakościowa" icon={Award}>
           <Alrt type="info">Pola w tej sekcji są opcjonalne — uzupełnij tylko jeśli to ważne dla Twojego produktu i kupca. <strong>Skupiamy się na podstawowej specyfikacji</strong>, szczegóły handlowe ustalisz po kontakcie.</Alrt>
           <Row>
-            <Inp label="Kaliber / rozmiar" value={f.size||""} onChange={e=>u("size",e.target.value)} placeholder="np. 70–80 mm, M, 50 cm (kwiaty)" hint="opcjonalne"/>
-            <Inp label="Klasa jakości" value={f.qualityClass||""} onChange={e=>u("qualityClass",e.target.value)} hint="opcjonalne">
+            <Inp label="Kaliber / rozmiar" value={f.size||""} onChange={e=>u("size",e.target.value)} placeholder="np. jabłka 70-80 mm · borówki 12+ mm · cytrusy 6 (cal.) · róże 50-60 cm" hint="Standard branżowy lub miara, w której podajesz wielkość produktu."/>
+            <Inp label="Klasa jakości" value={f.qualityClass||""} onChange={e=>u("qualityClass",e.target.value)} hint="Klasa I = standard EU (większość obrotu). Extra = top EU. Premium/A = własne klasy sieci. Inna = certyfikaty branżowe (np. GlobalGAP grade).">
               <option value="">— wybierz —</option><option>Klasa I</option><option>Klasa Extra</option><option>Premium</option><option>A</option><option>Inna</option>
             </Inp>
           </Row>
@@ -3926,7 +4104,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
         {f.category==="kwiaty"&&<Card title="C. Parametry kwiatowe" icon={Leaf}>
           <Row>
             <Inp label="Długość pędu" required value={f.stemLength||""} onChange={e=>u("stemLength",e.target.value)} placeholder="np. 50 cm, 60 cm"/>
-            <Inp label="Faza otwarcia" required value={f.openingPhase||""} onChange={e=>u("openingPhase",e.target.value)} placeholder="np. cut stage 2, pąk zamknięty"/>
+            <Inp label="Faza otwarcia" required value={f.openingPhase||""} onChange={e=>u("openingPhase",e.target.value)} placeholder="np. pąk zamknięty (stage 1), półotwarty (stage 3), pełny (stage 5)" hint="Stadium rozwoju kwiatu w momencie zbioru. Możesz wpisać po polsku."/>
           </Row>
           <Row>
             <Inp label="Liczba szt. w pęczku / bukiecie" required type="number" value={f.bouquetCount||""} onChange={e=>u("bouquetCount",e.target.value)} placeholder="np. 10"/>
@@ -3973,6 +4151,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <div style={{ padding:errors.availabilityModel?"8px":0,borderRadius:8,...(errors.availabilityModel?{border:"2px solid #dc2626",background:"#fef2f2"}:{}) }}>
               <RadioGroup name="avail" options={["Całorocznie","Sezonowo","Krótkie okno","Tylko promo / spot"]} val={f.availabilityModel||""} onChange={v=>u("availabilityModel",v)}/>
             </div>
+            <div style={{ fontSize:11,color:"#94a3b8",marginTop:5 }}>Całorocznie = stabilna dostawa 12 mies. Sezonowo = produkt w określonym oknie (np. truskawki V-VII). Krótkie okno = kilka tygodni. Spot = jednorazowa partia, bez kontynuacji.</div>
             {errors.availabilityModel&&<div style={{fontSize:11,color:"#dc2626",marginTop:3}}>⚠ To pole jest wymagane</div>}
           </div>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14 }}>
@@ -4081,7 +4260,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <Inp label="Waluta" value={f.currency||"EUR"} onChange={e=>u("currency",e.target.value)}>
               <option>PLN</option><option>EUR</option><option>USD</option>
             </Inp>
-            <Inp label="Cena orientacyjna" type="number" value={f.priceOffer||""} onChange={e=>u("priceOffer",e.target.value)} placeholder="np. 2.40 (opcjonalne)" hint="opcjonalne"/>
+            <Inp label="Cena orientacyjna" type="number" value={f.priceOffer||""} onChange={e=>u("priceOffer",e.target.value)} placeholder="np. 2.40 — cena min. z poprzedniego tygodnia" hint="Opcjonalne. Pokazuje kupcowi rząd wielkości — finalna cena zostaje do uzgodnienia bilateralnie. Wpływ INCOTERMS: DAP/DDP zwykle wyżej, EXW niżej."/>
             <Inp label="Jednostka ceny" value={f.priceUnit||"kg"} onChange={e=>u("priceUnit",e.target.value)}>
               <option>kg</option><option>szt.</option><option>karton</option><option>paleta</option><option>pęczek</option><option>bukiet</option>
             </Inp>
@@ -4124,6 +4303,21 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
       {/* ════ STEP 3: PREZENTACJA ════ */}
       {step===3&&<>
         <Alrt type="warning"><strong>Nie pisz:</strong> wysoka jakość · konkurencyjna cena · indywidualne podejście · wieloletnie doświadczenie.<br/><strong>Pisz konkretnie:</strong> standard partii, wolumen, logistyka, cena, czas reakcji, korzyść dla kupca.</Alrt>
+
+        {/* [B2B Round prod-rollout / UX] Codex feedback: krótki przykład dobrej
+            oferty w jednej linii — pokazuje strukturę "produkt + kaliber + klasa
+            + wolumen + logistyka", którą kupiec rozumie od razu. */}
+        <details style={{ marginBottom:16,background:"#f0fdfa",border:"1px solid #99f6e4",borderRadius:10,padding:"10px 14px" }}>
+          <summary style={{ cursor:"pointer",fontSize:13,fontWeight:600,color:"#0d9488",userSelect:"none" }}>📋 Pokaż przykład dobrej oferty (1 zdanie)</summary>
+          <div style={{ marginTop:10,fontSize:13,color:"#134e4a",lineHeight:1.6 }}>
+            <div style={{ padding:"10px 12px",background:"white",borderRadius:8,fontFamily:"ui-monospace, SF Mono, monospace",fontSize:12,color:"#1e293b",border:"1px solid #ccfbf1",marginBottom:8 }}>
+              „Jabłka Gala 70-80 mm, klasa I, 100 t/mies., dostawa DAP do centrum dystrybucji"
+            </div>
+            <div style={{ fontSize:11,color:"#64748b",lineHeight:1.5 }}>
+              Każde pole konkretne i mierzalne: <strong>produkt + odmiana + kaliber + klasa + wolumen + logistyka</strong>. Kupiec wie od razu czego się spodziewać. Tego samego ducha trzymaj się w 3 pytaniach poniżej — operacyjnie, w liczbach.
+            </div>
+          </div>
+        </details>
 
         <Card title="A. Co Cię wyróżnia?" icon={CheckCircle}>
           <Alrt type="success">
@@ -4477,6 +4671,44 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       <div style={{ display:"flex",gap:10,padding:"12px 16px",background:"#f0fdf4",borderRadius:10,marginBottom:20,border:"1px solid #bbf7d0",fontSize:13,color:"#047857" }}>
         <ShieldCheck size={16} color="#059669" style={{ flexShrink:0,marginTop:1 }}/>
         <div>Gwarancja 14 dni — brak odczytu przez kupca = automatyczny zwrot kredytu na portfel. Kupujesz wysyłki, nie ryzyko.</div>
+      </div>
+
+      {/* [B2B Round prod-rollout / UX] Codex feedback: jasne porównanie
+          Standard vs Premium. Uczciwe — bez obietnic których nie potwierdzimy.
+          Realne różnice: pozycja w mailu, oznaczenie "Premium", cena/szt. */}
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:22 }}>
+        <div style={{ background:"white",border:"1px solid #bfdbfe",borderRadius:10,padding:"14px 16px" }}>
+          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:10 }}>
+            <span style={{ background:"#dbeafe",color:"#1e40af",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700 }}>STANDARD</span>
+            <span style={{ fontSize:12,color:"#64748b",fontWeight:600 }}>40-30 EUR / wysyłka</span>
+          </div>
+          <ul style={{ margin:0,paddingLeft:18,fontSize:12,color:"#475569",lineHeight:1.7 }}>
+            <li><strong>Pozycja środkowa</strong> w newsletterze do kupca</li>
+            <li>Pełna treść propozycji + Twoje zdjęcia i logo</li>
+            <li>Moderacja przed wysyłką (24h SLA)</li>
+            <li>Gwarancja 14 dni — zwrot przy braku odczytu</li>
+          </ul>
+          <div style={{ marginTop:10,padding:"7px 10px",background:"#eff6ff",borderRadius:6,fontSize:11,color:"#1e3a5f",lineHeight:1.5 }}>
+            <strong>Kiedy wybrać:</strong> chcesz dużo wysyłek po niższej cenie/szt. — najlepsze dla wolumenowych dostawców.
+          </div>
+        </div>
+
+        <div style={{ background:"white",border:"2px solid #fde68a",borderRadius:10,padding:"14px 16px",position:"relative" }}>
+          <div style={{ position:"absolute",top:-8,right:14,background:"#d97706",color:"white",fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:10,letterSpacing:0.5 }}>⭐ TOP POZYCJA</div>
+          <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:10 }}>
+            <span style={{ background:"#fef3c7",color:"#92400e",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700 }}>PREMIUM</span>
+            <span style={{ fontSize:12,color:"#92400e",fontWeight:600 }}>80-45 EUR / wysyłka</span>
+          </div>
+          <ul style={{ margin:0,paddingLeft:18,fontSize:12,color:"#475569",lineHeight:1.7 }}>
+            <li><strong>Twoja propozycja jako pierwsza</strong> w newsletterze</li>
+            <li>Oznaczenie <span style={{ background:"#fef3c7",color:"#92400e",padding:"1px 6px",borderRadius:4,fontSize:10,fontWeight:700 }}>Premium</span> w mailu — wyróżnienie wizualne</li>
+            <li>Pełna treść + zdjęcia + logo (jak Standard)</li>
+            <li>Gwarancja 14 dni — zwrot przy braku odczytu</li>
+          </ul>
+          <div style={{ marginTop:10,padding:"7px 10px",background:"#fffbeb",borderRadius:6,fontSize:11,color:"#78350f",lineHeight:1.5 }}>
+            <strong>Kiedy wybrać:</strong> stawiasz na widoczność i chcesz żeby kupiec zobaczył Cię od razu — najlepsze dla premium produktów, kategorii nowych dla sieci, kluczowych okien sezonu.
+          </div>
+        </div>
       </div>
 
       {/* Standard table */}
@@ -6532,7 +6764,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     <div key={s.id} style={{ display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9",fontSize:12 }}>
                       <span style={{ fontSize:14 }}>{CEMOJI[o?.category]||"📦"}</span>
                       <div style={{ flex:1 }}>{o?.title||o?.product||"Propozycja"} → {r?.name||"—"}</div>
-                      <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
+                      <span title={STATUS_TIPS[s.status]||""} style={{ cursor:"help" }}>
+                        <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
+                      </span>
                     </div>
                   );
                 })}
