@@ -1,0 +1,1744 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<title>Fresh Market — Dashboard dostawcy · mockup v4 (final wzorzec do wdrożenia)</title>
+<style>
+  :root{
+    /* Design tokens — lekkie, operacyjne */
+    --bg:#f8fafc;
+    --card:#ffffff;
+    --border:#e2e8f0;
+    --border-strong:#cbd5e1;
+    --text:#0f172a;
+    --text2:#1e293b;
+    --muted:#64748b;
+    --muted2:#94a3b8;
+    --teal:#0d9488;
+    --teal-hover:#0f766e;
+    --success:#059669;
+    --success-soft:#ecfdf5;
+    --warn:#d97706;
+    --warn-soft:#fffbeb;
+    --danger:#dc2626;
+    --danger-soft:#fef2f2;
+    --info:#2563eb;
+    --info-soft:#eff6ff;
+    --purple:#7c3aed;
+    --purple-soft:#f5f3ff;
+    --radius:8px;
+    --radius-sm:6px;
+  }
+  *{
+    box-sizing:border-box;
+    /* [v3] Zachowaj tła i gradienty przy drukowaniu / eksporcie do PDF */
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
+  @page{margin:14mm}
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,'Segoe UI',sans-serif;
+    background:#cbd5e1;
+    color:var(--text2);
+    font-size:13px;
+    line-height:1.5;
+    padding:24px 32px;
+  }
+  h1.page{font-size:17px;color:var(--text);margin:0 0 4px;font-weight:700}
+  p.page-sub{color:#475569;margin:0 0 18px;font-size:12px}
+
+  .variant-label{
+    background:#0f172a;
+    color:#94a3b8;
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    padding:7px 14px;
+    border-radius:6px 6px 0 0;
+    margin-bottom:-1px;
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-weight:700;
+  }
+  .variant-label .dot{width:7px;height:7px;border-radius:50%}
+  .variant-label.A .dot{background:#10b981}
+  .variant-label.B .dot{background:#d97706}
+  .variant-label.C .dot{background:#a855f7}
+  .variant-label.D .dot{background:#059669}
+
+  .variant{
+    display:grid;
+    grid-template-columns:212px 1fr;
+    border-radius:var(--radius);
+    overflow:hidden;
+    background:var(--bg);
+    margin-bottom:36px;
+    min-height:680px;
+    border:1px solid #94a3b8;
+  }
+
+  /* ──────── SIDEBAR (stała kolejność we wszystkich stanach) ──────── */
+  .sidebar{
+    background:#0f172a;
+    color:#94a3b8;
+    padding:14px 10px;
+    display:flex;
+    flex-direction:column;
+    gap:1px;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:4px 8px 12px;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+    margin-bottom:8px;
+  }
+  .brand .name{color:white;font-weight:700;font-size:13px;letter-spacing:-0.01em}
+  .nav-section{
+    font-size:9px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:rgba(255,255,255,0.3);
+    font-weight:700;
+    padding:8px 10px 4px;
+  }
+  .nav-item{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:7px 10px;
+    color:#64748b;
+    border-radius:6px;
+    font-size:12.5px;
+    cursor:pointer;
+    line-height:1;
+  }
+  .nav-item.active{
+    background:rgba(13,148,136,0.85);
+    color:white;
+    font-weight:600;
+  }
+  .nav-item.locked{opacity:0.4}
+  .nav-item .badge{
+    margin-left:auto;
+    background:#059669;
+    color:white;
+    border-radius:99px;
+    font-size:9.5px;
+    font-weight:700;
+    padding:1px 7px;
+  }
+  .nav-item .badge.purple{background:#7c3aed}
+  .nav-item .pulse{
+    margin-left:auto;
+    width:7px;height:7px;
+    border-radius:50%;
+    background:#a855f7;
+    box-shadow:0 0 0 3px rgba(168,85,247,0.25);
+  }
+  .nav-item .pulse.green{background:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,0.25)}
+  .nav-sub{
+    padding:6px 10px 6px 28px;
+    color:rgba(255,255,255,0.4);
+    font-size:11.5px;
+    border-radius:6px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .nav-sub.active{background:rgba(13,148,136,0.6);color:white;font-weight:600}
+  .nav-sub.done{color:rgba(16,185,129,0.6)}
+  .nav-sub.done::before{content:"✓";font-weight:700}
+  .nav-sub.locked{opacity:0.35}
+
+  /* Inline SVG icon — generic 14px */
+  .ico{
+    width:14px;height:14px;
+    flex-shrink:0;
+    display:inline-block;
+    stroke:currentColor;
+    fill:none;
+    stroke-width:2;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+  .ico-12{width:12px;height:12px}
+  .ico-16{width:16px;height:16px}
+
+  /* ──────── MAIN ──────── */
+  .main{padding:16px 20px;overflow-y:auto}
+
+  /* Topbar (slim) */
+  .topbar{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:8px 14px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-bottom:12px;
+  }
+  .topbar .title{font-weight:700;font-size:13px;color:var(--text)}
+  .topbar .pill{
+    margin-left:auto;
+    display:inline-flex;
+    align-items:center;
+    gap:7px;
+    padding:3px 10px 3px 4px;
+    background:#f8fafc;
+    border:1px solid var(--border);
+    border-radius:99px;
+    font-size:11px;
+    color:#475569;
+  }
+  .topbar .pill .avatar{
+    width:18px;height:18px;border-radius:50%;
+    background:#0d9488;color:white;
+    display:flex;align-items:center;justify-content:center;
+    font-size:9px;font-weight:700;
+  }
+  .topbar .pill .role{
+    background:#059669;color:white;
+    padding:1px 6px;border-radius:4px;
+    font-size:9px;font-weight:700;
+    text-transform:uppercase;letter-spacing:0.04em;
+  }
+  .topbar .pill.warn{background:var(--warn-soft);border-color:#fde68a;color:#92400e}
+  .topbar .pill.warn .role{background:var(--warn)}
+
+  /* ──────── ALERTS / BANNERS ──────── */
+  .alert{
+    display:flex;
+    align-items:flex-start;
+    gap:11px;
+    padding:11px 14px;
+    border-radius:var(--radius);
+    border:1px solid;
+    margin-bottom:12px;
+    font-size:12.5px;
+    line-height:1.5;
+  }
+  .alert.warn{background:var(--warn-soft);border-color:#fde68a;color:#92400e}
+  .alert.success{background:var(--success-soft);border-color:#bbf7d0;color:#065f46}
+  .alert.info{background:var(--info-soft);border-color:#bfdbfe;color:#1e3a8a}
+  .alert.danger{background:var(--danger-soft);border-color:#fecaca;color:#7f1d1d}
+  .alert .alert-ico{
+    width:18px;height:18px;
+    border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+    font-weight:700;font-size:11px;
+    margin-top:1px;
+  }
+  .alert.warn .alert-ico{background:var(--warn);color:white}
+  .alert.success .alert-ico{background:var(--success);color:white}
+  .alert.info .alert-ico{background:var(--info);color:white}
+  .alert.danger .alert-ico{background:var(--danger);color:white}
+  .alert .alert-body{flex:1}
+  .alert strong{font-weight:600}
+  .alert button{
+    background:white;
+    border:1px solid currentColor;
+    color:inherit;
+    padding:5px 11px;
+    border-radius:var(--radius-sm);
+    font-size:11.5px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+    flex-shrink:0;
+    margin-left:auto;
+    align-self:center;
+  }
+
+  /* ──────── CARD (base) ──────── */
+  .card{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px 16px;
+    margin-bottom:12px;
+  }
+  .card-head{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .card-head .card-title{
+    font-size:10.5px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:var(--muted);
+  }
+  .card-head .card-aside{
+    margin-left:auto;
+    font-size:11px;
+    color:var(--muted2);
+  }
+
+  .row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  .row-6-4{display:grid;grid-template-columns:6fr 4fr;gap:12px;margin-bottom:12px}
+
+  /* ──────── §1 NEXT STEP (jedyny gradient na ekranie w stanie A) ──────── */
+  .next-step{
+    background:linear-gradient(135deg,#0d9488 0%,#0f766e 100%);
+    color:white;
+    padding:14px 18px;
+    border-radius:var(--radius);
+    margin-bottom:12px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+  }
+  .next-step.purple{background:linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%)}
+  .next-step.amber{background:linear-gradient(135deg,#d97706 0%,#b45309 100%)}
+  .next-step.flat{background:white;color:var(--text);border:1px solid var(--border)}
+  /* [v3] Bordered — biała karta z kolorowym paskiem po lewej (Stan C/D, FM aktywne) */
+  .next-step.bordered{
+    background:white;
+    color:var(--text);
+    border:1px solid var(--border);
+    border-left-width:4px;
+    padding:12px 16px 12px 14px;
+  }
+  .next-step.bordered .ns-lbl{color:var(--muted)}
+  .next-step.bordered .ns-desc{color:#475569}
+  .next-step.bordered.purple{border-left-color:var(--purple)}
+  .next-step.bordered.purple .ns-ico{background:var(--purple-soft);color:var(--purple)}
+  .next-step.bordered.purple .ns-btn{background:var(--purple);color:white}
+  .next-step.bordered.amber{border-left-color:var(--warn)}
+  .next-step.bordered.amber .ns-ico{background:var(--warn-soft);color:var(--warn)}
+  .next-step.bordered.amber .ns-btn{background:var(--warn);color:white}
+  .next-step .ns-ico{
+    width:32px;height:32px;
+    background:rgba(255,255,255,0.18);
+    border-radius:var(--radius-sm);
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  .next-step.flat .ns-ico{background:var(--teal);color:white}
+  .next-step .ns-body{flex:1;min-width:0}
+  .next-step .ns-lbl{
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    font-weight:700;
+    color:rgba(255,255,255,0.7);
+    margin-bottom:2px;
+  }
+  .next-step.flat .ns-lbl{color:var(--muted)}
+  .next-step .ns-title{
+    font-weight:700;
+    font-size:14.5px;
+    margin-bottom:2px;
+    letter-spacing:-0.01em;
+  }
+  .next-step .ns-desc{
+    font-size:12px;
+    color:rgba(255,255,255,0.82);
+    line-height:1.5;
+  }
+  .next-step.flat .ns-desc{color:var(--muted)}
+  .next-step .ns-btn{
+    background:white;
+    color:var(--teal);
+    border:none;
+    padding:9px 14px;
+    border-radius:var(--radius-sm);
+    font-weight:600;
+    font-size:12.5px;
+    cursor:pointer;
+    font-family:inherit;
+    flex-shrink:0;
+  }
+  .next-step.purple .ns-btn{color:var(--purple)}
+  .next-step.amber .ns-btn{color:var(--warn)}
+  .next-step.flat .ns-btn{background:var(--teal);color:white}
+
+  /* ──────── §2 PAKIET (light card) ──────── */
+  .pkg-card .pkg-stat{
+    font-size:22px;
+    font-weight:700;
+    color:var(--text);
+    letter-spacing:-0.02em;
+    line-height:1.1;
+  }
+  .pkg-card .pkg-stat .total{color:var(--muted);font-weight:500;font-size:15px;margin-left:2px}
+  .pkg-bar{
+    margin-top:8px;
+    height:6px;
+    background:#f1f5f9;
+    border-radius:99px;
+    overflow:hidden;
+    border:1px solid var(--border);
+  }
+  .pkg-bar > div{height:100%;background:var(--teal);border-radius:99px}
+  .pkg-bar.warn > div{background:var(--warn)}
+  .pkg-bar.danger > div{background:var(--danger)}
+  .pkg-meta{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-top:10px;
+    font-size:11px;
+    color:var(--muted);
+  }
+  .pkg-meta .valid strong{color:var(--text2);font-weight:600}
+  .btn-link{
+    background:none;
+    border:none;
+    color:var(--teal);
+    font-size:11.5px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+    text-decoration:underline;
+    padding:0;
+  }
+  .btn-outline{
+    background:white;
+    border:1px solid var(--border-strong);
+    color:var(--text2);
+    padding:6px 12px;
+    border-radius:var(--radius-sm);
+    font-size:11.5px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+  }
+  .btn-primary{
+    background:var(--teal);
+    color:white;
+    border:none;
+    padding:8px 14px;
+    border-radius:var(--radius-sm);
+    font-size:12px;
+    font-weight:600;
+    cursor:pointer;
+    font-family:inherit;
+  }
+
+  /* ──────── §2 NEXT WINDOW (light card) ──────── */
+  .next-window .nw-row{display:flex;align-items:center;gap:12px}
+  .next-window .nw-date{
+    font-size:18px;
+    font-weight:700;
+    color:var(--text);
+    letter-spacing:-0.01em;
+    line-height:1.15;
+  }
+  .next-window .nw-countdown{
+    font-size:11.5px;
+    color:var(--success);
+    font-weight:600;
+    margin-top:2px;
+  }
+  .next-window .nw-cta{
+    margin-left:auto;
+  }
+
+  /* ──────── §3 KPI ──────── */
+  .kpi-row{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:10px;
+  }
+  .kpi{
+    padding:11px 13px;
+    border-radius:var(--radius-sm);
+    border:1px solid var(--border);
+    background:#fbfcfd;
+  }
+  .kpi .kpi-lbl{
+    font-size:10px;
+    font-weight:600;
+    color:var(--muted);
+    margin-bottom:5px;
+    text-transform:uppercase;
+    letter-spacing:0.04em;
+    display:flex;
+    align-items:center;
+    gap:5px;
+  }
+  .kpi .kpi-lbl::before{
+    content:"";
+    width:7px;height:7px;
+    border-radius:50%;
+    background:var(--muted2);
+  }
+  .kpi.waiting .kpi-lbl::before{background:#f97316}
+  .kpi.seen .kpi-lbl::before{background:#059669}
+  .kpi.expired .kpi-lbl::before{background:#94a3b8}
+  .kpi.rate .kpi-lbl::before{background:#2563eb}
+  .kpi .kpi-val{
+    font-size:22px;
+    font-weight:700;
+    color:var(--text);
+    letter-spacing:-0.02em;
+    line-height:1.05;
+  }
+  .kpi .kpi-meta{
+    margin-top:4px;
+    font-size:11px;
+    color:var(--muted);
+    line-height:1.35;
+  }
+  .kpi .trend{
+    display:inline-block;
+    font-size:10.5px;
+    font-weight:600;
+    margin-left:3px;
+  }
+  .trend.up{color:var(--success)}
+  .trend.down{color:var(--danger)}
+
+  /* ──────── §5 ACTIVITY ──────── */
+  .activity .row{
+    display:flex;
+    gap:10px;
+    align-items:flex-start;
+    padding:8px 0;
+    border-bottom:1px solid #f1f5f9;
+  }
+  .activity .row:last-child{border-bottom:0;padding-bottom:2px}
+  .activity .row:first-child{padding-top:0}
+  .activity .dot{
+    width:7px;height:7px;
+    border-radius:50%;
+    margin-top:6px;
+    flex-shrink:0;
+  }
+  .dot.green{background:#059669}
+  .dot.orange{background:#f97316}
+  .dot.blue{background:#2563eb}
+  .dot.gray{background:#94a3b8}
+  .dot.purple{background:#a855f7}
+  .dot.amber{background:#d97706}
+  .activity .content{flex:1;font-size:12.5px;line-height:1.45;color:#334155}
+  .activity .content strong{color:var(--text);font-weight:600}
+  .activity .time{font-size:10.5px;color:var(--muted2);margin-top:1px}
+  .activity .footer{
+    padding-top:9px;
+    margin-top:4px;
+    border-top:1px solid #f1f5f9;
+    font-size:11.5px;
+    color:var(--teal);
+    cursor:pointer;
+    font-weight:600;
+  }
+
+  /* ──────── §5 FM COMPACT ──────── */
+  .fm-card .fm-line{font-size:12px;color:#475569;line-height:1.55}
+  .fm-card .fm-line strong{color:var(--text)}
+  .fm-card .fm-big{
+    font-size:20px;
+    font-weight:700;
+    color:var(--text);
+    letter-spacing:-0.02em;
+    line-height:1.1;
+    margin-bottom:2px;
+  }
+  .fm-card .fm-timeline{
+    display:flex;
+    align-items:center;
+    gap:0;
+    margin:10px 0;
+    padding:0 2px;
+  }
+  .fm-card .fm-timeline .step{
+    flex:1;text-align:center;
+    position:relative;
+    font-size:9.5px;color:var(--muted2);font-weight:600;
+  }
+  .fm-card .fm-timeline .step .circle{
+    width:10px;height:10px;
+    border-radius:50%;
+    background:#e2e8f0;
+    margin:0 auto 4px;
+    position:relative;z-index:2;
+    border:2px solid white;
+  }
+  .fm-card .fm-timeline .step.current .circle{background:var(--teal);box-shadow:0 0 0 2px rgba(13,148,136,0.2)}
+  .fm-card .fm-timeline .step.done .circle{background:var(--success)}
+  .fm-card .fm-timeline .step:not(:last-child)::after{
+    content:"";position:absolute;top:6px;right:-50%;
+    width:100%;height:1.5px;background:#e2e8f0;z-index:1;
+  }
+  .fm-card .fm-timeline .step.done:not(:last-child)::after{background:var(--success)}
+
+  /* ──────── FM HERO (Stan C/D — jeden gradient na ekranie) ──────── */
+  .fm-hero{
+    background:linear-gradient(135deg,#581c87 0%,#7c3aed 70%,#a855f7 100%);
+    color:white;
+    padding:16px 18px;
+    border-radius:var(--radius);
+    margin-bottom:12px;
+  }
+  .fm-hero.published{
+    background:linear-gradient(135deg,#064e3b 0%,#059669 70%,#10b981 100%);
+  }
+  .fm-hero-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .fm-hero-phase{
+    display:inline-flex;align-items:center;gap:5px;
+    background:rgba(255,255,255,0.2);
+    padding:3px 9px;border-radius:99px;
+    font-size:10px;font-weight:700;
+    text-transform:uppercase;letter-spacing:0.06em;
+  }
+  .fm-hero-phase .dot{width:6px;height:6px;border-radius:50%;background:#fbbf24}
+  .fm-hero-title{
+    font-weight:700;font-size:16px;
+    letter-spacing:-0.01em;
+    margin:6px 0 3px;
+  }
+  .fm-hero-desc{
+    color:rgba(255,255,255,0.85);
+    font-size:12px;line-height:1.55;
+    max-width:580px;
+  }
+  .pick-progress{
+    background:rgba(0,0,0,0.18);
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:var(--radius-sm);
+    padding:11px 13px;
+    margin-top:12px;
+  }
+  .pick-progress-head{
+    display:flex;align-items:center;justify-content:space-between;
+    margin-bottom:8px;
+  }
+  .pick-progress-head .lbl{
+    font-size:10px;text-transform:uppercase;
+    letter-spacing:0.06em;
+    color:rgba(255,255,255,0.7);font-weight:700;
+  }
+  .pick-progress-head .nums{font-size:12px;font-weight:700}
+  .pick-progress-bar{
+    height:6px;background:rgba(0,0,0,0.3);
+    border-radius:99px;overflow:hidden;
+    margin-bottom:10px;
+  }
+  .pick-progress-bar > div{height:100%;background:#fbbf24;border-radius:99px}
+  .chip-row{display:flex;gap:5px;flex-wrap:wrap}
+  .chip{
+    padding:3px 9px;border-radius:99px;
+    font-size:10.5px;font-weight:600;
+    background:rgba(255,255,255,0.16);
+    color:white;
+    border:1px solid rgba(255,255,255,0.1);
+    line-height:1.4;
+  }
+  .chip.main{background:#fbbf24;color:#0f172a;border:none}
+  .chip.reserve{background:rgba(16,185,129,0.7);color:white;border:none}
+  .chip.empty{
+    background:transparent;
+    color:rgba(255,255,255,0.5);
+    border:1px dashed rgba(255,255,255,0.3);
+  }
+  .fm-hero-cta{display:flex;gap:8px;margin-top:12px}
+  .fm-hero-cta .primary{
+    background:white;color:var(--purple);
+    border:none;padding:9px 14px;
+    border-radius:var(--radius-sm);
+    font-weight:600;font-size:12.5px;
+    cursor:pointer;font-family:inherit;
+  }
+  .fm-hero.published .fm-hero-cta .primary{color:var(--success)}
+  .fm-hero-cta .secondary{
+    background:rgba(255,255,255,0.12);
+    color:white;
+    border:1px solid rgba(255,255,255,0.22);
+    padding:9px 14px;
+    border-radius:var(--radius-sm);
+    font-weight:600;font-size:12px;
+    cursor:pointer;font-family:inherit;
+  }
+
+  /* Meeting list (Stan D) */
+  .meeting-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+  .meeting-row{
+    background:rgba(255,255,255,0.12);
+    border:1px solid rgba(255,255,255,0.16);
+    border-radius:var(--radius-sm);
+    padding:8px 11px;
+    display:flex;align-items:center;gap:11px;
+  }
+  .meeting-row.next{
+    background:rgba(251,191,36,0.18);
+    border-color:#fbbf24;
+  }
+  .meeting-row .num{
+    width:26px;height:26px;
+    border-radius:6px;
+    background:rgba(255,255,255,0.22);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:11px;
+    flex-shrink:0;
+  }
+  .meeting-row.next .num{background:#fbbf24;color:#0f172a}
+  .meeting-row .m-network{font-weight:600;font-size:12.5px;color:white;line-height:1.2}
+  .meeting-row .m-time{font-size:10.5px;color:rgba(255,255,255,0.7);margin-top:1px}
+  .meeting-row .m-info{flex:1;min-width:0}
+  .meeting-row .m-table{
+    background:rgba(0,0,0,0.25);
+    padding:2px 7px;border-radius:4px;
+    font-size:9.5px;font-weight:700;
+    color:rgba(255,255,255,0.95);
+    text-transform:uppercase;letter-spacing:0.04em;
+    flex-shrink:0;
+  }
+
+  /* ──────── PreConnect compact (Stan C/D) ──────── */
+  .preconnect-compact{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:11px 14px;
+    margin-bottom:12px;
+    display:flex;align-items:center;gap:14px;
+  }
+  .preconnect-compact .pc-info{flex:1;min-width:0}
+  .preconnect-compact .pc-name{font-weight:600;font-size:12.5px;color:var(--text);line-height:1.2}
+  .preconnect-compact .pc-sub{color:var(--muted);font-size:11px;margin-top:2px}
+  .preconnect-compact .pc-stats{display:flex;gap:18px;border-left:1px solid var(--border);padding-left:18px}
+  .preconnect-compact .pc-stat{text-align:right}
+  .preconnect-compact .pc-stat .v{font-weight:700;font-size:14px;color:var(--text);line-height:1.1;display:block}
+  .preconnect-compact .pc-stat .k{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-top:2px}
+
+  /* ──────── ONBOARDING (Stan B) ──────── */
+  .onboard-card{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:14px 16px;
+    margin-bottom:12px;
+  }
+  .onboard-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .onboard-head .ttl{font-weight:700;font-size:13px;color:var(--text)}
+  .onboard-head .ttl span{color:var(--muted);font-weight:500;margin-left:5px;font-size:11.5px}
+  .onboard-head .pbar{flex:1;height:5px;background:#f1f5f9;border-radius:99px;overflow:hidden}
+  .onboard-head .pbar > div{height:100%;background:var(--teal);border-radius:99px}
+  .onb-step{
+    display:flex;align-items:flex-start;gap:11px;
+    padding:9px 12px;border:1px solid var(--border);
+    background:#fbfcfd;border-radius:var(--radius-sm);
+    margin-bottom:5px;
+  }
+  .onb-step.done{background:#f0fdf4;border-color:#bbf7d0}
+  .onb-step .num{
+    width:20px;height:20px;border-radius:50%;
+    background:#e2e8f0;color:var(--muted);
+    font-weight:700;font-size:10.5px;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  .onb-step.done .num{background:var(--teal);color:white}
+  .onb-step .body{flex:1}
+  .onb-step .body strong{color:var(--text);font-size:12.5px;font-weight:600;display:block;line-height:1.3}
+  .onb-step.done .body strong{color:#065f46}
+  .onb-step .body p{margin:2px 0 0;font-size:11.5px;color:var(--muted);line-height:1.45}
+  .onb-step .cta{flex-shrink:0}
+
+  /* ──────── HELP STRIP ──────── */
+  .help-strip{
+    background:white;
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:10px 14px;
+    display:flex;align-items:center;gap:9px;
+    font-size:12px;color:#475569;
+    cursor:pointer;
+  }
+  .help-strip .chev{margin-left:auto;color:var(--muted2);font-size:10px}
+  .help-strip .ico-info{color:var(--info)}
+
+  /* Dimmed (Stan B placeholders) */
+  .dim{opacity:0.55}
+  .dim .kpi-val{color:var(--muted2)}
+
+  /* ──────── NOTES below mockups ──────── */
+  .notes{
+    background:#0f172a;
+    color:#cbd5e1;
+    border-radius:var(--radius);
+    padding:14px 18px;
+    margin:-24px 0 24px;
+    font-size:12px;line-height:1.6;
+  }
+  .notes h3{margin:0 0 6px;font-size:12px;color:white;font-weight:700}
+  .notes code{
+    background:rgba(255,255,255,0.08);
+    color:#a7f3d0;
+    padding:1px 5px;border-radius:3px;
+    font-size:10.5px;
+  }
+  .notes ul{margin:6px 0 0;padding-left:18px}
+  .notes li{margin-bottom:3px}
+
+  /* Legend */
+  .legend{
+    display:flex;gap:14px;font-size:10.5px;color:var(--muted);
+    margin-bottom:14px;flex-wrap:wrap;
+  }
+  .legend .item{display:flex;align-items:center;gap:5px}
+  .legend .item .ld{width:8px;height:8px;border-radius:50%}
+
+</style>
+</head>
+<body>
+
+<h1 class="page">Dashboard dostawcy — mockup v4 (wzorzec do wdrożenia)</h1>
+<p class="page-sub">
+  Iteracja v4 po drugim feedbacku Codexa: top zarezerwowany dla blokerów (refund pod KPI),
+  Stan C uproszczony (FM Hero z deadlinem, Next Step pod nim), copy „Przygotuj wysyłkę",
+  ikona download w lucide-style. Cztery stany jeden pod drugim.
+</p>
+
+<div class="legend">
+  <div class="item"><span class="ld" style="background:#f97316"></span>oczekujące/wysyłka w drodze</div>
+  <div class="item"><span class="ld" style="background:#059669"></span>zobaczone/sukces</div>
+  <div class="item"><span class="ld" style="background:#94a3b8"></span>wygasłe/nieaktywne</div>
+  <div class="item"><span class="ld" style="background:#2563eb"></span>info/zobaczone</div>
+  <div class="item"><span class="ld" style="background:#d97706"></span>uwaga</div>
+  <div class="item"><span class="ld" style="background:#dc2626"></span>blocker</div>
+  <div class="item"><span class="ld" style="background:#a855f7"></span>FM 2026 active</div>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- STAN A: aktywny dostawca, FM zamknięte                            -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<div class="variant-label A">
+  <span class="dot"></span>
+  Stan A · Aktywny dostawca (typowy dzień roboczy, FM zamknięte)
+</div>
+<div class="variant">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 32 32">
+        <path d="M22.5 11.8c-1.5-1-3.3-1.4-4.8-0.6-0.5 0.3-1 0.7-1.5 1.1-0.5-0.4-1-0.8-1.5-1.1-1.5-0.8-3.3-0.4-4.8 0.6-2.5 1.7-3.5 5.2-2.2 8.6 1.3 3.4 4.4 6.6 6.7 6.6 0.7 0 1.3-0.2 1.8-0.5 0.5 0.3 1.1 0.5 1.8 0.5 2.3 0 5.4-3.2 6.7-6.6 1.3-3.4 0.3-6.9-2.2-8.6z" fill="#16a34a"/>
+        <path d="M16.5 9.5c-0.3-2.4 1.4-4.6 3.8-5.1 0.4 2.4-1.3 4.7-3.8 5.1z" fill="#65a30d"/>
+      </svg>
+      <span class="name">Fresh Market</span>
+    </div>
+    <div class="nav-section">PreConnect</div>
+    <div class="nav-item active">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      Wysyłki
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      Moje propozycje
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      Finanse <span class="badge">23 €</span>
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+      Twoja firma
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Mój profil
+    </div>
+    <div class="nav-section" style="margin-top:6px">Fresh Market 2026</div>
+    <div class="nav-item locked">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Spotkania FM 2026
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="title">Dashboard</div>
+      <div class="pill">
+        <span class="avatar">K</span>
+        <span>KJOW Sp. z o.o.</span>
+        <span class="role">Dostawca</span>
+      </div>
+    </div>
+
+    <!-- [v4] §1 ALERT: top zostawiamy dla blokerów. Refundy to nie blocker —
+         przeniesione pod KPI jako delikatny pasek info. -->
+
+    <!-- §2 NEXT STEP — jedyny gradient na ekranie -->
+    <div class="next-step">
+      <div class="ns-ico">
+        <svg class="ico-16" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:white"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+      </div>
+      <div class="ns-body">
+        <div class="ns-lbl">Twój następny krok</div>
+        <div class="ns-title">Masz 2 zatwierdzone propozycje gotowe do wysyłki</div>
+        <div class="ns-desc">„Cebula żółta klasa I" i „Marchew baby 200g" są aktywne ale jeszcze nie poszły do żadnej sieci. Wykorzystaj kredyty z pakietu w czerwcowym oknie.</div>
+      </div>
+      <button class="ns-btn">Przygotuj wysyłkę</button>
+    </div>
+
+    <!-- §3 PAKIET + NEXT WINDOW (1:1, oba białe) -->
+    <div class="row-2">
+
+      <div class="card pkg-card">
+        <div class="card-head">
+          <div class="card-title">Kredyty PreConnect</div>
+          <div class="card-aside">aktywny pakiet: Standard 30</div>
+        </div>
+        <div class="pkg-stat">23<span class="total">/ 30 kredytów</span></div>
+        <div class="pkg-bar"><div style="width:76.67%"></div></div>
+        <div class="pkg-meta">
+          <div class="valid">Ważne do <strong>31.12.2026</strong> · pozostało 232 dni</div>
+          <button class="btn-link">Kup pakiet</button>
+        </div>
+      </div>
+
+      <div class="card next-window">
+        <div class="card-head">
+          <div class="card-title">Najbliższe okno wysyłki</div>
+        </div>
+        <div class="nw-row">
+          <div>
+            <div class="nw-date">wtorek, 2 czerwca 2026</div>
+            <div class="nw-countdown">za 19 dni</div>
+          </div>
+          <button class="btn-outline nw-cta">Zobacz harmonogram</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- §4 KPI -->
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">Wysyłki PreConnect — ostatnie 30 dni</div>
+        <div class="card-aside">23 wysyłki łącznie</div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi waiting">
+          <div class="kpi-lbl">Czekają</div>
+          <div class="kpi-val">5</div>
+          <div class="kpi-meta">czekają na otwarcie lub automatyczny zwrot</div>
+        </div>
+        <div class="kpi seen">
+          <div class="kpi-lbl">Zobaczone / rozliczone</div>
+          <div class="kpi-val">18 <span class="trend up">+4</span></div>
+          <div class="kpi-meta">kupiec otworzył, kredyt pobrany</div>
+        </div>
+        <div class="kpi expired">
+          <div class="kpi-lbl">Wygasłe</div>
+          <div class="kpi-val">3</div>
+          <div class="kpi-meta">nieotwarte w 14 dni · kredyt zwrócony</div>
+        </div>
+        <div class="kpi rate">
+          <div class="kpi-lbl">Współczynnik zobaczeń</div>
+          <div class="kpi-val">86% <span class="trend up">+8pp</span></div>
+          <div class="kpi-meta">zobaczone z zakończonych wysyłek</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- [v4] Refund strip — delikatny pasek info pod KPI (nie blocker) -->
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-bottom:12px;font-size:11.5px;color:#065f46">
+      <span style="width:7px;height:7px;border-radius:50%;background:#059669;flex-shrink:0"></span>
+      <span><strong style="font-weight:600">3 zwroty kredytów w tym miesiącu (45 €)</strong> — kupcy nie otworzyli w terminie. Kredyty wróciły do pakietu automatycznie.</span>
+      <button class="btn-link" style="margin-left:auto;color:#059669">Zobacz</button>
+    </div>
+
+    <!-- §5 ACTIVITY + FM compact -->
+    <div class="row-6-4">
+
+      <div class="card activity">
+        <div class="card-head">
+          <div class="card-title">Ostatnia aktywność</div>
+          <div class="card-aside">5 zdarzeń · 14 dni</div>
+        </div>
+        <div class="row">
+          <div class="dot green"></div>
+          <div class="content">
+            <div><strong>Biedronka</strong> zobaczyła ofertę „Jabłka premium 2026"</div>
+            <div class="time">dziś, 09:12 · 8 dni przed wygaśnięciem</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot blue"></div>
+          <div class="content">
+            <div>Wysłano <strong>3 oferty</strong> do <strong>Carrefour Polska</strong></div>
+            <div class="time">12 maj · pobrano 3 kredyty (zostało 23/30)</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot green"></div>
+          <div class="content">
+            <div>Propozycja <strong>„Borówka premium"</strong> zatwierdzona przez moderację</div>
+            <div class="time">10 maj · gotowa do wysłania</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot gray"></div>
+          <div class="content">
+            <div>Dodano propozycję <strong>„Cebula żółta klasa I"</strong></div>
+            <div class="time">8 maj · status: szkic</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot green"></div>
+          <div class="content">
+            <div>Zwrot <strong>+1 kredytu</strong> — wysyłka do Lidla wygasła nieotwarta</div>
+            <div class="time">1 maj · kredyt wrócił do pakietu</div>
+          </div>
+        </div>
+        <div class="footer">Zobacz pełną historię →</div>
+      </div>
+
+      <div class="card fm-card">
+        <div class="card-head">
+          <div class="card-title">Spotkania FM 2026</div>
+          <div class="card-aside" style="background:#f1f5f9;padding:2px 8px;border-radius:99px;font-weight:600">Wkrótce</div>
+        </div>
+        <div class="fm-big">za 142 dni</div>
+        <div class="fm-line">Otwarcie wyboru sieci · <strong>1 września 2026</strong></div>
+        <div class="fm-timeline">
+          <div class="step current"><div class="circle"></div>Wkrótce</div>
+          <div class="step"><div class="circle"></div>Wybór</div>
+          <div class="step"><div class="circle"></div>Algorytm</div>
+          <div class="step"><div class="circle"></div>Plan</div>
+        </div>
+        <button class="btn-outline" style="width:100%">Zobacz program FM →</button>
+      </div>
+
+    </div>
+
+    <!-- §7 HELP -->
+    <div class="help-strip">
+      <svg class="ico ico-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span>Jak to działa? — przepływ PreConnect i Spotkań FM 2026</span>
+      <span class="chev">▼</span>
+    </div>
+
+  </main>
+</div>
+
+<div class="notes">
+  <h3>Stan A — komentarz (v4)</h3>
+  <ul>
+    <li><strong>Top zarezerwowany dla blokerów</strong> — refundy NIE są blockerem, więc pasek info „3 zwroty 45 €" ląduje pod KPI jako delikatny zielony pasek (1 linia, btn-link „Zobacz"). Na samej górze tylko: konto zablokowane, brak pakietu, kończący się pakiet, deadline FM.</li>
+    <li><strong>Jeden gradient na ekranie</strong> — Twój następny krok (teal). Reszta to białe karty z 1px ramką.</li>
+    <li><strong>CTA „Przygotuj wysyłkę"</strong> zamiast „Wyślij do sieci" — neutralne, niezależnie od tego czy email do kupca idzie od razu czy w batchu od admina.</li>
+    <li><strong>Kredyty PreConnect</strong> generyczna nazwa, aktywny pakiet jako mała wzmianka. 23/30 = wszystkie dostępne kredyty.</li>
+    <li><strong>Najbliższe okno</strong> jako biała karta z primary teal CTA — bez ciemnego gradientu.</li>
+    <li><strong>KPI:</strong> Czekają · Zobaczone/rozliczone · Wygasłe · Współczynnik zobaczeń. Status-doty (kolorowa kropka przed labelem) bez wypełniania całej karty kolorem.</li>
+    <li><strong>Sidebar</strong> stała kolejność: PreConnect zawsze pierwszy, FM 2026 drugi.</li>
+  </ul>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- STAN B: pending_review (nowy dostawca)                            -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<div class="variant-label B">
+  <span class="dot"></span>
+  Stan B · Nowy dostawca, pending_review (1. dzień)
+</div>
+<div class="variant">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 32 32">
+        <path d="M22.5 11.8c-1.5-1-3.3-1.4-4.8-0.6-0.5 0.3-1 0.7-1.5 1.1-0.5-0.4-1-0.8-1.5-1.1-1.5-0.8-3.3-0.4-4.8 0.6-2.5 1.7-3.5 5.2-2.2 8.6 1.3 3.4 4.4 6.6 6.7 6.6 0.7 0 1.3-0.2 1.8-0.5 0.5 0.3 1.1 0.5 1.8 0.5 2.3 0 5.4-3.2 6.7-6.6 1.3-3.4 0.3-6.9-2.2-8.6z" fill="#16a34a"/>
+        <path d="M16.5 9.5c-0.3-2.4 1.4-4.6 3.8-5.1 0.4 2.4-1.3 4.7-3.8 5.1z" fill="#65a30d"/>
+      </svg>
+      <span class="name">Fresh Market</span>
+    </div>
+    <div class="nav-section">PreConnect</div>
+    <div class="nav-item active">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item locked">
+      <svg class="ico" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      Wysyłki
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      Moje propozycje
+    </div>
+    <div class="nav-item locked">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      Finanse
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+      Twoja firma
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Mój profil
+    </div>
+    <div class="nav-section" style="margin-top:6px">Fresh Market 2026</div>
+    <div class="nav-item locked">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Spotkania FM 2026
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div class="topbar">
+      <div class="title">Dashboard</div>
+      <div class="pill warn">
+        <span class="avatar" style="background:#d97706">O</span>
+        <span>Owoce Polski Sp. z o.o.</span>
+        <span class="role">Pending</span>
+      </div>
+    </div>
+
+    <!-- §1 BLOCKER -->
+    <div class="alert warn">
+      <div class="alert-ico">!</div>
+      <div class="alert-body">
+        <strong>Konto czeka na zatwierdzenie przez administratora.</strong> Możesz uzupełnić profil, wgrać logo i dodać propozycje. Wysyłki do sieci odblokujemy po akceptacji — zwykle w ciągu 24h roboczych.
+      </div>
+      <button>Napisz do admina</button>
+    </div>
+
+    <!-- §2 NEXT STEP (gradient — jedyny na ekranie) -->
+    <div class="next-step">
+      <div class="ns-ico">
+        <svg class="ico-16" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:white"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+      </div>
+      <div class="ns-body">
+        <div class="ns-lbl">Twój następny krok</div>
+        <div class="ns-title">Uzupełnij profil firmy, żeby przyspieszyć akceptację</div>
+        <div class="ns-desc">Admin zatwierdza szybciej konta z kompletnymi danymi: opis firmy + logo + przynajmniej 1 propozycja w katalogu.</div>
+      </div>
+      <button class="ns-btn">Otwórz profil</button>
+    </div>
+
+    <!-- §3 CHECKLIST -->
+    <div class="onboard-card">
+      <div class="onboard-head">
+        <div class="ttl">Zacznij tutaj <span>(1/5)</span></div>
+        <div class="pbar"><div style="width:20%"></div></div>
+      </div>
+      <div class="onb-step done">
+        <div class="num">✓</div>
+        <div class="body">
+          <strong>Uzupełnij dane firmy</strong>
+          <p>Nazwa, NIP, kraj — minimum dla kupca.</p>
+        </div>
+      </div>
+      <div class="onb-step">
+        <div class="num">2</div>
+        <div class="body">
+          <strong>Wgraj logo firmy</strong>
+          <p>Pokazuje się w mailu do kupca. PNG/JPG, ~400×400 px.</p>
+        </div>
+        <button class="btn-outline cta">Wgraj logo</button>
+      </div>
+      <div class="onb-step">
+        <div class="num">3</div>
+        <div class="body">
+          <strong>Dodaj pierwszą propozycję asortymentową</strong>
+          <p>Produkt + krótka specyfikacja + 1–3 zdjęcia.</p>
+        </div>
+        <button class="btn-outline cta">Dodaj propozycję</button>
+      </div>
+      <div class="onb-step" style="opacity:0.7">
+        <div class="num">4</div>
+        <div class="body">
+          <strong>Pakiet odblokujemy po akceptacji konta</strong>
+          <p>Cennik pakietów już dostępny do podglądu. Zakup będzie możliwy zaraz po zatwierdzeniu konta.</p>
+        </div>
+        <button class="btn-outline cta">Zobacz cennik</button>
+      </div>
+      <div class="onb-step">
+        <div class="num">5</div>
+        <div class="body">
+          <strong>Wyślij propozycję do sieci</strong>
+          <p>Pierwsza wysyłka = punkt zwrotny.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- §4 PAKIET + WINDOW — wyszarzone -->
+    <div class="row-2 dim">
+      <div class="card pkg-card">
+        <div class="card-head"><div class="card-title">Kredyty PreConnect</div><div class="card-aside">brak aktywnego pakietu</div></div>
+        <div class="pkg-stat" style="color:var(--muted)">0<span class="total">/ 0 kredytów</span></div>
+        <div class="pkg-bar"><div style="width:0%"></div></div>
+        <div class="pkg-meta">
+          <div class="valid">Wybierz pakiet, aby rozpocząć wysyłki</div>
+          <button class="btn-link">Cennik</button>
+        </div>
+      </div>
+      <div class="card next-window">
+        <div class="card-head"><div class="card-title">Najbliższe okno wysyłki</div></div>
+        <div class="nw-row">
+          <div>
+            <div class="nw-date" style="color:var(--muted)">wtorek, 2 czerwca 2026</div>
+            <div class="nw-countdown" style="color:var(--muted2)">za 19 dni</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- §5 KPI — wyszarzone, puste -->
+    <div class="card dim">
+      <div class="card-head"><div class="card-title">Wysyłki PreConnect — ostatnie 30 dni</div><div class="card-aside">brak danych</div></div>
+      <div class="kpi-row">
+        <div class="kpi waiting"><div class="kpi-lbl">Czekają</div><div class="kpi-val">—</div><div class="kpi-meta">brak wysyłek</div></div>
+        <div class="kpi seen"><div class="kpi-lbl">Zobaczone / rozliczone</div><div class="kpi-val">—</div><div class="kpi-meta">brak wysyłek</div></div>
+        <div class="kpi expired"><div class="kpi-lbl">Wygasłe</div><div class="kpi-val">—</div><div class="kpi-meta">brak wysyłek</div></div>
+        <div class="kpi rate"><div class="kpi-lbl">Współczynnik zobaczeń</div><div class="kpi-val">—</div><div class="kpi-meta">brak wysyłek</div></div>
+      </div>
+    </div>
+
+    <div class="help-strip">
+      <svg class="ico ico-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span>Jak to działa? — przepływ PreConnect i Spotkań FM 2026</span>
+      <span class="chev">▼</span>
+    </div>
+
+  </main>
+</div>
+
+<div class="notes">
+  <h3>Stan B — komentarz</h3>
+  <ul>
+    <li><strong>Hierarchia blokady:</strong> pomarańczowy banner (warn) → następny krok (gradient — jedyny) → checklist. Wszystko inne wyszarzone (<code>dim</code>).</li>
+    <li><strong>Pakiet, KPI</strong> jako placeholdery — istnieją, ale opacity 0.55 i wartości „—". Sygnalizują „te liczby wrócą jak coś zrobisz".</li>
+    <li><strong>Sidebar</strong> ta sama kolejność co w Stanie A. Zablokowane pozycje (Wysyłki, Finanse) opacity 0.4. Bez emoji 🔒.</li>
+    <li><strong>Po akceptacji</strong> + 1. wysyłce dashboard automatycznie morfuje w Stan A — KPI nabierają wartości, checklist znika.</li>
+  </ul>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- STAN C: FM 2026 Faza Preferencje                                  -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<div class="variant-label C">
+  <span class="dot"></span>
+  Stan C · FM 2026 — Faza Preferencje (dziś: 5 września, deadline 16 września)
+</div>
+<div class="variant">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 32 32">
+        <path d="M22.5 11.8c-1.5-1-3.3-1.4-4.8-0.6-0.5 0.3-1 0.7-1.5 1.1-0.5-0.4-1-0.8-1.5-1.1-1.5-0.8-3.3-0.4-4.8 0.6-2.5 1.7-3.5 5.2-2.2 8.6 1.3 3.4 4.4 6.6 6.7 6.6 0.7 0 1.3-0.2 1.8-0.5 0.5 0.3 1.1 0.5 1.8 0.5 2.3 0 5.4-3.2 6.7-6.6 1.3-3.4 0.3-6.9-2.2-8.6z" fill="#16a34a"/>
+        <path d="M16.5 9.5c-0.3-2.4 1.4-4.6 3.8-5.1 0.4 2.4-1.3 4.7-3.8 5.1z" fill="#65a30d"/>
+      </svg>
+      <span class="name">Fresh Market</span>
+    </div>
+    <!-- ── PreConnect ZAWSZE PIERWSZY (kolejność stała) ── -->
+    <div class="nav-section">PreConnect</div>
+    <div class="nav-item active">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      Wysyłki
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      Moje propozycje
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      Finanse
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+      Twoja firma
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Mój profil
+    </div>
+    <!-- ── FM ZAWSZE DRUGI, ale teraz z badge + pulsem ── -->
+    <div class="nav-section" style="margin-top:6px">Fresh Market 2026</div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Spotkania FM 2026 <span class="pulse"></span>
+    </div>
+    <div class="nav-sub active">Wybór sieci · 2/5</div>
+    <div class="nav-sub locked">Algorytm</div>
+    <div class="nav-sub locked">Twoje spotkania</div>
+  </aside>
+
+  <main class="main">
+
+    <div class="topbar">
+      <div class="title">Dashboard</div>
+      <div class="pill">
+        <span class="avatar">K</span>
+        <span>KJOW Sp. z o.o.</span>
+        <span class="role">Dostawca</span>
+      </div>
+    </div>
+
+    <!-- [v4] FM Hero PIERWSZY z deadlinem w nagłówku (alert info usunięty —
+         deadline jest teraz tu, nie 3× powtórzone). Next Step zjeżdża POD hero. -->
+
+    <!-- FM HERO (jedyny duży gradient — wybór sieci jest priorytetem) -->
+    <div class="fm-hero">
+      <div class="fm-hero-head" style="justify-content:space-between">
+        <div class="fm-hero-phase"><span class="dot"></span> Faza 2 · Preferencje aktywne</div>
+        <div style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:rgba(255,255,255,0.85);font-weight:600">
+          <svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          11 dni · do 16 września
+        </div>
+      </div>
+      <div class="fm-hero-title">Wybierz sieci na spotkania B2B — Fresh Market 2026</div>
+      <div class="fm-hero-desc">
+        Maks. 5 sieci głównych + dowolnie rezerwowych. Algorytm dopasuje grafik 17–22 września i opublikuje plan 22 września. Po 16 września zmiany tylko przez admina.
+      </div>
+      <div class="pick-progress">
+        <div class="pick-progress-head">
+          <div class="lbl">Twój wybór głównych sieci</div>
+          <div class="nums">2 / 5</div>
+        </div>
+        <div class="pick-progress-bar"><div style="width:40%"></div></div>
+        <div class="chip-row">
+          <span class="chip main">Biedronka · główna</span>
+          <span class="chip main">Lidl Polska · główna</span>
+          <span class="chip empty">slot główny wolny</span>
+          <span class="chip empty">slot główny wolny</span>
+          <span class="chip empty">slot główny wolny</span>
+          <span class="chip reserve">Carrefour · rezerwowa</span>
+        </div>
+      </div>
+      <div class="fm-hero-cta">
+        <button class="primary">Wybierz pozostałe 3 sieci</button>
+        <button class="secondary">Przeglądaj sieci</button>
+      </div>
+    </div>
+
+    <!-- [v4] NEXT STEP pod FM Hero — bordered (białe tło, lewy pasek purple) -->
+    <div class="next-step bordered purple">
+      <div class="ns-ico">
+        <svg class="ico-16" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+      </div>
+      <div class="ns-body">
+        <div class="ns-lbl">Twój następny krok</div>
+        <div class="ns-title">Dokończ wybór 3 głównych sieci</div>
+        <div class="ns-desc">Sugerowane na bazie zeszłorocznego FM: <strong>Kaufland</strong>, <strong>Auchan</strong>, <strong>Dino</strong>.</div>
+      </div>
+      <button class="ns-btn">Wybierz sieci</button>
+    </div>
+
+    <!-- §5 ACTIVITY + Status algorytmu -->
+    <div class="row-6-4">
+      <div class="card activity">
+        <div class="card-head">
+          <div class="card-title">Ostatnia aktywność</div>
+          <div class="card-aside">5 zdarzeń · 7 dni</div>
+        </div>
+        <div class="row">
+          <div class="dot purple"></div>
+          <div class="content">
+            <div>Dodano <strong>Lidl Polska</strong> do sieci głównych (2/5)</div>
+            <div class="time">dziś, 14:22 · FM 2026 preferencje</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot purple"></div>
+          <div class="content">
+            <div>Dodano <strong>Carrefour</strong> do sieci rezerwowych</div>
+            <div class="time">dziś, 14:18</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot purple"></div>
+          <div class="content">
+            <div>Dodano <strong>Biedronka</strong> do sieci głównych (1/5)</div>
+            <div class="time">dziś, 14:15</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot blue"></div>
+          <div class="content">
+            <div>Wiadomość od <strong>Oksana (admin)</strong>: „Otwarcie wyborów potwierdzone"</div>
+            <div class="time">dziś, 11:40</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot green"></div>
+          <div class="content">
+            <div><strong>Faza 2: Preferencje</strong> oficjalnie otwarta</div>
+            <div class="time">1 września · admin uruchomił schedulingOpen</div>
+          </div>
+        </div>
+        <div class="footer">Zobacz pełną historię →</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Status Twoich wyborów</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid #f1f5f9">
+          <div class="dot green" style="margin-top:6px"></div>
+          <div style="flex:1">
+            <div style="font-size:12.5px;color:var(--text);font-weight:600">Biedronka</div>
+            <div style="font-size:11px;color:var(--success);margin-top:1px">Wzajemny wybór · czeka na algorytm</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid #f1f5f9">
+          <div class="dot orange" style="margin-top:6px"></div>
+          <div style="flex:1">
+            <div style="font-size:12.5px;color:var(--text);font-weight:600">Lidl Polska</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:1px">Czeka na decyzję sieci</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:9px;padding:8px 0">
+          <div class="dot gray" style="margin-top:6px"></div>
+          <div style="flex:1">
+            <div style="font-size:12.5px;color:var(--text);font-weight:600">Carrefour</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:1px">Sieć rezerwowa · niski priorytet</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9;font-size:11px;color:var(--muted);line-height:1.5">
+          Wynik (lista spotkań) opublikujemy <strong style="color:var(--text)">22 września</strong>.
+        </div>
+      </div>
+    </div>
+
+    <!-- PreConnect compact (jasna karta, nie czarna) -->
+    <div class="preconnect-compact">
+      <div class="pc-info">
+        <div class="pc-name">PreConnect — całoroczna wysyłka działa normalnie</div>
+        <div class="pc-sub">Możesz wysyłać oferty niezależnie od FM 2026</div>
+      </div>
+      <div class="pc-stats">
+        <div class="pc-stat"><span class="v">23</span><div class="k">Kredyty</div></div>
+        <div class="pc-stat"><span class="v">5</span><div class="k">Czekają</div></div>
+        <div class="pc-stat"><span class="v">86%</span><div class="k">Wsk. zob.</div></div>
+      </div>
+      <button class="btn-outline">Otwórz PreConnect →</button>
+    </div>
+
+    <div class="help-strip">
+      <svg class="ico ico-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span>Jak działają Spotkania B2B FM 2026? — pełny opis fazy i algorytmu</span>
+      <span class="chev">▼</span>
+    </div>
+
+  </main>
+</div>
+
+<div class="notes">
+  <h3>Stan C — komentarz (v4)</h3>
+  <ul>
+    <li><strong>Top alert info usunięty</strong> — deadline „11 dni · do 16 września" siedzi teraz w nagłówku FM Hero (ikona zegara po prawej obok phase pill). Brak powtórzenia tej samej informacji 3 razy.</li>
+    <li><strong>Kolejność: Topbar → FM Hero (z deadlinem) → Next Step bordered → Activity</strong>. FM jest priorytetem fazy, więc pierwszy. Next Step uzupełnia szczegół, nie wyprzedza.</li>
+    <li><strong>Jeden gradient na ekranie</strong> = FM Hero. Next Step to biała karta z lewym paskiem purple. Bez konkurencji.</li>
+    <li><strong>Chipsy bez ⭐/👍</strong> — „Biedronka · główna", „Carrefour · rezerwowa", „slot główny wolny". B2B, tekstowo.</li>
+    <li><strong>Sidebar</strong> ta sama kolejność co Stan A. Sygnał aktywności = pulse-dot na pozycji FM + rozwinięta pod-nav.</li>
+    <li><strong>Status Twoich wyborów</strong> (po prawej) — konkretnie kto Cię wybrał, status-doty bez ciężkich tła.</li>
+  </ul>
+</div>
+
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<!-- STAN D: FM 2026 Plan opublikowany                                 -->
+<!-- ═════════════════════════════════════════════════════════════════ -->
+<div class="variant-label D">
+  <span class="dot"></span>
+  Stan D · FM 2026 — Plan opublikowany (dziś: 23 września, event jutro)
+</div>
+<div class="variant">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 32 32">
+        <path d="M22.5 11.8c-1.5-1-3.3-1.4-4.8-0.6-0.5 0.3-1 0.7-1.5 1.1-0.5-0.4-1-0.8-1.5-1.1-1.5-0.8-3.3-0.4-4.8 0.6-2.5 1.7-3.5 5.2-2.2 8.6 1.3 3.4 4.4 6.6 6.7 6.6 0.7 0 1.3-0.2 1.8-0.5 0.5 0.3 1.1 0.5 1.8 0.5 2.3 0 5.4-3.2 6.7-6.6 1.3-3.4 0.3-6.9-2.2-8.6z" fill="#16a34a"/>
+        <path d="M16.5 9.5c-0.3-2.4 1.4-4.6 3.8-5.1 0.4 2.4-1.3 4.7-3.8 5.1z" fill="#65a30d"/>
+      </svg>
+      <span class="name">Fresh Market</span>
+    </div>
+    <div class="nav-section">PreConnect</div>
+    <div class="nav-item active">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      Wysyłki
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      Moje propozycje
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      Finanse
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+      Twoja firma
+    </div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Mój profil
+    </div>
+    <div class="nav-section" style="margin-top:6px">Fresh Market 2026</div>
+    <div class="nav-item">
+      <svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Spotkania FM 2026 <span class="badge">4</span>
+    </div>
+    <div class="nav-sub done">Wybór sieci</div>
+    <div class="nav-sub done">Algorytm</div>
+    <div class="nav-sub active">Twoje spotkania</div>
+  </aside>
+
+  <main class="main">
+
+    <div class="topbar">
+      <div class="title">Dashboard</div>
+      <div class="pill">
+        <span class="avatar">K</span>
+        <span>KJOW Sp. z o.o.</span>
+        <span class="role">Dostawca</span>
+      </div>
+    </div>
+
+    <!-- [v3] §1+§2+§3 zlane: alert „event jutro" wchodzi do FM Hero header,
+         lista spotkań ląduje od razu na pierwszym ekranie. Next Step schodzi pod hero. -->
+
+    <!-- FM HERO published — z bannerem eventu w nagłówku -->
+    <div class="fm-hero published">
+      <div class="fm-hero-head" style="justify-content:space-between">
+        <div class="fm-hero-phase"><span class="dot" style="background:#fbbf24"></span> Event jutro · czwartek 24 września</div>
+        <button class="secondary" style="padding:5px 11px;font-size:11px;border-radius:6px;display:inline-flex;align-items:center;gap:5px">
+          <svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Pobierz plan PDF
+        </button>
+      </div>
+      <div class="fm-hero-title">Twoje spotkania w Fresh Market 2026</div>
+      <div class="fm-hero-desc">
+        4 spotkania potwierdzone. Numery spotkań oznaczają kolejność w grafiku — szczegółowy harmonogram (godziny, miejsca) otrzymasz na rejestracji w dniu eventu.
+      </div>
+      <div class="meeting-list">
+        <div class="meeting-row next">
+          <div class="num">1</div>
+          <div class="m-info">
+            <div class="m-network">Biedronka</div>
+            <div class="m-time">Spotkanie pierwsze · wybrana jako sieć główna</div>
+          </div>
+        </div>
+        <div class="meeting-row">
+          <div class="num">2</div>
+          <div class="m-info">
+            <div class="m-network">Lidl Polska</div>
+            <div class="m-time">Sieć główna</div>
+          </div>
+        </div>
+        <div class="meeting-row">
+          <div class="num">3</div>
+          <div class="m-info">
+            <div class="m-network">Kaufland</div>
+            <div class="m-time">Sieć główna</div>
+          </div>
+        </div>
+        <div class="meeting-row">
+          <div class="num">4</div>
+          <div class="m-info">
+            <div class="m-network">Carrefour</div>
+            <div class="m-time">Sieć rezerwowa</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEXT STEP — biała karta z lewym amber paskiem (jedyny gradient = FM Hero powyżej) -->
+    <div class="next-step bordered amber">
+      <div class="ns-ico">
+        <svg class="ico-16" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+      </div>
+      <div class="ns-body">
+        <div class="ns-lbl">Twój następny krok</div>
+        <div class="ns-title">Przygotuj prezentację — pierwsze spotkanie z Biedronką</div>
+        <div class="ns-desc">Sprawdź profil sieci, przygotuj próbki produktów i materiały sprzedażowe. Godziny i numery stolików otrzymasz na rejestracji.</div>
+      </div>
+      <button class="ns-btn">Profil Biedronki</button>
+    </div>
+
+    <!-- §5 ACTIVITY + Logistyka eventu -->
+    <div class="row-6-4">
+      <div class="card activity">
+        <div class="card-head">
+          <div class="card-title">Ostatnia aktywność</div>
+          <div class="card-aside">5 zdarzeń · 14 dni</div>
+        </div>
+        <div class="row">
+          <div class="dot green"></div>
+          <div class="content">
+            <div><strong>Grafik FM 2026 opublikowany</strong> — 4 spotkania przypisane</div>
+            <div class="time">22 września, 09:00 · admin opublikował plan</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot blue"></div>
+          <div class="content">
+            <div>Wiadomość od <strong>Oksana (admin)</strong>: „Grafik publikowany dziś o 09:00"</div>
+            <div class="time">22 września, 08:45 · czat</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot blue"></div>
+          <div class="content">
+            <div>Dopasowanie wzajemne z <strong>Kaufland</strong> potwierdzone</div>
+            <div class="time">19 września · algorytm</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot blue"></div>
+          <div class="content">
+            <div>Faza algorytmu zakończona — generujemy grafik</div>
+            <div class="time">17 września · admin uruchomił matching</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="dot green"></div>
+          <div class="content">
+            <div><strong>Carrefour</strong> dodany jako spotkanie z puli rezerwowej</div>
+            <div class="time">16 września</div>
+          </div>
+        </div>
+        <div class="footer">Zobacz pełną historię →</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Logistyka eventu</div>
+        </div>
+        <div style="font-size:12px;color:#475569;line-height:1.7;margin-bottom:10px">
+          <strong style="color:var(--text)">Data:</strong> czwartek 24 września 2026<br>
+          <strong style="color:var(--text)">Rejestracja:</strong> od 09:00<br>
+          <strong style="color:var(--text)">Otwarcie:</strong> 10:00<br>
+          <strong style="color:var(--text)">Miejsce:</strong> EXPO Łódź, hala A
+        </div>
+        <div class="alert info" style="margin:0;padding:8px 11px;font-size:11.5px">
+          <div class="alert-ico" style="width:16px;height:16px;font-size:10px">i</div>
+          <div class="alert-body">Szczegółowy harmonogram (godziny spotkań, numery stolików) otrzymasz drukowany przy rejestracji. Przyjedź odpowiednio wcześniej.</div>
+        </div>
+        <button class="btn-outline" style="width:100%;margin-top:8px">Otwórz mapę EXPO</button>
+      </div>
+    </div>
+
+    <!-- PreConnect compact -->
+    <div class="preconnect-compact">
+      <div class="pc-info">
+        <div class="pc-name">PreConnect — po evencie wróć tu na follow-up</div>
+        <div class="pc-sub">Wyślij dedykowaną ofertę do każdej z sieci, z którymi się spotkałeś</div>
+      </div>
+      <div class="pc-stats">
+        <div class="pc-stat"><span class="v">23</span><div class="k">Kredyty</div></div>
+        <div class="pc-stat"><span class="v">2</span><div class="k">Czekają</div></div>
+        <div class="pc-stat"><span class="v">86%</span><div class="k">Wsk. zob.</div></div>
+      </div>
+      <button class="btn-outline">Otwórz PreConnect →</button>
+    </div>
+
+    <div class="help-strip">
+      <svg class="ico ico-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span>Jak przebiega event FM 2026? — agenda, zasady, kontakty awaryjne</span>
+      <span class="chev">▼</span>
+    </div>
+
+  </main>
+</div>
+
+<div class="notes">
+  <h3>Stan D — komentarz (v4 final)</h3>
+  <ul>
+    <li><strong>Dane spotkania = nr + sieć</strong> (tylko to jest w grafiku FM). Mockup nie pokazuje godzin, stolików, ani konkretnych kupców — żeby nie sugerować że to gotowe pola w bazie.</li>
+    <li><strong>Meeting row</strong> teraz pokazuje: numer spotkania + nazwa sieci + status (sieć główna / rezerwowa). Drukowany szczegół (godziny, miejsce) supplier dostaje na rejestracji w dniu eventu — to napisane w opisie hero i w info-tipie logistyki.</li>
+    <li><strong>Logistyka eventu</strong>: Data + Rejestracja od 09:00 + Otwarcie 10:00 + Miejsce. Bez stolika.</li>
+    <li><strong>Top alert + Next Step + FM Hero połączone</strong> — info „event jutro" wchodzi do nagłówka FM Hero (faza pill + przycisk Pobierz plan PDF po prawej). Lista spotkań above-the-fold.</li>
+    <li><strong>Jeden gradient</strong> = FM Hero (zielony). Next Step to biała karta z lewym amber paskiem.</li>
+    <li><strong>Sidebar identyczny porządek</strong>, FM ma badge „4" (liczba spotkań). Pod-nav: ✓ Wybór sieci · ✓ Algorytm · <strong>Twoje spotkania</strong> (active).</li>
+    <li><strong>PreConnect compact</strong> narrative: „po evencie wróć tu na follow-up" — łączy dwa moduły.</li>
+  </ul>
+</div>
+
+<div class="notes" style="background:#0d9488">
+  <h3>v4 — zmiany vs v3 (drugi feedback Codexa)</h3>
+  <ul>
+    <li><strong>Top zarezerwowany dla blokerów</strong> — w Stanie A refund banner zniknął z topu, ląduje pod KPI jako delikatny zielony pasek info (1 linia, btn-link „Zobacz"). Top przyjmuje: konto zablokowane, brak pakietu, kończący się pakiet, deadline FM.</li>
+    <li><strong>Stan C uproszczony</strong> — alert info usunięty (powtarzał deadline 3 razy). Deadline „11 dni · do 16 września" siedzi teraz w prawym górnym rogu FM Hero z ikoną zegara. Kolejność: <em>Topbar → FM Hero z deadlinem → Next Step bordered → Activity</em>.</li>
+    <li><strong>Copy „Przygotuj wysyłkę"</strong> zamiast „Wyślij do sieci"/„Nowa wysyłka" — neutralne wobec tego czy email od razu czy w batchu od admina. Spójne w Next Step CTA i w karcie Najbliższego okna.</li>
+    <li><strong>Ikona download lucide-style</strong> w Stanie D — przycisk „Pobierz plan PDF" z prawdziwą inline SVG download icon zamiast unicode ⬇.</li>
+  </ul>
+</div>
+
+<div class="notes" style="background:#0f766e">
+  <h3>v3 zmiany (zachowane w v4)</h3>
+  <ul>
+    <li><strong>1 gradient na ekran rygorystycznie</strong> — w A/B = Next Step (teal). W C/D = FM Hero. Next Step w C/D to <code>.next-step.bordered.purple/.amber</code> (biała karta z lewym paskiem).</li>
+    <li><strong>Print-friendly CSS</strong> — <code>print-color-adjust:exact</code> w globalnym reset.</li>
+    <li><strong>Stan D restrukturyzacja</strong> — top alert „event jutro" zlał się z FM Hero. Meeting list above-the-fold.</li>
+    <li><strong>Copy KPI:</strong> Czekają = „czekają na otwarcie lub automatyczny zwrot", Współczynnik zobaczeń = „zobaczone z zakończonych wysyłek".</li>
+    <li><strong>Stan B pakiet</strong> w onboardingu: „Pakiet odblokujemy po akceptacji konta" + disabled „Zobacz cennik".</li>
+    <li><strong>FM chips bez emoji</strong> — tekstowe „· główna" / „· rezerwowa".</li>
+  </ul>
+</div>
+
+<div class="notes" style="background:#581c87">
+  <h3>Zasady wizualne (stałe od v2)</h3>
+  <ul>
+    <li>Białe karty z 1px <code>#e2e8f0</code> ramką. Border radius max 8px.</li>
+    <li>Sidebar stabilny — PreConnect zawsze pierwszy, FM zawsze drugi. Sygnał FM-aktywne = pulse-dot (Stan C) lub badge (Stan D).</li>
+    <li>KPI: Czekają · Zobaczone/rozliczone · Wygasłe · Współczynnik zobaczeń. Status-doty (kropka przed labelem) zamiast tła w kolorze.</li>
+    <li>Kredyty PreConnect: 23/30 (generyczna nazwa, „aktywny pakiet: Standard 30" jako mała wzmianka).</li>
+    <li>Inline SVG (lucide-style) w nawigacji. Status-doty w activity/KPI. Zero dekoracyjnych emoji w UI.</li>
+    <li>Stan A mieści 95% above-the-fold na 1440×900.</li>
+  </ul>
+</div>
+
+<div class="notes" style="background:#1e3a8a">
+  <h3>Logika wyboru stanu (do implementacji)</h3>
+  <pre style="background:rgba(0,0,0,0.3);padding:11px 14px;border-radius:6px;font-size:11px;line-height:1.6;margin:6px 0 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#dbeafe;overflow-x:auto;white-space:pre-wrap">
+function pickDashboardState({ co, fmSettings }) {
+  // 1. Konto czeka na akceptację → blokery
+  if (co?.account_status === "pending_review") return "B";
+
+  // 2. Grafik FM opublikowany → operacyjny widok eventu
+  if (fmSettings?.planPublished) return "D";
+
+  // 3. Faza wyboru sieci otwarta, ale plan jeszcze nie wydany
+  if (fmSettings?.schedulingOpen && !fmSettings?.planPublished) return "C";
+
+  // 4. Domyślnie: codzienny PreConnect
+  return "A";
+}</pre>
+  <ul style="margin-top:10px">
+    <li>Sprawdzaj w tej kolejności — pierwszy match wygrywa. Pending zawsze ważniejszy niż faza FM.</li>
+    <li><code>planPublished</code> i <code>schedulingOpen</code> już są w <code>fm_settings</code> (sprawdzone w kodzie istniejącego <code>PageSupplierDashboard</code>). Nie wymagają nowych pól w bazie.</li>
+    <li>Stan A → Stan D ma sens jako naturalny upgrade pod koniec września. Po evencie wracamy do Stanu A (PreConnect całoroczny).</li>
+    <li>Stan B → Stan A automatycznie po zmianie <code>account_status</code> na <code>active</code> przez admina.</li>
+  </ul>
+</div>
+
+<div class="notes" style="background:#7c3aed">
+  <h3>Wdrożenie — sugerowana sekwencja</h3>
+  <ul>
+    <li><strong>Etap 1 (P0, 1–2 dni):</strong> Stan A + Stan B w PreconnectFM.jsx. Wymaga: helper <code>getSupplierStats(accountId, 30d)</code> + komponenty <code>&lt;NextStep/&gt;</code> <code>&lt;PkgCard/&gt;</code> <code>&lt;NextWindow/&gt;</code> <code>&lt;KpiRow/&gt;</code> <code>&lt;Activity/&gt;</code>. Bez zmiany sidebar.</li>
+    <li><strong>Etap 2 (P0+, 1 dzień):</strong> <code>getSupplierActivity</code> — agregator zdarzeń z <code>legacy_sends</code> + <code>legacy_offers</code> + <code>payu_orders</code> + <code>refundNotifs</code>.</li>
+    <li><strong>Etap 3 (P1, na wrzesień):</strong> Stan C + D — <code>&lt;FmHeroPickStep/&gt;</code> (preferencje) i <code>&lt;FmHeroPublished/&gt;</code> (plan + lista spotkań). Triggerowane przez <code>fmSettings.currentPhase</code> + <code>schedulingOpen</code>.</li>
+    <li>Stan D zależy od istnienia tabeli z grafikiem — sprawdź czy <code>fmSchedule</code> już zwraca pełne dane z numerami stolików i godzinami.</li>
+  </ul>
+</div>
+
+</body>
+</html>

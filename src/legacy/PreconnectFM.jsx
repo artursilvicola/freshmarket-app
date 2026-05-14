@@ -3130,268 +3130,605 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Dashboard: 2 main blocks — PreConnect + FM 2026 ────────────────────── */
+// =============================================================================
+// PageDashboard — dashboard dostawcy v2 (panel operacyjny)
+// [B2B Round prod-rollout / dashboard v2]
+//
+// Mockup referencja: dashboard-supplier-mockup.html (v4 final).
+// Wybór stanu (priority chain, pierwszy match wygrywa):
+//   pending_review → Stan B (onboarding + blocker, pakiet wyszarzony)
+//   planPublished  → Stan D (lista spotkań FM)         — P1, TODO
+//   schedulingOpen → Stan C (wybór sieci FM)            — P1, TODO
+//   default        → Stan A (codzienny PreConnect, KPI + Next Step)
+//
+// P0 wdraża A + B. C/D fallback do A z TODO komentarzem.
+//
+// Sekcje Stanu A (z mockupu):
+//   1. Next Step (gradient teal — jedyny gradient na ekranie)
+//   2. Kredyty PreConnect + Najbliższe okno wysyłki (1:1, oba białe)
+//   3. KPI 30-dniowe: Czekają / Zobaczone / Wygasłe / Współczynnik
+//   4. Refund strip (warunkowo, pod KPI)
+//   5. Aktywność (60%) + FM compact (40%)
+//   6. Help (collapsible)
+// =============================================================================
+
+// ── HELPERY (czyste funkcje, można testować bez React) ──────────────────────
+
+// Najbliższy pierwszy wtorek miesiąca (okno wysyłki PreConnect).
+// Jeśli dziś przed pierwszym wtorkiem bieżącego miesiąca → ten wtorek.
+// Inaczej → pierwszy wtorek następnego miesiąca.
+function _firstTueOfMonth(y, m) {
+  const d = new Date(y, m, 1);
+  while (d.getDay() !== 2) d.setDate(d.getDate() + 1);
+  return d;
+}
+function getNextSendWindow(today = new Date()) {
+  const tcm = _firstTueOfMonth(today.getFullYear(), today.getMonth());
+  if (today.getTime() < tcm.getTime()) return tcm;
+  return _firstTueOfMonth(today.getFullYear(), today.getMonth() + 1);
+}
+const PL_DAYS = ["niedziela","poniedziałek","wtorek","środa","czwartek","piątek","sobota"];
+const PL_MONTHS = ["stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","września","października","listopada","grudnia"];
+const PL_MONTHS_SHORT = ["sty","lut","mar","kwi","maj","cze","lip","sie","wrz","paź","lis","gru"];
+function fmtPolishDate(d) {
+  return `${PL_DAYS[d.getDay()]}, ${d.getDate()} ${PL_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+function dayDiff(a, b) {
+  return Math.ceil((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000));
+}
+function pluralDni(n) { return n === 1 ? "dzień" : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? "dni" : "dni"; }
+function daysToFmOpen(today = new Date()) {
+  const y = today.getFullYear();
+  let t = new Date(y, 8, 1); // 1 września
+  if (today.getTime() > t.getTime()) t = new Date(y + 1, 8, 1);
+  return dayDiff(today, t);
+}
+
+// Wybór stanu dashboardu — patrz mockup v4
+function pickSupplierDashState({ co, fmSettings }) {
+  if (co?.account_status === "pending_review") return "B";
+  if (fmSettings?.planPublished) return "D";
+  if (fmSettings?.schedulingOpen && !fmSettings?.planPublished) return "C";
+  return "A";
+}
+
+// ── KOMPONENT GŁÓWNY ────────────────────────────────────────────────────────
+
 function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed }) {
-  const mySends    = (sends||[]).filter(s=>!s.supplierId||s.supplierId===accountId);
-  const confirmed  = mySends.filter(s=>["read","read_manual"].includes(s.status)).length;
-  const pending    = mySends.filter(s=>s.status==="sent").length;
-  const refunds    = (refundNotifs||[]).filter(
+  const dashState = pickSupplierDashState({ co, fmSettings });
+
+  // Refundy dla tego supplera (active, nie odrzucone)
+  const refunds = (refundNotifs || []).filter(
     n => !n.dismissed && (!n.supplierId || n.supplierId === accountId)
   );
-  const fmOpen = fmSettings?.schedulingOpen;
-  const [howOpenSup, setHowOpenSup] = useState(false);
 
-  // [B2B Round prod-rollout / UX] Checklist startowa — 5 kroków do pełnej
-  // gotowości supplera. Pokazuje się dopóki co najmniej jeden krok jest do
-  // zrobienia. Po wszystkich ✓ — chowamy całą kartę (LS flag).
-  const onboardingDoneLs = typeof window !== "undefined" && window.localStorage
-    ? window.localStorage.getItem("fm_supplier_onboard_dismissed") === "1"
-    : false;
-  const [hideOnboarding, setHideOnboarding] = useState(onboardingDoneLs);
-  const myOffersCount = (offers || []).filter(o => !o.supplierId || o.supplierId === accountId).length;
-  const mySendsCount = (sends || []).filter(s => !s.supplierId || s.supplierId === accountId).length;
-  const onbSteps = [
+  // ── Statystyki 30d ──────────────────────────────────────────────────────
+  const mySends = (sends || []).filter(s => !s.supplierId || s.supplierId === accountId);
+  const cutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const recentSends = mySends.filter(s => {
+    const ts = new Date(s.statusChangedAt || s.createdAt || s.created_at || s.sentAt || 0).getTime();
+    return ts >= cutoffMs;
+  });
+  const stWaiting = recentSends.filter(s => s.status === "sent").length;
+  const stSeen    = recentSends.filter(s => s.status === "read" || s.status === "read_manual").length;
+  const stExpired = recentSends.filter(s => s.status === "expired" || s.status === "refunded").length;
+  const stClosed  = stSeen + stExpired;
+  const stRatePct = stClosed > 0 ? Math.round((stSeen / stClosed) * 100) : null;
+
+  // ── Aktywne propozycje dostawcy ─────────────────────────────────────────
+  const myActiveOffers = (offers || []).filter(o => o.status === "active" && (!o.supplierId || o.supplierId === accountId));
+  const myDraftOffers  = (offers || []).filter(o => o.status === "draft"  && (!o.supplierId || o.supplierId === accountId));
+
+  // ── Daty i countdowns ────────────────────────────────────────────────────
+  const today = new Date();
+  const nextWindow = getNextSendWindow(today);
+  const daysToWindow = dayDiff(today, nextWindow);
+  const fmDaysOpen = daysToFmOpen(today);
+
+  // ── Next Step priority chain ─────────────────────────────────────────────
+  let nextStep;
+  if (co?.account_status === "pending_review") {
+    nextStep = {
+      title: "Uzupełnij profil firmy, żeby przyspieszyć akceptację",
+      desc: "Admin zatwierdza szybciej konta z kompletnymi danymi: opis firmy, logo, certyfikaty i przynajmniej 1 propozycja w katalogu.",
+      cta: "Otwórz profil firmy",
+      goto: "company",
+    };
+  } else if (!pkgMax || pkgMax === 0) {
+    nextStep = {
+      title: "Wybierz pakiet wysyłek żeby zacząć",
+      desc: "Bez kredytów nie wyślesz propozycji do sieci. Pakiety od 1 wysyłki w górę.",
+      cta: "Wybierz pakiet",
+      goto: "finanse",
+    };
+  } else if (myActiveOffers.length === 0) {
+    nextStep = {
+      title: "Dodaj swoją pierwszą propozycję asortymentową",
+      desc: "Produkt + krótka specyfikacja + zdjęcia. Po zatwierdzeniu przez moderację możesz wysłać do sieci.",
+      cta: "Dodaj propozycję",
+      goto: "offers",
+    };
+  } else if (refunds.length > 0) {
+    const total = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    nextStep = {
+      title: `Masz ${refunds.length === 1 ? "1 zwrot" : `${refunds.length} zwroty`} kredytów do sprawdzenia${total ? ` — ${total} €` : ""}`,
+      desc: "Kupcy nie otworzyli Twoich propozycji w terminie 14 dni. Kredyty wróciły do pakietu automatycznie.",
+      cta: "Zobacz zwroty",
+      goto: "finanse",
+    };
+  } else if (recentSends.length === 0) {
+    nextStep = {
+      title: myActiveOffers.length === 1
+        ? "Masz 1 aktywną propozycję gotową do wysyłki"
+        : `Masz ${myActiveOffers.length} aktywne propozycje gotowe do wysyłki`,
+      desc: "Wykorzystaj kredyty z pakietu. Wybierz sieci i przygotuj wysyłkę w najbliższym oknie.",
+      cta: "Przygotuj wysyłkę",
+      goto: "wysylki",
+    };
+  } else if (pkgMax > 0 && pkgUsed / pkgMax > 0.8) {
+    nextStep = {
+      title: "Pakiet kończy się — kup uzupełnienie",
+      desc: `Wykorzystałeś ${pkgUsed} z ${pkgMax} kredytów (${Math.round(pkgUsed / pkgMax * 100)}%). Bez nowego pakietu nie wyślesz w najbliższym oknie.`,
+      cta: "Kup pakiet",
+      goto: "finanse",
+    };
+  } else {
+    nextStep = {
+      title: "Wszystko gotowe — kontynuuj wysyłki",
+      desc: `Masz ${rem} kredytów do wykorzystania. Najbliższe okno: ${fmtPolishDate(nextWindow)}.`,
+      cta: "Przygotuj wysyłkę",
+      goto: "wysylki",
+    };
+  }
+
+  // ── Activity feed: ostatnie 6 zdarzeń ────────────────────────────────────
+  const offerById = new Map((offers || []).map(o => [o.id, o]));
+  const events = [];
+  for (const s of mySends) {
+    const ts = new Date(s.statusChangedAt || s.createdAt || s.created_at || s.sentAt || 0).getTime();
+    if (!ts) continue;
+    const ofTitle = offerById.get(s.offerId)?.title || offerById.get(s.offerId)?.product || "";
+    if (s.status === "read" || s.status === "read_manual") {
+      events.push({ ts, dot: "#059669", body: <><strong>Kupiec zobaczył</strong> propozycję{ofTitle ? <> <em>„{ofTitle}"</em></> : null}</>, sub: "kredyt pobrany z pakietu" });
+    } else if (s.status === "sent") {
+      events.push({ ts, dot: "#2563eb", body: <><strong>Wysłano</strong> propozycję{ofTitle ? <> <em>„{ofTitle}"</em></> : null}</>, sub: "czeka na otwarcie (max 14 dni)" });
+    } else if (s.status === "expired" || s.status === "refunded") {
+      events.push({ ts, dot: "#94a3b8", body: <><strong>Wysyłka wygasła</strong>{ofTitle ? <> <em>„{ofTitle}"</em></> : null}</>, sub: "kredyt zwrócony do pakietu" });
+    }
+  }
+  for (const o of (offers || [])) {
+    if (o.supplierId && o.supplierId !== accountId) continue;
+    const ts = new Date(o.updatedAt || o.createdAt || 0).getTime();
+    if (!ts) continue;
+    const t = o.title || o.product || "";
+    if (o.status === "active") {
+      events.push({ ts, dot: "#059669", body: <><strong>Propozycja zatwierdzona</strong>{t ? <> <em>„{t}"</em></> : null}</>, sub: "gotowa do wysłania" });
+    } else if (o.status === "draft") {
+      events.push({ ts, dot: "#94a3b8", body: <><strong>Dodano propozycję</strong>{t ? <> <em>„{t}"</em></> : null}</>, sub: "status: szkic" });
+    }
+  }
+  for (const r of refunds) {
+    events.push({ ts: r.timestamp || Date.now(), dot: "#059669", body: <><strong>Zwrot kredytu</strong>{r.amount ? <> (+{r.amount} €)</> : null}</>, sub: r.msg || "wysyłka wygasła nieotwarta" });
+  }
+  events.sort((a, b) => b.ts - a.ts);
+  const activity = events.slice(0, 6);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STAN B — pending_review
+  // ─────────────────────────────────────────────────────────────────────────
+  if (dashState === "B") {
+    return (
+      <div style={{ maxWidth: 920 }}>
+        <NextStepCard nextStep={nextStep} nav={nav} />
+        <OnboardingChecklist
+          co={co}
+          pkgMax={pkgMax}
+          rem={rem}
+          activeOffersCount={myActiveOffers.length + myDraftOffers.length}
+          mySendsCount={mySends.length}
+          nav={nav}
+        />
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12, opacity:0.55 }}>
+          <PkgCard pkgMax={0} pkgUsed={0} rem={0} nav={nav} placeholder />
+          <NextWindowCard window={nextWindow} days={daysToWindow} nav={nav} dim />
+        </div>
+        <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px", marginBottom:12, opacity:0.6 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+            <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Wysyłki PreConnect — ostatnie 30 dni</div>
+            <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>brak danych</div>
+          </div>
+          <KpiRow waiting={null} seen={null} expired={null} ratePct={null} placeholder />
+        </div>
+        <HelpStripDashboard />
+      </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // STAN A (default) + fallback dla C/D do P1
+  // TODO P1: Stan C (schedulingOpen) i Stan D (planPublished) — wdrożymy bliżej września.
+  //          Do tego czasu C/D fall through do Stanu A — FmCompact poniżej i tak
+  //          pokaże informacyjnie status faz FM.
+  // ─────────────────────────────────────────────────────────────────────────
+  return (
+    <div style={{ maxWidth: 920 }}>
+      <NextStepCard nextStep={nextStep} nav={nav} />
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
+        <PkgCard pkgMax={pkgMax} pkgUsed={pkgUsed} rem={rem} nav={nav} />
+        <NextWindowCard window={nextWindow} days={daysToWindow} nav={nav} />
+      </div>
+
+      <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px", marginBottom:12 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+          <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Wysyłki PreConnect — ostatnie 30 dni</div>
+          <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>{recentSends.length} wysyłek łącznie</div>
+        </div>
+        <KpiRow waiting={stWaiting} seen={stSeen} expired={stExpired} ratePct={stRatePct} />
+      </div>
+
+      {refunds.length > 0 && (() => {
+        const total = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        return (
+          <div style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, marginBottom:12, fontSize:11.5, color:"#065f46" }}>
+            <span style={{ width:7, height:7, borderRadius:"50%", background:"#059669", flexShrink:0 }} />
+            <span><strong style={{ fontWeight:600 }}>{refunds.length === 1 ? "1 zwrot kredytu" : `${refunds.length} zwrotów kredytów`}{total ? ` (${total} €)` : ""}</strong> w tym miesiącu — kupcy nie otworzyli w terminie. Kredyty wróciły do pakietu automatycznie.</span>
+            <button onClick={() => nav("finanse")} style={{ background:"none", border:"none", color:"#059669", fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", padding:0, marginLeft:"auto" }}>Zobacz</button>
+          </div>
+        );
+      })()}
+
+      <div style={{ display:"grid", gridTemplateColumns:"6fr 4fr", gap:12, marginBottom:12 }}>
+        <ActivityCard events={activity} />
+        <FmCompactCard
+          daysToOpen={fmDaysOpen}
+          schedulingOpen={!!fmSettings?.schedulingOpen}
+          planPublished={!!fmSettings?.planPublished}
+          nav={nav}
+          fmSettings={fmSettings}
+        />
+      </div>
+
+      <HelpStripDashboard />
+    </div>
+  );
+}
+
+// ── KOMPONENTY POMOCNICZE ────────────────────────────────────────────────
+
+function NextStepCard({ nextStep, nav }) {
+  return (
+    <div style={{
+      background:"linear-gradient(135deg,#0d9488 0%,#0f766e 100%)",
+      color:"white",
+      padding:"14px 18px",
+      borderRadius:8,
+      marginBottom:12,
+      display:"flex",
+      alignItems:"center",
+      gap:14,
+    }}>
+      <div style={{ width:32, height:32, background:"rgba(255,255,255,0.18)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+        <Zap size={16} />
+      </div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.08em", fontWeight:700, color:"rgba(255,255,255,0.7)", marginBottom:2 }}>Twój następny krok</div>
+        <div style={{ fontWeight:700, fontSize:14.5, marginBottom:2, letterSpacing:"-0.01em" }}>{nextStep.title}</div>
+        <div style={{ fontSize:12, color:"rgba(255,255,255,0.82)", lineHeight:1.5 }}>{nextStep.desc}</div>
+      </div>
+      <button
+        onClick={() => nav(nextStep.goto)}
+        style={{ background:"white", color:"#0d9488", border:"none", padding:"9px 14px", borderRadius:6, fontWeight:600, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}
+      >{nextStep.cta}</button>
+    </div>
+  );
+}
+
+function PkgCard({ pkgMax, pkgUsed, rem, nav, placeholder }) {
+  const max = pkgMax || 0;
+  const used = pkgUsed || 0;
+  const remaining = rem != null ? rem : (max - used);
+  const pct = max > 0 ? Math.round((used / max) * 100) : 0;
+  return (
+    <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Kredyty PreConnect</div>
+        <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>
+          {max > 0 ? `aktywny pakiet: Standard ${max}` : "brak aktywnego pakietu"}
+        </div>
+      </div>
+      <div style={{ fontSize:22, fontWeight:700, color: placeholder ? "#94a3b8" : "#0f172a", letterSpacing:"-0.02em", lineHeight:1.1 }}>
+        {remaining}<span style={{ color:"#64748b", fontWeight:500, fontSize:15, marginLeft:2 }}>/ {max} kredytów</span>
+      </div>
+      <div style={{ marginTop:8, height:6, background:"#f1f5f9", borderRadius:99, overflow:"hidden", border:"1px solid #e2e8f0" }}>
+        <div style={{ height:"100%", background: pct > 80 ? "#d97706" : "#0d9488", width:`${pct}%`, borderRadius:99 }} />
+      </div>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10, fontSize:11, color:"#64748b" }}>
+        <div>{placeholder ? "Wybierz pakiet, aby rozpocząć wysyłki" : `${used} wykorzystanych · ${remaining} dostępnych`}</div>
+        <button onClick={() => nav("finanse")} style={{ background:"none", border:"none", color:"#0d9488", fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", padding:0 }}>
+          {placeholder ? "Zobacz cennik" : "Kup pakiet"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NextWindowCard({ window: w, days, nav, dim }) {
+  const dayName = PL_DAYS[w.getDay()];
+  return (
+    <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
+      <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b", marginBottom:10 }}>Najbliższe okno wysyłki</div>
+      <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+        <div>
+          <div style={{ fontSize:17, fontWeight:700, color: dim ? "#94a3b8" : "#0f172a", letterSpacing:"-0.01em", lineHeight:1.15 }}>
+            {dayName}, {w.getDate()} {PL_MONTHS[w.getMonth()]} {w.getFullYear()}
+          </div>
+          <div style={{ fontSize:11.5, color: dim ? "#94a3b8" : "#059669", fontWeight:600, marginTop:2 }}>za {days} {pluralDni(days)}</div>
+        </div>
+        {!dim && (
+          <button
+            onClick={() => nav("wysylki")}
+            style={{ marginLeft:"auto", padding:"6px 12px", background:"white", border:"1px solid #cbd5e1", color:"#1e293b", borderRadius:6, fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}
+          >Zobacz harmonogram</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function KpiRow({ waiting, seen, expired, ratePct, placeholder }) {
+  const kpis = [
+    { lbl:"Czekają",                color:"#f97316", val: waiting, meta:"czekają na otwarcie lub automatyczny zwrot" },
+    { lbl:"Zobaczone / rozliczone", color:"#059669", val: seen,    meta:"kupiec otworzył, kredyt pobrany" },
+    { lbl:"Wygasłe",                color:"#94a3b8", val: expired, meta:"nieotwarte w 14 dni · kredyt zwrócony" },
+    { lbl:"Współczynnik zobaczeń",  color:"#2563eb", val: ratePct === null ? "—" : (ratePct != null ? `${ratePct}%` : "—"), meta:"zobaczone z zakończonych wysyłek" },
+  ];
+  return (
+    <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
+      {kpis.map((k, i) => (
+        <div key={i} style={{ padding:"11px 13px", borderRadius:6, border:"1px solid #e2e8f0", background:"#fbfcfd" }}>
+          <div style={{ fontSize:10, fontWeight:600, color:"#64748b", marginBottom:5, textTransform:"uppercase", letterSpacing:"0.04em", display:"flex", alignItems:"center", gap:5 }}>
+            <span style={{ width:7, height:7, borderRadius:"50%", background:k.color, display:"inline-block" }} />
+            {k.lbl}
+          </div>
+          <div style={{ fontSize:22, fontWeight:700, color: placeholder ? "#94a3b8" : "#0f172a", letterSpacing:"-0.02em", lineHeight:1.05 }}>
+            {placeholder ? "—" : k.val}
+          </div>
+          <div style={{ marginTop:4, fontSize:11, color:"#64748b", lineHeight:1.35 }}>
+            {placeholder ? "brak wysyłek" : k.meta}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ActivityCard({ events }) {
+  function relTime(ts) {
+    const diff = Date.now() - ts;
+    if (diff < 60 * 60 * 1000) return "przed chwilą";
+    if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / (60*60*1000))} godz. temu`;
+    if (diff < 7 * 24 * 60 * 60 * 1000) {
+      const n = Math.floor(diff / (24*60*60*1000));
+      return `${n} ${pluralDni(n)} temu`;
+    }
+    const d = new Date(ts);
+    return `${d.getDate()} ${PL_MONTHS_SHORT[d.getMonth()]}`;
+  }
+  return (
+    <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Ostatnia aktywność</div>
+        <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>
+          {events.length === 0 ? "brak zdarzeń" : `${events.length} ${events.length === 1 ? "zdarzenie" : (events.length < 5 ? "zdarzenia" : "zdarzeń")}`}
+        </div>
+      </div>
+      {events.length === 0 ? (
+        <div style={{ fontSize:12.5, color:"#94a3b8", padding:"6px 0" }}>
+          Wyślij pierwszą propozycję, żeby zobaczyć historię tutaj.
+        </div>
+      ) : events.map((e, i) => (
+        <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"8px 0", borderBottom: i === events.length - 1 ? "none" : "1px solid #f1f5f9" }}>
+          <div style={{ width:7, height:7, borderRadius:"50%", background:e.dot, marginTop:6, flexShrink:0 }} />
+          <div style={{ flex:1, minWidth:0, fontSize:12.5, lineHeight:1.45, color:"#334155" }}>
+            <div>{e.body}</div>
+            <div style={{ fontSize:10.5, color:"#94a3b8", marginTop:1 }}>{relTime(e.ts)}{e.sub ? ` · ${e.sub}` : ""}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FmCompactCard({ daysToOpen, schedulingOpen, planPublished, nav, fmSettings }) {
+  const phaseLabel = planPublished ? "Plan opublikowany" : schedulingOpen ? "Wybór sieci aktywny" : "Wkrótce";
+  const bigText = (schedulingOpen || planPublished) ? null : `za ${daysToOpen} ${pluralDni(daysToOpen)}`;
+  const handleClick = () => {
+    if (planPublished || schedulingOpen) {
+      try { nav(resolveFMRoute(fmSettings)); } catch (e) { nav("fm-sched"); }
+    }
+  };
+  return (
+    <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
+        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Spotkania FM 2026</div>
+        <div style={{ marginLeft:"auto", padding:"2px 8px", borderRadius:99, background:"#f1f5f9", color:"#64748b", fontSize:9.5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>{phaseLabel}</div>
+      </div>
+      {bigText && (
+        <div style={{ fontSize:20, fontWeight:700, color:"#0f172a", letterSpacing:"-0.02em", lineHeight:1.1, marginBottom:2 }}>{bigText}</div>
+      )}
+      <div style={{ fontSize:12, color:"#475569", lineHeight:1.55 }}>
+        {planPublished
+          ? "Grafik gotowy — zobacz numery swoich spotkań."
+          : schedulingOpen
+            ? "Wybór sieci otwarty — przejdź do FM 2026."
+            : <>Otwarcie wyboru sieci · <strong style={{ color:"#0f172a" }}>1 września</strong></>}
+      </div>
+      <div style={{ display:"flex", alignItems:"center", margin:"10px 0", padding:"0 2px" }}>
+        {[
+          { l:"Wkrótce",  s: (schedulingOpen || planPublished) ? "done" : "current" },
+          { l:"Wybór",    s: planPublished ? "done" : schedulingOpen ? "current" : "pending" },
+          { l:"Algorytm", s: planPublished ? "done" : "pending" },
+          { l:"Plan",     s: planPublished ? "current" : "pending" },
+        ].map((step, i, arr) => (
+          <div key={i} style={{ flex:1, textAlign:"center", position:"relative", fontSize:9.5, color:"#94a3b8", fontWeight:600 }}>
+            <div style={{
+              width:10, height:10, borderRadius:"50%",
+              background: step.s === "done" ? "#059669" : step.s === "current" ? "#0d9488" : "#e2e8f0",
+              boxShadow: step.s === "current" ? "0 0 0 2px rgba(13,148,136,0.2)" : "none",
+              margin:"0 auto 4px",
+              position:"relative", zIndex:2,
+              border:"2px solid white",
+            }} />
+            {i < arr.length - 1 && (
+              <div style={{ position:"absolute", top:6, right:"-50%", width:"100%", height:1.5, background: step.s === "done" ? "#059669" : "#e2e8f0", zIndex:1 }} />
+            )}
+            {step.l}
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={handleClick}
+        disabled={!schedulingOpen && !planPublished}
+        style={{
+          width:"100%", padding:"7px 11px",
+          background:"white", color:"#475569",
+          border:"1px solid #e2e8f0", borderRadius:6,
+          fontSize:12, fontWeight:600,
+          cursor: (schedulingOpen || planPublished) ? "pointer" : "default",
+          fontFamily:"inherit",
+          opacity: (schedulingOpen || planPublished) ? 1 : 0.7,
+        }}
+      >{planPublished ? "Zobacz spotkania →" : schedulingOpen ? "Otwórz wybór sieci →" : "Zobacz program FM →"}</button>
+    </div>
+  );
+}
+
+function OnboardingChecklist({ co, pkgMax, rem, activeOffersCount, mySendsCount, nav }) {
+  // Krok 4 (pakiet) jest wyszarzony w pending_review — cennik można oglądać,
+  // ale zakup zablokowany do akceptacji konta. Sygnał w mockupie v4.
+  const steps = [
     {
       key: "profile",
       label: "Uzupełnij dane firmy",
       hint: "Nazwa, NIP, kraj, krótki opis — minimum żeby kupiec wiedział kogo dotyczy oferta.",
       done: !!(co?.name && co?.country && (co?.description || co?.description_short)),
-      cta: "Otwórz profil firmy",
+      cta: "Otwórz profil",
       goto: "company",
     },
     {
       key: "logo",
       label: "Wgraj logo firmy",
-      hint: "Pokazuje się w mailu do kupca i przy ofertach. PNG/JPG, kwadrat ~400×400 px.",
+      hint: "Pokazuje się w mailu do kupca i przy ofertach. PNG/JPG, ~400×400 px.",
       done: !!(co?.logo_url || co?.logo),
       cta: "Wgraj logo",
       goto: "company",
     },
     {
       key: "offer",
-      label: "Dodaj pierwszą propozycję",
-      hint: "Produkt + krótka specyfikacja + 1-3 zdjęcia. To podstawa wysyłki do sieci.",
-      done: myOffersCount > 0,
+      label: "Dodaj pierwszą propozycję asortymentową",
+      hint: "Produkt + krótka specyfikacja + 1–3 zdjęcia.",
+      done: activeOffersCount > 0,
       cta: "Dodaj propozycję",
       goto: "offers",
     },
     {
       key: "package",
-      label: "Aktywuj pakiet wysyłek",
-      hint: "Każda wysyłka do sieci kosztuje 1 kredyt z pakietu. Bez pakietu nie wyślesz.",
-      done: Number(pkgMax || 0) > 0 || Number(rem || 0) > 0,
-      cta: "Wybierz pakiet",
+      label: "Pakiet odblokujemy po akceptacji konta",
+      hint: "Cennik dostępny do podglądu. Zakup będzie możliwy zaraz po zatwierdzeniu konta przez administratora.",
+      done: false,
+      cta: "Zobacz cennik",
       goto: "finanse",
+      dim: true,
     },
     {
       key: "send",
       label: "Wyślij propozycję do sieci",
-      hint: "Wybierz sieć z listy w Wysyłkach i kliknij Wyślij. Pierwsza wysyłka = punkt zwrotny.",
+      hint: "Pierwsza wysyłka po aktywacji konta.",
       done: mySendsCount > 0,
-      cta: "Wyślij propozycję",
-      goto: "wysylki",
+      cta: null,
     },
   ];
-  const onbDoneCount = onbSteps.filter(s => s.done).length;
-  const allOnbDone = onbDoneCount === onbSteps.length;
-  function dismissOnboarding() {
-    try { window.localStorage.setItem("fm_supplier_onboard_dismissed", "1"); } catch (e) {}
-    setHideOnboarding(true);
-  }
-
+  const doneCount = steps.filter(s => s.done).length;
   return (
-    <div style={{ maxWidth:860 }}>
+    <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px", marginBottom:12 }}>
+      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:12 }}>
+        <div style={{ fontWeight:700, fontSize:13, color:"#0f172a" }}>
+          Zacznij tutaj <span style={{ color:"#64748b", fontWeight:500, marginLeft:5, fontSize:11.5 }}>({doneCount}/{steps.length})</span>
+        </div>
+        <div style={{ flex:1, height:5, background:"#f1f5f9", borderRadius:99, overflow:"hidden" }}>
+          <div style={{ width:`${(doneCount/steps.length)*100}%`, height:"100%", background:"#0d9488", borderRadius:99 }} />
+        </div>
+      </div>
+      {steps.map((step, idx) => (
+        <div key={step.key} style={{
+          display:"flex", alignItems:"flex-start", gap:11,
+          padding:"9px 12px",
+          border:`1px solid ${step.done ? "#bbf7d0" : "#e2e8f0"}`,
+          background: step.done ? "#f0fdf4" : "#fbfcfd",
+          borderRadius:6,
+          marginBottom:5,
+          opacity: step.dim ? 0.7 : 1,
+        }}>
+          <div style={{
+            width:20, height:20, borderRadius:"50%",
+            background: step.done ? "#0d9488" : "#e2e8f0",
+            color: step.done ? "white" : "#64748b",
+            fontWeight:700, fontSize:10.5,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            flexShrink:0,
+          }}>{step.done ? <CheckCircle size={12} color="white"/> : idx + 1}</div>
+          <div style={{ flex:1 }}>
+            <div style={{ color: step.done ? "#065f46" : "#0f172a", fontSize:12.5, fontWeight:600, lineHeight:1.3 }}>{step.label}</div>
+            <div style={{ margin:"2px 0 0", fontSize:11.5, color:"#64748b", lineHeight:1.45 }}>{step.hint}</div>
+          </div>
+          {step.cta && !step.done && (
+            <button
+              onClick={() => step.goto && nav(step.goto)}
+              style={{
+                background:"white", border:"1px solid #cbd5e1", color:"#1e293b",
+                padding:"6px 12px", borderRadius:6,
+                fontSize:11.5, fontWeight:600,
+                cursor:"pointer", fontFamily:"inherit", flexShrink:0,
+              }}
+            >{step.cta}</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
-      {/* ── Checklist startowa — 5 kroków do gotowości ── */}
-      {!hideOnboarding && !allOnbDone && (
-        <div style={{ marginBottom:16,background:"white",borderRadius:12,border:"1px solid #e2e8f0",padding:"16px 18px" }}>
-          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
-            <div style={{ fontWeight:700,fontSize:14,color:"#1e293b" }}>
-              Zacznij tutaj <span style={{ color:"#64748b",fontWeight:500,marginLeft:6 }}>({onbDoneCount}/{onbSteps.length})</span>
-            </div>
-            <div style={{ flex:1,height:6,background:"#f1f5f9",borderRadius:99,margin:"0 14px",overflow:"hidden" }}>
-              <div style={{ width:`${(onbDoneCount/onbSteps.length)*100}%`,height:"100%",background:"#0d9488",transition:"width 0.3s" }}/>
-            </div>
-            <button onClick={dismissOnboarding} title="Schowaj checklistę" style={{ background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4 }}>
-              <X size={14}/>
-            </button>
+function HelpStripDashboard() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, overflow:"hidden" }}>
+      <div onClick={() => setOpen(v => !v)} style={{ padding:"10px 14px", display:"flex", alignItems:"center", gap:9, fontSize:12, color:"#475569", cursor:"pointer", userSelect:"none" }}>
+        <Info size={13} color="#2563eb" />
+        <span>Jak to działa? — przepływ PreConnect i Spotkań FM 2026</span>
+        <span style={{ marginLeft:"auto", color:"#94a3b8", fontSize:10 }}>{open ? "▲" : "▼"}</span>
+      </div>
+      {open && (
+        <div style={{ padding:"0 14px 14px", borderTop:"1px solid #f1f5f9", fontSize:12, color:"#475569", lineHeight:1.6 }}>
+          <div style={{ fontWeight:700, color:"#0d9488", marginTop:10, marginBottom:5, display:"flex", alignItems:"center", gap:6 }}>
+            <Send size={12} /> Moduł PreConnect (całoroczny)
           </div>
-          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-            {onbSteps.map(step => (
-              <div key={step.key} style={{ display:"flex",alignItems:"flex-start",gap:10,padding:"10px 12px",background:step.done?"#f0fdf4":"#f8fafc",borderRadius:8,border:`1px solid ${step.done?"#bbf7d0":"#e2e8f0"}` }}>
-                <div style={{ width:22,height:22,borderRadius:"50%",background:step.done?"#0d9488":"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1 }}>
-                  {step.done ? <CheckCircle size={14} color="white"/> : <span style={{ fontSize:11,fontWeight:700,color:"#64748b" }}>{onbSteps.indexOf(step)+1}</span>}
-                </div>
-                <div style={{ flex:1,minWidth:0 }}>
-                  <div style={{ fontWeight:600,fontSize:13,color:step.done?"#065f46":"#1e293b" }}>{step.label}</div>
-                  {!step.done && <div style={{ fontSize:12,color:"#64748b",marginTop:2,lineHeight:1.5 }}>{step.hint}</div>}
-                </div>
-                {!step.done && (
-                  <button onClick={()=>nav(step.goto)} style={{ padding:"6px 12px",background:"#0d9488",color:"white",border:"none",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",flexShrink:0,fontFamily:"inherit" }}>
-                    {step.cta}
-                  </button>
-                )}
-              </div>
-            ))}
+          <ul style={{ margin:0, paddingLeft:18 }}>
+            <li><strong>Propozycje asortymentowe</strong> tworzysz w zakładce <em>Moje propozycje</em>. Po zatwierdzeniu moderacji są gotowe do wysyłki.</li>
+            <li><strong>Wysyłki</strong> realizowane są w pierwszy wtorek miesiąca. Każda wysyłka do sieci = 1 kredyt z pakietu.</li>
+            <li><strong>Złota zasada 14 dni:</strong> jeśli kupiec nie otworzy propozycji w 14 dni, kredyt wraca automatycznie do Twojego pakietu.</li>
+          </ul>
+          <div style={{ fontWeight:700, color:"#7c3aed", marginTop:10, marginBottom:5, display:"flex", alignItems:"center", gap:6 }}>
+            <Calendar size={12} /> Moduł Spotkania FM 2026 (targi)
           </div>
+          <ul style={{ margin:0, paddingLeft:18 }}>
+            <li><strong>Preferencje</strong> (1–16 września): wybierasz maks. 5 sieci głównych + dowolnie rezerwowych.</li>
+            <li><strong>Algorytm + korekty</strong> (17–22 września): dopasowanie par sieć ↔ dostawca.</li>
+            <li><strong>Plan</strong> (od 22 września): otrzymujesz listę z numerami spotkań. Szczegóły (godziny, miejsca) na rejestracji w dniu eventu.</li>
+            <li>Masz pytanie? Napisz do admina w czacie w prawym dolnym rogu.</li>
+          </ul>
         </div>
       )}
-
-      {/* ── Jak to działa? — Supplier ── */}
-      <div style={{ marginBottom:20,background:"white",borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden" }}>
-        <div onClick={()=>setHowOpenSup(v=>!v)} style={{ display:"flex",alignItems:"center",gap:10,padding:"13px 18px",cursor:"pointer",userSelect:"none" }}>
-          <Info size={15} color="#2563eb"/>
-          <span style={{ fontWeight:700,fontSize:14,color:"#1e293b",flex:1 }}>Jak to działa?</span>
-          <span style={{ fontSize:12,color:"#94a3b8" }}>{howOpenSup?"Zwiń ▲":"Rozwiń ▼"}</span>
-        </div>
-        {howOpenSup && (
-          <div style={{ padding:"0 18px 18px",borderTop:"1px solid #f1f5f9" }}>
-            <p style={{ fontSize:13,color:"#334155",lineHeight:1.7,marginTop:14,marginBottom:12 }}>
-              Witaj na platformie Fresh Market! Twój panel dzieli się na dwa główne moduły: <strong>PreConnect</strong> (całoroczna wysyłka propozycji) oraz <strong>Spotkania FM 2026</strong> (rejestracja na fizyczne spotkania B2B).
-            </p>
-
-            <div style={{ fontWeight:700,fontSize:13,color:"#0d9488",marginBottom:8,display:"flex",alignItems:"center",gap:6 }}>
-              <Send size={13}/> Moduł PreConnect (Całoroczny)
-            </div>
-            <ul style={{ margin:"0 0 14px 0",paddingLeft:18,display:"flex",flexDirection:"column",gap:7 }}>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Tworzenie propozycji asortymentowej:</strong> Przejdź do zakładki <em>Moje propozycje</em> i kliknij <em>Dodaj propozycję asortymentową</em>. Możesz nadać własną nazwę (widoczną tylko dla Ciebie). Cena jest opcjonalna i ma charakter orientacyjny.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Duplikowanie:</strong> Masz podobne produkty? Użyj przycisku <em>Duplikuj</em> przy istniejącej propozycji — skopiujesz produkt, dane logistyczne, certyfikaty i opakowanie. Tylko zmień to, co się różni.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Wysyłanie do Sieci:</strong> Przejdź do <em>Wysyłki → Sieci handlowe</em>. Znajdź sieć, sprawdź preferencje kupców i kliknij <em>Wyślij propozycję</em>. Z Twojego konta zostanie pobrany 1 kredyt.</li>
-              <li style={{ fontSize:12,color:"#059669",lineHeight:1.65,background:"#f0fdf4",padding:"6px 10px",borderRadius:7,listStyle:"none",marginLeft:-18,border:"1px solid #bbf7d0" }}>⭐ <strong>Złota zasada 14 dni:</strong> Wysyłki realizowane są w pierwszy wtorek każdego miesiąca. Jeśli kupiec nie otworzy propozycji w ciągu 14 dni – kredyt automatycznie wraca na Twój portfel!</li>
-            </ul>
-
-            <div style={{ fontWeight:700,fontSize:13,color:"#7c3aed",marginBottom:8,display:"flex",alignItems:"center",gap:6 }}>
-              <Calendar size={13}/> Moduł Spotkania FM 2026 (Targi)
-            </div>
-            <ul style={{ margin:"0 0 10px 0",paddingLeft:18,display:"flex",flexDirection:"column",gap:7 }}>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Preferencje (do 16 września):</strong> Wybierz maks. 5 głównych sieci (⭐) oraz sieci rezerwowe (👍), z którymi chcesz się spotkać.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Wyniki (od 22 września):</strong> Algorytm i Administrator ułożą grafik. W zakładce <em>Twoje spotkania</em> zobaczysz numery spotkań i profile dopasowanych sieci.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Masz problem?</strong> W prawym dolnym rogu znajdziesz ikonę czatu. Napisz do nas — Administrator jest do Twojej dyspozycji!</li>
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* ════ STAŁY PANEL INFO: SPOTKANIA FM 2026 ════ */}
-      {/* [B2B Round supplier-FM-UX] Persistent info block. Visible regardless of
-          schedulingOpen — supplier always knows the timeline and where to ask
-          for help. Greyed when fmOpen=false but text stays readable. */}
-      <div style={{ marginBottom:16,padding:"16px 18px",background:fmOpen?"#fffbeb":"#f8fafc",border:`1px solid ${fmOpen?"#fde68a":"#e2e8f0"}`,borderRadius:12 }}>
-        <div style={{ fontWeight:700,fontSize:13,color:fmOpen?"#92400e":"#475569",marginBottom:10,display:"flex",alignItems:"center",gap:7 }}>
-          <Calendar size={14}/> Moduł Spotkania FM 2026 (Targi)
-          {!fmOpen && <span style={{ marginLeft:6,fontSize:10,fontWeight:700,color:"#94a3b8",background:"#f1f5f9",padding:"2px 8px",borderRadius:20 }}>🔒 ZAMKNIĘTE</span>}
-        </div>
-        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,fontSize:12,color:fmOpen?"#334155":"#64748b",lineHeight:1.6 }}>
-          <div>
-            <div style={{ fontWeight:700,marginBottom:3,color:fmOpen?"#1e293b":"#475569" }}>Preferencje do 16 września</div>
-            <div>Wybierz maksymalnie 5 głównych sieci oznaczonych gwiazdką ⭐ oraz sieci rezerwowe oznaczone 👍, z którymi chcesz się spotkać.</div>
-          </div>
-          <div>
-            <div style={{ fontWeight:700,marginBottom:3,color:fmOpen?"#1e293b":"#475569" }}>Wyniki od 22 września</div>
-            <div>Algorytm i Administrator ułożą grafik. W zakładce <em>Twoje spotkania</em> zobaczysz numery spotkań oraz profile dopasowanych sieci.</div>
-          </div>
-          <div>
-            <div style={{ fontWeight:700,marginBottom:3,color:fmOpen?"#1e293b":"#475569" }}>Masz problem?</div>
-            <div>W prawym dolnym rogu znajdziesz ikonę czatu. Napisz do nas — Administrator jest do Twojej dyspozycji.</div>
-          </div>
-        </div>
-      </div>
-
-      {/* [B2B Round supplier-FM-UX] Tile order depends on schedulingOpen.
-          fmOpen=true  → Spotkania B2B FIRST (most important now), PreConnect SECOND
-          fmOpen=false → PreConnect FIRST (default daily flow), Spotkania SECOND (greyed) */}
-      {(() => {
-        const preConnectTile = (
-          <div key="preconnect" style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:16,padding:"28px 28px",marginBottom:16 }}>
-            <div style={{ display:"flex",alignItems:"flex-start",gap:14,marginBottom:20 }}>
-              <div style={{ width:48,height:48,borderRadius:12,background:"rgba(13,148,136,0.25)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                <Send size={22} color="#6ee7b7"/>
-              </div>
-              <div style={{ flex:1 }}>
-                <div style={{ color:"white",fontWeight:800,fontSize:18,marginBottom:8 }}>PreConnect</div>
-                <div style={{ color:"rgba(255,255,255,0.7)",fontSize:13,lineHeight:1.8,maxWidth:580 }}>
-                  Wyślij swoje <strong style={{ color:"#6ee7b7" }}>propozycje asortymentowe</strong> bezpośrednio do sieci handlowej z gwarancją przeczytania.<br/>
-                  Jeżeli kupiec nie zapozna się z propozycją w ciągu 14 dni, zwrócimy Twoje pieniądze.<br/>
-                  Wysyłki realizowane są w pierwszy wtorek każdego miesiąca.
-                </div>
-                {refunds.length>0&&(
-                  <div style={{ marginTop:12,padding:"10px 14px",background:"rgba(251,191,36,0.15)",border:"1px solid rgba(251,191,36,0.4)",borderRadius:9,fontSize:12,color:"#fbbf24" }}>
-                    {refunds.length === 1
-                      ? `Zwrot ${refunds[0].amount} EUR — ${refunds[0].msg}`
-                      : `${refunds.length} zwroty kredytu czekają na Twój panel.`
-                    }
-                  </div>
-                )}
-                {pending>0&&(
-                  <div style={{ marginTop:8,padding:"8px 12px",background:"rgba(234,88,12,0.15)",border:"1px solid rgba(234,88,12,0.35)",borderRadius:9,fontSize:12,color:"#fed7aa" }}>
-                    {pending} {pending===1?"propozycja":"propozycje"} w trakcie — oczekuje na odczyt przez kupca (max 14 dni).
-                  </div>
-                )}
-                {confirmed>0&&(
-                  <div style={{ marginTop:8,padding:"8px 12px",background:"rgba(5,150,105,0.15)",border:"1px solid rgba(5,150,105,0.4)",borderRadius:9,fontSize:12,color:"#6ee7b7" }}>
-                    {confirmed} {confirmed===1?"propozycja przeczytana":"propozycje przeczytane"} — kupcy zapoznali się z Twoimi propozycjami.
-                  </div>
-                )}
-              </div>
-            </div>
-            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
-              <button onClick={()=>nav("wysylki")} style={{ padding:"14px 18px",background:"rgba(13,148,136,0.85)",border:"1px solid rgba(13,148,136,0.5)",borderRadius:10,color:"white",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:10 }}>
-                <Send size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>Nowa wysyłka</div><div style={{ fontSize:11,opacity:0.75,marginTop:2 }}>{rem} wysyłek w pakiecie</div></div>
-              </button>
-              <button onClick={()=>nav("offers")} style={{ padding:"14px 18px",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,color:"white",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:10 }}>
-                <Tag size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>Moje propozycje</div><div style={{ fontSize:11,opacity:0.65,marginTop:2 }}>{offers.filter(o=>o.status==="active").length} opublikowanych · {offers.filter(o=>o.status==="draft").length} szkiców</div></div>
-              </button>
-            </div>
-          </div>
-        );
-
-        const fmTile = (
-          <div key="fm" onClick={fmOpen?()=>nav(resolveFMRoute(fmSettings)):undefined} style={{ borderRadius:16,border:fmOpen?"2px solid #059669":"1px solid #e2e8f0",background:fmOpen?"linear-gradient(135deg,#f0fdf4,#ecfdf5)":"white",padding:"28px 28px",marginBottom:16,position:"relative",overflow:"hidden",cursor:fmOpen?"pointer":"default" }}>
-            {!fmOpen&&<div style={{ position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,#e2e8f0,#f1f5f9)" }}/>}
-            <div style={{ display:"flex",alignItems:"flex-start",gap:14,marginBottom:20 }}>
-              <div style={{ width:48,height:48,borderRadius:12,background:fmOpen?"rgba(5,150,105,0.15)":"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                <Calendar size={22} color={fmOpen?"#059669":"#94a3b8"}/>
-              </div>
-              <div style={{ flex:1 }}>
-                <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap" }}>
-                  <span style={{ fontWeight:800,fontSize:18,color:fmOpen?"#0f172a":"#94a3b8" }}>Spotkania B2B — Fresh Market 2026</span>
-                  {fmOpen
-                    ? <span style={{ background:"#059669",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>● AKTYWNE</span>
-                    : <span style={{ background:"#f1f5f9",color:"#94a3b8",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>🔒 ZAMKNIĘTE</span>
-                  }
-                </div>
-                <div style={{ fontSize:13,color:fmOpen?"#334155":"#94a3b8",lineHeight:1.8,maxWidth:580 }}>
-                  Planowanie spotkań B2B z kupcami sieci handlowych podczas Fresh Market 2026.<br/>
-                  {fmOpen
-                    ? <><strong style={{ color:"#059669" }}>Aplikacja jest aktywna.</strong> Przejdź do sekcji Spotkania FM 2026, aby wybrać sieci i zobaczyć swój plan.</>
-                    : <>Aplikacja będzie dostępna od września 2026.<br/>Planowane otwarcie: <strong>1 września 2026</strong>. Dostępna dla dostawców i kupców od 1 września.</>
-                  }
-                </div>
-              </div>
-            </div>
-            {!fmOpen&&(
-              <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:20 }}>
-                {[["🎯","1–16 września","Wybór preferowanych sieci handlowych"],["🔒","16 września","Zamknięcie wyborów — dalsze zmiany tylko przez administratora"],["⚙️","17–22 września","Algorytm matchingu + ręczne korekty administratora"],["📋","22 września","Publikacja finalnego harmonogramu i numerów"],["🎪","24 września","Fresh Market 2026 — event"]].map(([ic,d,sub])=>(
-                  <div key={d} style={{ flex:1,minWidth:120,padding:"10px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
-                    <div style={{ fontSize:16,marginBottom:3 }}>{ic}</div>
-                    <div style={{ fontSize:11,fontWeight:700,color:"#334155" }}>{d}</div>
-                    <div style={{ fontSize:11,color:"#94a3b8",marginTop:2,lineHeight:1.4 }}>{sub}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {fmOpen&&(
-              <button onClick={()=>nav(resolveFMRoute(fmSettings))} style={{ padding:"13px 22px",background:"#059669",border:"none",borderRadius:10,color:"white",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,marginBottom:16 }}>
-                <Calendar size={15}/> Przejdź do Spotkań FM 2026
-              </button>
-            )}
-            <div style={{ paddingTop:14,borderTop:"1px solid #e2e8f0",fontSize:11,color:"#94a3b8" }}>
-              Pytania? Kontakt: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818
-            </div>
-          </div>
-        );
-
-        return fmOpen ? <>{fmTile}{preConnectTile}</> : <>{preConnectTile}{fmTile}</>;
-      })()}
     </div>
   );
 }
