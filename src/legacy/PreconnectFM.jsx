@@ -8619,6 +8619,22 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
               })
           }
         </Card>
+        {/* [B2B Round prod-rollout / FM queue model] Mechanika spotkań FM 2026 —
+            system kolejkowy z numerkami + wywołania na ekranie/w aplikacji + Gate 1/2.
+            Patrz: dashboard-supplier-mockup.html v5 i kompendium PRECONNECT_KOMPENDIUM_DLA_GPT.md. */}
+        <div style={{ marginTop:16,padding:"16px 18px",background:"white",border:"1px solid #e2e8f0",borderRadius:10 }}>
+          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"#64748b",marginBottom:10 }}>Jak działa wywoływanie spotkań w dniu eventu</div>
+          <ol style={{ margin:0,paddingLeft:18,fontSize:12.5,color:"#334155",lineHeight:1.7 }}>
+            <li><strong>Numery spotkań</strong> powyżej oznaczają kolejność, w jakiej będziesz wzywany — nie stałe godziny.</li>
+            <li>Aktualne wywołania będą widoczne na <strong>dużym ekranie</strong> w środku sali oraz <strong>w aplikacji</strong> (tutaj, w trybie live).</li>
+            <li>Gdy zobaczysz swój numer, podejdź do obsługi B2B przy <strong>Gate 1</strong> lub <strong>Gate 2</strong> (na końcu sali).</li>
+            <li>Pomocnik Fresh Market <strong>odprowadzi Cię</strong> na właściwe spotkanie z siecią.</li>
+            <li>Po zakończeniu spotkania wróć do obserwowania kolejki — Twój następny numer może być wkrótce wzywany.</li>
+          </ol>
+          <div style={{ marginTop:10,padding:"8px 12px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,fontSize:11.5,color:"#92400e",lineHeight:1.5 }}>
+            <strong>Bądź gotowy.</strong> W dniu eventu wywołania pojawiają się szybko — przygotuj materiały i próbki dla wszystkich {rows.length} sieci przed startem.
+          </div>
+        </div>
         {previewRetailer && <RetailerPreviewModal retailer={previewRetailer} onClose={()=>setPreviewRetailer(null)}/>}
         <FMVenueFooter/>
       </div>

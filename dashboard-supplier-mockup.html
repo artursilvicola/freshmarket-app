@@ -2,7 +2,7 @@
 <html lang="pl">
 <head>
 <meta charset="UTF-8">
-<title>Fresh Market — Dashboard dostawcy · mockup v4 (final wzorzec do wdrożenia)</title>
+<title>Fresh Market — Dashboard dostawcy · mockup v5 (queue model dla FM)</title>
 <style>
   :root{
     /* Design tokens — lekkie, operacyjne */
@@ -794,11 +794,11 @@
 </head>
 <body>
 
-<h1 class="page">Dashboard dostawcy — mockup v4 (wzorzec do wdrożenia)</h1>
+<h1 class="page">Dashboard dostawcy — mockup v5 (queue model dla FM)</h1>
 <p class="page-sub">
-  Iteracja v4 po drugim feedbacku Codexa: top zarezerwowany dla blokerów (refund pod KPI),
-  Stan C uproszczony (FM Hero z deadlinem, Next Step pod nim), copy „Przygotuj wysyłkę",
-  ikona download w lucide-style. Cztery stany jeden pod drugim.
+  Iteracja v5 — Stan D przerobiony z fałszywego kalendarza godzinowego na <strong>system kolejkowy z gate'ami</strong>
+  (jak faktycznie działa FM B2B: numerki + wywołania na ekranie/w aplikacji + Gate 1/Gate 2 + obsługa odprowadza).
+  Brak fikcyjnych godzin, stolików, kupców. Cztery stany jeden pod drugim + bonus „Stan E — live mode" jako szkic na P2.
 </p>
 
 <div class="legend">
@@ -1512,8 +1512,8 @@
       </div>
     </div>
 
-    <!-- [v3] §1+§2+§3 zlane: alert „event jutro" wchodzi do FM Hero header,
-         lista spotkań ląduje od razu na pierwszym ekranie. Next Step schodzi pod hero. -->
+    <!-- [v5] FM 2026 to system kolejkowy (numerki + wywołania na ekranie/aplikacji + Gate 1/2),
+         nie kalendarz z godzinami i stolikami. Lista spotkań pokazuje numer + sieć + status. -->
 
     <!-- FM HERO published — z bannerem eventu w nagłówku -->
     <div class="fm-hero published">
@@ -1521,19 +1521,19 @@
         <div class="fm-hero-phase"><span class="dot" style="background:#fbbf24"></span> Event jutro · czwartek 24 września</div>
         <button class="secondary" style="padding:5px 11px;font-size:11px;border-radius:6px;display:inline-flex;align-items:center;gap:5px">
           <svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Pobierz plan PDF
+          Pobierz listę spotkań (PDF)
         </button>
       </div>
-      <div class="fm-hero-title">Twoje spotkania w Fresh Market 2026</div>
+      <div class="fm-hero-title">Twoja kolejka spotkań B2B</div>
       <div class="fm-hero-desc">
-        4 spotkania potwierdzone. Numery spotkań oznaczają kolejność w grafiku — szczegółowy harmonogram (godziny, miejsca) otrzymasz na rejestracji w dniu eventu.
+        Masz 4 spotkania z numerami kolejności. <strong>Nie ma stałych godzin ani stolików</strong> — w dniu eventu śledź aktualne wywołania w aplikacji i na dużym ekranie na sali, a obsługa Fresh Market odprowadzi Cię na właściwe spotkanie.
       </div>
       <div class="meeting-list">
         <div class="meeting-row next">
           <div class="num">1</div>
           <div class="m-info">
             <div class="m-network">Biedronka</div>
-            <div class="m-time">Spotkanie pierwsze · wybrana jako sieć główna</div>
+            <div class="m-time">Sieć główna</div>
           </div>
         </div>
         <div class="meeting-row">
@@ -1558,6 +1558,10 @@
           </div>
         </div>
       </div>
+      <div style="margin-top:12px;padding:11px 13px;background:rgba(0,0,0,0.18);border:1px solid rgba(255,255,255,0.1);border-radius:6px;font-size:11.5px;color:rgba(255,255,255,0.9);line-height:1.55">
+        <strong style="color:white;display:block;margin-bottom:3px">Jak działa wywoływanie spotkań:</strong>
+        Aktualne numery są pokazywane <strong>na dużym ekranie</strong> w środku sali i <strong>w aplikacji</strong>. Gdy zobaczysz swój numer, podejdź do obsługi B2B przy <strong>Gate 1</strong> lub <strong>Gate 2</strong> — pomocnicy odprowadzą Cię na właściwe spotkanie z siecią.
+      </div>
     </div>
 
     <!-- NEXT STEP — biała karta z lewym amber paskiem (jedyny gradient = FM Hero powyżej) -->
@@ -1567,10 +1571,10 @@
       </div>
       <div class="ns-body">
         <div class="ns-lbl">Twój następny krok</div>
-        <div class="ns-title">Przygotuj prezentację — pierwsze spotkanie z Biedronką</div>
-        <div class="ns-desc">Sprawdź profil sieci, przygotuj próbki produktów i materiały sprzedażowe. Godziny i numery stolików otrzymasz na rejestracji.</div>
+        <div class="ns-title">Przygotuj materiały na spotkania z 4 sieciami</div>
+        <div class="ns-desc">Sprawdź profile sieci (Biedronka, Lidl, Kaufland, Carrefour), przygotuj próbki produktów i materiały sprzedażowe. W dniu eventu wszystko robi się szybko — bądź gotowy gdy Twój numer zostanie wywołany.</div>
       </div>
-      <button class="ns-btn">Profil Biedronki</button>
+      <button class="ns-btn">Profile sieci</button>
     </div>
 
     <!-- §5 ACTIVITY + Logistyka eventu -->
@@ -1620,7 +1624,7 @@
 
       <div class="card">
         <div class="card-head">
-          <div class="card-title">Logistyka eventu</div>
+          <div class="card-title">Event — dzień jutrzejszy</div>
         </div>
         <div style="font-size:12px;color:#475569;line-height:1.7;margin-bottom:10px">
           <strong style="color:var(--text)">Data:</strong> czwartek 24 września 2026<br>
@@ -1628,9 +1632,14 @@
           <strong style="color:var(--text)">Otwarcie:</strong> 10:00<br>
           <strong style="color:var(--text)">Miejsce:</strong> EXPO Łódź, hala A
         </div>
-        <div class="alert info" style="margin:0;padding:8px 11px;font-size:11.5px">
-          <div class="alert-ico" style="width:16px;height:16px;font-size:10px">i</div>
-          <div class="alert-body">Szczegółowy harmonogram (godziny spotkań, numery stolików) otrzymasz drukowany przy rejestracji. Przyjedź odpowiednio wcześniej.</div>
+        <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;font-size:11.5px;color:#334155;line-height:1.6">
+          <div style="font-weight:600;color:var(--text);margin-bottom:5px">Obsługa spotkań B2B</div>
+          <div>Gdy zobaczysz swój numer spotkania na ekranie/w aplikacji, podejdź do jednego z gate'ów:</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+            <span style="background:#0f172a;color:white;padding:2px 9px;border-radius:4px;font-weight:600;font-size:11px">Gate 1</span>
+            <span style="background:#0f172a;color:white;padding:2px 9px;border-radius:4px;font-weight:600;font-size:11px">Gate 2</span>
+          </div>
+          <div style="margin-top:6px;font-size:11px;color:var(--muted)">Pomocnik Fresh Market odprowadzi Cię na właściwe spotkanie.</div>
         </div>
         <button class="btn-outline" style="width:100%;margin-top:8px">Otwórz mapę EXPO</button>
       </div>
@@ -1660,16 +1669,77 @@
 </div>
 
 <div class="notes">
-  <h3>Stan D — komentarz (v4 final)</h3>
+  <h3>Stan D — komentarz (v5 — queue model)</h3>
   <ul>
-    <li><strong>Dane spotkania = nr + sieć</strong> (tylko to jest w grafiku FM). Mockup nie pokazuje godzin, stolików, ani konkretnych kupców — żeby nie sugerować że to gotowe pola w bazie.</li>
-    <li><strong>Meeting row</strong> teraz pokazuje: numer spotkania + nazwa sieci + status (sieć główna / rezerwowa). Drukowany szczegół (godziny, miejsce) supplier dostaje na rejestracji w dniu eventu — to napisane w opisie hero i w info-tipie logistyki.</li>
-    <li><strong>Logistyka eventu</strong>: Data + Rejestracja od 09:00 + Otwarcie 10:00 + Miejsce. Bez stolika.</li>
-    <li><strong>Top alert + Next Step + FM Hero połączone</strong> — info „event jutro" wchodzi do nagłówka FM Hero (faza pill + przycisk Pobierz plan PDF po prawej). Lista spotkań above-the-fold.</li>
+    <li><strong>Spotkania FM = system kolejkowy, nie kalendarz</strong>. Uczestnik dostaje numerki, śledzi wywołania w aplikacji + na ekranie sali, idzie do Gate 1/Gate 2 gdzie obsługa FM odprowadza go na spotkanie. To NIE jest harmonogram z godzinami i stolikami.</li>
+    <li><strong>Meeting row</strong> pokazuje wyłącznie: numer spotkania + nazwa sieci + status (sieć główna / rezerwowa). Brak godzin, brak stolików, brak kontaktów kupca — bo tych danych nie ma w schemacie FM.</li>
+    <li><strong>Komunikat operacyjny w FM Hero</strong>: tłumaczy mechanikę (ekran + aplikacja → numer → Gate → obsługa FM odprowadza). To zastępuje fałszywą iluzję „kalendarza".</li>
+    <li><strong>Logistyka eventu</strong>: Data + Rejestracja od 09:00 + Otwarcie 10:00 + Miejsce + sekcja „Obsługa spotkań B2B" z chip'ami Gate 1 / Gate 2.</li>
+    <li><strong>Next Step</strong>: „Przygotuj materiały na spotkania z 4 sieciami" — sieci po nazwach, nie konkretne kupce. Goto: „Profile sieci".</li>
     <li><strong>Jeden gradient</strong> = FM Hero (zielony). Next Step to biała karta z lewym amber paskiem.</li>
     <li><strong>Sidebar identyczny porządek</strong>, FM ma badge „4" (liczba spotkań). Pod-nav: ✓ Wybór sieci · ✓ Algorytm · <strong>Twoje spotkania</strong> (active).</li>
-    <li><strong>PreConnect compact</strong> narrative: „po evencie wróć tu na follow-up" — łączy dwa moduły.</li>
   </ul>
+</div>
+
+<div class="notes" style="background:#7c2d92">
+  <h3>⚠ Model biznesowy spotkań FM 2026 — zasada fundamentalna</h3>
+  <p style="margin:6px 0 8px">
+    FM B2B działa jako <strong>system kolejkowy / wywoławczy</strong>, NIE jako klasyczny harmonogram. Implementacja Stanu D w P1 MUSI respektować ten model:
+  </p>
+  <p style="margin:0 0 6px;font-weight:700;color:#fbcfe8">Co JEST w danych grafiku FM:</p>
+  <ul style="margin:0 0 10px">
+    <li>numer spotkania (kolejność w grafiku)</li>
+    <li>sieć handlowa</li>
+    <li>status sieci (główna / rezerwowa) — pochodzi z <code>fm_prefs</code></li>
+  </ul>
+  <p style="margin:0 0 6px;font-weight:700;color:#fbcfe8">Czego NIE MA w danych — UI nie wymyśla:</p>
+  <ul style="margin:0 0 10px">
+    <li>godzin spotkań (np. 10:30 — 10:50)</li>
+    <li>numerów stolików (np. B-14, sektor niebieski)</li>
+    <li>nazwisk kupców (np. Anna Nowak)</li>
+    <li>kontaktów do kupców (mail, telefon)</li>
+    <li>wiadomości od konkretnego kupca</li>
+    <li>komunikatów typu „bądź 15 min przed pierwszym spotkaniem"</li>
+  </ul>
+  <p style="margin:0 0 6px;font-weight:700;color:#fbcfe8">Mechanika w dniu eventu:</p>
+  <ol style="margin:0 0 10px">
+    <li>Uczestnik ma w aplikacji listę swoich spotkań (numer + sieć).</li>
+    <li>Aktualne wywołania pojawiają się <strong>na dużym ekranie</strong> w środku sali ORAZ <strong>w aplikacji</strong>.</li>
+    <li>Gdy numer uczestnika jest wywoływany → podchodzi do <strong>Gate 1</strong> lub <strong>Gate 2</strong>.</li>
+    <li>Obsługa B2B Fresh Market <strong>odprowadza go</strong> na właściwe spotkanie z siecią.</li>
+    <li>Po zakończeniu wraca do trybu śledzenia kolejki.</li>
+  </ol>
+  <p style="margin:0;font-style:italic;font-size:11px;color:#e9d5ff">
+    Komunikacja przez ekran, aplikację, mikrofon i czasem SMS (źródło: kompendium FM PRECONNECT_KOMPENDIUM_DLA_GPT.md).
+  </p>
+</div>
+
+<div class="notes" style="background:#064e3b">
+  <h3>Bonus: Stan E — „w trakcie eventu" (live mode, P2)</h3>
+  <p style="margin:6px 0 8px">
+    Kiedy event trwa, dashboard mógłby przełączyć się w tryb live z aktualnym wywoływaniem. Schemat treści:
+  </p>
+  <pre style="background:rgba(0,0,0,0.3);padding:11px 14px;border-radius:6px;font-size:11px;line-height:1.55;margin:6px 0;font-family:ui-monospace,Menlo,monospace;color:#a7f3d0;white-space:pre-wrap">
+┌─────────────────────────────────────────────────────────┐
+│ ● LIVE · Fresh Market 2026 trwa                          │
+│                                                          │
+│  Teraz wywoływane:                                       │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │ Spotkanie 1 — Biedronka                          │    │
+│  │ → Podejdź do Gate 1                              │    │
+│  └─────────────────────────────────────────────────┘    │
+│                                                          │
+│  Następne (przygotuj się):                              │
+│  • Spotkanie 2 — Lidl Polska                            │
+│                                                          │
+│  Pozostałe w kolejce:                                   │
+│  • Spotkanie 3 — Kaufland                               │
+│  • Spotkanie 4 — Carrefour (sieć rezerwowa)             │
+└─────────────────────────────────────────────────────────┘
+  </pre>
+  <p style="margin:6px 0 0">
+    Wymaga: backend pushuje aktualnie wywoływane numery (websocket / polling co kilka sekund) + flag „aktywny gate" per numer. Live mode aktywowany przez <code>fmSettings.eventInProgress = true</code>. P2 — po pierwszym evencie 2026 zobaczymy co realnie warto pokazywać dostawcy w trakcie.
+  </p>
 </div>
 
 <div class="notes" style="background:#0d9488">
