@@ -1,6 +1,6 @@
 # Dostępy testowe dla Codexa — Fresh Market
 
-**Aplikacja:** https://freshmarketb2b.netlify.app
+**Aplikacja:** https://b2b.freshmarket.eu (fallback: https://freshmarketb2b.netlify.app)
 **Status:** TEST environment, hasła można ujawniać tylko zaufanym agentom testowym.
 
 ---

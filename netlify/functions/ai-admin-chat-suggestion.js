@@ -130,7 +130,7 @@ function buildSystemPrompt(kompendiumContent) {
       "- Fresh Market 2026: 24 września 2026, Ożarów Mazowiecki, Ptak Warsaw Expo.",
       "- Plan spotkań publikowany 22 września po korektach admina.",
       "- Kontakt do organizatora: Oksana Kozłowska, oksana@freshmarket.eu, +48 603 811 818.",
-      "- PreConnect (app.freshmarket.eu / freshmarketb2b.netlify.app) = panel B2B z profilami firm, ofertami, matchmakingiem i harmonogramem spotkań."
+      "- PreConnect (b2b.freshmarket.eu) = panel B2B z profilami firm, ofertami, matchmakingiem i harmonogramem spotkań."
     );
     return introRules.join("\n");
   }

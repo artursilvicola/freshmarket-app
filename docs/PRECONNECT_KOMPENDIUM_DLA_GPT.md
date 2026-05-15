@@ -11,13 +11,13 @@
 | Produkt | URL | Co to jest | Stack |
 |---|---|---|---|
 | **freshmarket.eu** | freshmarket.eu | Marketingowa strona Fresh Market 2026 | Astro + Decap CMS + Netlify |
-| **PreConnect** (B2B app) | app.freshmarket.eu (prod) / freshmarketb2b.netlify.app | Panel uczestników: profile firm, oferty, matchmaking, harmonogram spotkań | React + Vite + Supabase + Netlify |
+| **PreConnect** (B2B app) | b2b.freshmarket.eu (prod) | Panel uczestników: profile firm, oferty, matchmaking, harmonogram spotkań | React + Vite + Supabase + Netlify |
 
 **Kiedy używać którego URL-a w odpowiedzi:**
 - Rejestracja na wydarzenie (płatność, pakiety) → **freshmarket.eu/registration**
-- Login do panelu B2B (po zatwierdzeniu przez admina) → **app.freshmarket.eu**
+- Login do panelu B2B (po zatwierdzeniu przez admina) → **b2b.freshmarket.eu**
 - CMS strony marketingowej (edycja tekstów, logotypów) → **freshmarket.eu/admin/**
-- Panel B2B z zarządzaniem firmami/kupcami/spotkaniami → **app.freshmarket.eu/admin**
+- Panel B2B z zarządzaniem firmami/kupcami/spotkaniami → **b2b.freshmarket.eu/admin**
 
 ---
 

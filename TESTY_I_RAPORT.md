@@ -1,6 +1,6 @@
 # Fresh Market — Raport końcowy testów + audyt
 **Data:** 30.04.2026
-**Aplikacja:** https://freshmarketb2b.netlify.app
+**Aplikacja:** https://b2b.freshmarket.eu (fallback: https://freshmarketb2b.netlify.app)
 **Repozytorium:** https://github.com/artursilvicola/freshmarket-app
 **Baza:** Supabase (region eu-central-1)
 

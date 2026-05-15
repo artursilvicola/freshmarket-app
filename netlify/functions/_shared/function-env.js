@@ -16,7 +16,10 @@ export function resolveEnvConfig() {
   const resendWebhookSecret = getFirstEnv("RESEND_WEBHOOK_SECRET");
   const openAiApiKey = getFirstEnv("OPENAI_API_KEY");
   const openAiModel = getFirstEnv("OPENAI_MODEL") || "gpt-4.1-mini";
-  const b2bAppUrl = getFirstEnv("B2B_APP_URL") || "https://freshmarketb2b.netlify.app";
+  // [B2B Round prod-rollout / custom-domain] Primary app URL = b2b.freshmarket.eu
+  // (custom domain pointing to freshmarketb2b.netlify.app via CNAME).
+  // Fallback dla developmentu lub gdyby env var nie był ustawiony.
+  const b2bAppUrl = getFirstEnv("B2B_APP_URL") || "https://b2b.freshmarket.eu";
 
   // [B2B Round prod-rollout / faza 3] PayU integration
   // PAYU_ENV controls which API endpoint to hit: 'sandbox' (secure.snd.payu.com)
