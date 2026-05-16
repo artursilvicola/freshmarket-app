@@ -8,6 +8,17 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# [B2B Round prod-rollout / custom-domain] Force 301 redirect z Netlify subdomain
+# na primary domain b2b.freshmarket.eu. Netlify nie robi tego automatycznie dla
+# domen poza Netlify DNS — musimy explicit. Wszystkie wejścia na *.netlify.app
+# (np. stare bookmarki, linki w starych mailach) lądują na nowej domenie.
+# force = true wymusza redirect nawet jeśli plik istnieje pod tą samą ścieżką.
+[[redirects]]
+  from = "https://freshmarketb2b.netlify.app/*"
+  to = "https://b2b.freshmarket.eu/:splat"
+  status = 301
+  force = true
+
 # SPA fallback - React Router obsługuje routing po stronie klienta
 [[redirects]]
   from = "/*"
