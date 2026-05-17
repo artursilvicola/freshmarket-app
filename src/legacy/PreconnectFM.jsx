@@ -6566,6 +6566,54 @@ function PageAdminRetailers({ retailers, setRetailers }) {
   const [saveMeta, setSaveMeta]     = useState({});
 
   function updateRetailer(id, changes) { setRetailers(prev=>prev.map(r=>r.id===id?{...r,...changes}:r)); }
+
+  // [B2B Round prod-rollout / admin-toggle-fix]
+  // Toggle badges "Aktywna" i "FM 2026" muszą być AUTO-SAVE (bez walidacji blokującej).
+  // Wcześniej toggle wywoływał tylko `updateRetailer` (local state) — wyglądał jak zapisany,
+  // ale po reload zmiana znikała, bo full save (`saveRetailer`) wymaga klikać "💾 Zapisz zmiany"
+  // w rozwiniętym widoku + waliduje fm26ChainId + active fm26 buyer (te walidacje są sensowne
+  // przy układaniu FM scheduling, ale nie przy oznaczaniu sieci jako uczestnika FM).
+  //
+  // Ta funkcja:
+  //   - aktualizuje state lokalnie (jak `updateRetailer`)
+  //   - wywołuje `bulkUpsertRetailers([retailer])` z aktualną wersją + zmianą
+  //   - pokazuje "Zapisano" indicator (przez setSavedIds, jak full save)
+  //   - bez walidacji fm26ChainId / fm26 buyers — to wciąż jest walidowane przez full save
+  async function quickToggleRetailer(id, changes) {
+    const current = retailers.find(r => r.id === id);
+    if (!current) return;
+    const patch = { ...changes };
+    // [B2B Round prod-rollout / admin-toggle-fix] Gdy admin włącza FM26 a sieć nie ma
+    // jeszcze fm26ChainId — auto-assign kolejne wolne `chN`. Inaczej filter supplier-side
+    // (`r.fm26Active && r.fm26ChainId`) odrzuci tę sieć i dostawcy jej nie zobaczą,
+    // mimo że admin oznaczył ją jako uczestnika FM. Admin może później edytować ID
+    // ręcznie w rozwiniętym widoku jeśli chce inny.
+    if (patch.fm26Active === true && !current.fm26ChainId) {
+      const usedIds = new Set(
+        (retailers || [])
+          .map(r => r.fm26ChainId)
+          .filter(Boolean)
+      );
+      const usedNums = Array.from(usedIds)
+        .map(id => /^ch(\d+)$/.exec(String(id))?.[1])
+        .filter(Boolean)
+        .map(n => Number(n));
+      const nextNum = usedNums.length ? Math.max(...usedNums) + 1 : 1;
+      patch.fm26ChainId = `ch${nextNum}`;
+    }
+    const next = { ...current, ...patch };
+    setRetailers(prev => prev.map(r => r.id === id ? next : r));
+    try {
+      await bulkUpsertRetailers([next]);
+      setSavedIds(prev => ({ ...prev, [id]: true }));
+      setTimeout(() => setSavedIds(prev => { const n = { ...prev }; delete n[id]; return n; }), 2500);
+    } catch (e) {
+      // Cofnij zmianę state'a po błędzie zapisu
+      setRetailers(prev => prev.map(r => r.id === id ? current : r));
+      setSaveError(prev => ({ ...prev, [id]: e?.message || "Nie udało się zapisać zmiany." }));
+      setTimeout(() => setSaveError(prev => { const n = { ...prev }; delete n[id]; return n; }), 4000);
+    }
+  }
   function updateBuyer(retailerId, buyerId, changes) {
     setRetailers(prev=>prev.map(r=>{
       if(r.id!==retailerId) return r;
@@ -6884,12 +6932,13 @@ function PageAdminRetailers({ retailers, setRetailers }) {
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                 {isSaved&&<span style={{fontSize:11,color:"#059669",fontWeight:600}}>✅ Zapisano</span>}
+                {/* [B2B Round prod-rollout / admin-toggle-fix] Auto-save zamiast tylko local state */}
                 <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:600,border:`1px solid ${r.active!==false?"#bbf7d0":"#fca5a5"}`,background:r.active!==false?"#f0fdf4":"#fef2f2",color:r.active!==false?"#059669":"#dc2626",userSelect:"none"}} onClick={e=>e.stopPropagation()}>
-                  <input type="checkbox" checked={r.active!==false} onChange={e=>updateRetailer(r.id,{active:e.target.checked})} style={{display:"none"}}/>
+                  <input type="checkbox" checked={r.active!==false} onChange={e=>quickToggleRetailer(r.id,{active:e.target.checked})} style={{display:"none"}}/>
                   {r.active!==false?"✅ Aktywna":"⛔ Nieaktywna"}
                 </label>
-                <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:600,userSelect:"none",border:`1px solid ${r.fm26Active?"#2563eb":"#e2e8f0"}`,background:r.fm26Active?"#eff6ff":"#f8fafc",color:r.fm26Active?"#2563eb":"#94a3b8"}} onClick={e=>e.stopPropagation()}>
-                  <input type="checkbox" checked={r.fm26Active||false} onChange={e=>updateRetailer(r.id,{fm26Active:e.target.checked})} style={{display:"none"}}/>
+                <label title="Kliknij aby przełączyć — zapisuje się od razu. fm26ChainId i kupcy FM26 ustawisz rozwijając kartę sieci." style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:600,userSelect:"none",border:`1px solid ${r.fm26Active?"#2563eb":"#e2e8f0"}`,background:r.fm26Active?"#eff6ff":"#f8fafc",color:r.fm26Active?"#2563eb":"#94a3b8"}} onClick={e=>e.stopPropagation()}>
+                  <input type="checkbox" checked={r.fm26Active||false} onChange={e=>quickToggleRetailer(r.id,{fm26Active:e.target.checked})} style={{display:"none"}}/>
                   {r.fm26Active?"📅 FM 2026":"📅 Poza FM"}
                 </label>
                 <span style={{fontSize:16,color:"#94a3b8"}}>{isExpanded?"▲":"▼"}</span>
