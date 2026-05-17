@@ -188,8 +188,13 @@ function toRetailerDbRow(r = {}) {
     buyer_phone: r.buyer_phone || primaryBuyer?.phone || r.phone || null,
     next_send: r.next_send || r.nextSend || null,
     active: r.active !== false,
-    fm26_active: !!(r.fm26_active ?? r.fm26Active),
-    fm26_chain_id: r.fm26_chain_id || r.fm26ChainId || null,
+    // [B2B Round prod-rollout / admin-toggle-fix] PRIORITY: camelCase z state'u aplikacji
+    // (świeża wartość z UI) NAD snake_case (stara wartość z DB join). Wcześniej było
+    // `r.fm26_active ?? r.fm26Active` — bug: `??` traktuje `false` z DB jako "valid",
+    // więc świeże `fm26Active=true` z toggle nie nadpisywało. Skutek: chainId się
+    // zapisywał (bo `||`), ale fm26_active nigdy nie zmieniał wartości.
+    fm26_active: !!(r.fm26Active ?? r.fm26_active),
+    fm26_chain_id: r.fm26ChainId ?? r.fm26_chain_id ?? null,
     description: r.description || null,
   };
 }
