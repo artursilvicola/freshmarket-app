@@ -2238,7 +2238,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       .map((co, idx) => ({
         id:          co.fmId,
         name:        co.name,
-        pkg:         co.pkg === "prem_10" ? "Premium" : "Business",
+        // [B2B Round prod-rollout / FM scheduling v2] Realny mapping pakietów:
+        //   prem_10 → Premium (uczestnik FM B2B z umawianymi spotkaniami)
+        //   std_*   → Standard (BEZ umawianych spotkań — wykluczony w algorytmie)
+        // Pakiet "Business" istnieje w kompendium jako pośredni tier, ale w kodzie
+        // aplikacji nie ma jeszcze osobnego ID — dodać gdy biznes zdefiniuje.
+        pkg:         co.pkg === "prem_10" ? "Premium" : "Standard",
         country:     co.country,
         products:    co.products || "",
         companyId:   co.id,
@@ -9370,7 +9375,59 @@ function buildFMData(prefs, resps, chains, suppliers) {
     nums[sid][cid] = n;
   }
 
-  return { res, cs, nums, cq };
+  // FAZA 6 — wykryj warnings dla admina (do wyświetlenia w Korektach)
+  //
+  // Case 1: "Sieć rezerwowa lepszym numerem niż główna"
+  //   Jeśli firma ma sieć GŁÓWNĄ (⭐) w czerwonej strefie (>FM_ZONE_ORANGE_MAX)
+  //   ALE ma sieć REZERWOWĄ (👍) w zielonej (<= FM_ZONE_GREEN_MAX),
+  //   admin może chcieć zamienić priorytet ręcznie.
+  //
+  // Case 2: "Firma bez spotkań mimo pełnej opłaty" (Premium/Business)
+  //   Firmie nie udało się dopasować żadnej sieci — admin musi reagować
+  //   ręcznie albo dodać alternatywy.
+  const warnings = [];
+  for (const s of eligible) {
+    const sid = s.id;
+    const mtgs = res[sid].m;
+    if (mtgs.length === 0) {
+      warnings.push({
+        type: "no_meetings",
+        supplierId: sid,
+        supplierName: s.name,
+        message: `Firma ${s.name} (${s.pkg}) nie ma żadnych spotkań — sprawdź czy sieci ją odrzuciły lub dodaj alternatywy ręcznie.`,
+      });
+      continue;
+    }
+    // Case 1: star w czerwonej, thumb w zielonej
+    const starRed = mtgs.filter(cid => {
+      const score = res[sid].r[cid];
+      const num = nums[sid][cid];
+      const isStar = score === FM_SCORE.MUTUAL_STAR_WANT || score === FM_SCORE.MUTUAL_STAR_CHANCE;
+      return isStar && num > FM_ZONE_ORANGE_MAX;
+    });
+    const thumbGreen = mtgs.filter(cid => {
+      const score = res[sid].r[cid];
+      const num = nums[sid][cid];
+      const isThumb = score === FM_SCORE.MUTUAL_THUMB_WANT || score === FM_SCORE.MUTUAL_THUMB_CHANCE;
+      return isThumb && num <= FM_ZONE_GREEN_MAX;
+    });
+    if (starRed.length > 0 && thumbGreen.length > 0) {
+      const starCid = starRed[0];
+      const thumbCid = thumbGreen[0];
+      const starCh = _chains.find(c => c.id === starCid);
+      const thumbCh = _chains.find(c => c.id === thumbCid);
+      warnings.push({
+        type: "swap_star_thumb",
+        supplierId: sid,
+        supplierName: s.name,
+        message: `Firma ${s.name}: sieć GŁÓWNA ${starCh?.name || starCid} ma numer ${nums[sid][starCid]} (czerwona), a REZERWOWA ${thumbCh?.name || thumbCid} ma numer ${nums[sid][thumbCid]} (zielona). Rozważ zamianę priorytetu w korektach.`,
+        starChainId: starCid,
+        thumbChainId: thumbCid,
+      });
+    }
+  }
+
+  return { res, cs, nums, cq, warnings };
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -10011,6 +10068,44 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
       {tab==="plan" && (
         <div>
           <AlgorithmTriggerCard fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} setFmSchedule={setFmSchedule}/>
+          {/* [B2B Round prod-rollout / FM scheduling v2] Warnings z algorytmu —
+              admin widzi listę problemów do rozważenia (swap_star_thumb, no_meetings). */}
+          {(() => {
+            const _plan = pickFMPlan(fmSchedule, fmAlgo);
+            const warnings = _plan?.warnings || [];
+            if (!warnings.length) return null;
+            const noMeetings = warnings.filter(w => w.type === "no_meetings");
+            const swaps = warnings.filter(w => w.type === "swap_star_thumb");
+            return (
+              <div style={{ marginTop:14, marginBottom:6 }}>
+                {noMeetings.length > 0 && (
+                  <div style={{ background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"12px 14px",marginBottom:8 }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6 }}>
+                      <AlertTriangle size={14} color="#dc2626"/>
+                      <strong style={{ fontSize:13,color:"#991b1b" }}>{noMeetings.length} {noMeetings.length===1?"firma bez spotkań":"firm bez spotkań"}</strong>
+                    </div>
+                    <div style={{ fontSize:11.5,color:"#7f1d1d",lineHeight:1.55 }}>
+                      {noMeetings.map(w => w.supplierName).join(", ")} — sprawdź czy sieci je odrzuciły lub dodaj alternatywy w Korektach.
+                    </div>
+                  </div>
+                )}
+                {swaps.length > 0 && (
+                  <div style={{ background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"12px 14px" }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:8 }}>
+                      <AlertTriangle size={14} color="#d97706"/>
+                      <strong style={{ fontSize:13,color:"#92400e" }}>{swaps.length} {swaps.length===1?"sugestia zamiany ⭐/👍":"sugestii zamian ⭐/👍"}</strong>
+                    </div>
+                    <ul style={{ margin:0,paddingLeft:18,fontSize:11.5,color:"#78350f",lineHeight:1.6 }}>
+                      {swaps.slice(0, 8).map((w, i) => (
+                        <li key={i} style={{ marginBottom:3 }}>{w.message}</li>
+                      ))}
+                      {swaps.length > 8 && <li style={{ color:"#92400e",fontStyle:"italic" }}>...i {swaps.length - 8} więcej</li>}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {(fmFullData||fmSchedule) && (
             <div style={{ marginTop:16 }}>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14 }}>
