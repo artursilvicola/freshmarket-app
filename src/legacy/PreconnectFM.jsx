@@ -2857,7 +2857,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
-    if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey}/>;
+    if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey} setOffers={setOffers} fl={fl}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
@@ -4391,8 +4391,18 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
 }
 
 /* ── Offers ────────────────────────────────────────────────────────────── */
-function PageOffers({ offers, sends, nav, accountId }) {
+function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
   const myOffers = (offers||[]).filter(o=>!o.supplierId||o.supplierId===accountId);
+  // [B2B Round prod-rollout / supplier-delete-offer]
+  // Lokalny modal potwierdzający usunięcie. Pokazuje nazwę propozycji,
+  // wymaga jawnego "Tak, usuń" — to operacja nieodwracalna (DELETE w DB).
+  const [confirmDelete, setConfirmDelete] = useState(null); // null | offer
+  function handleDelete(offer) {
+    if (!offer) return;
+    setOffers?.(prev => prev.filter(o => o.id !== offer.id));
+    setConfirmDelete(null);
+    fl?.(`Propozycja „${getInternalOfferTitle(offer) || getPublicOfferTitle(offer) || "(bez nazwy)"}" usunięta.`, "success");
+  }
   return (
     <div>
       <div style={{ marginBottom:14 }}>
@@ -4406,7 +4416,13 @@ function PageOffers({ offers, sends, nav, accountId }) {
         <Btn dark onClick={()=>nav("offer-create")}><Plus size={13}/> Dodaj propozycję asortymentową</Btn>
       </div>
       {myOffers.length===0&&<Alrt>Brak propozycji. Kliknij „Dodaj propozycję asortymentową" aby dodać pierwszą.</Alrt>}
-      {myOffers.map(o=>{ const sc=sends.filter(s=>s.offerId===o.id); const rc=sc.filter(s=>["read","read_manual"].includes(s.status)).length; const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o); return (
+      {myOffers.map(o=>{ const sc=sends.filter(s=>s.offerId===o.id); const rc=sc.filter(s=>["read","read_manual"].includes(s.status)).length; const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o);
+        // [B2B Round prod-rollout / supplier-delete-offer]
+        // Usunąć można TYLKO propozycje które jeszcze nie zostały wysłane do żadnej sieci.
+        // Po pierwszej wysyłce (legacy_send dla tej oferty) propozycja "żyje" w pipeline
+        // — jej usunięcie zostawiłoby sierocone send'y u admina i kupców.
+        const canDelete = sc.length === 0;
+        return (
         <div key={o.id} style={{ display:"flex",gap:12,padding:"14px 16px",background:"white",borderRadius:10,border:"1px solid #e2e8f0",marginBottom:8,alignItems:"center" }}>
           <span style={{ fontSize:24 }}>{CEMOJI[o.category]}</span>
           <div style={{ flex:1,minWidth:0 }}>
@@ -4429,9 +4445,46 @@ function PageOffers({ offers, sends, nav, accountId }) {
             <Btn sm outline onClick={()=>nav("offer-edit",o.id)}><Edit size={11}/> Edytuj</Btn>
             <Btn sm outline onClick={()=>nav("offer-copy",o.id)} title="Duplikuj propozycję — przyspiesza dodawanie podobnych produktów" style={{ borderColor:"#7c3aed",color:"#7c3aed" }}><Layers size={11}/> Duplikuj</Btn>
             {o.status==="active"&&<Btn sm style={{ background:"rgba(13,148,136,0.08)",color:"#0d9488" }} onClick={()=>nav("wysylki",o.id)}><Send size={11}/> Wyślij</Btn>}
+            {/* [B2B Round prod-rollout / supplier-delete-offer]
+                Przycisk Usuń — tylko gdy propozycja NIE została jeszcze wysłana
+                do żadnej sieci. Po wysyłce ukryty (tooltip z wyjaśnieniem). */}
+            {canDelete ? (
+              <Btn sm outline onClick={()=>setConfirmDelete(o)} title="Usuń propozycję (operacja nieodwracalna)" style={{ borderColor:"#dc2626",color:"#dc2626" }}>
+                <X size={11}/> Usuń
+              </Btn>
+            ) : (
+              <Btn sm outline disabled title={`Nie można usunąć — propozycja wysłana do ${sc.length} ${sc.length===1?"sieci":"sieci"}. Po wysyłce trafia do pipeline admina.`} style={{ borderColor:"#e2e8f0",color:"#cbd5e1",cursor:"not-allowed" }}>
+                <Lock size={11}/> Usuń
+              </Btn>
+            )}
           </div>
         </div>
       );})}
+
+      {/* Modal potwierdzający usunięcie */}
+      {confirmDelete && (
+        <div style={{ position:"fixed",inset:0,background:"rgba(15,23,42,0.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20 }} onClick={()=>setConfirmDelete(null)}>
+          <div style={{ background:"white",borderRadius:12,padding:24,maxWidth:440,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.25)" }} onClick={e=>e.stopPropagation()}>
+            <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:14 }}>
+              <div style={{ width:36,height:36,borderRadius:"50%",background:"#fef2f2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <AlertTriangle size={18} color="#dc2626"/>
+              </div>
+              <div style={{ fontSize:16,fontWeight:700,color:"#0f172a" }}>Usuń propozycję?</div>
+            </div>
+            <div style={{ fontSize:13,color:"#475569",lineHeight:1.6,marginBottom:18 }}>
+              Czy na pewno chcesz usunąć propozycję <strong style={{ color:"#0f172a" }}>„{getInternalOfferTitle(confirmDelete) || getPublicOfferTitle(confirmDelete) || "(bez nazwy)"}"</strong>?
+              <br/><br/>
+              Operacja jest <strong style={{ color:"#dc2626" }}>nieodwracalna</strong>. Propozycja zostanie skasowana z bazy. Jeśli chcesz ją tylko ukryć przed kupcami, możesz zamiast tego zmienić status na „Szkic" w edycji.
+            </div>
+            <div style={{ display:"flex",gap:8,justifyContent:"flex-end" }}>
+              <Btn outline onClick={()=>setConfirmDelete(null)}>Anuluj</Btn>
+              <Btn onClick={()=>handleDelete(confirmDelete)} style={{ background:"#dc2626",color:"white",border:"none" }}>
+                <X size={12}/> Tak, usuń
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
