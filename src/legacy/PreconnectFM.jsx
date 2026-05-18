@@ -910,10 +910,48 @@ const FM_EXCLUDED_PACKAGES = new Set(["Standard"]);
 const FM_ZONE_GREEN_MAX = 25;
 const FM_ZONE_ORANGE_MAX = 35;
 
+// ═════════════════════════════════════════════════════════════════════════
+// [B2B Round prod-rollout / FM scheduling v2 — Zasada 0]
+// ZASADA 0 — TWARDE WYKLUCZENIA (przed jakimkolwiek scoringiem).
+//
+// Para firma ↔ sieć nie może wejść do automatycznego grafiku, jeśli:
+//   • sieć oznaczyła firmę jako remove / rejected / nie chcę spotkania,
+//   • firma ręcznie wykluczyła tę sieć (supplierPref === "exclude" / "reject"),
+//   • firma ma pakiet Standard (FM_EXCLUDED_PACKAGES),
+//   • firma nie jest dopuszczona do FM B2B (fm_b2b_enabled === false).
+//
+// Dopiero PO przejściu tych filtrów algorytm liczy scoring (kategorie A-F).
+// ═════════════════════════════════════════════════════════════════════════
+
+// Helper: czy SAMA FIRMA jest dopuszczona do algorytmu (filtr per-supplier).
+// Jeśli false → wszystkie pary tej firmy są wykluczone przed scoringiem.
+function isSupplierEligible(supplier) {
+  if (!supplier) return false;
+  // Pakiet Standard nie ma umawianych spotkań (kompendium EVENT §21.1)
+  if (FM_EXCLUDED_PACKAGES.has(supplier.pkg)) return false;
+  // Admin nie dopuścił firmy do FM B2B
+  if (supplier.fmB2bEnabled === false) return false;
+  return true;
+}
+
+// Helper: czy POJEDYNCZA PARA jest wykluczona przed scoringiem (filtr per-pair).
+// Wartości "remove"/"rejected"/"exclude" pochodzą z:
+//   chainResp: response kupca w fm_resps.zone (UI buyer: ❌ Nie chcę)
+//   supplierPref: pref firmy w fm_prefs (UI supplier: ❌ Nie chcę — przyszłościowo,
+//     obecnie supplier może tylko star/thumb/usunąć)
+function isPairExcluded(supplierPref, chainResp) {
+  // Sieć aktywnie odrzuca firmę
+  if (chainResp === "remove" || chainResp === "rejected") return true;
+  // Firma aktywnie wyklucza sieć (przyszłościowo, gdy UI supplier doda 4. stan)
+  if (supplierPref === "exclude" || supplierPref === "rejected" || supplierPref === "remove") return true;
+  return false;
+}
+
 // Helper: ocena pojedynczej pary (supplier, chain) wg hierarchii biznesowej.
-// Zwraca 0 jeśli spotkanie nie wchodzi do grafiku (sieć nie zaakceptowała).
+// Wywoływany TYLKO po przejściu Zasady 0 — tu nie obsługujemy wykluczeń.
+// Zwraca 0 jeśli para nie pasuje do żadnej kategorii (chainResp = null/undefined).
 function scoreMatch(supplierPref, chainResp) {
-  if (!chainResp || chainResp === "remove") return 0;  // sieć nie akceptuje
+  if (!chainResp) return 0;  // sieć nie odpowiedziała wcale → brak spotkania
   const isWant   = chainResp === "want";
   const isChance = chainResp === "chance";
   const isStar   = supplierPref === "star";
@@ -2248,6 +2286,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         products:    co.products || "",
         companyId:   co.id,
         paymentDate: co.paymentDate || co.paidAt || null, // real payment date for scheduling priority
+        // [B2B Round prod-rollout / FM scheduling v2 — Zasada 0]
+        // fm_b2b_enabled = admin per-supplier flag dopuszczający firmę do FM B2B.
+        // Brak akceptacji → twarde wykluczenie z algorytmu (FAZA 0 w buildFMData).
+        // undefined = traktujemy jako true dla starszych mock-firm bez tego pola.
+        fmB2bEnabled: co.fm_b2b_enabled !== false,
         _sortIdx:    idx, // stable fallback
       })),
     [companies]
@@ -9240,7 +9283,13 @@ function fmNZ(n) {
 // ═════════════════════════════════════════════════════════════════════════
 // [B2B Round prod-rollout / FM scheduling v2] Nowy algorytm matchingu
 //
-// Hierarchia priorytetów (od najwyższej):
+// ZASADA 0 — twarde wykluczenia (PRZED rankingiem):
+//   • sieć oznaczyła firmę: remove / rejected
+//   • firma wykluczyła sieć: exclude / rejected / remove
+//   • firma w pakiecie Standard (FM_EXCLUDED_PACKAGES)
+//   • firma bez fm_b2b_enabled (admin nie dopuścił)
+//
+// Hierarchia priorytetów (PO przejściu Zasady 0):
 //   1. Mutual match (obie strony chcą) ZAWSZE bije jednostronne
 //   2. W obrębie kategorii (kat A-F): payment_date ASC tie-breaker
 //   3. ⭐ przed 👍 wewnątrz mutual (score MUTUAL_STAR_* > MUTUAL_THUMB_*)
@@ -9263,8 +9312,10 @@ function buildFMData(prefs, resps, chains, suppliers) {
   const _chains    = chains    || FM_CHAINS;
   const _suppliers = (suppliers && suppliers.length > 0) ? suppliers : FM_SUPPLIERS;
 
-  // FAZA 1 — filtruj wykluczone pakiety (Standard nie ma matchowanych spotkań)
-  const eligible = _suppliers.filter(s => !FM_EXCLUDED_PACKAGES.has(s.pkg));
+  // FAZA 0 — TWARDE WYKLUCZENIA (przed jakimkolwiek scoringiem)
+  // Filtr per-supplier: Standard + brak fm_b2b_enabled → out z algorytmu całkowicie.
+  // Filtr per-pair (remove/rejected/exclude) odbywa się w FAZA 2 razem ze scoringiem.
+  const eligible = _suppliers.filter(isSupplierEligible);
 
   // Init wynikowych struktur dla WSZYSTKICH supplerów (także wykluczonych —
   // UI może czytać res[sid] dla wszystkich; wykluczeni zostaną z m: [])
@@ -9280,11 +9331,15 @@ function buildFMData(prefs, resps, chains, suppliers) {
   });
 
   // FAZA 2 — zbierz wszystkich kandydatów (pary supplier×chain z score > 0)
+  // Zasada 0 per-pair: isPairExcluded blokuje wszystkie remove/rejected/exclude
+  // PRZED policzeniem score (czyste oddzielenie wykluczeń od scoringu).
   const candidates = [];
   eligible.forEach(s => {
     _chains.forEach(ch => {
       const sPref = prefs[s.id]?.[ch.id];
       const cResp = resps[ch.id]?.[s.id];
+      // ZASADA 0 — twarde wykluczenia per-pair
+      if (isPairExcluded(sPref, cResp)) return;
       const score = scoreMatch(sPref, cResp);
       if (score <= 0) return;
       candidates.push({
