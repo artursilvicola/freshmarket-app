@@ -871,6 +871,63 @@ const FM_PHASES=[
   {id:4,label:"Publikacja i event",  sub:"Finalna lista 22 wrz. · Event 24 wrz.",                        dates:"22–24 września",      color:"#059669"},
 ];
 const FM_MAX_M=5,FM_MAX_S=60;
+
+// ═════════════════════════════════════════════════════════════════════════
+// [B2B Round prod-rollout / FM scheduling v2] Konfiguracja algorytmu
+// Hierarchia priorytetów spotkań B2B (zatwierdzona przez biznes):
+//   1) mutual match wygrywa z jednostronnym ZAWSZE
+//   2) w obrębie tej samej kategorii: payment_date ASC (kto wcześniej zapłacił)
+//   3) sieci główne (⭐) przed zapasowymi (👍)
+//   4) Standard nie idzie do matchingu
+//   5) min odstęp ≥ FM_MIN_GAP między spotkaniami tej samej firmy
+//   6) progi stref widoczne i edytowalne tutaj (nie hardcoded głębiej)
+// ═════════════════════════════════════════════════════════════════════════
+const FM_SCORE = {
+  // Kategoria A — supplier wybrał sieć jako GŁÓWNĄ + sieć wybrała firmę (✅)
+  MUTUAL_STAR_WANT:     6000,
+  // Kategoria B — supplier wybrał sieć jako REZERWOWĄ + sieć wybrała firmę (✅)
+  MUTUAL_THUMB_WANT:    5000,
+  // Kategoria D — supplier wybrał sieć jako GŁÓWNĄ + sieć daje szansę (🤝)
+  MUTUAL_STAR_CHANCE:   4000,
+  // Kategoria E — supplier wybrał sieć jako REZERWOWĄ + sieć daje szansę (🤝)
+  MUTUAL_THUMB_CHANCE:  3000,
+  // Kategoria C — sieć aktywnie chce firmę, ale firma jej nie wybrała
+  //   (jednostronne zainteresowanie ze strony sieci — wciąż wartościowe)
+  ONE_SIDE_WANT:        2000,
+  // Kategoria F — sieć daje szansę firmie której nie wybrała (1-side, low)
+  ONE_SIDE_CHANCE:      1000,
+};
+// Minimalny odstęp numerów między spotkaniami tej samej firmy.
+// 2 = firma z 1 i 3 OK, ale 1 i 2 zabronione (musi zdążyć fizycznie).
+const FM_MIN_GAP = 2;
+// Pakiety wykluczone z matchmakingu (Standard nie ma umawianych spotkań —
+// jedynie networking + Speed Dating wg kompendium EVENT §5.9, §21.1).
+const FM_EXCLUDED_PACKAGES = new Set(["Standard"]);
+// Progi stref kolorystycznych (kolejność numerków):
+//   ≤ FM_ZONE_GREEN_MAX  → 🟢 zielona (wysoka szansa rozmowy)
+//   ≤ FM_ZONE_ORANGE_MAX → 🟠 pomarańczowa (środkowa kolejka)
+//   wyższe              → 🔴 czerwona (jeśli wolny czas)
+const FM_ZONE_GREEN_MAX = 25;
+const FM_ZONE_ORANGE_MAX = 35;
+
+// Helper: ocena pojedynczej pary (supplier, chain) wg hierarchii biznesowej.
+// Zwraca 0 jeśli spotkanie nie wchodzi do grafiku (sieć nie zaakceptowała).
+function scoreMatch(supplierPref, chainResp) {
+  if (!chainResp || chainResp === "remove") return 0;  // sieć nie akceptuje
+  const isWant   = chainResp === "want";
+  const isChance = chainResp === "chance";
+  const isStar   = supplierPref === "star";
+  const isThumb  = supplierPref === "thumb";
+  const isMutual = isStar || isThumb;
+  if (isMutual && isWant   && isStar)  return FM_SCORE.MUTUAL_STAR_WANT;    // A
+  if (isMutual && isWant   && isThumb) return FM_SCORE.MUTUAL_THUMB_WANT;   // B
+  if (isMutual && isChance && isStar)  return FM_SCORE.MUTUAL_STAR_CHANCE;  // D
+  if (isMutual && isChance && isThumb) return FM_SCORE.MUTUAL_THUMB_CHANCE; // E
+  if (!isMutual && isWant)   return FM_SCORE.ONE_SIDE_WANT;                 // C
+  if (!isMutual && isChance) return FM_SCORE.ONE_SIDE_CHANCE;               // F
+  return 0;
+}
+
 // runFMAlgo removed — buildFMData is canonical
 function genFMData(suppliers, chains){
   const _s = (suppliers && suppliers.length > 0) ? suppliers : FM_SUPPLIERS;
@@ -880,7 +937,7 @@ function genFMData(suppliers, chains){
   _s.forEach(s=>{_c.forEach(c=>{if(p[s.id]?.[c.id]){const x=Math.random();r[c.id][s.id]=x<0.40?"want":x<0.78?"chance":"remove";}});});
   return{p,r};
 }
-function getFMZone(pos){if(pos==null)return"blocked";if(pos<=25)return"green";if(pos<=35)return"orange";return"red";}
+function getFMZone(pos){if(pos==null)return"blocked";if(pos<=FM_ZONE_GREEN_MAX)return"green";if(pos<=FM_ZONE_ORANGE_MAX)return"orange";return"red";}
 const FM_ZONE_COLORS={
   green: {c:"#059669",bg:"#f0fdf4",b:"#bbf7d0",l:"Wysoka szansa",i:"🟢"},
   orange:{c:"#d97706",bg:"#fffbeb",b:"#fde68a",l:"Środkowa kolejka",i:"🟠"},
@@ -9170,147 +9227,148 @@ const FM_NZS = {
 };
 function fmNZ(n) {
   if (!n || n <= 0) return null; // no slot assigned yet — caller handles null
-  if (n <= 25) return "green";
-  if (n <= 35) return "orange";
+  if (n <= FM_ZONE_GREEN_MAX) return "green";
+  if (n <= FM_ZONE_ORANGE_MAX) return "orange";
   return "red";
 }
 
+// ═════════════════════════════════════════════════════════════════════════
+// [B2B Round prod-rollout / FM scheduling v2] Nowy algorytm matchingu
+//
+// Hierarchia priorytetów (od najwyższej):
+//   1. Mutual match (obie strony chcą) ZAWSZE bije jednostronne
+//   2. W obrębie kategorii (kat A-F): payment_date ASC tie-breaker
+//   3. ⭐ przed 👍 wewnątrz mutual (score MUTUAL_STAR_* > MUTUAL_THUMB_*)
+//   4. Pakiet Premium > Business (tie-breaker po payment_date)
+//   5. Standard wykluczony z matchmakingu (FM_EXCLUDED_PACKAGES)
+//
+// Constraints podczas numerowania:
+//   - jeden supplier nie ma dwóch tych samych numerów
+//   - jedna sieć nie przekracza FM_MAX_S slotów
+//   - jeden supplier nie przekracza FM_MAX_M spotkań
+//   - spotkania jednej firmy mają odstęp ≥ FM_MIN_GAP numerów
+//
+// Output format (niezmieniony — backward compat z PageSupplierFM/Buyer/Admin):
+//   { res: {sid: {m: [cid...], r: {cid: score}}},
+//     cs:  {cid: {n: count, list: [sid...]}},
+//     nums:{sid: {cid: slotNumber}},
+//     cq:  {cid: [sid|null array indexed by slot-1]} }
+// ═════════════════════════════════════════════════════════════════════════
 function buildFMData(prefs, resps, chains, suppliers) {
   const _chains    = chains    || FM_CHAINS;
   const _suppliers = (suppliers && suppliers.length > 0) ? suppliers : FM_SUPPLIERS;
-  const FM_MAX_MEETINGS = 5;
-  const FM_MAX_SLOTS    = 60;
 
-  /* ── Sort: Premium first, then Business, then paymentDate asc ── */
-  const sorted = [..._suppliers].sort((a, b) => {
-    const tier = { Premium: 0, Business: 1 };
-    const ta = tier[a.pkg] ?? 2, tb = tier[b.pkg] ?? 2;
-    if (ta !== tb) return ta - tb;
-    const da = a.paymentDate || a.paidAt || "";
-    const db = b.paymentDate || b.paidAt || "";
-    if (da && db) return da < db ? -1 : da > db ? 1 : 0;
-    if (da) return -1;
-    if (db) return  1;
-    return (a._sortIdx ?? 999) - (b._sortIdx ?? 999);
-  });
+  // FAZA 1 — filtruj wykluczone pakiety (Standard nie ma matchowanych spotkań)
+  const eligible = _suppliers.filter(s => !FM_EXCLUDED_PACKAGES.has(s.pkg));
 
-  /* ── Init ── */
+  // Init wynikowych struktur dla WSZYSTKICH supplerów (także wykluczonych —
+  // UI może czytać res[sid] dla wszystkich; wykluczeni zostaną z m: [])
   const res = {};
   const cs  = {};
-  _suppliers.forEach(s => { res[s.id] = { m: [], r: {} }; });
-  _chains.forEach(ch => { cs[ch.id] = { n: 0, list: [] }; });
-
-  const canAssign = (sid, cid) =>
-    cs[cid] !== undefined &&
-    res[sid].m.length < FM_MAX_MEETINGS &&
-    cs[cid].n < FM_MAX_SLOTS &&
-    !res[sid].m.includes(cid);
-
-  const assign = (sid, cid, rd) => {
-    if (!canAssign(sid, cid)) return false;
-    res[sid].m.push(cid);
-    res[sid].r[cid] = rd;
-    cs[cid].n++;
-    cs[cid].list.push(sid);
-    return true;
-  };
-
-  /*
-   * ════════════════════════════════════════════════════════════
-   * MATCHING — NETWORK CHOICE IS SUPREME
-   * Priority:
-   *   R1: chain answered ✅ (want) — regardless of supplier pref (star/thumb)
-   *   R2: chain answered 🤝 (chance) — regardless of supplier pref
-   *   ❌ (remove) = no meeting
-   * Within each round: sorted order (Premium → Business → paymentDate)
-   * ════════════════════════════════════════════════════════════
-   */
-
-  /* R1 — chain wants meeting (✅), any supplier pref except remove */
-  sorted.forEach(s => {
-    _chains.forEach(ch => {
-      const chainResp   = resps[ch.id]?.[s.id];
-      const supplierPref = prefs[s.id]?.[ch.id];
-      if (chainResp === "want" && supplierPref !== undefined && supplierPref !== "remove")
-        assign(s.id, ch.id, 1);
-    });
+  const nums = {};
+  const cq  = {};
+  const used = {};  // sid -> Set(slot numbers tej firmy globalnie)
+  _suppliers.forEach(s => { res[s.id] = { m: [], r: {} }; nums[s.id] = {}; used[s.id] = new Set(); });
+  _chains.forEach(ch => {
+    cs[ch.id] = { n: 0, list: [] };
+    cq[ch.id] = new Array(Math.max(60, FM_MAX_S)).fill(null);
   });
 
-  /* R2 — chain gives chance (🤝), supplier has any pref except remove */
-  /* Prioritise suppliers with fewer meetings so far */
-  [...sorted]
-    .sort((a, b) => res[a.id].m.length - res[b.id].m.length)
-    .forEach(s => {
-      if (res[s.id].m.length >= FM_MAX_MEETINGS) return;
-      _chains.forEach(ch => {
-        const chainResp   = resps[ch.id]?.[s.id];
-        const supplierPref = prefs[s.id]?.[ch.id];
-        if (chainResp === "chance" && supplierPref !== undefined && supplierPref !== "remove")
-          assign(s.id, ch.id, 2);
+  // FAZA 2 — zbierz wszystkich kandydatów (pary supplier×chain z score > 0)
+  const candidates = [];
+  eligible.forEach(s => {
+    _chains.forEach(ch => {
+      const sPref = prefs[s.id]?.[ch.id];
+      const cResp = resps[ch.id]?.[s.id];
+      const score = scoreMatch(sPref, cResp);
+      if (score <= 0) return;
+      candidates.push({
+        supplier: s,
+        chain: ch,
+        score,
+        // Tie-breakery sortowania:
+        paymentDate: s.paymentDate || s.paidAt || "9999-99-99",
+        pkgTier: s.pkg === "Premium" ? 0 : s.pkg === "Business" ? 1 : 2,
+        sortIdx: s._sortIdx ?? 999,
       });
     });
-
-  /*
-   * ════════════════════════════════════════════════════════════
-   * SCHEDULING — unique slot numbers, placement rules:
-   *   meeting #1 → must land in 1–10
-   *   meeting #2 → must land in 11–20
-   *   meeting #3+ → try 1–10, then 11–20, then 20+ (fallback)
-   *   uniqueness: supplier never gets the same number in two chains
-   *   ordering: sorted (Premium → Business → paymentDate) gets earlier slots
-   * ════════════════════════════════════════════════════════════
-   */
-  const nums = {};
-  const cq   = {};
-  const used = {}; // slot numbers this supplier already occupies across ALL chains
-  _suppliers.forEach(s => { nums[s.id] = {}; used[s.id] = new Set(); });
-  _chains.forEach(ch => {
-    cq[ch.id] = new Array(Math.max(cs[ch.id].n + 10, 60)).fill(null);
   });
 
-  const findSlot = (cid, lo, hi, usedSet) => {
-    if (!cq[cid]) return -1;
-    const limit = Math.min(hi, cq[cid].length);
-    for (let p = lo; p < limit; p++) {
-      if (cq[cid][p] === null && !usedSet.has(p + 1)) return p;
+  // FAZA 3 — globalne sortowanie kandydatów: score DESC → payment ASC → pkg → idx
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (a.paymentDate !== b.paymentDate) {
+      // ASC: wcześniejsza data wcześniej. Brak daty traktujemy jak "9999" (na koniec)
+      return a.paymentDate < b.paymentDate ? -1 : 1;
     }
-    return -1;
-  };
-
-  const placeAt = (sid, cid, bp) => {
-    cq[cid][bp] = sid;
-    used[sid].add(bp + 1);
-    nums[sid][cid] = bp + 1;
-  };
-
-  const place = (sid, cid, lo, hi) => {
-    let bp = findSlot(cid, lo, hi, used[sid]);
-    if (bp === -1) bp = findSlot(cid, 0, cq[cid].length, used[sid]);
-    if (bp === -1) { bp = cq[cid].length; cq[cid].push(null); }
-    placeAt(sid, cid, bp);
-  };
-
-  sorted.forEach(s => {
-    const mtgs = res[s.id].m;
-    if (mtgs.length === 0) return;
-
-    mtgs.forEach((cid, i) => {
-      if (i === 0) {
-        // 1st meeting MUST be in 1–10
-        place(s.id, cid, 0, 10);
-      } else if (i === 1) {
-        // 2nd meeting MUST be in 11–20
-        place(s.id, cid, 10, 20);
-      } else {
-        // 3rd+ : try 1–10 first, then 11–20, then 20+
-        let bp = findSlot(cid, 0, 10, used[s.id]);
-        if (bp !== -1) { placeAt(s.id, cid, bp); return; }
-        bp = findSlot(cid, 10, 20, used[s.id]);
-        if (bp !== -1) { placeAt(s.id, cid, bp); return; }
-        place(s.id, cid, 20, cq[cid].length);
-      }
-    });
+    if (a.pkgTier !== b.pkgTier) return a.pkgTier - b.pkgTier;
+    if (a.sortIdx !== b.sortIdx) return a.sortIdx - b.sortIdx;
+    return String(a.supplier.id).localeCompare(String(b.supplier.id));
   });
+
+  // FAZA 4 — przypisywanie multi-pass do FM_MAX_M spotkań/supplier
+  // Każdy pass dodaje jedną kolejną parę firmie (round-robin po liczbie spotkań).
+  // Iterujemy candidates w global sorted order — naturalnie pierwsze idą
+  // mutual A (6000), potem mutual B (5000) itd.
+  const pairsAssigned = new Set();  // "sid::cid" żeby uniknąć duplikatów
+  for (let pass = 1; pass <= FM_MAX_M; pass++) {
+    for (const cand of candidates) {
+      const sid = cand.supplier.id;
+      const cid = cand.chain.id;
+      // Pomijamy jeśli firma już ma >= pass spotkań (czyli wzięła wcześniej)
+      if (res[sid].m.length >= pass) continue;
+      // Pomijamy jeśli firma ma < pass-1 (nie nadrabiamy z opóźnieniem)
+      if (res[sid].m.length < pass - 1) continue;
+      // Pomijamy jeśli sieć pełna
+      if (cs[cid].n >= FM_MAX_S) continue;
+      // Pomijamy jeśli para już przypisana
+      if (pairsAssigned.has(`${sid}::${cid}`)) continue;
+      // Przypisz
+      res[sid].m.push(cid);
+      res[sid].r[cid] = cand.score;  // zapisujemy score zamiast round (numerek info)
+      cs[cid].n++;
+      cs[cid].list.push(sid);
+      pairsAssigned.add(`${sid}::${cid}`);
+    }
+  }
+
+  // FAZA 5 — numerowanie z respektowaniem FM_MIN_GAP
+  //
+  // Iterujemy jeszcze raz candidates w sortowanej kolejności (ten sam porządek
+  // co przy assignmencie). Dla każdej przypisanej pary znajdź najmniejszy wolny
+  // slot w sieci taki że:
+  //   - slot wolny w tej sieci (cq[cid][slot-1] === null)
+  //   - żadne z istniejących spotkań tej firmy nie jest bliżej niż FM_MIN_GAP
+  //
+  // Wynik: firmy z najwyższym score (mutual A) dostają najmniejsze numerki.
+  for (const cand of candidates) {
+    const sid = cand.supplier.id;
+    const cid = cand.chain.id;
+    if (!pairsAssigned.has(`${sid}::${cid}`)) continue;  // ta para nie wzięta
+    if (nums[sid][cid] != null) continue;                // już ma slot (raz każda para)
+
+    // Znajdź najmniejszy n taki że spełnia constraints
+    let n = 1;
+    let safety = 0;  // safety break — never iterate more than 1000
+    while (safety++ < 1000) {
+      const idx = n - 1;
+      // Rozszerz tablicę cq jeśli za krótka
+      if (idx >= cq[cid].length) cq[cid].push(null);
+      // Slot zajęty w sieci?
+      if (cq[cid][idx] !== null) { n++; continue; }
+      // Konflikt z innym spotkaniem tej firmy (gap)?
+      let hasNearby = false;
+      for (const prev of used[sid]) {
+        if (Math.abs(n - prev) < FM_MIN_GAP) { hasNearby = true; break; }
+      }
+      if (hasNearby) { n++; continue; }
+      break;  // n jest dobre
+    }
+
+    cq[cid][n - 1] = sid;
+    used[sid].add(n);
+    nums[sid][cid] = n;
+  }
 
   return { res, cs, nums, cq };
 }
