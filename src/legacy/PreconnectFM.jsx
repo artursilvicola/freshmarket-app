@@ -2974,7 +2974,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
-    if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers}/>;
+    if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity}/>;
@@ -3085,17 +3085,23 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>Admin</span>
               </div>
               {[[Layers,"Pipeline","a-pipeline"],[Store,"Sieci","a-retailers"],[Building2,"Firmy","a-firmy"]].map(([Ic,label,key])=>{
-                // [B2B Round supplier-onboarding-access-and-communication]
-                // Badge przy "Firmy" pokazuje liczbę dostawców czekających na
-                // zatwierdzenie. Liczone z lokalnego state companies (po
-                // bulkUpsert wraca z DB więc badge jest świeży).
-                const pendingForFirmy = key === "a-firmy"
-                  ? (companies || []).filter(c => c.account_status === "pending_review").length
-                  : 0;
+                // [B2B Round prod-rollout / admin-notifications] Badge w sidebarze
+                // dla pozycji wymagających akcji admina:
+                //   - Pipeline: propozycje czekające na moderację (status pending_moderation)
+                //   - Firmy: dostawcy w pending_review
+                let pendingCount = 0;
+                let pendingTitle = "";
+                if (key === "a-pipeline") {
+                  pendingCount = (sends || []).filter(s => s.status === "pending_moderation").length;
+                  pendingTitle = `${pendingCount} ${pendingCount===1?"propozycja czeka":"propozycji czeka"} na moderację`;
+                } else if (key === "a-firmy") {
+                  pendingCount = (companies || []).filter(c => c.account_status === "pending_review").length;
+                  pendingTitle = `${pendingCount} ${pendingCount===1?"firma czeka":"firm czeka"} na zatwierdzenie`;
+                }
                 return (
                   <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                     <Ic size={14}/><span>{label}</span>
-                    {pendingForFirmy>0 && <span title={`${pendingForFirmy} firm czeka na zatwierdzenie`} style={{ marginLeft:"auto",background:"#d97706",color:"white",borderRadius:10,fontSize:9,fontWeight:700,padding:"1px 6px",flexShrink:0 }}>{pendingForFirmy}</span>}
+                    {pendingCount>0 && <span title={pendingTitle} style={{ marginLeft:"auto",background:"#d97706",color:"white",borderRadius:10,fontSize:9,fontWeight:700,padding:"1px 6px",flexShrink:0 }}>{pendingCount}</span>}
                   </div>
                 );
               })}
@@ -6393,14 +6399,58 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Admin Dashboard ──────────────────────────────────────────────────── */
-function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, resetToSeed, retailers, fmSuppliers }) {
+function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, resetToSeed, retailers, fmSuppliers, companies }) {
   const pm=sends.filter(s=>s.status==="pending_moderation").length;
   const ap=sends.filter(s=>s.status==="approved").length;
   const nc=sends.filter(s=>s.status==="sent").length;
   const confirmed=sends.filter(s=>["read","read_manual"].includes(s.status));
   const revenue=confirmed.length*40;
+  // [B2B Round prod-rollout / admin-notifications] Dodatkowo zliczamy firmy
+  // w pending_review (rejestracja → admin musi aktywować). To 2 niezależne
+  // kolejki które wymagają akcji admina — pokazujemy w bannerze na górze.
+  const pendingFirms = (companies || []).filter(c => c.account_status === "pending_review").length;
+  const hasUrgent = pm > 0 || pendingFirms > 0;
   return (
     <div>
+      {/* [B2B Round prod-rollout / admin-notifications]
+          WYRAŹNY BANNER gdy są zadania czekające na admina (Oksana zgłosiła:
+          "nie widać, że coś wpłynęło" — pipeline KPI łatwo przegapić).
+          Pokazujemy tylko gdy faktycznie coś jest, żeby nie spamować. */}
+      {hasUrgent && (
+        <div style={{ marginBottom:18, padding:"14px 18px", background:"linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%)", border:"1px solid #fde68a", borderRadius:12, display:"flex", alignItems:"center", gap:14 }}>
+          <div style={{ width:42, height:42, borderRadius:"50%", background:"#d97706", color:"white", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:22 }}>🔔</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:700, fontSize:14, color:"#92400e", marginBottom:3 }}>
+              Wymaga Twojej akcji
+            </div>
+            <div style={{ fontSize:13, color:"#78350f", lineHeight:1.55 }}>
+              {pm > 0 && (
+                <>
+                  <strong>{pm}</strong> {pm===1?"propozycja czeka":pm<5?"propozycje czekają":"propozycji czeka"} na moderację
+                  {pendingFirms > 0 && " · "}
+                </>
+              )}
+              {pendingFirms > 0 && (
+                <>
+                  <strong>{pendingFirms}</strong> {pendingFirms===1?"firma czeka":pendingFirms<5?"firmy czekają":"firm czeka"} na aktywację konta
+                </>
+              )}
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+            {pm > 0 && (
+              <button onClick={()=>nav("a-pipeline")} style={{ padding:"8px 14px", background:"#d97706", color:"white", border:"none", borderRadius:8, fontSize:12.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
+                Otwórz Pipeline →
+              </button>
+            )}
+            {pendingFirms > 0 && (
+              <button onClick={()=>nav("a-firmy")} style={{ padding:"8px 14px", background:"white", color:"#92400e", border:"1px solid #d97706", borderRadius:8, fontSize:12.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
+                Otwórz Firmy →
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12,marginBottom:20 }}>
         {[["Przychód (potwier.)",`${revenue} EUR`,revenue>0?"#059669":"#94a3b8",TrendingUp],[`Do moderacji (${pm})`,pm>0?"Wymaga akcji":"OK",pm>0?"#d97706":"#059669",Layers],[`Zatwierdzone (${ap})`,ap>0?"Gotowe do wysyłki":"—",ap>0?"#2563eb":"#94a3b8",Send],[`Do potwierdzenia (${nc})`,nc>0?"Tracking aktywny":"—",nc>0?"#ea580c":"#94a3b8",Phone]].map(([l,v,c,Ic])=>(
           <div key={l} style={{ padding:"14px 16px",background:"white",border:"1px solid #e2e8f0",borderRadius:12,borderTop:`3px solid ${c}` }}>
