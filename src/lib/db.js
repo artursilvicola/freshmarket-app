@@ -1564,3 +1564,108 @@ export async function getCompanyByLegacySupplierId(legacySupplierId) {
   }
   return data;
 }
+
+// ===================================================================
+// ADMIN TEAM MANAGEMENT
+// [B2B Round prod-rollout / admin-team]
+//
+// 2-poziomowy system administratorów (po migracji 031_admin_levels.sql):
+//   • SUPER ADMIN — role=admin AND admin_level='super'
+//                   Pełen dostęp + może zarządzać zespołem
+//   • ZWYKŁY ADMIN — role=admin AND admin_level IS NULL
+//                    Pełen dostęp poza zarządzaniem zespołem
+//
+// Operacje na role/admin_level są chronione przez RLS policy
+// `profiles_super_admin_role_change` — tylko super admin może zmienić.
+// ===================================================================
+
+// Pobierz listę wszystkich adminów (super + zwykli).
+// Zwraca: [{ id, email, name, admin_level, created_at }, ...]
+export async function getAllAdmins() {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, name, admin_level, created_at")
+    .eq("role", "admin")
+    .order("admin_level", { ascending: false })  // 'super' przed NULL
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.warn("[getAllAdmins]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+// Promuj istniejącego user'a (po emailu) do roli admin.
+// Wymaga: super admin uprawnień (RLS).
+// User MUSI już istnieć w auth.users — najpierw musi zarejestrować się przez
+// normalny flow (zarejestruj dostawcę lub zostać dodany jako buyer).
+//
+// Zwraca: { ok: true, profile } albo { ok: false, error }
+export async function promoteToAdmin(email) {
+  if (!email || !email.includes("@")) {
+    return { ok: false, error: "Niepoprawny email" };
+  }
+  // Znajdź profile po emailu
+  const { data: existing, error: findErr } = await supabase
+    .from("profiles")
+    .select("id, email, role, admin_level")
+    .eq("email", email.toLowerCase().trim())
+    .maybeSingle();
+  if (findErr) return { ok: false, error: findErr.message };
+  if (!existing) {
+    return {
+      ok: false,
+      error: `Brak użytkownika ${email}. Najpierw musi zarejestrować się w aplikacji (np. przez stronę rejestracji dostawcy), potem promuj.`,
+    };
+  }
+  if (existing.role === "admin") {
+    return { ok: false, error: `${email} już jest administratorem.` };
+  }
+  // Promuj
+  const { data: updated, error: updErr } = await supabase
+    .from("profiles")
+    .update({ role: "admin", updated_at: new Date().toISOString() })
+    .eq("id", existing.id)
+    .select()
+    .single();
+  if (updErr) return { ok: false, error: updErr.message };
+  return { ok: true, profile: updated };
+}
+
+// Zdejmij rolę admin z user'a (degraduj do zwykłego user'a — role staje się NULL).
+// Wymaga: super admin (RLS).
+// NIE pozwalamy zdjąć roli sobie samemu (frontend gating + safety w RLS).
+export async function demoteFromAdmin(userId) {
+  if (!userId) return { ok: false, error: "Brak userId" };
+  const { data: me } = await supabase.auth.getUser();
+  if (me?.user?.id === userId) {
+    return { ok: false, error: "Nie możesz zdjąć uprawnień administratora samemu sobie." };
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ role: null, admin_level: null, updated_at: new Date().toISOString() })
+    .eq("id", userId)
+    .select()
+    .single();
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, profile: data };
+}
+
+// Toggle super-admin: enabled=true → ustaw 'super', false → NULL (zostaje zwykłym adminem)
+// Wymaga: super admin (RLS).
+// NIE pozwalamy zdjąć sobie samemu super-admin (żeby nie zostać samemu odciętym).
+export async function setSuperAdmin(userId, enabled) {
+  if (!userId) return { ok: false, error: "Brak userId" };
+  const { data: me } = await supabase.auth.getUser();
+  if (me?.user?.id === userId && !enabled) {
+    return { ok: false, error: "Nie możesz odebrać sobie samemu uprawnień super admina." };
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ admin_level: enabled ? "super" : null, updated_at: new Date().toISOString() })
+    .eq("id", userId)
+    .select()
+    .single();
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, profile: data };
+}

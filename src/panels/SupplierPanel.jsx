@@ -2,12 +2,13 @@ import { useAuth } from "../auth/AuthProvider";
 import LegacyApp from "../legacy/PreconnectFM";
 import PanelTopBar from "../components/PanelTopBar";
 import EntityLogo from "../components/EntityLogo";
+import LegalFooter from "../components/LegalFooter";
 
 export default function SupplierPanel() {
   const { user, profile, signOut } = useAuth();
 
   return (
-    <div style={{ minHeight: "100vh" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <PanelTopBar
         title="Panel Dostawcy"
         logo={
@@ -22,7 +23,10 @@ export default function SupplierPanel() {
         roleColor="#0d9488"
         onSignOut={signOut}
       />
-      <LegacyApp initialRole="supplier" currentUser={profile} />
+      <div style={{ flex: 1 }}>
+        <LegacyApp initialRole="supplier" currentUser={profile} />
+      </div>
+      <LegalFooter />
     </div>
   );
 }

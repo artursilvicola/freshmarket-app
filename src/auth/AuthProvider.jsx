@@ -58,6 +58,11 @@ export function AuthProvider({ children }) {
           retailer_name: data.retailer?.name || null,
           company_logo_url: data.company?.logo_url || null,
           retailer_logo_url: data.retailer?.logo_url || null,
+          // [B2B Round prod-rollout / admin-team] Shortcut dla UI gating:
+          // super admin = role=admin AND admin_level='super'. Aplikacja używa
+          // tego do pokazania/ukrycia pozycji "Administratorzy" w sidebar
+          // i przycisków zarządzania zespołem.
+          is_super_admin: data.role === "admin" && data.admin_level === "super",
         }
       : null;
     setProfile(enriched);

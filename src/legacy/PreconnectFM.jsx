@@ -47,6 +47,9 @@ import {
   createPayuOrder as dbCreatePayuOrder,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
   getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
+  // [B2B Round prod-rollout / admin-team] zarządzanie zespołem administratorów
+  getAllAdmins as dbGetAllAdmins, promoteToAdmin as dbPromoteToAdmin,
+  demoteFromAdmin as dbDemoteFromAdmin, setSuperAdmin as dbSetSuperAdmin,
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 import FreshMarketLogo from "../components/FreshMarketLogo";
@@ -2985,6 +2988,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
     if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
     if(pg==="a-branding")   return <PageAdminBranding fl={fl}/>;
+    if(pg==="a-team")       return <PageAdminTeam fl={fl} currentUser={currentUser}/>;
     return null;
   }
 
@@ -3130,6 +3134,15 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div onClick={()=>nav("a-branding")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-branding"?"white":"#64748b",background:navKey==="a-branding"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-branding"?600:400 }}>
                 <Sparkles size={14}/><span>Branding</span>
               </div>
+              {/* [B2B Round prod-rollout / admin-team] Pozycja "Administratorzy"
+                  widoczna TYLKO dla super admina (is_super_admin = role=admin
+                  AND admin_level='super'). Zwykli admini nie zobaczą tej zakładki. */}
+              {currentUser?.is_super_admin && (
+                <div onClick={()=>nav("a-team")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-team"?"white":"#64748b",background:navKey==="a-team"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-team"?600:400 }}>
+                  <Users size={14}/><span>Administratorzy</span>
+                  <span title="Tylko super admin widzi tę zakładkę" style={{ marginLeft:"auto",fontSize:9,color:"#a78bfa",background:"rgba(124,58,237,0.15)",padding:"1px 6px",borderRadius:6,fontWeight:700 }}>SUPER</span>
+                </div>
+              )}
             </>}
           </nav>
           <div style={{ padding:12,borderTop:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:8 }}>
@@ -10561,6 +10574,293 @@ function PageAdminBranding({ fl }) {
         <br/><br/>
         Po uploadzie odśwież stronę (F5) — nowy URL podpinamy raz na load.
       </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// PageAdminTeam — [B2B Round prod-rollout / admin-team]
+// =============================================================================
+// Zarządzanie zespołem administratorów. Widoczne TYLKO dla super admina
+// (gating już w sidebarze, ale dodatkowo zabezpieczamy tutaj).
+//
+// Funkcje:
+//   - Lista wszystkich adminów (super + zwykli)
+//   - "Promuj do administratora" — wpisz email istniejącego user'a → role=admin
+//   - "Promuj do super admina" / "Zdjmij super" — toggle admin_level
+//   - "Zdjmij uprawnienia administratora" — degradacja (role staje się NULL)
+//
+// Bezpieczeństwo:
+//   - RLS w bazie (profiles_super_admin_role_change) - jedynie super admin
+//     może UPDATE'ować role/admin_level innym userom
+//   - Funkcje db.js (demoteFromAdmin, setSuperAdmin) blokują self-degradation
+// =============================================================================
+function PageAdminTeam({ fl, currentUser }) {
+  const [admins, setAdmins] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(null);  // { id, email, name }
+
+  async function reload() {
+    setLoading(true);
+    try {
+      const list = await dbGetAllAdmins();
+      setAdmins(list);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { reload(); }, []);
+
+  // Gating ostrzegawczy — gdyby ktoś trafił tu mimo braku super-admin
+  if (!currentUser?.is_super_admin) {
+    return (
+      <div style={{ maxWidth: 600, margin: "40px auto", padding: 24, background: "white", border: "1px solid #fecaca", borderRadius: 12 }}>
+        <h2 style={{ color: "#991b1b", fontSize: 18, margin: "0 0 8px" }}>⛔ Brak dostępu</h2>
+        <p style={{ color: "#7f1d1d", fontSize: 13, margin: 0 }}>
+          Sekcja „Administratorzy" jest dostępna tylko dla super administratora.
+          Jesteś zalogowany jako zwykły administrator — masz dostęp do wszystkich
+          innych funkcji, ale zarządzanie zespołem wymaga uprawnień super-admin.
+        </p>
+      </div>
+    );
+  }
+
+  async function handlePromote() {
+    if (!inviteEmail.trim()) { fl?.("Wpisz email użytkownika.", "error"); return; }
+    setBusy(true);
+    try {
+      const res = await dbPromoteToAdmin(inviteEmail.trim());
+      if (!res.ok) {
+        fl?.("❌ " + res.error, "error");
+      } else {
+        fl?.(`✓ ${inviteEmail.trim()} otrzymał uprawnienia administratora.`, "success");
+        setInviteEmail("");
+        await reload();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleToggleSuper(admin) {
+    const wasSuper = admin.admin_level === "super";
+    setBusy(true);
+    try {
+      const res = await dbSetSuperAdmin(admin.id, !wasSuper);
+      if (!res.ok) {
+        fl?.("❌ " + res.error, "error");
+      } else {
+        fl?.(
+          wasSuper
+            ? `✓ ${admin.email} jest teraz zwykłym administratorem.`
+            : `✓ ${admin.email} jest teraz super administratorem.`,
+          "success"
+        );
+        await reload();
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemove(admin) {
+    setBusy(true);
+    try {
+      const res = await dbDemoteFromAdmin(admin.id);
+      if (!res.ok) {
+        fl?.("❌ " + res.error, "error");
+      } else {
+        fl?.(`✓ ${admin.email} stracił uprawnienia administratora.`, "success");
+        await reload();
+      }
+    } finally {
+      setBusy(false);
+      setConfirmRemove(null);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 920 }}>
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#0f172a" }}>Administratorzy</h1>
+        <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+          Zarządzaj zespołem administratorów Fresh Market B2B. Tylko Ty (super admin) możesz zmieniać uprawnienia.
+        </div>
+      </div>
+
+      {/* Promocja nowego admina */}
+      <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18, marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+          Promuj użytkownika do administratora
+        </div>
+        <div style={{ fontSize: 12, color: "#475569", marginBottom: 12, lineHeight: 1.55 }}>
+          Wpisz email użytkownika, który <strong>już istnieje w systemie</strong> (zarejestrowany przez stronę rejestracji dostawcy albo dodany jako kupiec). Po promocji dostanie dostęp do wszystkich funkcji administratora — moderacja propozycji, zarządzanie sieciami i firmami, panel FM 2026, branding.
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input
+            type="email"
+            value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)}
+            placeholder="email@firma.pl"
+            disabled={busy}
+            style={{ flex: 1, padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: 7, fontSize: 13, fontFamily: "inherit" }}
+            onKeyDown={(e) => { if (e.key === "Enter" && !busy) handlePromote(); }}
+          />
+          <button
+            onClick={handlePromote}
+            disabled={busy || !inviteEmail.trim()}
+            style={{
+              padding: "10px 16px",
+              background: busy || !inviteEmail.trim() ? "#cbd5e1" : "#0d9488",
+              color: "white",
+              border: "none",
+              borderRadius: 7,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: busy || !inviteEmail.trim() ? "not-allowed" : "pointer",
+              fontFamily: "inherit",
+              flexShrink: 0,
+            }}
+          >
+            {busy ? "Promuję..." : "Promuj na administratora"}
+          </button>
+        </div>
+      </div>
+
+      {/* Lista administratorów */}
+      <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+          Lista administratorów ({admins.length})
+        </div>
+        {loading ? (
+          <div style={{ fontSize: 13, color: "#94a3b8", padding: "10px 0" }}>Ładuję...</div>
+        ) : admins.length === 0 ? (
+          <div style={{ fontSize: 13, color: "#94a3b8", padding: "10px 0" }}>Brak administratorów. To dziwne — Ty powinieneś być na tej liście.</div>
+        ) : (
+          admins.map((admin) => {
+            const isSuper = admin.admin_level === "super";
+            const isMe = currentUser?.id === admin.id;
+            return (
+              <div key={admin.id} style={{
+                display: "flex", alignItems: "center", gap: 14,
+                padding: "12px 14px",
+                background: isSuper ? "rgba(124,58,237,0.04)" : "#fbfcfd",
+                border: `1px solid ${isSuper ? "rgba(124,58,237,0.2)" : "#e2e8f0"}`,
+                borderRadius: 8,
+                marginBottom: 6,
+              }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: "50%",
+                  background: isSuper ? "#7c3aed" : "#0d9488",
+                  color: "white",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontWeight: 700, fontSize: 14, flexShrink: 0,
+                }}>
+                  {(admin.name || admin.email || "?").substring(0, 1).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", display: "flex", alignItems: "center", gap: 6 }}>
+                    {admin.name || admin.email}
+                    {isMe && <span style={{ fontSize: 10, color: "#64748b", fontWeight: 500 }}>(to Ty)</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>
+                    {admin.email}
+                  </div>
+                </div>
+                <div>
+                  {isSuper ? (
+                    <span title="Super admin może zarządzać zespołem" style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      padding: "3px 10px", borderRadius: 99,
+                      background: "#7c3aed", color: "white",
+                      fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                    }}>⭐ SUPER ADMIN</span>
+                  ) : (
+                    <span style={{
+                      display: "inline-flex", alignItems: "center", gap: 4,
+                      padding: "3px 10px", borderRadius: 99,
+                      background: "rgba(13,148,136,0.12)", color: "#0d9488",
+                      fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
+                    }}>ADMIN</span>
+                  )}
+                </div>
+                {!isMe && (
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button
+                      onClick={() => handleToggleSuper(admin)}
+                      disabled={busy}
+                      title={isSuper ? "Cofnij uprawnienia super admina (zostaje zwykłym admin'em)" : "Promuj do super admina"}
+                      style={{
+                        padding: "6px 12px", fontSize: 11.5, fontWeight: 600,
+                        background: "white",
+                        border: `1px solid ${isSuper ? "#cbd5e1" : "#7c3aed"}`,
+                        color: isSuper ? "#475569" : "#7c3aed",
+                        borderRadius: 6, cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit",
+                      }}
+                    >
+                      {isSuper ? "Zdjmij super" : "Promuj super"}
+                    </button>
+                    <button
+                      onClick={() => setConfirmRemove(admin)}
+                      disabled={busy}
+                      title="Cofnij uprawnienia administratora całkowicie"
+                      style={{
+                        padding: "6px 12px", fontSize: 11.5, fontWeight: 600,
+                        background: "white",
+                        border: "1px solid #fecaca", color: "#dc2626",
+                        borderRadius: 6, cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit",
+                      }}
+                    >
+                      <X size={11} style={{ verticalAlign: "middle" }}/> Usuń
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Info box */}
+      <div style={{ marginTop: 14, padding: "11px 14px", background: "#f0fdfa", border: "1px solid #99f6e4", borderRadius: 8, fontSize: 11, color: "#0f766e", lineHeight: 1.6 }}>
+        <strong>💡 Wskazówki:</strong>
+        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+          <li><strong>Super admin</strong> — pełen dostęp + może zarządzać zespołem (Ty)</li>
+          <li><strong>Zwykły admin</strong> — pełen dostęp do moderacji, sieci, firm, FM, branding, ale NIE widzi tej zakładki</li>
+          <li>Żeby promować nowego admina, użytkownik musi <strong>najpierw założyć konto</strong> (np. przez rejestrację dostawcy)</li>
+          <li>Nie możesz odebrać uprawnień samemu sobie (zabezpieczenie przed zamknięciem dostępu do systemu)</li>
+        </ul>
+      </div>
+
+      {/* Modal potwierdzający usunięcie admina */}
+      {confirmRemove && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setConfirmRemove(null)}>
+          <div style={{ background: "white", borderRadius: 12, padding: 24, maxWidth: 440, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <AlertTriangle size={18} color="#dc2626"/>
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>Usuń uprawnienia administratora?</div>
+            </div>
+            <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginBottom: 18 }}>
+              Czy na pewno chcesz odebrać uprawnienia administratora użytkownikowi <strong style={{ color: "#0f172a" }}>{confirmRemove.name || confirmRemove.email}</strong>?
+              <br/><br/>
+              Konto pozostaje aktywne, ale traci dostęp do panelu administratora (moderacja, sieci, firmy, FM, branding).
+              <br/><br/>
+              Można później ponownie promować tego użytkownika do administratora.
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Btn outline onClick={() => setConfirmRemove(null)}>Anuluj</Btn>
+              <Btn onClick={() => handleRemove(confirmRemove)} disabled={busy} style={{ background: "#dc2626", color: "white", border: "none" }}>
+                <X size={12}/> {busy ? "Usuwam..." : "Tak, usuń"}
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

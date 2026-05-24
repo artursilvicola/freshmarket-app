@@ -2,6 +2,7 @@ import { useAuth } from "../auth/AuthProvider";
 import LegacyApp from "../legacy/PreconnectFM";
 import PanelTopBar from "../components/PanelTopBar";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import LegalFooter from "../components/LegalFooter";
 
 /**
  * AdminPanel — wrapper na istniejącą aplikację z wymuszonym kontekstem admina.
@@ -15,7 +16,7 @@ export default function AdminPanel() {
   const { user, profile, signOut } = useAuth();
 
   return (
-    <div style={{ minHeight: "100vh" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <PanelTopBar
         title="Panel Administratora"
         // [B2B Round branding-and-header-logos] admin nie reprezentuje jednej
@@ -27,7 +28,10 @@ export default function AdminPanel() {
         roleColor="#7c3aed"
         onSignOut={signOut}
       />
-      <LegacyApp initialRole="admin" currentUser={profile} />
+      <div style={{ flex: 1 }}>
+        <LegacyApp initialRole="admin" currentUser={profile} />
+      </div>
+      <LegalFooter />
     </div>
   );
 }
