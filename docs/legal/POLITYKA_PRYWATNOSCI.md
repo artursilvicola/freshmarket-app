@@ -1,6 +1,6 @@
 # Polityka Prywatności — Fresh Market B2B PreConnect
 
-**Wersja 1.0** · Obowiązuje od: [DATA WDROŻENIA]
+**Wersja 1.0** · Obowiązuje od: 24 maja 2026
 
 Niniejsza Polityka opisuje, w jaki sposób KJOW Sp. z o.o. (Operator platformy Fresh Market B2B PreConnect) przetwarza dane osobowe Użytkowników Serwisu zgodnie z Rozporządzeniem Parlamentu Europejskiego i Rady (UE) 2016/679 z dnia 27 kwietnia 2016 r. (RODO).
 
@@ -12,7 +12,9 @@ Administratorem Twoich danych osobowych jest:
 
 **KJOW Sp. z o.o.**
 ul. Marii 17/25, 05-803 Pruszków
-NIP: [NIP] · KRS: [KRS]
+NIP: 1181976336 · KRS: 0000321131 · REGON: 141654548
+Sąd Rejonowy dla m.st. Warszawy w Warszawie, XIV Wydział Gospodarczy KRS
+Kapitał zakładowy: 50 000,00 zł
 
 **Kontakt w sprawie danych osobowych:**
 📧 hello@freshmarket.eu
@@ -48,13 +50,15 @@ Przetwarzamy dane, które Dostawca **dobrowolnie podaje** podczas rejestracji i 
 
 ### 2.2 Dane Kupca
 
-**Dane osobowe Kupca:**
+**Dane osobowe Kupca** przetwarzane przez Operatora:
 - imię i nazwisko
 - służbowy adres e-mail
 - numer telefonu
 - nazwa Sieci handlowej / dystrybutora
 - stanowisko (np. Kategoria Manager)
 - kategorie zakupowe (owoce / warzywa / kwiaty)
+
+> **Uwaga dot. widoczności:** dane osobowe Kupca (imię, nazwisko, e-mail, telefon) są widoczne wyłącznie dla **Operatora** oraz dla osób z tej samej Sieci handlowej / dystrybutora. **Dostawcy NIE widzą** tych danych — dla Dostawcy publikujemy tylko nazwę Sieci jako organizacji oraz kategorie zakupowe (szczegóły w sekcji 4.1).
 
 ### 2.3 Dane techniczne (wszyscy Użytkownicy)
 
@@ -84,17 +88,32 @@ Przetwarzamy dane, które Dostawca **dobrowolnie podaje** podczas rejestracji i 
 
 > ⚠️ **KLUCZOWA ZASADA:** Operator **nie sprzedaje, nie wynajmuje i nie przekazuje** danych Użytkowników podmiotom zewnętrznym w celach marketingowych. **Dane udostępniane są wyłącznie w ramach uzgodnionej współpracy handlowej** — i tylko tym podmiotom, do których Użytkownik sam zdecydował się wysłać Propozycję / z którymi wybrał się spotkać.
 
-### 4.1 Wzajemna widoczność Dostawca ↔ Kupiec
+### 4.1 Wzajemna widoczność Dostawca ↔ Kupiec — asymetryczna
 
-**Kupiec widzi dane Dostawcy** (nazwa firmy, logo, opis, treść Propozycji, dane kontaktowe osoby kontaktowej) **TYLKO** gdy:
+**Widoczność jest świadomie asymetryczna** — chronimy dane osobowe Kupców (osób reprezentujących Sieci handlowe / dystrybutorów). Dostawca otrzymuje informacje o Sieci jako organizacji, ale nie o konkretnym Kupcu jako osobie fizycznej.
+
+#### Co widzi Kupiec o Dostawcy
+
+**Kupiec widzi pełne dane Dostawcy** (nazwa firmy, logo, opis działalności, treść Propozycji asortymentowej z cenami i zdjęciami, **dane kontaktowe osoby kontaktowej** — imię, nazwisko, e-mail służbowy, telefon) **TYLKO** gdy:
 - Dostawca wysłał Propozycję do reprezentowanej przez Kupca Sieci (moduł PreConnect), lub
 - Dostawca i Kupiec zostali dopasowani na Spotkanie B2B FM (po wzajemnym potwierdzeniu).
 
-**Dostawca widzi dane Kupca** (imię, nazwisko, adres e-mail, telefon, Sieć) **TYLKO** gdy:
-- Kupiec został przypisany do Sieci, do której Dostawca wysłał Propozycję, lub
-- Kupiec zaakceptował Dostawcę na Spotkanie B2B FM.
+Pełne dane kontaktowe Dostawcy są celowo udostępnione Kupcowi — Dostawca **świadomie i dobrowolnie** przekazuje swoje dane wybranej Sieci, ponieważ jego celem jest podjęcie współpracy handlowej.
 
-**Po wymianie kontaktu** obie strony mogą korzystać z otrzymanych danych do celów dalszej współpracy handlowej **poza Serwisem** — to standardowa praktyka B2B w branży.
+#### Co widzi Dostawca o Kupcu / Sieci
+
+**Dostawca NIE widzi danych osobowych Kupca** (imienia, nazwiska, adresu e-mail ani telefonu konkretnej osoby reprezentującej Sieć). Dostawca widzi wyłącznie **dane Sieci jako organizacji**:
+- **nazwa Sieci handlowej / dystrybutora** (np. „Biedronka", „Lidl Polska", „Carrefour"),
+- **kategorie zakupowe** Sieci (np. „owoce", „warzywa", „kwiaty"),
+- kraj Sieci, logo Sieci (jeśli udostępnione przez Sieć).
+
+Status wysłanej Propozycji widziany przez Dostawcę to: „wysłano do Biedronka", „otwarta przez Sieć", „wygasła" — **bez wskazania konkretnej osoby**, która ją otworzyła.
+
+#### Komunikacja po wzajemnym kontakcie
+
+Jeśli Kupiec zdecyduje się odpowiedzieć Dostawcy na otrzymaną Propozycję (przez mail z domeny Sieci, telefon lub osobiście podczas Spotkań B2B FM), to **od momentu takiej odpowiedzi obie strony mają wymienione kontakty** i mogą prowadzić dalszą współpracę poza Serwisem.
+
+Operator nie przekazuje aktywnie danych Kupca Dostawcy — to **Kupiec sam decyduje**, czy i w jaki sposób ujawni Dostawcy swoje dane osobowe.
 
 ### 4.2 Podmioty przetwarzające dane w imieniu Operatora
 

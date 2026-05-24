@@ -1,6 +1,6 @@
 # Regulamin korzystania z platformy Fresh Market B2B PreConnect
 
-**Wersja 1.0** · Obowiązuje od: [DATA WDROŻENIA]
+**Wersja 1.0** · Obowiązuje od: 24 maja 2026
 **Administrator:** KJOW Sp. z o.o. z siedzibą w Pruszkowie
 
 ---
@@ -9,7 +9,7 @@
 
 W regulaminie używamy następujących pojęć:
 
-1. **Operator / Administrator** — KJOW Sp. z o.o. z siedzibą w Pruszkowie (05-803), ul. Marii 17/25, wpisana do rejestru przedsiębiorców Krajowego Rejestru Sądowego pod numerem KRS [NUMER], NIP: [NIP], REGON: [REGON].
+1. **Operator / Administrator** — KJOW Sp. z o.o. z siedzibą w Pruszkowie (05-803), ul. Marii 17/25, wpisana do rejestru przedsiębiorców Krajowego Rejestru Sądowego prowadzonego przez Sąd Rejonowy dla m.st. Warszawy w Warszawie, XIV Wydział Gospodarczy KRS pod numerem KRS 0000321131, NIP: 1181976336, REGON: 141654548, kapitał zakładowy: 50 000,00 zł.
 2. **Platforma / Serwis** — strona internetowa pod adresem `https://b2b.freshmarket.eu` wraz z systemem informatycznym do obsługi spotkań B2B i wysyłki ofert handlowych w branży owoców, warzyw i kwiatów.
 3. **Użytkownik** — osoba fizyczna lub prawna posiadająca konto w Serwisie, w jednej z trzech ról: Dostawca, Kupiec lub Administrator Serwisu.
 4. **Dostawca** — przedsiębiorca (osoba fizyczna lub prawna) prowadzący działalność gospodarczą w zakresie produkcji lub dystrybucji owoców, warzyw, kwiatów lub produktów pokrewnych, korzystający z Serwisu do prezentowania swojej oferty kupcom.
@@ -200,10 +200,10 @@ Kupiec zobowiązuje się do:
 1. Prawem właściwym dla Regulaminu jest prawo polskie.
 2. Wszelkie spory powstałe na tle Regulaminu, których nie uda się rozwiązać polubownie, będą rozpatrywane przez sąd właściwy dla siedziby Operatora.
 3. W sprawach nieuregulowanych Regulaminem zastosowanie mają przepisy Kodeksu Cywilnego, ustawy o świadczeniu usług drogą elektroniczną, Ustawy Prawo przedsiębiorców oraz RODO.
-4. Regulamin wchodzi w życie z dniem [DATA WDROŻENIA].
+4. Regulamin wchodzi w życie z dniem 24 maja 2026.
 5. Polityka Prywatności dostępna jest pod adresem `https://b2b.freshmarket.eu/polityka-prywatnosci` i stanowi integralną część Regulaminu w zakresie ochrony danych osobowych.
 
 ---
 
 **Kontakt:** hello@freshmarket.eu · +48 603 424 346
-**Operator:** KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków · NIP: [NIP]
+**Operator:** KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków · NIP: 1181976336 · KRS: 0000321131 · REGON: 141654548
