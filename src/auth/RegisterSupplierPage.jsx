@@ -51,6 +51,8 @@ export default function RegisterSupplierPage() {
         contact_name: form.contact_name,
         contact_phone: form.contact_phone,
         nip: form.nip,
+        accepted_terms_version: TERMS_VERSION,
+        accepted_privacy_version: PRIVACY_VERSION,
       });
 
       // Auto-login: supplier od razu trafia do panelu (w stanie pending_review)

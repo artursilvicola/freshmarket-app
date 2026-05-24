@@ -1,7 +1,10 @@
 /**
  * Netlify Function: register-supplier-self
  * POST /.netlify/functions/register-supplier-self
- * Body: { email, password, company_name, country, contact_name?, contact_phone?, nip? }
+ * Body: {
+ *   email, password, company_name, country, contact_name?, contact_phone?, nip?,
+ *   accepted_terms_version?, accepted_privacy_version?
+ * }
  *
  * [B2B Round supplier-onboarding-access-and-communication]
  *
@@ -54,6 +57,9 @@ export const handler = async (event) => {
   const contactName = String(body.contact_name || "").trim();
   const contactPhone = String(body.contact_phone || "").trim();
   const nip = String(body.nip || "").trim();
+  const acceptedTermsVersion = String(body.accepted_terms_version || "1.0").trim();
+  const acceptedPrivacyVersion = String(body.accepted_privacy_version || "1.0").trim();
+  const acceptedAt = new Date().toISOString();
 
   // ── Walidacja ──────────────────────────────────────────────────────
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
@@ -89,6 +95,9 @@ export const handler = async (event) => {
     user_metadata: {
       role: "supplier",
       company_name: companyName,
+      accepted_terms_version: acceptedTermsVersion,
+      accepted_privacy_version: acceptedPrivacyVersion,
+      accepted_at: acceptedAt,
     },
   });
   if (userErr || !userData?.user) {
@@ -129,6 +138,9 @@ export const handler = async (event) => {
         company_id: company.id,
         active: true,
         fm26_active: false,
+        accepted_terms_version: acceptedTermsVersion,
+        accepted_privacy_version: acceptedPrivacyVersion,
+        accepted_at: acceptedAt,
       },
       { onConflict: "id" }
     );
@@ -189,6 +201,9 @@ export const handler = async (event) => {
     user_id: userId,
     company_id: company.id,
     account_status: "pending_review",
+    accepted_terms_version: acceptedTermsVersion,
+    accepted_privacy_version: acceptedPrivacyVersion,
+    accepted_at: acceptedAt,
     message: "Konto utworzone, czeka na zatwierdzenie przez administratora.",
     emails: emailResults,
   });

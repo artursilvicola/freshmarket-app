@@ -1398,11 +1398,31 @@ export async function notifySupplier({ template, company_id, payload }) {
 // [B2B Round supplier-onboarding-access-and-communication]
 // Self-registration: tworzy nowe konto dostawcy + firmę w stanie
 // pending_review. Nie wymaga auth (publiczny endpoint).
-export async function selfRegisterSupplier({ email, password, company_name, country, contact_name, contact_phone, nip }) {
+export async function selfRegisterSupplier({
+  email,
+  password,
+  company_name,
+  country,
+  contact_name,
+  contact_phone,
+  nip,
+  accepted_terms_version,
+  accepted_privacy_version,
+}) {
   const res = await fetch("/.netlify/functions/register-supplier-self", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password, company_name, country, contact_name, contact_phone, nip }),
+    body: JSON.stringify({
+      email,
+      password,
+      company_name,
+      country,
+      contact_name,
+      contact_phone,
+      nip,
+      accepted_terms_version,
+      accepted_privacy_version,
+    }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
