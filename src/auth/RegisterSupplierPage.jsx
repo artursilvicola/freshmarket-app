@@ -164,9 +164,17 @@ export default function RegisterSupplierPage() {
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#475569", lineHeight: 1.5, cursor: "pointer" }}>
             <input type="checkbox" checked={form.accept} onChange={(e) => set("accept", e.target.checked)} style={{ marginTop: 3 }}/>
             <span>
+              Akceptuję{" "}
+              <a href="/regulamin" target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600 }}>Regulamin</a>
+              {" "}oraz{" "}
+              <a href="/polityka-prywatnosci" target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600 }}>Politykę Prywatności</a>.
               Rozumiem, że konto trafia do <strong>weryfikacji administratora</strong>.
               Do czasu zatwierdzenia mogę zalogować się i uzupełnić profil, ale nie wysyłam ofert
               do sieci ani nie biorę udziału w Spotkaniach B2B.
+              <br/><br/>
+              Moje dane (nazwa firmy, kontakt) będą widoczne <strong>wyłącznie dla kupców z sieci handlowych
+              i dystrybutorów</strong>, do których sam zdecyduję się wysłać propozycję lub z którymi
+              umówię się na spotkanie B2B. Operator nie przekazuje danych innym podmiotom.
             </span>
           </label>
 

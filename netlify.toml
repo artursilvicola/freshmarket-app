@@ -19,6 +19,19 @@
   status = 301
   force = true
 
+# [B2B Round prod-rollout / legal-pages] Pretty URLs dla regulaminu + RODO.
+# Bez .html w adresie — wygodniej dla użytkowników i ładniej w stopkach maili.
+# status=200 (rewrite, nie redirect) → URL w pasku pozostaje /regulamin
+# zamiast skoczyć na /regulamin.html.
+[[redirects]]
+  from = "/regulamin"
+  to = "/regulamin.html"
+  status = 200
+[[redirects]]
+  from = "/polityka-prywatnosci"
+  to = "/polityka-prywatnosci.html"
+  status = 200
+
 # SPA fallback - React Router obsługuje routing po stronie klienta
 [[redirects]]
   from = "/*"
