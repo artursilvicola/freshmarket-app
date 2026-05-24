@@ -121,7 +121,11 @@ export const handler = async (event) => {
     .single();
   if (coErr || !company) {
     // Cleanup: usuń auth usera, żeby nie zostawić ducha
-    await supaSvc.auth.admin.deleteUser(userId).catch(() => {});
+    try {
+      await supaSvc.auth.admin.deleteUser(userId);
+    } catch {
+      // Best effort cleanup. Pierwotny błąd zwracamy niżej.
+    }
     return json(500, { error: "Nie udało się utworzyć firmy: " + (coErr?.message || "unknown") });
   }
 
@@ -146,8 +150,16 @@ export const handler = async (event) => {
     );
   if (profErr) {
     // Cleanup: usuń company + user
-    await supaSvc.from("companies").delete().eq("id", company.id).catch(() => {});
-    await supaSvc.auth.admin.deleteUser(userId).catch(() => {});
+    try {
+      await supaSvc.from("companies").delete().eq("id", company.id);
+    } catch {
+      // Best effort cleanup. Pierwotny błąd zwracamy niżej.
+    }
+    try {
+      await supaSvc.auth.admin.deleteUser(userId);
+    } catch {
+      // Best effort cleanup. Pierwotny błąd zwracamy niżej.
+    }
     return json(500, { error: "Nie udało się utworzyć profilu: " + profErr.message });
   }
 
