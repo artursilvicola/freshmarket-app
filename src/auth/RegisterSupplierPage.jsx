@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { selfRegisterSupplier } from "../lib/db";
 import { supabase } from "../lib/supabase";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/legal-versions";
 
 /**
  * RegisterSupplierPage — publiczna self-registration dostawcy.
@@ -60,6 +61,25 @@ export default function RegisterSupplierPage() {
       if (signInErr) {
         setDone({ ok: true, autoLogin: false, ...result });
       } else {
+        // [B2B Round prod-rollout / legal-versioning] Zapisz wersje zaakceptowanych
+        // dokumentów do profiles — wymóg art. 7 RODO (obowiązek wykazania zgody).
+        // Robimy PO signIn żeby RLS pozwoliło na update (auth.uid() = profile.id).
+        try {
+          const { data: sess } = await supabase.auth.getUser();
+          if (sess?.user?.id) {
+            await supabase
+              .from("profiles")
+              .update({
+                accepted_terms_version: TERMS_VERSION,
+                accepted_privacy_version: PRIVACY_VERSION,
+                accepted_at: new Date().toISOString(),
+              })
+              .eq("id", sess.user.id);
+          }
+        } catch (e) {
+          console.warn("[register] consent versioning save failed", e?.message || e);
+          // Nie blokujemy rejestracji — fallback w bazie zapisuje "pre-1.0" przez migrację
+        }
         // navigate dopiero po krótkim opóźnieniu, żeby AuthProvider zdążył pociągnąć profil
         setDone({ ok: true, autoLogin: true, ...result });
         setTimeout(() => navigate("/dostawca", { replace: true }), 800);
@@ -172,9 +192,12 @@ export default function RegisterSupplierPage() {
               Do czasu zatwierdzenia mogę zalogować się i uzupełnić profil, ale nie wysyłam ofert
               do sieci ani nie biorę udziału w Spotkaniach B2B.
               <br/><br/>
-              Moje dane (nazwa firmy, kontakt) będą widoczne <strong>wyłącznie dla kupców z sieci handlowych
-              i dystrybutorów</strong>, do których sam zdecyduję się wysłać propozycję lub z którymi
-              umówię się na spotkanie B2B. Operator nie przekazuje danych innym podmiotom.
+              Moje dane będą widoczne dla <strong>kupców z sieci handlowych i dystrybutorów</strong> wyłącznie
+              w zakresie, w jakim sam wyślę im propozycję, wybiorę ich w ramach Spotkań B2B
+              albo zostanę z nimi dopasowany w ramach zaakceptowanej procedury FM B2B.
+              Operator <strong>nie udostępnia danych innym odbiorcom w celach marketingowych</strong>;
+              dane mogą być przetwarzane przez <strong>dostawców technicznych działających na zlecenie
+              Operatora</strong> (lista w Polityce Prywatności).
             </span>
           </label>
 

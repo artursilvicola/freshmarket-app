@@ -130,6 +130,17 @@ export default function LoginPage() {
               osobno. Buyer dalej idzie przez admina (nie ma self-register dla kupców). */}
           Nie masz konta dostawcy? <Link to="/zarejestruj-dostawce" style={S.link}>Zarejestruj firmę</Link>
         </div>
+
+        {/* [B2B Round prod-rollout / legal] Linki do Regulaminu i Polityki
+            Prywatności — wymóg dobrej praktyki dla aplikacji przetwarzającej
+            dane osobowe. Otwierane w nowej karcie żeby nie wybić usera z loginu. */}
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #e2e8f0", textAlign: "center", fontSize: 11, color: "#94a3b8" }}>
+          <a href="/regulamin" target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>Regulamin</a>
+          <span style={{ margin: "0 8px", color: "#cbd5e1" }}>·</span>
+          <a href="/polityka-prywatnosci" target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>Polityka Prywatności</a>
+          <span style={{ margin: "0 8px", color: "#cbd5e1" }}>·</span>
+          <a href="mailto:hello@freshmarket.eu" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>Kontakt</a>
+        </div>
       </div>
     </div>
   );

@@ -114,9 +114,17 @@ Wszyscy procesorzy zobowiązani są umownie do zachowania bezpieczeństwa danych
 
 Dane mogą zostać udostępnione organom publicznym (np. policja, prokuratura, sąd, urząd skarbowy) **wyłącznie na podstawie pisemnego wezwania o właściwej podstawie prawnej**.
 
-### 4.4 Brak transferu poza EOG
+### 4.4 Transfer danych poza EOG
 
-Operator **nie przekazuje** Twoich danych do krajów spoza Europejskiego Obszaru Gospodarczego, z wyjątkiem opcjonalnej integracji z OpenAI (gdzie transferowane są **wyłącznie nieidentyfikowalne dane operacyjne** — bez nazw firm, danych kontaktowych, treści Propozycji handlowych).
+Dane przetwarzane są przez Operatora i wymienione wyżej podmioty przetwarzające (procesory) zgodnie z zawartymi **umowami powierzenia przetwarzania (DPA)** wymaganymi przez RODO. Większość operacji odbywa się w infrastrukturze zlokalizowanej w Europejskim Obszarze Gospodarczym (Supabase i Resend — region eu-west-1, Irlandia; PayU — Polska).
+
+W przypadku usług, których architektura wymaga transferu danych poza EOG (np. Netlify — globalna sieć CDN dla treści statycznych; OpenAI — wyłącznie nieidentyfikowalne dane operacyjne, jeśli integracja jest włączona), transfer odbywa się **na podstawie odpowiednich zabezpieczeń** w rozumieniu Rozdziału V RODO, w szczególności:
+
+- **Standardowych Klauzul Umownych (SCC)** zatwierdzonych decyzją Komisji Europejskiej z 4 czerwca 2021 r.;
+- **Decyzji o adekwatności** Komisji Europejskiej (Data Privacy Framework dla USA, jeśli dotyczy konkretnego procesora);
+- Wewnętrznych polityk bezpieczeństwa procesorów certyfikowanych standardami międzynarodowymi (SOC 2, ISO 27001).
+
+Operator dokłada starań, aby dane Użytkowników były przetwarzane głównie w infrastrukturze unijnej. Lista konkretnych procesorów i ich lokalizacji (sekcja 4.2 powyżej) może zostać zaktualizowana — najnowsza wersja jest zawsze dostępna w aktualnej Polityce Prywatności.
 
 ---
 
