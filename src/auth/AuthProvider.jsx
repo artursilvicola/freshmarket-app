@@ -8,7 +8,8 @@ import i18n from "../i18n";
 import {
   normalizeLocale,
   persistLocale,
-  consumePendingLocaleSync,
+  readPendingLocaleSync,
+  clearPendingLocaleSync,
   DEFAULT_LOCALE,
 } from "../i18n/locale";
 
@@ -78,12 +79,14 @@ export function AuthProvider({ children }) {
       : null;
     setProfile(enriched);
 
-    // [B2B Round prod-rollout / i18n MVP — Krok 2 + 3b]
+    // [B2B Round prod-rollout / i18n MVP — Krok 2 + 3b + 3c]
     // Synchronizacja języka po zalogowaniu — dwa scenariusze:
     //
     // A) Niezalogowany user zmienił język przed loginem (pending sync flag):
-    //    consumePendingLocaleSync() zwraca tę wartość, my UPDATE'ujemy
-    //    profile.locale w DB tym wyborem (best-effort). Intencja usera
+    //    readPendingLocaleSync() zwraca tę wartość (BEZ kasowania flagi).
+    //    UPDATE'ujemy profile.locale w DB tym wyborem (best-effort).
+    //    Flagę kasujemy DOPIERO po sukcesie DB update — żeby przy padnięciu
+    //    sync mógł zostać ponowiony przy kolejnym loginie. Intencja usera
     //    wygrywa nad domyślnym 'pl' z migracji.
     //
     // B) Brak pending sync: standardowe zachowanie — profile.locale z DB
@@ -94,7 +97,7 @@ export function AuthProvider({ children }) {
     // (Krok 4 dopiero podłączy auth pages). Ta linia ustawia tylko stan
     // i18next — wizualnie nic się nie zmienia w aplikacji.
     if (enriched) {
-      const pendingLocale = consumePendingLocaleSync();
+      const pendingLocale = readPendingLocaleSync();
       const dbLocale = normalizeLocale(enriched.locale || DEFAULT_LOCALE);
 
       // Pending sync wygrywa nad DB. Jeśli nie ma pending — używamy DB.
@@ -107,8 +110,11 @@ export function AuthProvider({ children }) {
       }
       persistLocale(desired);
 
-      // [Krok 3b] Jeśli pending sync nadpisał DB — zapiszmy też do bazy
-      // żeby przyszłe sesje od razu miały właściwy język.
+      // [Krok 3c] Trzy ścieżki dla pending sync:
+      //   1. pending istnieje i RÓŻNI się od DB → UPDATE, flagę kasujemy
+      //      DOPIERO po sukcesie. Jeśli padnie, flaga zostaje na ponowienie.
+      //   2. pending istnieje i RÓWNY DB → nic do robienia, kasujemy flagę.
+      //   3. brak pending → nic do robienia.
       if (pendingLocale && pendingLocale !== dbLocale) {
         supabase
           .from("profiles")
@@ -117,16 +123,18 @@ export function AuthProvider({ children }) {
           .then(({ error }) => {
             if (error) {
               console.warn("[Auth] pending locale sync to DB failed:", error.message);
-              // Nie wywalamy aplikacji — UI już aktualne, localStorage zapisany.
-              // Przy następnym loginie pending flag już została skonsumowana,
-              // więc DB wygra (potencjalnie cofnie wybór). To trade-off
-              // best-effort sync — jeśli RLS chwilowo blokuje, regresja
-              // przy następnej sesji jest akceptowalna.
+              // [Krok 3c] NIE kasujemy flagi — sync zostanie ponowiony przy
+              // kolejnym loginie. UI dla bieżącej sesji już jest właściwy
+              // (localStorage + i18next state).
             } else {
+              clearPendingLocaleSync();
               // Lokalny enriched.locale też aktualizujemy żeby nie był stale
               setProfile((prev) => prev ? { ...prev, locale: pendingLocale } : prev);
             }
           });
+      } else if (pendingLocale && pendingLocale === dbLocale) {
+        // [Krok 3c] Pending już zgodny z DB — flaga niepotrzebna, kasujemy.
+        clearPendingLocaleSync();
       }
     }
   }, []);

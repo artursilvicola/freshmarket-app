@@ -138,20 +138,26 @@ export function markLocaleForSync(locale) {
 }
 
 /**
- * [Krok 3b] Sprawdza czy istnieje pending sync. Jeśli tak — zwraca locale
- * z localStorage i CZYŚCI flagę. Wywoływane raz, po zalogowaniu w AuthProvider.
+ * [Krok 3c] Tylko ODCZYT pending sync — bez side-effect.
+ *
+ * Zmiana względem Kroku 3b: poprzednia wersja (consumePendingLocaleSync)
+ * kasowała flagę od razu przy odczycie. Jeśli następujący po niej DB update
+ * profile.locale padał (RLS, network, race), flaga znikała mimo że sync
+ * nie został wykonany — przy kolejnym loginie DB wygrywała i cofała wybór.
+ *
+ * Teraz: AuthProvider tylko CZYTA wartość, a clearPendingLocaleSync() woła
+ * dopiero gdy DB update zakończy się sukcesem (albo gdy pending już === DB).
+ * Jeśli DB update padnie, flaga zostaje i sync zostanie ponowiony przy
+ * kolejnym loginie.
  *
  * @returns {string|null} locale do synchronizacji albo null gdy brak pending
  */
-export function consumePendingLocaleSync() {
+export function readPendingLocaleSync() {
   try {
     if (typeof window === "undefined" || !window.localStorage) return null;
     const pending = window.localStorage.getItem(LOCALE_PENDING_SYNC_KEY);
     if (!pending) return null;
-    const locale = normalizeLocale(window.localStorage.getItem(LOCALE_STORAGE_KEY));
-    // Wyczyść flagę natychmiast — żeby kolejne wywołania nie odpalały sync
-    window.localStorage.removeItem(LOCALE_PENDING_SYNC_KEY);
-    return locale;
+    return normalizeLocale(window.localStorage.getItem(LOCALE_STORAGE_KEY));
   } catch (e) {
     return null;
   }
@@ -159,8 +165,15 @@ export function consumePendingLocaleSync() {
 
 /**
  * [Krok 3b] Czyści pending sync flag bez konsumowania wartości.
- * Wywoływane przez LanguageSwitcher gdy user JEST zalogowany i właśnie
- * wykonaliśmy DB UPDATE — nie ma już potrzeby pending sync.
+ *
+ * Wywoływane:
+ *   - przez AuthProvider PO udanym DB update profile.locale,
+ *   - przez AuthProvider gdy pending locale już === db locale (nic do robienia),
+ *   - przez LanguageSwitcher (defensywnie) gdy zalogowany user właśnie zsyncował
+ *     język do DB.
+ *
+ * Jeśli DB update PADł — NIE wołamy clearPendingLocaleSync. Flaga zostaje
+ * w localStorage i przy kolejnym loginie sync zostanie ponowiony.
  */
 export function clearPendingLocaleSync() {
   try {

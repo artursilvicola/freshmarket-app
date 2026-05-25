@@ -81,15 +81,18 @@ export default function LanguageSwitcher({ variant = "compact" }) {
         .eq("id", userId);
       if (error) {
         console.warn("[LanguageSwitcher] profile.locale UPDATE failed:", error.message);
-        // Nie revertujemy — UI już zaktualizowane. User przy następnym logowaniu
-        // dostanie locale z localStorage przez detectInitialLocale fallback chain.
+        // [Krok 3c] DB padł — ustaw pending sync, żeby AuthProvider przy
+        // kolejnym loginie ponowił UPDATE. Bez tego user przy ponownym
+        // logowaniu zobaczy stary język z DB (cofnięcie wyboru).
+        markLocaleForSync(target);
       } else {
         // Sukces — wyczyść ewentualną starą flagę pending sync (defensywnie)
         clearPendingLocaleSync();
       }
     } catch (e) {
       console.warn("[LanguageSwitcher] DB sync failed:", e?.message || e);
-      // Nie wywalamy aplikacji — to jest non-critical sync.
+      // [Krok 3c] Network error / exception — też pending sync na ponowienie.
+      markLocaleForSync(target);
     }
   }
 
