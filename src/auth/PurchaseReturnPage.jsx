@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import { getPayuOrderByExt } from "../lib/db";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 /**
  * PurchaseReturnPage — landing po powrocie z PayU.
@@ -150,6 +151,9 @@ export default function PurchaseReturnPage() {
 function Layout({ title, sub, children }) {
   return (
     <div style={S.wrap}>
+      <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+        <LanguageSwitcher variant="auth" />
+      </div>
       <div style={S.card}>
         {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>

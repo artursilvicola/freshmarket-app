@@ -1,3 +1,5 @@
+import LanguageSwitcher from "./LanguageSwitcher";
+
 /**
  * <PanelTopBar>
  *
@@ -5,6 +7,11 @@
  * panel miał własną kopię tej samej JSX-y; po Round branding-and-header-logos
  * jeden komponent przyjmuje element `logo` jako props (FreshMarketLogo
  * dla admina, EntityLogo dla dostawcy/kupca) — reszta układu jest identyczna.
+ *
+ * [B2B Round prod-rollout / i18n MVP — Krok 3]
+ * Dodany LanguageSwitcher (variant="panel") między user info a buttonem
+ * "Wyloguj" — dostępny we wszystkich 3 panelach (Admin/Supplier/Buyer)
+ * po zalogowaniu. Przed loginem switcher jest w stronach auth.
  *
  * Props:
  *   title:     string  — np. "Panel Dostawcy"
@@ -54,6 +61,7 @@ export default function PanelTopBar({
           {roleLabel}
         </span>
         <span style={{ fontSize: 13, color: "#475569" }}>{userLabel}</span>
+        <LanguageSwitcher variant="panel" />
         <button
           onClick={onSignOut}
           style={{

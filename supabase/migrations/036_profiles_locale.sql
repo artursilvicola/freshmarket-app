@@ -60,9 +60,12 @@ COMMIT;
 --
 --    Oczekiwane: total = with_locale (zero NULL), pl = total (wszyscy mają pl).
 --
--- 2. Sprawdź default na świeżym INSERT (poza testami — w prod nie wykonuj):
---    -- INSERT INTO profiles (id, email, role) VALUES ('00000000-0000-0000-0000-000000000099', 'test_locale@example.com', NULL);
---    -- SELECT locale FROM profiles WHERE id='00000000-0000-0000-0000-000000000099';
---    -- Oczekiwane: 'pl'
---    -- DELETE FROM profiles WHERE id='00000000-0000-0000-0000-000000000099';
+-- 2. Sprawdź że default 'pl' działa dla nowych rejestracji:
+--    Zarejestruj testowego dostawcę przez /zarejestruj-dostawce (UI),
+--    następnie:
+--      SELECT email, locale FROM profiles
+--      WHERE email = 'twoj-test@example.com';
+--    Oczekiwane: locale='pl' (automatycznie z DEFAULT 'pl').
+--    Po Kroku 3 (LanguageSwitcher) — można też zarejestrować z aktywnym
+--    EN w UI i zweryfikować że locale='en' zostało zapisane do bazy.
 -- ============================================================================

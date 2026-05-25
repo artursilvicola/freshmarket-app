@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
@@ -61,6 +62,9 @@ export default function ResetPasswordPage() {
 
   return (
     <div style={S.wrap}>
+      <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+        <LanguageSwitcher variant="auth" />
+      </div>
       <div style={S.card}>
         {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>

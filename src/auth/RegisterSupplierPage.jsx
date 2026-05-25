@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { selfRegisterSupplier } from "../lib/db";
 import { supabase } from "../lib/supabase";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/legal-versions";
 
 /**
@@ -96,6 +97,9 @@ export default function RegisterSupplierPage() {
   if (done?.ok) {
     return (
       <div style={S.wrap}>
+        <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+          <LanguageSwitcher variant="auth" />
+        </div>
         <div style={S.card}>
           {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
           <div style={S.brand}>
@@ -129,6 +133,9 @@ export default function RegisterSupplierPage() {
 
   return (
     <div style={S.wrap}>
+      <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+        <LanguageSwitcher variant="auth" />
+      </div>
       <div style={S.card}>
         {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>

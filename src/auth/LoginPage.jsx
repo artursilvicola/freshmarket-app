@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthProvider";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 export default function LoginPage() {
   const { signIn, sendMagicLink, sendPasswordReset, user } = useAuth();
@@ -48,6 +49,11 @@ export default function LoginPage() {
 
   return (
     <div style={S.wrap}>
+      {/* [B2B Round prod-rollout / i18n MVP — Krok 3] Przełącznik języka
+          w prawym górnym rogu, na gradiencie. Wariant "auth" — białe litery. */}
+      <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+        <LanguageSwitcher variant="auth" />
+      </div>
       <div style={S.card}>
         {/* [B2B Round prod-rollout / branding] Zamiast placeholdera "FM" —
             FreshMarketLogo (img z fm_settings.brand_logo_url, fallback SVG
