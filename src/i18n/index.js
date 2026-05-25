@@ -30,7 +30,7 @@ import plCommon from "./pl/common.json";
 import plAuth from "./pl/auth.json";
 import enCommon from "./en/common.json";
 import enAuth from "./en/auth.json";
-import { detectInitialLocale, DEFAULT_LOCALE } from "./locale";
+import { detectInitialLocale } from "./locale";
 
 const resources = {
   pl: {
@@ -53,7 +53,11 @@ i18n
   .init({
     resources,
     lng: initialLocale,         // Krok 2: detect z localStorage / navigator.
-    fallbackLng: DEFAULT_LOCALE, // Brakujący klucz w en → pokazujemy pl (nie key).
+    // [Krok 4] Wyłączamy fallback PL→EN i EN→PL. Jeśli klucz brakuje
+    // w wybranym języku, i18next pokaże surowy klucz (np. 'login.title')
+    // zamiast maskować innym językiem. Symetrię pl/en wymuszamy świadomie,
+    // a CI guard w końcówce P0 dopilnuje że pliki nie rozjeżdżają się.
+    fallbackLng: false,
     ns: ["common", "auth"],     // Aktywne namespace'y w P0. Reszta w P1/P2.
     defaultNS: "common",
     interpolation: {
