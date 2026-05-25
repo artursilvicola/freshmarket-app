@@ -71,7 +71,7 @@ Polski dostawca dostaje wszystko po polsku jak dotąd — bez regresji.
 - Pipeline batch mailing do retailerów (monthly digest)
 
 **PreconnectFM (P2):**
-- `src/preconnect/PreconnectFM.jsx` — 4000+ linii, wnętrze aplikacji, niedotykane
+- `src/legacy/PreconnectFM.jsx` — 4000+ linii, wnętrze aplikacji, niedotykane
 - AI chat (asystent admina dla odpowiedzi PreConnect)
 - FM B2B Meetings UI (faza preferencji, pairing, harmonogram)
 
@@ -119,8 +119,8 @@ Strategia: prawdopodobnie najpierw migracja PreconnectFM.jsx na useTranslation z
 ## Co Codex powinien sprawdzić przed merge
 
 Najwyższy priorytet:
-- [ ] Klucze PL/EN są symetryczne (`auth.json` 102/102, `common.json` ~25/~25)
-- [ ] `PreconnectFM.jsx` nie ma żadnych zmian (`git diff main feat/i18n-mvp -- src/preconnect/PreconnectFM.jsx` → pusto)
+- [ ] Klucze PL/EN są symetryczne (`auth.json` 99/99, `common.json` 33/33)
+- [ ] `PreconnectFM.jsx` nie ma żadnych zmian (`git diff main..feat/i18n-mvp -- src/legacy/PreconnectFM.jsx` → pusto)
 - [ ] Build przechodzi w Netlify
 - [ ] Manual QA checklist A1-A7, B1-B5, C1-C4, D1-D3, E1-E3 zaliczone
 
