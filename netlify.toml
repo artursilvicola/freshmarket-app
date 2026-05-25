@@ -32,6 +32,20 @@
   to = "/polityka-prywatnosci.html"
   status = 200
 
+# [B2B Round prod-rollout / i18n MVP — Krok 4b] EN wersje legal pages.
+# LoginPage / RegisterSupplierPage podają te URL-e anglojęzycznym userom;
+# bez tych rewrite'ów EN klikał Terms/Privacy i lądował na SPA fallbacku.
+# Drafty EN istnieją w public/regulations.html i public/privacy-policy.html,
+# z banerem "subject to legal review" do czasu potwierdzenia tłumaczenia.
+[[redirects]]
+  from = "/regulations"
+  to = "/regulations.html"
+  status = 200
+[[redirects]]
+  from = "/privacy-policy"
+  to = "/privacy-policy.html"
+  status = 200
+
 # SPA fallback - React Router obsługuje routing po stronie klienta
 [[redirects]]
   from = "/*"
