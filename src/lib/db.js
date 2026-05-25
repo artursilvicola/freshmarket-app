@@ -1408,6 +1408,10 @@ export async function selfRegisterSupplier({
   nip,
   accepted_terms_version,
   accepted_privacy_version,
+  // [B2B Round prod-rollout / i18n MVP — Krok 3b]
+  // Aktualnie wybrany język UI w momencie rejestracji.
+  // Backend zapisuje go do profile.locale + auth.users.user_metadata.locale.
+  locale,
 }) {
   const res = await fetch("/.netlify/functions/register-supplier-self", {
     method: "POST",
@@ -1422,6 +1426,7 @@ export async function selfRegisterSupplier({
       nip,
       accepted_terms_version,
       accepted_privacy_version,
+      locale,
     }),
   });
   const json = await res.json().catch(() => ({}));

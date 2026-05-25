@@ -4,6 +4,8 @@ import { selfRegisterSupplier } from "../lib/db";
 import { supabase } from "../lib/supabase";
 import FreshMarketLogo from "../components/FreshMarketLogo";
 import LanguageSwitcher from "../components/LanguageSwitcher";
+import i18n from "../i18n";
+import { normalizeLocale } from "../i18n/locale";
 import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/legal-versions";
 
 /**
@@ -54,6 +56,12 @@ export default function RegisterSupplierPage() {
         nip: form.nip,
         accepted_terms_version: TERMS_VERSION,
         accepted_privacy_version: PRIVACY_VERSION,
+        // [B2B Round prod-rollout / i18n MVP — Krok 3b]
+        // Przekazujemy aktualnie wybrany język żeby nowy profile.locale
+        // od razu miał właściwą wartość (zamiast domyślnego 'pl'). Backend
+        // (register-supplier-self) walidouje i zapisuje do profiles.locale
+        // + auth.users.user_metadata.locale (dla maili welcome).
+        locale: normalizeLocale(i18n.language),
       });
 
       // Auto-login: supplier od razu trafia do panelu (w stanie pending_review)

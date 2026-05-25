@@ -30,6 +30,13 @@ export const DEFAULT_LOCALE = "pl";
 // (po loginie używamy profiles.locale i sync'ujemy localStorage do profilu).
 export const LOCALE_STORAGE_KEY = "fm_locale";
 
+// [Krok 3b] Flaga "pending sync" — ustawiana gdy niezalogowany user zmienia
+// język. Po zalogowaniu AuthProvider sprawdza tę flagę i jeśli istnieje,
+// nadpisuje profile.locale wartością z localStorage (zamiast czytać z DB).
+// Bez tego scenariusz "wybieram EN przed loginem → loguję → DB ma pl → wracam na PL"
+// łamałby intencję usera.
+export const LOCALE_PENDING_SYNC_KEY = "fm_locale_pending_sync";
+
 /**
  * Sprowadza dowolny input (z DB, localStorage, navigator.language)
  * do jednego z SUPPORTED_LOCALES albo DEFAULT_LOCALE.
@@ -103,6 +110,62 @@ export function persistLocale(locale) {
   try {
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.setItem(LOCALE_STORAGE_KEY, normalized);
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+/**
+ * [Krok 3b] Oznacza wybór języka jako "pending sync" — wywoływane gdy
+ * NIEZALOGOWANY user zmienia język przez LanguageSwitcher. Po zalogowaniu
+ * AuthProvider sprawdzi tę flagę i UPDATE'uje profile.locale wartością
+ * z localStorage zamiast czytać z DB.
+ *
+ * Zapisuje zarówno locale (do fm_locale) jak i flagę (fm_locale_pending_sync=1).
+ *
+ * @param {string} locale
+ */
+export function markLocaleForSync(locale) {
+  persistLocale(locale);
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem(LOCALE_PENDING_SYNC_KEY, "1");
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+/**
+ * [Krok 3b] Sprawdza czy istnieje pending sync. Jeśli tak — zwraca locale
+ * z localStorage i CZYŚCI flagę. Wywoływane raz, po zalogowaniu w AuthProvider.
+ *
+ * @returns {string|null} locale do synchronizacji albo null gdy brak pending
+ */
+export function consumePendingLocaleSync() {
+  try {
+    if (typeof window === "undefined" || !window.localStorage) return null;
+    const pending = window.localStorage.getItem(LOCALE_PENDING_SYNC_KEY);
+    if (!pending) return null;
+    const locale = normalizeLocale(window.localStorage.getItem(LOCALE_STORAGE_KEY));
+    // Wyczyść flagę natychmiast — żeby kolejne wywołania nie odpalały sync
+    window.localStorage.removeItem(LOCALE_PENDING_SYNC_KEY);
+    return locale;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * [Krok 3b] Czyści pending sync flag bez konsumowania wartości.
+ * Wywoływane przez LanguageSwitcher gdy user JEST zalogowany i właśnie
+ * wykonaliśmy DB UPDATE — nie ma już potrzeby pending sync.
+ */
+export function clearPendingLocaleSync() {
+  try {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.removeItem(LOCALE_PENDING_SYNC_KEY);
     }
   } catch (e) {
     // ignore

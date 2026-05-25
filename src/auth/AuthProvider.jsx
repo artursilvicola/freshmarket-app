@@ -1,10 +1,16 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { supabase } from "../lib/supabase";
-// [B2B Round prod-rollout / i18n MVP — Krok 2] Synchronizacja języka:
+// [B2B Round prod-rollout / i18n MVP — Krok 2 + 3b] Synchronizacja języka:
 // po zalogowaniu profile.locale (z DB) wygrywa z localStorage / navigator,
-// i wywołujemy i18n.changeLanguage() + persistLocale() (sync do localStorage).
+// CHYBA ŻE niezalogowany user właśnie wybrał inny język (pending sync flag)
+// — wtedy ten wybór nadpisuje DB.
 import i18n from "../i18n";
-import { normalizeLocale, persistLocale, DEFAULT_LOCALE } from "../i18n/locale";
+import {
+  normalizeLocale,
+  persistLocale,
+  consumePendingLocaleSync,
+  DEFAULT_LOCALE,
+} from "../i18n/locale";
 
 /**
  * AuthProvider — context z aktualnym użytkownikiem i jego profilem (rolą).
@@ -72,23 +78,56 @@ export function AuthProvider({ children }) {
       : null;
     setProfile(enriched);
 
-    // [B2B Round prod-rollout / i18n MVP — Krok 2]
-    // Synchronizacja języka: profile.locale (z DB) wygrywa nad localStorage/
-    // navigator. Jeśli profile.locale=null (rzadkie po migracji 036), używamy
-    // DEFAULT_LOCALE. persistLocale() zapisuje też do localStorage, żeby przy
-    // następnym wejściu bez zalogowania od razu trafić na właściwy język.
+    // [B2B Round prod-rollout / i18n MVP — Krok 2 + 3b]
+    // Synchronizacja języka po zalogowaniu — dwa scenariusze:
+    //
+    // A) Niezalogowany user zmienił język przed loginem (pending sync flag):
+    //    consumePendingLocaleSync() zwraca tę wartość, my UPDATE'ujemy
+    //    profile.locale w DB tym wyborem (best-effort). Intencja usera
+    //    wygrywa nad domyślnym 'pl' z migracji.
+    //
+    // B) Brak pending sync: standardowe zachowanie — profile.locale z DB
+    //    wygrywa, zapisujemy do localStorage żeby kolejne wizyty bez
+    //    logowania od razu trafiły na właściwy język.
     //
     // UWAGA: useTranslation() nie jest jeszcze używany w żadnym komponencie
     // (Krok 4 dopiero podłączy auth pages). Ta linia ustawia tylko stan
     // i18next — wizualnie nic się nie zmienia w aplikacji.
     if (enriched) {
-      const desired = normalizeLocale(enriched.locale || DEFAULT_LOCALE);
+      const pendingLocale = consumePendingLocaleSync();
+      const dbLocale = normalizeLocale(enriched.locale || DEFAULT_LOCALE);
+
+      // Pending sync wygrywa nad DB. Jeśli nie ma pending — używamy DB.
+      const desired = pendingLocale && pendingLocale !== dbLocale ? pendingLocale : dbLocale;
+
       if (i18n.language !== desired) {
         i18n.changeLanguage(desired).catch((e) => {
           console.warn("[Auth] i18n.changeLanguage failed:", e?.message || e);
         });
       }
       persistLocale(desired);
+
+      // [Krok 3b] Jeśli pending sync nadpisał DB — zapiszmy też do bazy
+      // żeby przyszłe sesje od razu miały właściwy język.
+      if (pendingLocale && pendingLocale !== dbLocale) {
+        supabase
+          .from("profiles")
+          .update({ locale: pendingLocale })
+          .eq("id", userId)
+          .then(({ error }) => {
+            if (error) {
+              console.warn("[Auth] pending locale sync to DB failed:", error.message);
+              // Nie wywalamy aplikacji — UI już aktualne, localStorage zapisany.
+              // Przy następnym loginie pending flag już została skonsumowana,
+              // więc DB wygra (potencjalnie cofnie wybór). To trade-off
+              // best-effort sync — jeśli RLS chwilowo blokuje, regresja
+              // przy następnej sesji jest akceptowalna.
+            } else {
+              // Lokalny enriched.locale też aktualizujemy żeby nie był stale
+              setProfile((prev) => prev ? { ...prev, locale: pendingLocale } : prev);
+            }
+          });
+      }
     }
   }, []);
 

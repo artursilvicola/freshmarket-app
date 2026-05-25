@@ -4,6 +4,8 @@ import {
   SUPPORTED_LOCALES,
   normalizeLocale,
   persistLocale,
+  markLocaleForSync,
+  clearPendingLocaleSync,
 } from "../i18n/locale";
 
 /**
@@ -49,23 +51,41 @@ export default function LanguageSwitcher({ variant = "compact" }) {
       return; // nie persist'ujemy jeśli changeLanguage padło
     }
 
-    // 2) LocalStorage — fallback dla niezalogowanego usera przy następnej wizycie
-    persistLocale(target);
-
-    // 3) DB — tylko jeśli user zalogowany. Best-effort, nie blokujemy UX.
+    // 2) Sprawdź czy user zalogowany — od tego zależy dalsza logika
+    let isLoggedIn = false;
+    let userId = null;
     try {
       const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData?.session?.user?.id;
-      if (userId) {
-        const { error } = await supabase
-          .from("profiles")
-          .update({ locale: target })
-          .eq("id", userId);
-        if (error) {
-          console.warn("[LanguageSwitcher] profile.locale UPDATE failed:", error.message);
-          // Nie revertujemy — UI już zaktualizowane. User przy następnym logowaniu
-          // dostanie locale z localStorage przez detectInitialLocale fallback chain.
-        }
+      userId = sessionData?.session?.user?.id || null;
+      isLoggedIn = !!userId;
+    } catch (e) {
+      // brak sesji / network — traktujemy jak niezalogowany
+    }
+
+    if (!isLoggedIn) {
+      // [Krok 3b] Niezalogowany — zapisz do localStorage + ustaw pending sync.
+      // Po loginie AuthProvider odczyta flagę i UPDATE'uje profile.locale na tę
+      // wartość (zamiast czytać DB, gdzie domyślne jest 'pl').
+      markLocaleForSync(target);
+      return;
+    }
+
+    // 3) Zalogowany — zapisz do localStorage (sync z profilem) + DB UPDATE
+    persistLocale(target);
+
+    // Best-effort DB UPDATE. Nie blokujemy UX jeśli padnie.
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ locale: target })
+        .eq("id", userId);
+      if (error) {
+        console.warn("[LanguageSwitcher] profile.locale UPDATE failed:", error.message);
+        // Nie revertujemy — UI już zaktualizowane. User przy następnym logowaniu
+        // dostanie locale z localStorage przez detectInitialLocale fallback chain.
+      } else {
+        // Sukces — wyczyść ewentualną starą flagę pending sync (defensywnie)
+        clearPendingLocaleSync();
       }
     } catch (e) {
       console.warn("[LanguageSwitcher] DB sync failed:", e?.message || e);
@@ -95,6 +115,7 @@ export default function LanguageSwitcher({ variant = "compact" }) {
           return (
             <button
               key={code}
+              type="button"
               onClick={() => handleChange(code)}
               aria-pressed={active}
               aria-label={code === "pl" ? "Polski" : "English"}
@@ -140,6 +161,7 @@ export default function LanguageSwitcher({ variant = "compact" }) {
             <span key={code} style={{ display: "inline-flex", alignItems: "center" }}>
               {idx > 0 && <span style={{ color: "rgba(255,255,255,0.4)", margin: "0 4px" }}>·</span>}
               <button
+                type="button"
                 onClick={() => handleChange(code)}
                 aria-pressed={active}
                 style={{
@@ -171,6 +193,7 @@ export default function LanguageSwitcher({ variant = "compact" }) {
         return (
           <button
             key={code}
+            type="button"
             onClick={() => handleChange(code)}
             aria-pressed={active}
             style={{
