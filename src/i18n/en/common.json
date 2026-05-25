@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "language": "English",
+    "language_code": "en",
+    "_note": "Krok 1: minimalna struktura. Wszystkie klucze muszą być symetryczne z pl/common.json."
+  },
+  "actions": {
+    "add": "Add",
+    "edit": "Edit",
+    "save": "Save",
+    "save_changes": "Save changes",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "send": "Send",
+    "submit": "Submit",
+    "download": "Download",
+    "upload": "Upload",
+    "back": "Back",
+    "next": "Next",
+    "done": "Done",
+    "close": "Close",
+    "open": "Open",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "status": {
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Information",
+    "loading": "Loading…",
+    "saved": "Saved",
+    "copied": "Copied",
+    "no_data": "No data",
+    "no_results": "No results",
+    "required": "Required",
+    "optional": "Optional"
+  },
+  "footer": {
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy",
+    "contact": "Contact",
+    "copyright": "© {{year}} Fresh Market · KJOW Sp. z o.o."
+  }
+}
