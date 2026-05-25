@@ -30,6 +30,7 @@ import plCommon from "./pl/common.json";
 import plAuth from "./pl/auth.json";
 import enCommon from "./en/common.json";
 import enAuth from "./en/auth.json";
+import { detectInitialLocale, DEFAULT_LOCALE } from "./locale";
 
 const resources = {
   pl: {
@@ -42,12 +43,17 @@ const resources = {
   },
 };
 
+// [Krok 2] Wykrywanie początkowego języka dla niezalogowanego usera:
+// localStorage 'fm_locale' → navigator.language → DEFAULT_LOCALE ('pl').
+// Po zalogowaniu AuthProvider nadpisze przez i18n.changeLanguage(profile.locale).
+const initialLocale = detectInitialLocale();
+
 i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: "pl",                  // Krok 1: hardcoded pl. Detector w Kroku 3.
-    fallbackLng: "pl",          // Brakujący klucz w en → pokazujemy pl (nie key).
+    lng: initialLocale,         // Krok 2: detect z localStorage / navigator.
+    fallbackLng: DEFAULT_LOCALE, // Brakujący klucz w en → pokazujemy pl (nie key).
     ns: ["common", "auth"],     // Aktywne namespace'y w P0. Reszta w P1/P2.
     defaultNS: "common",
     interpolation: {
