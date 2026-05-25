@@ -4,10 +4,12 @@
 **Cel:** ustalenie standardu terminologii ZANIM ruszymy kod. Po akceptacji ten plik jest źródłem prawdy dla wszystkich tłumaczeń (UI, maile, dokumenty legal).
 
 **Zasady:**
+- **Wersje PL i EN są RÓWNORZĘDNE** — obie są oficjalnymi wersjami aplikacji i dokumentów. Polski nie ma pierwszeństwa nad angielskim ani odwrotnie. *Prawo właściwe* (governing law) — osobna sprawa: zawsze polskie (siedziba Operatora).
 - Każdy klucz w plikach `pl/*.json` i `en/*.json` musi używać terminologii z tego dokumentu
 - Nie zmieniamy terminologii po starcie prac bez świadomej decyzji + sprintu refaktorowego
 - Wariacje (np. liczba mnoga, dopełniacz) są naturalne — chodzi o ujednolicenie głównej formy
 - Treści użytkownika (nazwy firm, opisy ofert) NIE są tłumaczone — to UGC
+- Emoji (⭐ 👍 ❌) mogą występować w UI, ale **NIE są częścią terminologii kanonu** — tłumaczymy tylko teksty
 
 ---
 
@@ -20,9 +22,9 @@
 | Sieć handlowa | Retail chain | np. Biedronka, Lidl |
 | Dystrybutor | Distributor | hurtowy odbiorca |
 | Sieć (skrót, gdy oczywiste) | Retailer | krótsza forma w UI |
-| Administrator | Administrator | pełna forma |
-| Super administrator | Super administrator | poziom z dostępem do zarządzania zespołem |
-| Zwykły administrator | Administrator | bez prefiksu — dla skrótu |
+| Administrator | **Admin** | naturalna forma w aplikacjach (nie "Administrator") |
+| Super administrator | **Super admin** | poziom z dostępem do zarządzania zespołem |
+| Zwykły administrator | Admin | bez prefiksu — dla skrótu |
 | Konto | Account | |
 | Profil firmy | Company profile | |
 | Profil użytkownika | User profile | |
@@ -78,11 +80,11 @@
 | Spotkania FM 2026 | FM 2026 Meetings | brand-specific |
 | Fresh Market 2026 | Fresh Market 2026 | nazwa eventu, nie tłumaczymy |
 | Event / wydarzenie | Event | "Event day", "during the event" |
-| **Wybór sieci** | **Network selection** | faza 2 supplier |
-| Sieci główne | Main networks | ⭐ w UI |
-| Sieci rezerwowe | Reserve networks | 👍 w UI |
-| Slot główny | Main slot | |
-| Slot rezerwowy | Reserve slot | |
+| **Wybór sieci** | **Retailer selection** | faza 2 supplier. NIE "Network selection" (mylące z siecią komputerową) |
+| Sieci główne (⭐) | **Priority retailers** | nie "Main networks" — to UI label, naturalniej |
+| Sieci rezerwowe (👍) | **Backup retailers** | nie "Reserve networks" |
+| Slot główny | Priority slot | |
+| Slot rezerwowy | Backup slot | |
 | Algorytm | Algorithm | |
 | Uruchom algorytm | Run algorithm | |
 | Korekty | Adjustments | admin tab |
@@ -94,13 +96,13 @@
 | Kolejka spotkań | Meeting queue | model FM B2B |
 | Wzajemne potwierdzenie | Mutual confirmation | match dwustronny |
 | Match dwustronny | Mutual match | |
-| Akceptacja jednostronna | One-sided acceptance | sieć chce, dostawca nie wybrał |
+| Akceptacja jednostronna (sieć chce, dostawca nie wybrał) | **Buyer interested** | nie "One-sided acceptance" — brzmi prawno-technicznie. W UI naturalniej |
 | Bramka 1 / Bramka 2 | Gate 1 / Gate 2 | event day |
 | Obsługa B2B | B2B support staff | osoby odprowadzające do spotkania |
 | Wywołanie numeru | Number call | proces na evencie |
-| Kupiec chce | Buyer wants ✅ | odpowiedź buyer |
-| Daj szansę | Give a chance 🤝 | odpowiedź buyer |
-| Nie chcę | Don't want ❌ | odpowiedź buyer |
+| Kupiec chce (odpowiedź buyer) | **Interested** | nie "Buyer wants" — dosłowne tłumaczenie |
+| Daj szansę | **Maybe** lub **Consider** | nie "Give a chance" — dosłowne |
+| Nie chcę | **Not interested** | nie "Don't want" — dosłowne |
 | Przenieś na koniec kolejki | Move to back of queue | friction modal |
 | Wzajemnie wybrali | Mutually selected | |
 | Czerwona strefa | Red zone | numery > 35 |
@@ -163,14 +165,14 @@ Statusy techniczne (enumy DB) zostają po angielsku — w UI mapujemy na localiz
 
 | PL | EN | Uwagi |
 |---|---|---|
-| Panel administratora | Administrator panel | |
+| Panel administratora | **Admin panel** | |
 | Dashboard | Dashboard | nie tłumaczymy |
 | Firmy | Companies | sidebar |
-| Sieci | Networks | sidebar (zamiennie z "Retailers") |
+| Sieci | **Retailers** | sidebar (nie "Networks" — mylące) |
 | Wiadomości | Messages | sidebar |
 | Branding | Branding | nie tłumaczymy |
-| Administratorzy | Administrators | sidebar (super-admin only) |
-| Promuj do administratora | Promote to administrator | |
+| Administratorzy | **Admins** | sidebar (super-admin only) |
+| Promuj do administratora | Promote to admin | |
 | Odbierz uprawnienia | Revoke privileges | |
 | Aktywuj konto | Activate account | |
 | Zatwierdź firmę | Approve company | |
@@ -195,8 +197,9 @@ Statusy techniczne (enumy DB) zostają po angielsku — w UI mapujemy na localiz
 | Akceptuję | I accept | checkbox |
 | Wycofanie zgody | Consent withdrawal | |
 | Prawo do bycia zapomnianym | Right to erasure | RODO |
-| Wersja wiążąca | Binding version | "Polish version shall prevail" |
-| Wersja informacyjna | Informational version | |
+| Wersja językowa dokumentu | **Official language version** | równorzędność PL i EN |
+| Obie wersje językowe są oficjalne | Both language versions are official | klauzula w legal docs |
+| Prawo właściwe | **Governing law** | osobno od wersji językowej (zawsze: Polish law) |
 | Wersja 1.0 | Version 1.0 | |
 | Obowiązuje od | Effective from | |
 | Wchodzi w życie | Comes into force | |
@@ -286,16 +289,22 @@ Nazwy własne, brandowe, nie tłumaczone w EN:
 
 ## 11. Zasady stylu EN
 
-- **Sentence case** dla labelek (np. "Add proposal", NIE "Add Proposal")
-- **Title Case** dla nagłówków stron i sekcji (np. "Network Selection")
+- **Sentence case prawie wszędzie w UI** — labelki, buttony, nagłówki kart, sidebar items, toasty:
+  - "Add proposal" (NIE "Add Proposal")
+  - "Retailer selection" (NIE "Retailer Selection")
+  - "Your meetings" (NIE "Your Meetings")
+- **Title Case** używamy tylko dla:
+  - tytułów dokumentów legal ("Terms of Service", "Privacy Policy")
+  - stron marketingowych zewnętrznych (poza aplikacją)
+  - oficjalnych nazw eventów ("Fresh Market 2026 — B2B Meeting & Trade Show")
 - **Imperative** dla buttonów ("Save changes", NIE "Saving changes")
 - **Active voice** ("Buyer opened your proposal", NIE "Your proposal was opened by buyer")
-- **B2B tone** — formalne, ale nie sztywne. Bez "Hey there!" w mailach.
+- **B2B tone** — formalne, ale nie sztywne. Bez "Hey there!" w mailach. Bez "we're so excited" itp.
 - **No exclamation marks** w komunikatach UI (poza marketingowymi typu welcome screen)
-- **Date format EN:** `May 24, 2026` lub `24 May 2026`. NIE `24.05.2026` (US convention vs PL).
-- **Number format EN:** `1,000` (przecinek tysięczny), `1.50` (kropka dziesiętna)
+- **Date format:** `24 May 2026` (europejski, dzień przed miesiącem — bez przecinka). NIE `May 24, 2026` (USA-centric). NIE `24.05.2026` (PL — w EN traktowane jako daty UK numeric ale niejednoznaczne).
+- **Number format:** `1,000` (przecinek tysięczny), `1.50` (kropka dziesiętna)
 - **Currency:** `€60.00` lub `60 EUR` (Fresh Market używa EUR)
-- **Time format EN:** `10:30 AM` lub `10:30` (24h). Spójność per produkt.
+- **Time format:** `10:30` (24h, bez AM/PM). Konsystentnie w całej aplikacji — europejski format.
 
 ---
 
@@ -303,18 +312,26 @@ Nazwy własne, brandowe, nie tłumaczone w EN:
 
 Sytuacje gdzie warto się upewnić zanim wdrożymy:
 
-| Pojęcie | Wątpliwość | Sugerowana decyzja |
+| Pojęcie | Wątpliwość | Decyzja |
 |---|---|---|
-| "Propozycja" | "Proposal" vs "Offer"? | **Proposal** — bo nie zawiera ceny obligatoryjnie. "Offer" w B2B sugeruje ofertę handlową z ceną. |
-| "Sieć handlowa" | "Retail chain" vs "Retailer"? | **Retail chain** dla pełnego terminu, **Retailer** dla skrótu w UI |
-| "Wysyłka" | "Submission" (Codex) vs "Send"? | **Submission** — Codex ma rację, "Send" mylące |
-| "Kupiec" | "Buyer" vs "Purchaser"? | **Buyer** — standardowe w retail/FMCG |
-| "Dostawca" | "Supplier" vs "Vendor"? | **Supplier** — branża spożywcza, food supply chain |
-| "Pakiet" (PreConnect) | "Package" vs "Plan" vs "Subscription"? | **Package** dla single purchase, **Plan** jako semantyczny synonim |
-| "Slot spotkania" | "Slot" vs "Time slot" vs "Meeting slot"? | **Meeting slot** dla jasności, **slot** w skrócie |
-| "Kategoria zakupowa" | "Buying category" vs "Purchasing category" vs "Product category"? | **Product category** — najprościej |
-| "Numer spotkania" (queue) | "Meeting number" vs "Queue number"? | **Meeting number** — to nasz brand, model kolejkowy opisujemy osobno |
-| "Korekta" (admin) | "Adjustment" vs "Correction" vs "Override"? | **Adjustment** dla normalnej zmiany, **Override** dla wymuszenia mimo "remove" |
+| "Propozycja" | "Proposal" vs "Offer"? | ✅ **Proposal** — bo nie zawiera ceny obligatoryjnie. "Offer" w B2B sugeruje ofertę handlową z ceną. |
+| "Sieć handlowa" | "Retail chain" vs "Retailer" vs "Network"? | ✅ **Retail chain** dla pełnego terminu, **Retailer** dla skrótu w UI. NIE "Network" (mylące z siecią komputerową). |
+| "Wysyłka" | "Submission" (Codex) vs "Send" vs "Shipment"? | ✅ **Submission** — Codex ma rację, "Send"/"Shipment" mylące |
+| "Kupiec" | "Buyer" vs "Purchaser"? | ✅ **Buyer** — standardowe w retail/FMCG |
+| "Dostawca" | "Supplier" vs "Vendor"? | ✅ **Supplier** — branża spożywcza, food supply chain |
+| "Pakiet" (PreConnect) | "Package" vs "Plan" vs "Subscription"? | ✅ **Package** dla single purchase, **Plan** jako semantyczny synonim |
+| "Slot spotkania" | "Slot" vs "Time slot" vs "Meeting slot"? | ✅ **Meeting slot** dla jasności, **slot** w skrócie |
+| "Kategoria zakupowa" | "Buying category" vs "Product category"? | ✅ **Product category** — najprościej |
+| "Numer spotkania" (queue) | "Meeting number" vs "Queue number"? | ✅ **Meeting number** — to nasz brand, model kolejkowy opisujemy osobno |
+| "Korekta" (admin) | "Adjustment" vs "Correction" vs "Override"? | ✅ **Adjustment** dla normalnej zmiany, **Override** dla wymuszenia mimo "remove" |
+| "Sieci główne / rezerwowe" | "Main/Reserve" (dosłowne) vs "Priority/Backup"? | ✅ **Priority/Backup** (Codex) — naturalniej w UI |
+| "Odpowiedzi kupca" | "Buyer wants / Give a chance / Don't want" (dosłowne) | ✅ **Interested / Maybe / Not interested** (Codex) — czysta terminologia |
+| "Administrator" w UI | "Administrator" (formalne) vs "Admin"? | ✅ **Admin** (Codex) — naturalniej w aplikacjach |
+| "Akceptacja jednostronna" | "One-sided acceptance" (prawno-techn.) | ✅ **Buyer interested** — UI-friendly. "One-sided" tylko w dokumentacji wewnętrznej |
+| "Wersja językowa wiążąca" | "Polish version prevails" vs równorzędność | ✅ **Równorzędność** (Codex) — PL i EN obie oficjalne. Klauzula: "Both language versions are official." Prawo właściwe (governing law) = polskie, ale to OSOBNE od wersji językowej. |
+| Daty (EN format) | `May 24, 2026` (USA) vs `24 May 2026` (europ.) | ✅ **24 May 2026** (Codex) — Fresh Market to europejski event |
+| Godziny (EN format) | `10:30 AM` (USA 12h) vs `10:30` (24h)? | ✅ **10:30** (24h) — standard europejski |
+| Style cases | Title Case (USA) vs Sentence case? | ✅ **Sentence case** wszędzie w UI (Codex), Title Case tylko dla dokumentów legal |
 
 ---
 
