@@ -186,11 +186,17 @@ export const handler = async (event) => {
   // ── Krok 4: wyślij maile (fire-and-forget, nie blokujemy odpowiedzi) ──
   // Mail A do supplera + powiadomienie do admina. Każdy template
   // renderuje się w supplier-email-templates.js. Wysyłka przez Resend.
+  //
+  // [B2B Round prod-rollout / i18n MVP — Krok 6]
+  // Welcome mail do supplera idzie w jego języku (locale z body request,
+  // walidowane wyżej do 'pl'|'en' z fallback do 'pl'). Admin notification
+  // ZOSTAJE PL — to mail do zespołu Fresh Market (newsletter@freshmarket.eu),
+  // operacyjnie używamy polskiego niezależnie od locale supplera.
   const tpls = [
     {
       template: "registration_accepted",
       to: email,
-      payload: { companyName, contactName, appUrl: env.b2bAppUrl },
+      payload: { companyName, contactName, appUrl: env.b2bAppUrl, locale },
     },
     {
       template: "admin_new_registration",

@@ -2,7 +2,15 @@
 
 Domyślne maile Supabase Auth (Reset Password, Confirm Sign Up itd.) są po angielsku, generyczne, bez brandu Fresh Market. Plus wychodzą z `noreply@mail.app.supabase.io` zamiast `hello@freshmarket.eu`.
 
-Ten folder zawiera **gotowe szablony HTML w polskim** + **instrukcję SMTP** żeby naprawić.
+Ten folder zawiera **gotowe szablony HTML — dwujęzyczne PL + EN** + **instrukcję SMTP** żeby naprawić.
+
+## [Krok 6 / i18n MVP] Dlaczego bilingual
+
+Supabase Auth nie zna `locale` użytkownika w momencie generowania linku (np. dla resetu hasła wystarczy adres e-mail — sesja jeszcze nie istnieje, więc `user_metadata.locale` może nie być dostępne dla legacy userów). Próba renderowania per-locale przez `{{ if eq .Data.locale "en" }}` daje pustą sekcję dla wszystkich kont sprzed Kroku 3b, które nie mają `locale` w metadata.
+
+Dwujęzyczne PL + EN obok siebie jest bezpiecznym wariantem — anglojęzyczny dostawca zawsze znajdzie swoją sekcję, polski też, niezależnie od stanu metadata. Krótka treść w obu językach + jeden wspólny przycisk `Ustaw nowe hasło · Set new password` (link ten sam, więc dzielenie buttona ma sens).
+
+Maile transakcyjne Fresh Market PreConnect (z Resend) są natomiast **locale-aware**: render PL albo EN po `payload.locale` przekazanym z backendu (`netlify/functions/register-supplier-self.js` przekazuje go z body request, gdzie frontend wstawia aktualny język UI). Te maile mają sesję usera albo świeżą rejestrację, więc locale jest pewne.
 
 ---
 
