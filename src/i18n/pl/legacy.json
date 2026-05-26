@@ -232,46 +232,6 @@
         "btn_open": "Otwórz wybór sieci →",
         "btn_soon": "Zobacz program FM →"
       },
-      "offers": {
-        "header_label": "PreConnect",
-        "title": "Moje propozycje asortymentowe",
-        "desc_pre": "Lista Twoich propozycji produktowych. Każda pokazuje konkretne produkty kupcom — to nie jest klasyczne ofertowanie cenowe, więc ",
-        "desc_strong": "cena jest opcjonalna",
-        "desc_post": ".",
-        "add_button": "Dodaj propozycję asortymentową",
-        "empty": "Brak propozycji. Kliknij „Dodaj propozycję asortymentową\" aby dodać pierwszą.",
-        "card": {
-          "only_you_badge": "Tylko Ty",
-          "for_buyer_badge": "Dla kupca",
-          "status_published": "Opublikowana",
-          "status_draft": "Szkic",
-          "premium_badge": "Premium",
-          "kpi_retailers": "Sieci",
-          "kpi_read": "Przecz.",
-          "btn_edit": "Edytuj",
-          "btn_duplicate": "Duplikuj",
-          "btn_duplicate_tooltip": "Duplikuj propozycję — przyspiesza dodawanie podobnych produktów",
-          "btn_send": "Wyślij",
-          "btn_delete": "Usuń",
-          "btn_delete_tooltip_can": "Usuń propozycję (operacja nieodwracalna)",
-          "btn_delete_tooltip_locked_one": "Nie można usunąć — propozycja wysłana do {{count}} sieci. Po wysyłce trafia do pipeline admina.",
-          "btn_delete_tooltip_locked_few": "Nie można usunąć — propozycja wysłana do {{count}} sieci. Po wysyłce trafia do pipeline admina.",
-          "btn_delete_tooltip_locked_many": "Nie można usunąć — propozycja wysłana do {{count}} sieci. Po wysyłce trafia do pipeline admina.",
-          "btn_delete_tooltip_locked_other": "Nie można usunąć — propozycja wysłana do {{count}} sieci. Po wysyłce trafia do pipeline admina."
-        },
-        "delete_modal": {
-          "title": "Usuń propozycję?",
-          "body_pre": "Czy na pewno chcesz usunąć propozycję ",
-          "body_post": "?",
-          "warn_pre": "Operacja jest ",
-          "warn_strong": "nieodwracalna",
-          "warn_post": ". Propozycja zostanie skasowana z bazy. Jeśli chcesz ją tylko ukryć przed kupcami, możesz zamiast tego zmienić status na „Szkic\" w edycji.",
-          "cancel": "Anuluj",
-          "confirm": "Tak, usuń"
-        },
-        "deleted_flash": "Propozycja „{{title}}\" usunięta.",
-        "deleted_fallback_title": "(bez nazwy)"
-      },
       "onboarding": {
         "header_label": "Zacznij tutaj",
         "header_progress": "({{done}}/{{total}})",
@@ -290,6 +250,43 @@
         "step_send_label": "Wyślij propozycję do sieci",
         "step_send_hint": "Pierwsza wysyłka po aktywacji konta."
       }
+    },
+    "offers": {
+      "header_label": "PreConnect",
+      "title": "Moje propozycje asortymentowe",
+      "desc_pre": "Lista Twoich propozycji produktowych. Każda pokazuje konkretne produkty kupcom — to nie jest klasyczne ofertowanie cenowe, więc ",
+      "desc_strong": "cena jest opcjonalna",
+      "desc_post": ".",
+      "add_button": "Dodaj propozycję asortymentową",
+      "empty": "Brak propozycji. Kliknij „Dodaj propozycję asortymentową\" aby dodać pierwszą.",
+      "card": {
+        "only_you_badge": "Tylko Ty",
+        "for_buyer_badge": "Dla kupca",
+        "status_published": "Opublikowana",
+        "status_draft": "Szkic",
+        "premium_badge": "Premium",
+        "kpi_retailers": "Sieci",
+        "kpi_read": "Przecz.",
+        "btn_edit": "Edytuj",
+        "btn_duplicate": "Duplikuj",
+        "btn_duplicate_tooltip": "Duplikuj propozycję — przyspiesza dodawanie podobnych produktów",
+        "btn_send": "Wyślij",
+        "btn_delete": "Usuń",
+        "btn_delete_tooltip_can": "Usuń propozycję (operacja nieodwracalna)",
+        "btn_delete_tooltip_locked_one": "Nie można usunąć — propozycja wysłana do {{count}} sieci. Po wysyłce trafia do pipeline admina.",
+        "btn_delete_tooltip_locked_few": "Nie można usunąć — propozycja wysłana do {{count}} sieci. Po wysyłce trafia do pipeline admina.",
+        "btn_delete_tooltip_locked_many": "Nie można usunąć — propozycja wysłana do {{count}} sieci. Po wysyłce trafia do pipeline admina.",
+        "btn_delete_tooltip_locked_other": "Nie można usunąć — propozycja wysłana do {{count}} sieci. Po wysyłce trafia do pipeline admina."
+      },
+      "delete_modal": {
+        "title": "Usuń propozycję?",
+        "body_html": "Czy na pewno chcesz usunąć propozycję <strong>„{{title}}\"</strong>?",
+        "warn_html": "Operacja jest <strong>nieodwracalna</strong>. Propozycja zostanie skasowana z bazy. Jeśli chcesz ją tylko ukryć przed kupcami, możesz zamiast tego zmienić status na „Szkic\" w edycji.",
+        "cancel": "Anuluj",
+        "confirm": "Tak, usuń"
+      },
+      "deleted_flash": "Propozycja „{{title}}\" usunięta.",
+      "deleted_fallback_title": "(bez nazwy)"
     }
   },
   "buyer": {

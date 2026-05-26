@@ -4679,9 +4679,18 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
               <div style={{ fontSize:16,fontWeight:700,color:"#0f172a" }}>{t("supplier.offers.delete_modal.title")}</div>
             </div>
             <div style={{ fontSize:13,color:"#475569",lineHeight:1.6,marginBottom:18 }}>
-              {t("supplier.offers.delete_modal.body_pre")}<strong style={{ color:"#0f172a" }}>„{getInternalOfferTitle(confirmDelete) || getPublicOfferTitle(confirmDelete) || t("supplier.offers.deleted_fallback_title")}"</strong>{t("supplier.offers.delete_modal.body_post")}
+              <Trans
+                i18nKey="supplier.offers.delete_modal.body_html"
+                ns="legacy"
+                values={{ title: getInternalOfferTitle(confirmDelete) || getPublicOfferTitle(confirmDelete) || t("supplier.offers.deleted_fallback_title") }}
+                components={{ strong: <strong style={{ color:"#0f172a" }} /> }}
+              />
               <br/><br/>
-              {t("supplier.offers.delete_modal.warn_pre")}<strong style={{ color:"#dc2626" }}>{t("supplier.offers.delete_modal.warn_strong")}</strong>{t("supplier.offers.delete_modal.warn_post")}
+              <Trans
+                i18nKey="supplier.offers.delete_modal.warn_html"
+                ns="legacy"
+                components={{ strong: <strong style={{ color:"#dc2626" }} /> }}
+              />
             </div>
             <div style={{ display:"flex",gap:8,justifyContent:"flex-end" }}>
               <Btn outline onClick={()=>setConfirmDelete(null)}>{t("supplier.offers.delete_modal.cancel")}</Btn>
