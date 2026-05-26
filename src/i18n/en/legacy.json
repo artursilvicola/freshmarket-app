@@ -771,6 +771,188 @@
         "save_error_format": "Save error: {{message}}",
         "save_error_fallback": "unknown"
       }
+    },
+    "finance": {
+      "tabs": {
+        "saldo": "Balance and package",
+        "historia": "Submission history",
+        "pakiety": "Pricing and packages"
+      },
+      "wallet": {
+        "balance_label": "Wallet balance",
+        "funds_info_format": "Funds for further submissions — {{perSend}} EUR each",
+        "send_button": "Submit proposal",
+        "stats": {
+          "total_sent_label": "Total submitted",
+          "total_sent_unit": "mailings",
+          "seen_label": "Confirmed reads",
+          "seen_unit": "proposals",
+          "refunds_label": "Refunds",
+          "refunds_unit": "proposals"
+        }
+      },
+      "kpi": {
+        "effective_cost_label": "Effective cost",
+        "effective_cost_value_format": "{{amount}} EUR",
+        "effective_cost_sub": "after refunds",
+        "refunds_label": "Refunds",
+        "refunds_value_format": "+{{amount}} EUR",
+        "refunds_sub_pending": "booked / pending",
+        "refunds_sub_done": "to wallet",
+        "open_rate_label": "Open rate",
+        "open_rate_sub": "confirmed"
+      },
+      "active_pkg": {
+        "card_title": "Active package",
+        "pkg_badge": "PACKAGE",
+        "per_send_format": "{{perSend}} EUR each",
+        "used_format": "Used: {{used}}/{{max}} submissions",
+        "price_label": "Package price",
+        "price_value_format": "{{price}} EUR",
+        "valid_until_label": "Valid until",
+        "change_btn": "Change package"
+      },
+      "refunds_done": {
+        "card_title": "Refunds for unread submissions",
+        "alert_html": "<strong>{{count}} refunds = +{{total}} EUR</strong> returned to your wallet. You can use them for submissions to other retailers.",
+        "row_amount_format": "+{{amount}} EUR"
+      },
+      "refunds_pending": {
+        "card_title": "Refunds in progress",
+        "alert_html_one": "<strong>1 refund is in progress.</strong> The proposal status has already expired, but the refund record is still posting to the wallet.",
+        "alert_html_other": "<strong>{{count}} refunds are in progress.</strong> The proposal status has already expired, but the refund record is still posting to the wallet.",
+        "row_label": "refund in progress"
+      },
+      "recent_tx": {
+        "card_title": "Recent transactions",
+        "amount_format": "{{sign}}{{amount}} EUR"
+      },
+      "history": {
+        "card_title": "Submission history",
+        "headers": {
+          "offer": "Proposal",
+          "retailer": "Retailer",
+          "tier": "Tier",
+          "date": "Date",
+          "status": "Status",
+          "amount": "Amount"
+        },
+        "tier_premium": "Premium",
+        "tier_standard": "Standard",
+        "amount_eur_format": "{{amount}} EUR",
+        "refund_done_format": "+{{amount}} EUR",
+        "refund_pending": "refund in progress",
+        "awaiting": "pending",
+        "empty": "No submissions."
+      },
+      "pakiety": {
+        "payment_modal": {
+          "success_title": "Payment confirmed!",
+          "success_body_html": "Package <strong>{{pkgLabel}}</strong> has been activated.<br/>Added <strong>+{{qty}} submissions</strong> to your account.",
+          "success_state_html": "Current balance: <strong>{{total}} submissions total</strong>",
+          "pkg_label_premium_one": "Premium {{qty}} submission",
+          "pkg_label_premium_other": "Premium {{qty}} submissions",
+          "pkg_label_standard_one": "Standard {{qty}} submission",
+          "pkg_label_standard_other": "Standard {{qty}} submissions",
+          "title": "Confirm order",
+          "subtitle": "VAT invoice will be sent to your email",
+          "summary_pkg_label": "Package",
+          "summary_pkg_premium_one": "⭐ Premium · {{qty}} submission",
+          "summary_pkg_premium_other": "⭐ Premium · {{qty}} submissions",
+          "summary_pkg_standard_one": "Standard · {{qty}} submission",
+          "summary_pkg_standard_other": "Standard · {{qty}} submissions",
+          "summary_per_send_label": "Price each",
+          "summary_per_send_format": "{{perSend}} EUR",
+          "summary_discount_label": "Discount",
+          "summary_discount_value_format": "−{{percent}}% vs base price",
+          "summary_net_label": "Net",
+          "summary_net_format": "{{price}} EUR",
+          "summary_vat_label": "VAT 23%",
+          "summary_vat_format": "+{{amount}} EUR",
+          "summary_gross_label": "Gross",
+          "summary_gross_format": "{{amount}} EUR",
+          "pay_method_label": "Payment method",
+          "pay_card_label": "Credit card",
+          "pay_bank_label": "Bank transfer",
+          "pay_wallet_label_format": "From wallet ({{balance}} EUR)",
+          "pay_insufficient_funds_short": "Insufficient funds",
+          "wallet_insufficient_warn_format": "Missing {{missing}} EUR — top up the wallet or choose another method.",
+          "card_form_title": "Card data (demo – enter anything)",
+          "card_form_number_placeholder": "1234 5678 9012 3456",
+          "card_form_expiry_placeholder": "MM/YY",
+          "card_form_cvv_placeholder": "CVV",
+          "card_form_name_placeholder": "Cardholder name",
+          "bank_form_title": "Transfer details:",
+          "bank_form_beneficiary": "KJOW Sp. z o.o. · PKO BP",
+          "bank_form_iban": "PL 12 1440 1101 0000 0000 1234 5678",
+          "bank_form_title_label": "Title:",
+          "bank_form_title_value_format": "FM-{{plan}}-{{year}}",
+          "bank_form_info": "Once posted (1–2 business days) submissions will be added automatically.",
+          "cancel": "Cancel",
+          "processing": "Processing…",
+          "pay_button_format": "Pay {{gross}} EUR (incl. VAT)",
+          "payment_init_error_format": "Payment initialization error: {{message}}",
+          "payment_init_error_fallback": "please try again",
+          "no_redirect_error": "PayU did not return a redirect URL"
+        },
+        "pkg_stats": {
+          "total_label": "Total in packages",
+          "used_label": "Used",
+          "remaining_label": "Remaining",
+          "unit": "submissions"
+        },
+        "guarantee": "14-day guarantee — no buyer read = automatic credit refund to wallet. You buy submissions, not risk.",
+        "compare": {
+          "standard_badge": "STANDARD",
+          "standard_price_range": "40-30 EUR / submission",
+          "standard_b1_html": "<strong>Middle position</strong> in the buyer newsletter",
+          "standard_b2": "Full proposal content + your photos and logo",
+          "standard_b3": "Moderation before delivery (24h SLA)",
+          "standard_b4": "14-day guarantee — refund on no read",
+          "standard_when_html": "<strong>When to choose:</strong> you want many submissions at a lower price each — best for volume suppliers.",
+          "premium_top": "⭐ TOP POSITION",
+          "premium_badge": "PREMIUM",
+          "premium_price_range": "80-45 EUR / submission",
+          "premium_b1_html": "<strong>Your proposal first</strong> in the newsletter",
+          "premium_b2_html": "<em>Premium</em> mark in the email — visual distinction",
+          "premium_b3": "Full content + photos + logo (same as Standard)",
+          "premium_b4": "14-day guarantee — refund on no read",
+          "premium_when_html": "<strong>When to choose:</strong> you prioritize visibility and want the buyer to see you first — best for premium products, categories new to the retailer, key seasonal windows."
+        },
+        "table": {
+          "std_subtitle": "Middle position in the newsletter",
+          "prem_subtitle": "TOP position — your proposal first in the newsletter",
+          "header_package": "Package",
+          "header_price": "Price",
+          "header_per_send": "Price each",
+          "header_discount": "Discount",
+          "popular_badge": "Popular",
+          "qty_one": "{{count}} submission",
+          "qty_other": "{{count}} submissions",
+          "price_eur_format": "{{amount}} EUR",
+          "discount_value_format": "−{{percent}}%",
+          "base_label": "base",
+          "selected_badge": "Selected"
+        },
+        "cta": {
+          "pkg_premium_one_format": "⭐ Premium · {{qty}} submission",
+          "pkg_premium_other_format": "⭐ Premium · {{qty}} submissions",
+          "pkg_standard_one_format": "Standard · {{qty}} submission",
+          "pkg_standard_other_format": "Standard · {{qty}} submissions",
+          "sub_format": "{{price}} EUR net · {{perSend}} EUR each",
+          "sub_with_discount_format": "{{price}} EUR net · {{perSend}} EUR each · –{{discount}}% discount",
+          "order_button": "Order package"
+        },
+        "order_history": {
+          "card_title": "Order history",
+          "method_card": "💳 Card",
+          "method_bank": "🏦 Transfer",
+          "method_wallet": "💰 Wallet",
+          "qty_added_format": "+{{qty}} submissions",
+          "price_format": "−{{price}} EUR",
+          "paid_badge": "Paid"
+        }
+      }
     }
   },
   "buyer": {
@@ -1098,7 +1280,11 @@
       "password_length": "New password must be at least 8 characters.",
       "password_no_session": "No active session.",
       "password_current_invalid": "Current password is invalid.",
-      "password_change_failed": "Failed to change password."
+      "password_change_failed": "Failed to change password.",
+      "payu_must_be_logged_in": "You must be logged in to buy a package.",
+      "payu_status_format": "PayU: error {{status}}",
+      "payu_no_redirect_uri": "PayU: no redirectUri in response",
+      "company_id_required": "Missing company identifier."
     }
   }
 }

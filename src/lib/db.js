@@ -128,7 +128,8 @@ export async function updateCompany(id, patch) {
 }
 
 export async function saveCompanyContacts(companyId, contacts = []) {
-  if (!companyId) throw new Error("Brak identyfikatora firmy.");
+  // [P2-5] Bilingual via legacy.errors.db.company_id_required
+  if (!companyId) throw new Error(i18n.t("legacy:errors.db.company_id_required"));
 
   const { data: existing, error: loadError } = await supabase
     .from("company_contacts")
@@ -620,8 +621,10 @@ export async function getCompanyCapacity(companyId) {
 // Inicjuje zakup pakietu: woła Netlify function create-payu-order, dostaje
 // redirectUri do hosted checkout PayU. Frontend przekierowuje window.location.
 export async function createPayuOrder(planId) {
+  // [P2-5] Bilingual via legacy.errors.db.payu_*. body?.error pochodzi z PayU
+  // / Netlify function i jest passthrough (zwykle EN diagnostyki).
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Musisz być zalogowany żeby kupić pakiet.");
+  if (!session?.access_token) throw new Error(i18n.t("legacy:errors.db.payu_must_be_logged_in"));
 
   const res = await fetch("/.netlify/functions/create-payu-order", {
     method: "POST",
@@ -632,8 +635,8 @@ export async function createPayuOrder(planId) {
     body: JSON.stringify({ plan_id: planId }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error || `PayU: błąd ${res.status}`);
-  if (!body.redirectUri) throw new Error("PayU: brak redirectUri w odpowiedzi");
+  if (!res.ok) throw new Error(body?.error || i18n.t("legacy:errors.db.payu_status_format", { status: res.status }));
+  if (!body.redirectUri) throw new Error(i18n.t("legacy:errors.db.payu_no_redirect_uri"));
   return body;
 }
 

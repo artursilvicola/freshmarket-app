@@ -5364,6 +5364,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
 
 /* ── Finanse: tabs Saldo / Historia / Pakiety ─────────────────────────── */
 function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, orders, pkgMax, pkgUsed, retailers, accountId }) {
+  const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -5383,21 +5384,25 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
   return (
     <div style={{ maxWidth:860 }}>
       <div style={{ display:"flex",gap:0,marginBottom:20,background:"#f1f5f9",borderRadius:10,padding:4,width:"fit-content" }}>
-        {[["saldo","Saldo i pakiet"],["historia","Historia wysylek"],["pakiety","Cennik i pakiety"]].map(([t,l])=>(
-          <button key={t} onClick={()=>setTab(t)} style={{ padding:"8px 18px",borderRadius:8,border:"none",background:tab===t?"white":"transparent",fontWeight:tab===t?600:400,fontSize:13,cursor:"pointer",fontFamily:"inherit",color:tab===t?"#1e293b":"#64748b",boxShadow:tab===t?"0 1px 4px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
+        {[["saldo", t("supplier.finance.tabs.saldo")], ["historia", t("supplier.finance.tabs.historia")], ["pakiety", t("supplier.finance.tabs.pakiety")]].map(([tabKey, label])=>(
+          <button key={tabKey} onClick={()=>setTab(tabKey)} style={{ padding:"8px 18px",borderRadius:8,border:"none",background:tab===tabKey?"white":"transparent",fontWeight:tab===tabKey?600:400,fontSize:13,cursor:"pointer",fontFamily:"inherit",color:tab===tabKey?"#1e293b":"#64748b",boxShadow:tab===tabKey?"0 1px 4px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{label}</button>
         ))}
       </div>
 
       {tab==="saldo"&&<>
         <div style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:14,padding:"22px 26px",marginBottom:16,display:"flex",gap:24,alignItems:"stretch",flexWrap:"wrap" }}>
           <div style={{ flex:1,minWidth:160 }}>
-            <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>Saldo portfela</div>
+            <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{t("supplier.finance.wallet.balance_label")}</div>
             <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{wallet.balance}<span style={{ fontSize:16,fontWeight:400,marginLeft:4 }}>EUR</span></div>
-            <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>Srodki na kolejne wysylki - {getPlanById(co.pkg)?.perSend||40} EUR/szt.</div>
-            <div style={{ marginTop:14 }}><Btn onClick={()=>nav("wysylki")} style={{ background:"rgba(255,255,255,0.12)",color:"white",border:"1px solid rgba(255,255,255,0.2)" }}><Send size={13}/> Wyslij propozycje</Btn></div>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>{t("supplier.finance.wallet.funds_info_format", { perSend: getPlanById(co.pkg)?.perSend||40 })}</div>
+            <div style={{ marginTop:14 }}><Btn onClick={()=>nav("wysylki")} style={{ background:"rgba(255,255,255,0.12)",color:"white",border:"1px solid rgba(255,255,255,0.2)" }}><Send size={13}/> {t("supplier.finance.wallet.send_button")}</Btn></div>
           </div>
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",alignItems:"center" }}>
-            {[["Wyslano lacznie",allSent.length,"mailingow","rgba(255,255,255,0.07)","white"],["Potwierdzone odczyty",confirmed.length,"propozycji","rgba(5,150,105,0.22)","#6ee7b7"],["Zwroty",refundedExpired.length,"propozycji","rgba(239,68,68,0.18)","#fca5a5"]].map(([l,v,u,bg,c])=>(
+            {[
+              [t("supplier.finance.wallet.stats.total_sent_label"), allSent.length, t("supplier.finance.wallet.stats.total_sent_unit"), "rgba(255,255,255,0.07)", "white"],
+              [t("supplier.finance.wallet.stats.seen_label"), confirmed.length, t("supplier.finance.wallet.stats.seen_unit"), "rgba(5,150,105,0.22)", "#6ee7b7"],
+              [t("supplier.finance.wallet.stats.refunds_label"), refundedExpired.length, t("supplier.finance.wallet.stats.refunds_unit"), "rgba(239,68,68,0.18)", "#fca5a5"],
+            ].map(([l,v,u,bg,c])=>(
               <div key={l} style={{ padding:"12px 16px",background:bg,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",minWidth:100,textAlign:"center" }}>
                 <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
                 <div style={{ fontSize:10,color:c,opacity:0.75 }}>{u}</div>
@@ -5408,7 +5413,11 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
         </div>
 
         <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:16 }}>
-          {[["Efektywny koszt",`${totalEarned-totalRefunds} EUR`,"po zwrotach","#7c3aed"],["Zwroty",`+${totalRefunds} EUR`,pendingRefunds.length>0?"zaksiegowane / w toku":"na portfel","#059669"],["Open rate",allSent.length?Math.round(confirmed.length/allSent.length*100)+"%":"0%","potwierdzonych",confirmed.length/Math.max(1,allSent.length)>=0.5?"#059669":"#d97706"]].map(([l,v,sub,c])=>(
+          {[
+            [t("supplier.finance.kpi.effective_cost_label"), t("supplier.finance.kpi.effective_cost_value_format", { amount: totalEarned-totalRefunds }), t("supplier.finance.kpi.effective_cost_sub"), "#7c3aed"],
+            [t("supplier.finance.kpi.refunds_label"), t("supplier.finance.kpi.refunds_value_format", { amount: totalRefunds }), pendingRefunds.length>0?t("supplier.finance.kpi.refunds_sub_pending"):t("supplier.finance.kpi.refunds_sub_done"), "#059669"],
+            [t("supplier.finance.kpi.open_rate_label"), allSent.length?Math.round(confirmed.length/allSent.length*100)+"%":"0%", t("supplier.finance.kpi.open_rate_sub"), confirmed.length/Math.max(1,allSent.length)>=0.5?"#059669":"#d97706"],
+          ].map(([l,v,sub,c])=>(
             <div key={l} style={{ padding:"12px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10 }}>
               <div style={{ fontSize:11,color:"#94a3b8",marginBottom:3 }}>{l}</div>
               <div style={{ fontSize:20,fontWeight:800,color:c }}>{v}</div>
@@ -5417,80 +5426,90 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           ))}
         </div>
 
-        <Card title="Aktywny pakiet" icon={CreditCard}>
+        <Card title={t("supplier.finance.active_pkg.card_title")} icon={CreditCard}>
           <div style={{ display:"flex",gap:14,alignItems:"center",flexWrap:"wrap" }}>
             <div style={{ padding:"12px 20px",background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,color:"white",flexShrink:0 }}>
-              <div style={{ fontSize:10,opacity:0.6,marginBottom:2 }}>PAKIET</div>
+              <div style={{ fontSize:10,opacity:0.6,marginBottom:2 }}>{t("supplier.finance.active_pkg.pkg_badge")}</div>
               <div style={{ fontSize:14,fontWeight:700 }}>{pkgOpt.label}</div>
-              <div style={{ fontSize:11,opacity:0.6,marginTop:2 }}>{pkgOpt.perSend} EUR/szt.</div>
+              <div style={{ fontSize:11,opacity:0.6,marginTop:2 }}>{t("supplier.finance.active_pkg.per_send_format", { perSend: pkgOpt.perSend })}</div>
             </div>
             <div style={{ flex:1,minWidth:200 }}>
               <div style={{ display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5 }}>
-                <span style={{ color:"#64748b" }}>Uzyto: {confirmed.length}/{pkgOpt.max} wysylek</span>
+                <span style={{ color:"#64748b" }}>{t("supplier.finance.active_pkg.used_format", { used: confirmed.length, max: pkgOpt.max })}</span>
                 <span style={{ fontWeight:600,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{pct}%</span>
               </div>
               <div style={{ background:"#e2e8f0",borderRadius:4,height:8,overflow:"hidden" }}><div style={{ height:"100%",background:pct>=90?"#dc2626":pct>=70?"#d97706":"#0d9488",borderRadius:4,width:`${pct}%` }}/></div>
               <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10 }}>
-                {[["Cena pakietu",`${pkgOpt.price} EUR`],["Wazny do",co.pkgExpiry||"2026-12-31"]].map(([l,v])=><div key={l} style={{ padding:"7px 10px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div><div style={{ fontWeight:600,fontSize:12 }}>{v}</div></div>)}
+                {[
+                  [t("supplier.finance.active_pkg.price_label"), t("supplier.finance.active_pkg.price_value_format", { price: pkgOpt.price })],
+                  [t("supplier.finance.active_pkg.valid_until_label"), co.pkgExpiry||"2026-12-31"],
+                ].map(([l,v])=><div key={l} style={{ padding:"7px 10px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div><div style={{ fontWeight:600,fontSize:12 }}>{v}</div></div>)}
               </div>
             </div>
           </div>
-          <div style={{ marginTop:14 }}><Btn outline sm onClick={()=>setTab("pakiety")}><CreditCard size={12}/> Zmien pakiet</Btn></div>
+          <div style={{ marginTop:14 }}><Btn outline sm onClick={()=>setTab("pakiety")}><CreditCard size={12}/> {t("supplier.finance.active_pkg.change_btn")}</Btn></div>
         </Card>
 
-        {expired.length>0&&<Card title="Zwroty za brak odczytu" icon={RotateCcw} style={{ borderLeft:"3px solid #059669" }}>
-          <Alrt type="success"><strong>{expired.length} zwroty = +{totalRefunds} EUR</strong> wrocily na portfel. Mozesz je wykorzystac na wysylki do innych sieci.</Alrt>
+        {expired.length>0&&<Card title={t("supplier.finance.refunds_done.card_title")} icon={RotateCcw} style={{ borderLeft:"3px solid #059669" }}>
+          <Alrt type="success"><Trans i18nKey="supplier.finance.refunds_done.alert_html" ns="legacy" values={{ count: expired.length, total: totalRefunds }} components={{ strong: <strong /> }}/></Alrt>
           {expired.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); return (
             <div key={s.id} style={{ display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:13 }}>
               <RotateCcw size={12} color="#059669"/>
               <div style={{ flex:1 }}>{CEMOJI[o?.category]} <strong>{o?.title||o?.product}</strong>{" -> "}{r?.name}</div>
-              <strong style={{ color:"#059669" }}>+{getRefundAmount(s)} EUR</strong>
+              <strong style={{ color:"#059669" }}>{t("supplier.finance.refunds_done.row_amount_format", { amount: getRefundAmount(s) })}</strong>
             </div>
           );})}
         </Card>}
-        {pendingRefunds.length>0&&<Card title="Zwroty w toku" icon={RotateCcw} style={{ borderLeft:"3px solid #d97706" }}>
-          <Alrt type="warning"><strong>{pendingRefunds.length} {pendingRefunds.length===1?"zwrot jest":"zwroty sa"} w toku.</strong> Status propozycji jest juz wygaszony, ale zapis zwrotu jeszcze dojezdza do portfela.</Alrt>
+        {pendingRefunds.length>0&&<Card title={t("supplier.finance.refunds_pending.card_title")} icon={RotateCcw} style={{ borderLeft:"3px solid #d97706" }}>
+          <Alrt type="warning"><Trans i18nKey={pendingRefunds.length===1?"supplier.finance.refunds_pending.alert_html_one":"supplier.finance.refunds_pending.alert_html_other"} ns="legacy" values={{ count: pendingRefunds.length }} components={{ strong: <strong /> }}/></Alrt>
           {pendingRefunds.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); return (
             <div key={s.id} style={{ display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:13 }}>
               <RotateCcw size={12} color="#d97706"/>
               <div style={{ flex:1 }}>{CEMOJI[o?.category]} <strong>{o?.title||o?.product}</strong>{" -> "}{r?.name}</div>
-              <strong style={{ color:"#d97706" }}>zwrot w toku</strong>
+              <strong style={{ color:"#d97706" }}>{t("supplier.finance.refunds_pending.row_label")}</strong>
             </div>
           );})}
         </Card>}
 
-        <Card title="Ostatnie transakcje" icon={FileText}>
-          {(wallet.transactions || []).map((t,i)=>(
+        <Card title={t("supplier.finance.recent_tx.card_title")} icon={FileText}>
+          {(wallet.transactions || []).map((tx,i)=>(
             <div key={i} style={{ display:"flex",gap:10,alignItems:"center",padding:"9px 0",borderBottom:"1px solid #f1f5f9" }}>
-              <div style={{ width:30,height:30,borderRadius:"50%",background:t.type==="refund"?"#d1fae5":t.type==="credit"?"#dbeafe":"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                {t.type==="refund"?<RotateCcw size={12} color="#059669"/>:t.type==="credit"?<Plus size={12} color="#2563eb"/>:<X size={12} color="#dc2626"/>}
+              <div style={{ width:30,height:30,borderRadius:"50%",background:tx.type==="refund"?"#d1fae5":tx.type==="credit"?"#dbeafe":"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                {tx.type==="refund"?<RotateCcw size={12} color="#059669"/>:tx.type==="credit"?<Plus size={12} color="#2563eb"/>:<X size={12} color="#dc2626"/>}
               </div>
-              <div style={{ flex:1 }}><div style={{ fontSize:13 }}>{t.desc}</div><div style={{ fontSize:11,color:"#94a3b8" }}>{t.date}</div></div>
-              <div style={{ fontWeight:700,color:t.amount>0?"#059669":"#dc2626" }}>{t.amount>0?"+":""}{t.amount} EUR</div>
+              <div style={{ flex:1 }}><div style={{ fontSize:13 }}>{tx.desc}</div><div style={{ fontSize:11,color:"#94a3b8" }}>{tx.date}</div></div>
+              <div style={{ fontWeight:700,color:tx.amount>0?"#059669":"#dc2626" }}>{t("supplier.finance.recent_tx.amount_format", { sign: tx.amount>0?"+":"", amount: tx.amount })}</div>
             </div>
           ))}
         </Card>
       </>}
 
-      {tab==="historia"&&<Card title="Historia wysylek" noPad>
+      {tab==="historia"&&<Card title={t("supplier.finance.history.card_title")} noPad>
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%",borderCollapse:"collapse" }}>
-            <thead><tr style={{ background:"#f8fafc" }}>{["Propozycja","Siec","Tier","Data","Status","Kwota"].map(h=><th key={h} style={{ padding:"10px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap" }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background:"#f8fafc" }}>{[
+              t("supplier.finance.history.headers.offer"),
+              t("supplier.finance.history.headers.retailer"),
+              t("supplier.finance.history.headers.tier"),
+              t("supplier.finance.history.headers.date"),
+              t("supplier.finance.history.headers.status"),
+              t("supplier.finance.history.headers.amount"),
+            ].map(h=><th key={h} style={{ padding:"10px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap" }}>{h}</th>)}</tr></thead>
             <tbody>
               {allSent.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); const sc=STATUS_MAP[s.status]; const isConf=isSeenOrCharged(s); const amount=getChargeAmount(s, pkgOpt.perSend); return (
                 <tr key={s.id} style={{ background:s.status==="unread_expired"?"#fef9f9":isConf?"#f0fdf4":"white" }}>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontSize:13 }}><div style={{ display:"flex",gap:5,alignItems:"center" }}>{CEMOJI[o?.category]} <strong>{o?.title||o?.product}</strong></div></td>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}><div style={{ display:"flex",gap:6,alignItems:"center" }}><RetailerLogo retailer={r} size={16}/><span style={{ fontSize:12 }}>{r?.name}</span></div></td>
-                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}>{o?.tier==="premium"?<Badge color="#d97706" bg="#fef3c7">Premium</Badge>:<Badge color="#3b82f6" bg="#eff6ff">Standard</Badge>}</td>
+                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}>{o?.tier==="premium"?<Badge color="#d97706" bg="#fef3c7">{t("supplier.finance.history.tier_premium")}</Badge>:<Badge color="#3b82f6" bg="#eff6ff">{t("supplier.finance.history.tier_standard")}</Badge>}</td>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontSize:12,color:"#64748b" }}>{s.sentAt||s.sendDate}</td>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}><span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
                     <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
                     {(s.status==="pending_moderation"||s.status==="queued")&&<Info size={11} color={sc?.[1]} style={{verticalAlign:"middle"}}/>}
                   </span></td>
-                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>+{getRefundAmount(s)} EUR</span>:<span style={{ color:"#d97706" }}>zwrot w toku</span>):isConf?<span style={{ color:"#1e293b" }}>{amount} EUR</span>:<span style={{ color:"#94a3b8" }}>oczekuje</span>}</td>
+                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.history.refund_done_format", { amount: getRefundAmount(s) })}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.history.refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.history.amount_eur_format", { amount })}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.history.awaiting")}</span>}</td>
                 </tr>
               );})}
-              {allSent.length===0&&<tr><td colSpan={6} style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>Brak wysylek.</td></tr>}
+              {allSent.length===0&&<tr><td colSpan={6} style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>{t("supplier.finance.history.empty")}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -5502,6 +5521,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
 }
 
 function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax, pkgUsed }) {
+  const { t } = useTranslation("legacy");
   const [selected, setSelected] = useState(co.pkg||"std_5");
   const [showModal, setShowModal] = useState(false);
   const [payMethod, setPayMethod] = useState("karta");
@@ -5509,6 +5529,28 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   const [paid, setPaid] = useState(false);
   const sel = getPlanById(selected) || getPlanById("std_5") || PRICING_PLANS[0];
   const rem = Math.max(0, pkgMax - pkgUsed);
+
+  // [P2-5 i18n] Plurals: PL "wysyłka"/"wysyłek" matches qty===1?singular:plural.
+  // Helper zwraca przetłumaczony pkg label dla obu tier'ów z plural variant.
+  const pkgLabel = (tier, qty) => {
+    const k = tier === "PREMIUM"
+      ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_premium_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_premium_other")
+      : (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_standard_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_standard_other");
+    return t(k, { qty });
+  };
+  const ctaPkgLabel = (tier, qty) => {
+    const k = tier === "PREMIUM"
+      ? (qty === 1 ? "supplier.finance.pakiety.cta.pkg_premium_one_format" : "supplier.finance.pakiety.cta.pkg_premium_other_format")
+      : (qty === 1 ? "supplier.finance.pakiety.cta.pkg_standard_one_format" : "supplier.finance.pakiety.cta.pkg_standard_other_format");
+    return t(k, { qty });
+  };
+  const successPkgLabel = (tier, qty) => {
+    const k = tier === "PREMIUM"
+      ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_premium_one" : "supplier.finance.pakiety.payment_modal.pkg_label_premium_other")
+      : (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_standard_one" : "supplier.finance.pakiety.payment_modal.pkg_label_standard_other");
+    return t(k, { qty });
+  };
+  const tableQtyLabel = (qty) => t(qty === 1 ? "supplier.finance.pakiety.table.qty_one" : "supplier.finance.pakiety.table.qty_other", { count: qty });
 
   // [B2B Round prod-rollout / faza 3] Realne PayU zamiast mocka buyPackage().
   // Wywołuje Netlify function create-payu-order, dostaje redirectUri do
@@ -5518,12 +5560,15 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
     setPaying(true);
     try {
       const { redirectUri } = await dbCreatePayuOrder(selected);
-      if (!redirectUri) throw new Error("PayU nie zwrócił adresu przekierowania");
+      if (!redirectUri) throw new Error(t("supplier.finance.pakiety.payment_modal.no_redirect_error"));
       // Redirect przed setPaying(false), żeby nie migotać UI.
       window.location.href = redirectUri;
     } catch (e) {
       setPaying(false);
-      fl(`Błąd inicjalizacji płatności: ${e?.message || "spróbuj ponownie"}`, "error");
+      // [P2-5 i18n] Raw e.message z createPayuOrder już bilingual (P2-5
+      // legacy.errors.db.payu_*). Wrapper i fallback "spróbuj ponownie"
+      // tłumaczone tutaj.
+      fl(t("supplier.finance.pakiety.payment_modal.payment_init_error_format", { message: e?.message || t("supplier.finance.pakiety.payment_modal.payment_init_error_fallback") }), "error");
     }
   }
 
@@ -5538,13 +5583,12 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 <div style={{ width:64,height:64,borderRadius:"50%",background:"#d1fae5",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
                   <CheckCircle size={32} color="#059669"/>
                 </div>
-                <h3 style={{ margin:"0 0 8px",fontSize:18,color:"#0f172a" }}>Płatność potwierdzona!</h3>
+                <h3 style={{ margin:"0 0 8px",fontSize:18,color:"#0f172a" }}>{t("supplier.finance.pakiety.payment_modal.success_title")}</h3>
                 <p style={{ color:"#64748b",fontSize:13,margin:"0 0 16px",lineHeight:1.6 }}>
-                  Pakiet <strong>{sel.tier==="PREMIUM"?"Premium":"Standard"} {sel.qty} {sel.qty===1?"wysyłka":"wysyłek"}</strong> został aktywowany.<br/>
-                  Dodano <strong style={{ color:"#0d9488" }}>+{sel.qty} wysyłek</strong> do Twojego konta.
+                  <Trans i18nKey="supplier.finance.pakiety.payment_modal.success_body_html" ns="legacy" values={{ pkgLabel: successPkgLabel(sel.tier, sel.qty), qty: sel.qty }} components={{ strong: <strong />, br: <br /> }}/>
                 </p>
                 <div style={{ padding:"10px 16px",background:"#f0fdf4",borderRadius:8,fontSize:13,color:"#047857",border:"1px solid #bbf7d0" }}>
-                  Aktualny stan: <strong>{pkgMax + sel.qty} wysyłek łącznie</strong>
+                  <Trans i18nKey="supplier.finance.pakiety.payment_modal.success_state_html" ns="legacy" values={{ total: pkgMax + sel.qty }} components={{ strong: <strong /> }}/>
                 </div>
               </div>
             ):(
@@ -5554,61 +5598,65 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                     <CreditCard size={20} color="#0d9488"/>
                   </div>
                   <div>
-                    <h3 style={{ margin:0,fontSize:16 }}>Potwierdź zamówienie</h3>
-                    <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>Faktura VAT zostanie wysłana na e-mail</div>
+                    <h3 style={{ margin:0,fontSize:16 }}>{t("supplier.finance.pakiety.payment_modal.title")}</h3>
+                    <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>{t("supplier.finance.pakiety.payment_modal.subtitle")}</div>
                   </div>
                   <button onClick={()=>setShowModal(false)} style={{ marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4 }}><X size={18}/></button>
                 </div>
                 <div style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>Pakiet</span><span style={{ fontWeight:600 }}>{sel.tier==="PREMIUM"?"⭐ Premium":"Standard"} · {sel.qty} {sel.qty===1?"wysyłka":"wysyłek"}</span></div>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>Cena/szt.</span><span>{sel.perSend} EUR</span></div>
-                  {sel.discount>0&&<div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>Zniżka</span><span style={{ color:"#059669",fontWeight:600 }}>−{sel.discount}% vs cena bazowa</span></div>}
+                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_pkg_label")}</span><span style={{ fontWeight:600 }}>{pkgLabel(sel.tier, sel.qty)}</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_per_send_label")}</span><span>{t("supplier.finance.pakiety.payment_modal.summary_per_send_format", { perSend: sel.perSend })}</span></div>
+                  {sel.discount>0&&<div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_discount_label")}</span><span style={{ color:"#059669",fontWeight:600 }}>{t("supplier.finance.pakiety.payment_modal.summary_discount_value_format", { percent: sel.discount })}</span></div>}
                   <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:10,marginTop:4,display:"flex",justifyContent:"space-between" }}>
-                    <span style={{ fontWeight:700,fontSize:15 }}>Netto</span>
-                    <span style={{ fontWeight:800,fontSize:18,color:"#0d9488" }}>{sel.price} EUR</span>
+                    <span style={{ fontWeight:700,fontSize:15 }}>{t("supplier.finance.pakiety.payment_modal.summary_net_label")}</span>
+                    <span style={{ fontWeight:800,fontSize:18,color:"#0d9488" }}>{t("supplier.finance.pakiety.payment_modal.summary_net_format", { price: sel.price })}</span>
                   </div>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginTop:4,fontSize:12,color:"#94a3b8" }}><span>VAT 23%</span><span>+{Math.round(sel.price*0.23)} EUR</span></div>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginTop:2 }}><span style={{ fontSize:13,fontWeight:600,color:"#475569" }}>Brutto</span><span style={{ fontSize:15,fontWeight:800,color:"#1e293b" }}>{Math.round(sel.price*1.23)} EUR</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",marginTop:4,fontSize:12,color:"#94a3b8" }}><span>{t("supplier.finance.pakiety.payment_modal.summary_vat_label")}</span><span>{t("supplier.finance.pakiety.payment_modal.summary_vat_format", { amount: Math.round(sel.price*0.23) })}</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",marginTop:2 }}><span style={{ fontSize:13,fontWeight:600,color:"#475569" }}>{t("supplier.finance.pakiety.payment_modal.summary_gross_label")}</span><span style={{ fontSize:15,fontWeight:800,color:"#1e293b" }}>{t("supplier.finance.pakiety.payment_modal.summary_gross_format", { amount: Math.round(sel.price*1.23) })}</span></div>
                 </div>
                 <div style={{ marginBottom:16 }}>
-                  <label style={{ fontSize:12,fontWeight:600,display:"block",marginBottom:8,color:"#334155" }}>Metoda płatności</label>
+                  <label style={{ fontSize:12,fontWeight:600,display:"block",marginBottom:8,color:"#334155" }}>{t("supplier.finance.pakiety.payment_modal.pay_method_label")}</label>
                   <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8 }}>
-                    {[["karta","💳","Karta płatnicza"],["przelew","🏦","Przelew bankowy"],["portfel","💰",`Z portfela (${wallet.balance} EUR)`]].map(([val,icon,lbl])=>(
+                    {[
+                      ["karta", "💳", t("supplier.finance.pakiety.payment_modal.pay_card_label")],
+                      ["przelew", "🏦", t("supplier.finance.pakiety.payment_modal.pay_bank_label")],
+                      ["portfel", "💰", t("supplier.finance.pakiety.payment_modal.pay_wallet_label_format", { balance: wallet.balance })],
+                    ].map(([val,icon,lbl])=>(
                       <label key={val} onClick={()=>setPayMethod(val)} style={{ display:"flex",flexDirection:"column",alignItems:"center",gap:4,padding:"10px 6px",border:`2px solid ${payMethod===val?"#0d9488":"#e2e8f0"}`,borderRadius:8,cursor:"pointer",background:payMethod===val?"#f0fdfa":"white",userSelect:"none" }}>
                         <span style={{ fontSize:20 }}>{icon}</span>
                         <span style={{ fontSize:10,fontWeight:payMethod===val?700:400,color:payMethod===val?"#0d9488":"#64748b",textAlign:"center",lineHeight:1.3 }}>{lbl}</span>
-                        {val==="portfel"&&wallet.balance<sel.price&&<span style={{ fontSize:9,color:"#dc2626" }}>Za mało środków</span>}
+                        {val==="portfel"&&wallet.balance<sel.price&&<span style={{ fontSize:9,color:"#dc2626" }}>{t("supplier.finance.pakiety.payment_modal.pay_insufficient_funds_short")}</span>}
                       </label>
                     ))}
                   </div>
-                  {payMethod==="portfel"&&wallet.balance<sel.price&&<div style={{ marginTop:8,fontSize:12,color:"#dc2626",background:"#fef2f2",padding:"6px 10px",borderRadius:6,border:"1px solid #fca5a5" }}>Brakuje {sel.price-wallet.balance} EUR — doładuj portfel lub wybierz inną metodę.</div>}
+                  {payMethod==="portfel"&&wallet.balance<sel.price&&<div style={{ marginTop:8,fontSize:12,color:"#dc2626",background:"#fef2f2",padding:"6px 10px",borderRadius:6,border:"1px solid #fca5a5" }}>{t("supplier.finance.pakiety.payment_modal.wallet_insufficient_warn_format", { missing: sel.price-wallet.balance })}</div>}
                 </div>
                 {payMethod==="karta"&&(
                   <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",marginBottom:16,border:"1px solid #e2e8f0" }}>
-                    <div style={{ fontSize:11,color:"#94a3b8",marginBottom:8,textTransform:"uppercase",letterSpacing:0.5 }}>Dane karty (demo – wpisz cokolwiek)</div>
+                    <div style={{ fontSize:11,color:"#94a3b8",marginBottom:8,textTransform:"uppercase",letterSpacing:0.5 }}>{t("supplier.finance.pakiety.payment_modal.card_form_title")}</div>
                     <div style={{ display:"grid",gap:8 }}>
-                      <input placeholder="1234 5678 9012 3456" style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit",letterSpacing:1 }}/>
+                      <input placeholder={t("supplier.finance.pakiety.payment_modal.card_form_number_placeholder")} style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit",letterSpacing:1 }}/>
                       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8 }}>
-                        <input placeholder="MM/YY" style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
-                        <input placeholder="CVV" style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
+                        <input placeholder={t("supplier.finance.pakiety.payment_modal.card_form_expiry_placeholder")} style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
+                        <input placeholder={t("supplier.finance.pakiety.payment_modal.card_form_cvv_placeholder")} style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
                       </div>
-                      <input placeholder="Imię i nazwisko na karcie" style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
+                      <input placeholder={t("supplier.finance.pakiety.payment_modal.card_form_name_placeholder")} style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
                     </div>
                   </div>
                 )}
                 {payMethod==="przelew"&&(
                   <div style={{ background:"#f0f9ff",borderRadius:8,padding:"12px 14px",marginBottom:16,border:"1px solid #bae6fd",fontSize:12,color:"#0369a1" }}>
-                    <strong>Dane do przelewu:</strong><br/>
-                    KJOW Sp. z o.o. · PKO BP<br/>
-                    <span style={{ fontFamily:"monospace",fontSize:13 }}>PL 12 1440 1101 0000 0000 1234 5678</span><br/>
-                    Tytuł: <strong>FM-{selected.toUpperCase()}-{new Date().getFullYear()}</strong>
-                    <div style={{ marginTop:6,padding:"5px 8px",background:"rgba(3,105,161,0.08)",borderRadius:5,fontSize:11 }}>Po zaksięgowaniu (1–2 dni robocze) wysyłki zostaną dodane automatycznie.</div>
+                    <strong>{t("supplier.finance.pakiety.payment_modal.bank_form_title")}</strong><br/>
+                    {t("supplier.finance.pakiety.payment_modal.bank_form_beneficiary")}<br/>
+                    <span style={{ fontFamily:"monospace",fontSize:13 }}>{t("supplier.finance.pakiety.payment_modal.bank_form_iban")}</span><br/>
+                    {t("supplier.finance.pakiety.payment_modal.bank_form_title_label")} <strong>{t("supplier.finance.pakiety.payment_modal.bank_form_title_value_format", { plan: selected.toUpperCase(), year: new Date().getFullYear() })}</strong>
+                    <div style={{ marginTop:6,padding:"5px 8px",background:"rgba(3,105,161,0.08)",borderRadius:5,fontSize:11 }}>{t("supplier.finance.pakiety.payment_modal.bank_form_info")}</div>
                   </div>
                 )}
                 <div style={{ display:"flex",gap:8 }}>
-                  <Btn outline onClick={()=>setShowModal(false)} style={{ flex:1 }}>Anuluj</Btn>
+                  <Btn outline onClick={()=>setShowModal(false)} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
                   <Btn primary disabled={paying||(payMethod==="portfel"&&wallet.balance<sel.price)} onClick={handleOrder} style={{ flex:2,background:sel.tier==="PREMIUM"?"#d97706":"#0d9488" }}>
-                    {paying?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> Przetwarzanie…</>:<><CreditCard size={13}/> Zapłać {Math.round(sel.price*1.23)} EUR (z VAT)</>}
+                    {paying?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><CreditCard size={13}/> {t("supplier.finance.pakiety.payment_modal.pay_button_format", { gross: Math.round(sel.price*1.23) })}</>}
                   </Btn>
                 </div>
               </>
@@ -5619,7 +5667,11 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
 
       {/* Current package status */}
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20 }}>
-        {[[`${pkgMax}`,"Łącznie w pakietach","wysyłek","#0d9488"],[`${pkgUsed}`,"Wykorzystano","wysyłek","#3b82f6"],[`${rem}`,"Pozostało","wysyłek",rem>0?"#059669":"#dc2626"]].map(([v,l,sub,c])=>(
+        {[
+          [`${pkgMax}`, t("supplier.finance.pakiety.pkg_stats.total_label"), t("supplier.finance.pakiety.pkg_stats.unit"), "#0d9488"],
+          [`${pkgUsed}`, t("supplier.finance.pakiety.pkg_stats.used_label"), t("supplier.finance.pakiety.pkg_stats.unit"), "#3b82f6"],
+          [`${rem}`, t("supplier.finance.pakiety.pkg_stats.remaining_label"), t("supplier.finance.pakiety.pkg_stats.unit"), rem>0?"#059669":"#dc2626"],
+        ].map(([v,l,sub,c])=>(
           <div key={l} style={{ padding:"14px 16px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,borderTop:`3px solid ${c}` }}>
             <div style={{ fontSize:26,fontWeight:800,color:c }}>{v}</div>
             <div style={{ fontSize:12,fontWeight:600,color:"#475569",marginTop:2 }}>{l}</div>
@@ -5630,7 +5682,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
 
       <div style={{ display:"flex",gap:10,padding:"12px 16px",background:"#f0fdf4",borderRadius:10,marginBottom:20,border:"1px solid #bbf7d0",fontSize:13,color:"#047857" }}>
         <ShieldCheck size={16} color="#059669" style={{ flexShrink:0,marginTop:1 }}/>
-        <div>Gwarancja 14 dni — brak odczytu przez kupca = automatyczny zwrot kredytu na portfel. Kupujesz wysyłki, nie ryzyko.</div>
+        <div>{t("supplier.finance.pakiety.guarantee")}</div>
       </div>
 
       {/* [B2B Round prod-rollout / UX] Codex feedback: jasne porównanie
@@ -5639,34 +5691,34 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:22 }}>
         <div style={{ background:"white",border:"1px solid #bfdbfe",borderRadius:10,padding:"14px 16px" }}>
           <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:10 }}>
-            <span style={{ background:"#dbeafe",color:"#1e40af",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700 }}>STANDARD</span>
-            <span style={{ fontSize:12,color:"#64748b",fontWeight:600 }}>40-30 EUR / wysyłka</span>
+            <span style={{ background:"#dbeafe",color:"#1e40af",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700 }}>{t("supplier.finance.pakiety.compare.standard_badge")}</span>
+            <span style={{ fontSize:12,color:"#64748b",fontWeight:600 }}>{t("supplier.finance.pakiety.compare.standard_price_range")}</span>
           </div>
           <ul style={{ margin:0,paddingLeft:18,fontSize:12,color:"#475569",lineHeight:1.7 }}>
-            <li><strong>Pozycja środkowa</strong> w newsletterze do kupca</li>
-            <li>Pełna treść propozycji + Twoje zdjęcia i logo</li>
-            <li>Moderacja przed wysyłką (24h SLA)</li>
-            <li>Gwarancja 14 dni — zwrot przy braku odczytu</li>
+            <li><Trans i18nKey="supplier.finance.pakiety.compare.standard_b1_html" ns="legacy" components={{ strong: <strong /> }}/></li>
+            <li>{t("supplier.finance.pakiety.compare.standard_b2")}</li>
+            <li>{t("supplier.finance.pakiety.compare.standard_b3")}</li>
+            <li>{t("supplier.finance.pakiety.compare.standard_b4")}</li>
           </ul>
           <div style={{ marginTop:10,padding:"7px 10px",background:"#eff6ff",borderRadius:6,fontSize:11,color:"#1e3a5f",lineHeight:1.5 }}>
-            <strong>Kiedy wybrać:</strong> chcesz dużo wysyłek po niższej cenie/szt. — najlepsze dla wolumenowych dostawców.
+            <Trans i18nKey="supplier.finance.pakiety.compare.standard_when_html" ns="legacy" components={{ strong: <strong /> }}/>
           </div>
         </div>
 
         <div style={{ background:"white",border:"2px solid #fde68a",borderRadius:10,padding:"14px 16px",position:"relative" }}>
-          <div style={{ position:"absolute",top:-8,right:14,background:"#d97706",color:"white",fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:10,letterSpacing:0.5 }}>⭐ TOP POZYCJA</div>
+          <div style={{ position:"absolute",top:-8,right:14,background:"#d97706",color:"white",fontSize:10,fontWeight:800,padding:"3px 10px",borderRadius:10,letterSpacing:0.5 }}>{t("supplier.finance.pakiety.compare.premium_top")}</div>
           <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:10 }}>
-            <span style={{ background:"#fef3c7",color:"#92400e",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700 }}>PREMIUM</span>
-            <span style={{ fontSize:12,color:"#92400e",fontWeight:600 }}>80-45 EUR / wysyłka</span>
+            <span style={{ background:"#fef3c7",color:"#92400e",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700 }}>{t("supplier.finance.pakiety.compare.premium_badge")}</span>
+            <span style={{ fontSize:12,color:"#92400e",fontWeight:600 }}>{t("supplier.finance.pakiety.compare.premium_price_range")}</span>
           </div>
           <ul style={{ margin:0,paddingLeft:18,fontSize:12,color:"#475569",lineHeight:1.7 }}>
-            <li><strong>Twoja propozycja jako pierwsza</strong> w newsletterze</li>
-            <li>Oznaczenie <span style={{ background:"#fef3c7",color:"#92400e",padding:"1px 6px",borderRadius:4,fontSize:10,fontWeight:700 }}>Premium</span> w mailu — wyróżnienie wizualne</li>
-            <li>Pełna treść + zdjęcia + logo (jak Standard)</li>
-            <li>Gwarancja 14 dni — zwrot przy braku odczytu</li>
+            <li><Trans i18nKey="supplier.finance.pakiety.compare.premium_b1_html" ns="legacy" components={{ strong: <strong /> }}/></li>
+            <li><Trans i18nKey="supplier.finance.pakiety.compare.premium_b2_html" ns="legacy" components={{ em: <span style={{ background:"#fef3c7",color:"#92400e",padding:"1px 6px",borderRadius:4,fontSize:10,fontWeight:700 }} /> }}/></li>
+            <li>{t("supplier.finance.pakiety.compare.premium_b3")}</li>
+            <li>{t("supplier.finance.pakiety.compare.premium_b4")}</li>
           </ul>
           <div style={{ marginTop:10,padding:"7px 10px",background:"#fffbeb",borderRadius:6,fontSize:11,color:"#78350f",lineHeight:1.5 }}>
-            <strong>Kiedy wybrać:</strong> stawiasz na widoczność i chcesz żeby kupiec zobaczył Cię od razu — najlepsze dla premium produktów, kategorii nowych dla sieci, kluczowych okien sezonu.
+            <Trans i18nKey="supplier.finance.pakiety.compare.premium_when_html" ns="legacy" components={{ strong: <strong /> }}/>
           </div>
         </div>
       </div>
@@ -5674,19 +5726,25 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       {/* Standard table */}
       <div style={{ marginBottom:22 }}>
         <div style={{ display:"flex",gap:8,alignItems:"center",marginBottom:10 }}>
-          <span style={{ background:"#dbeafe",color:"#1e40af",padding:"3px 12px",borderRadius:20,fontSize:12,fontWeight:700 }}>STANDARD</span>
-          <span style={{ fontSize:12,color:"#64748b" }}>Pozycja środkowa w newsletterze</span>
+          <span style={{ background:"#dbeafe",color:"#1e40af",padding:"3px 12px",borderRadius:20,fontSize:12,fontWeight:700 }}>{t("supplier.finance.pakiety.compare.standard_badge")}</span>
+          <span style={{ fontSize:12,color:"#64748b" }}>{t("supplier.finance.pakiety.table.std_subtitle")}</span>
         </div>
         <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,overflow:"hidden" }}>
           <table style={{ width:"100%",borderCollapse:"collapse" }}>
-            <thead><tr style={{ background:"#f8fafc" }}>{["Pakiet","Cena","Cena/szt.","Zniżka",""].map(h=><th key={h} style={{ padding:"9px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"1px solid #e2e8f0" }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background:"#f8fafc" }}>{[
+              t("supplier.finance.pakiety.table.header_package"),
+              t("supplier.finance.pakiety.table.header_price"),
+              t("supplier.finance.pakiety.table.header_per_send"),
+              t("supplier.finance.pakiety.table.header_discount"),
+              "",
+            ].map((h,i)=><th key={i} style={{ padding:"9px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"1px solid #e2e8f0" }}>{h}</th>)}</tr></thead>
             <tbody>{PRICING_PLANS.filter(p=>p.tier==="STANDARD").map(plan=>{ const isSel=selected===plan.id; return (
               <tr key={plan.id} onClick={()=>setSelected(plan.id)} style={{ cursor:"pointer",background:isSel?"#eff6ff":"white",borderLeft:isSel?"3px solid #2563eb":"3px solid transparent" }}>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9" }}><div style={{ display:"flex",gap:7,alignItems:"center" }}>{plan.popular&&<span style={{ background:"#0d9488",color:"white",fontSize:9,fontWeight:700,padding:"1px 7px",borderRadius:8 }}>Popularny</span>}<strong style={{ color:isSel?"#2563eb":"#1e293b" }}>{plan.qty} {plan.qty===1?"wysyłka":"wysyłek"}</strong></div></td>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700 }}>{plan.price} EUR</td>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9",color:"#475569" }}>{plan.perSend} EUR</td>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9" }}>{plan.discount>0?<span style={{ background:"#d1fae5",color:"#047857",padding:"2px 8px",borderRadius:10,fontSize:12,fontWeight:700 }}>−{plan.discount}%</span>:<span style={{ color:"#94a3b8",fontSize:12 }}>bazowa</span>}</td>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9" }}>{isSel&&<span style={{ background:"#2563eb",color:"white",padding:"3px 10px",borderRadius:6,fontSize:12 }}>Wybrany</span>}</td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9" }}><div style={{ display:"flex",gap:7,alignItems:"center" }}>{plan.popular&&<span style={{ background:"#0d9488",color:"white",fontSize:9,fontWeight:700,padding:"1px 7px",borderRadius:8 }}>{t("supplier.finance.pakiety.table.popular_badge")}</span>}<strong style={{ color:isSel?"#2563eb":"#1e293b" }}>{tableQtyLabel(plan.qty)}</strong></div></td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700 }}>{t("supplier.finance.pakiety.table.price_eur_format", { amount: plan.price })}</td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9",color:"#475569" }}>{t("supplier.finance.pakiety.table.price_eur_format", { amount: plan.perSend })}</td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9" }}>{plan.discount>0?<span style={{ background:"#d1fae5",color:"#047857",padding:"2px 8px",borderRadius:10,fontSize:12,fontWeight:700 }}>{t("supplier.finance.pakiety.table.discount_value_format", { percent: plan.discount })}</span>:<span style={{ color:"#94a3b8",fontSize:12 }}>{t("supplier.finance.pakiety.table.base_label")}</span>}</td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #f1f5f9" }}>{isSel&&<span style={{ background:"#2563eb",color:"white",padding:"3px 10px",borderRadius:6,fontSize:12 }}>{t("supplier.finance.pakiety.table.selected_badge")}</span>}</td>
               </tr>
             );})}
             </tbody>
@@ -5697,19 +5755,25 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       {/* Premium table */}
       <div style={{ marginBottom:22 }}>
         <div style={{ display:"flex",gap:8,alignItems:"center",marginBottom:10 }}>
-          <span style={{ background:"#fef3c7",color:"#92400e",padding:"3px 12px",borderRadius:20,fontSize:12,fontWeight:700 }}>PREMIUM</span>
-          <span style={{ fontSize:12,color:"#64748b" }}>TOP pozycja — Twoja propozycja jako pierwsza w newsletterze</span>
+          <span style={{ background:"#fef3c7",color:"#92400e",padding:"3px 12px",borderRadius:20,fontSize:12,fontWeight:700 }}>{t("supplier.finance.pakiety.compare.premium_badge")}</span>
+          <span style={{ fontSize:12,color:"#64748b" }}>{t("supplier.finance.pakiety.table.prem_subtitle")}</span>
         </div>
         <div style={{ background:"white",border:"2px solid #fde68a",borderRadius:10,overflow:"hidden" }}>
           <table style={{ width:"100%",borderCollapse:"collapse" }}>
-            <thead><tr style={{ background:"#fffbeb" }}>{["Pakiet","Cena","Cena/szt.","Zniżka",""].map(h=><th key={h} style={{ padding:"9px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#92400e",borderBottom:"1px solid #fde68a" }}>{h}</th>)}</tr></thead>
+            <thead><tr style={{ background:"#fffbeb" }}>{[
+              t("supplier.finance.pakiety.table.header_package"),
+              t("supplier.finance.pakiety.table.header_price"),
+              t("supplier.finance.pakiety.table.header_per_send"),
+              t("supplier.finance.pakiety.table.header_discount"),
+              "",
+            ].map((h,i)=><th key={i} style={{ padding:"9px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#92400e",borderBottom:"1px solid #fde68a" }}>{h}</th>)}</tr></thead>
             <tbody>{PRICING_PLANS.filter(p=>p.tier==="PREMIUM").map(plan=>{ const isSel=selected===plan.id; return (
               <tr key={plan.id} onClick={()=>setSelected(plan.id)} style={{ cursor:"pointer",background:isSel?"#fef3c7":"white",borderLeft:isSel?"3px solid #d97706":"3px solid transparent" }}>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7" }}><div style={{ display:"flex",gap:7,alignItems:"center" }}><Star size={11} color="#d97706" fill="#d97706"/>{plan.popular&&<span style={{ background:"#d97706",color:"white",fontSize:9,fontWeight:700,padding:"1px 7px",borderRadius:8 }}>Popularny</span>}<strong style={{ color:isSel?"#b45309":"#1e293b" }}>{plan.qty} {plan.qty===1?"wysyłka":"wysyłek"}</strong></div></td>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7",fontWeight:700 }}>{plan.price} EUR</td>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7",color:"#475569" }}>{plan.perSend} EUR</td>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7" }}>{plan.discount>0?<span style={{ background:"#fde68a",color:"#92400e",padding:"2px 8px",borderRadius:10,fontSize:12,fontWeight:700 }}>−{plan.discount}%</span>:<span style={{ color:"#94a3b8",fontSize:12 }}>bazowa</span>}</td>
-                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7" }}>{isSel&&<span style={{ background:"#d97706",color:"white",padding:"3px 10px",borderRadius:6,fontSize:12 }}>Wybrany</span>}</td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7" }}><div style={{ display:"flex",gap:7,alignItems:"center" }}><Star size={11} color="#d97706" fill="#d97706"/>{plan.popular&&<span style={{ background:"#d97706",color:"white",fontSize:9,fontWeight:700,padding:"1px 7px",borderRadius:8 }}>{t("supplier.finance.pakiety.table.popular_badge")}</span>}<strong style={{ color:isSel?"#b45309":"#1e293b" }}>{tableQtyLabel(plan.qty)}</strong></div></td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7",fontWeight:700 }}>{t("supplier.finance.pakiety.table.price_eur_format", { amount: plan.price })}</td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7",color:"#475569" }}>{t("supplier.finance.pakiety.table.price_eur_format", { amount: plan.perSend })}</td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7" }}>{plan.discount>0?<span style={{ background:"#fde68a",color:"#92400e",padding:"2px 8px",borderRadius:10,fontSize:12,fontWeight:700 }}>{t("supplier.finance.pakiety.table.discount_value_format", { percent: plan.discount })}</span>:<span style={{ color:"#94a3b8",fontSize:12 }}>{t("supplier.finance.pakiety.table.base_label")}</span>}</td>
+                <td style={{ padding:"10px 14px",borderBottom:"1px solid #fef3c7" }}>{isSel&&<span style={{ background:"#d97706",color:"white",padding:"3px 10px",borderRadius:6,fontSize:12 }}>{t("supplier.finance.pakiety.table.selected_badge")}</span>}</td>
               </tr>
             );})}
             </tbody>
@@ -5720,17 +5784,19 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       {/* CTA */}
       <div style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:12,padding:"16px 20px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:24 }}>
         <div style={{ flex:1,color:"white" }}>
-          <div style={{ fontWeight:700,fontSize:15 }}>{sel.tier==="PREMIUM"?"⭐ Premium":"Standard"} · {sel.qty} {sel.qty===1?"wysyłka":"wysyłek"}</div>
-          <div style={{ fontSize:12,opacity:0.6,marginTop:2 }}>{sel.price} EUR netto · {sel.perSend} EUR/szt.{sel.discount>0?` · –${sel.discount}% zniżka`:""}</div>
+          <div style={{ fontWeight:700,fontSize:15 }}>{ctaPkgLabel(sel.tier, sel.qty)}</div>
+          <div style={{ fontSize:12,opacity:0.6,marginTop:2 }}>{sel.discount>0
+            ? t("supplier.finance.pakiety.cta.sub_with_discount_format", { price: sel.price, perSend: sel.perSend, discount: sel.discount })
+            : t("supplier.finance.pakiety.cta.sub_format", { price: sel.price, perSend: sel.perSend })}</div>
         </div>
         <Btn onClick={()=>setShowModal(true)} style={{ background:sel.tier==="PREMIUM"?"#d97706":"#0d9488",color:"white",border:"none",flexShrink:0,fontWeight:700 }}>
-          <CreditCard size={13}/> Zamów pakiet
+          <CreditCard size={13}/> {t("supplier.finance.pakiety.cta.order_button")}
         </Btn>
       </div>
 
       {/* Order history */}
       {orders.length>0&&(
-        <Card title="Historia zamówień" icon={FileText}>
+        <Card title={t("supplier.finance.pakiety.order_history.card_title")} icon={FileText}>
           {[...orders].reverse().map(ord=>(
             <div key={ord.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center" }}>
               <div style={{ width:36,height:36,borderRadius:8,background:ord.planId.startsWith("prem")?"#fef3c7":"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
@@ -5739,12 +5805,12 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
               <div style={{ flex:1 }}>
                 <div style={{ fontWeight:600,fontSize:13 }}>{ord.planLabel}</div>
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
-                  {ord.date} · {ord.paymentMethod==="karta"?"💳 Karta":ord.paymentMethod==="przelew"?"🏦 Przelew":"💰 Portfel"} · +{ord.qty} wysyłek
+                  {ord.date} · {ord.paymentMethod==="karta"?t("supplier.finance.pakiety.order_history.method_card"):ord.paymentMethod==="przelew"?t("supplier.finance.pakiety.order_history.method_bank"):t("supplier.finance.pakiety.order_history.method_wallet")} · {t("supplier.finance.pakiety.order_history.qty_added_format", { qty: ord.qty })}
                 </div>
               </div>
               <div style={{ textAlign:"right" }}>
-                <div style={{ fontWeight:700,fontSize:13,color:"#dc2626" }}>−{ord.price} EUR</div>
-                <Badge color="#059669" bg="#f0fdf4">Opłacone</Badge>
+                <div style={{ fontWeight:700,fontSize:13,color:"#dc2626" }}>{t("supplier.finance.pakiety.order_history.price_format", { price: ord.price })}</div>
+                <Badge color="#059669" bg="#f0fdf4">{t("supplier.finance.pakiety.order_history.paid_badge")}</Badge>
               </div>
             </div>
           ))}
