@@ -87,16 +87,6 @@
         "default_fallback": "nie udało się zmienić hasła"
       },
       "success": "Hasło zmienione pomyślnie."
-    },
-    "offer_preview_modal": {
-      "title": "Podgląd propozycji – widok kupca",
-      "premium_badge": "Premium",
-      "packaging_label": "OPAKOWANIE:",
-      "kv": {
-        "volume": "Wolumen",
-        "min_order": "Min.",
-        "season": "Sezon"
-      }
     }
   },
   "admin": {},

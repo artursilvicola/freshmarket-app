@@ -87,16 +87,6 @@
         "default_fallback": "failed to change password"
       },
       "success": "Password changed successfully."
-    },
-    "offer_preview_modal": {
-      "title": "Submission preview — buyer view",
-      "premium_badge": "Premium",
-      "packaging_label": "PACKAGING:",
-      "kv": {
-        "volume": "Volume",
-        "min_order": "Min.",
-        "season": "Season"
-      }
     }
   },
   "admin": {},

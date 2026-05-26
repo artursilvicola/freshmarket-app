@@ -8223,25 +8223,23 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
 }
 
 function OfferPreviewModal({ offer, co, onClose }) {
-  // [Krok P2-2] Bilingual via legacy.buyer.offer_preview_modal
-  const { t } = useTranslation("legacy");
   if(!offer) return null;
   const allCerts=[...(offer.certs||[]),offer.customCert].filter(Boolean);
   const allPack=[...(offer.packaging||[]),offer.customPackaging].filter(Boolean);
   const ct=co?.contacts?.[0];
   return (
-    <Modal title={t("buyer.offer_preview_modal.title")} onClose={onClose} wide>
-      {offer.tier==="premium"&&<div style={{ background:"#fffbeb",border:"1px solid #fbbf24",borderRadius:7,padding:"6px 12px",marginBottom:10,fontSize:12,fontWeight:600,color:"#92400e",display:"flex",gap:5,alignItems:"center" }}><Star size={12} fill="#d97706" color="#d97706"/> {t("buyer.offer_preview_modal.premium_badge")}</div>}
+    <Modal title="Podgląd propozycji – widok kupca" onClose={onClose} wide>
+      {offer.tier==="premium"&&<div style={{ background:"#fffbeb",border:"1px solid #fbbf24",borderRadius:7,padding:"6px 12px",marginBottom:10,fontSize:12,fontWeight:600,color:"#92400e",display:"flex",gap:5,alignItems:"center" }}><Star size={12} fill="#d97706" color="#d97706"/> Premium</div>}
       <div style={{ background:"#f0fdf4",borderRadius:10,padding:14,marginBottom:14,display:"flex",gap:12 }}>
         {offer.photos?.length?<img src={offer.photos[0]} alt="" style={{ width:110,height:80,objectFit:"cover",borderRadius:7,flexShrink:0,border:"2px solid #bbf7d0" }}/>:<div style={{ width:110,height:80,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:34 }}>{CEMOJI[offer.category]||"📦"}</div>}
         <div style={{ flex:1 }}>
           <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>{allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}{offer.origin&&<Badge>{FLAGS[offer.origin]||"🌐"} {CNAMES[offer.origin]||offer.origin}</Badge>}</div>
           <h3 style={{ margin:"0 0 8px",fontSize:15 }}>{offer.title||offer.product}</h3>
-          <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>{[[t("buyer.offer_preview_modal.kv.volume"),offer.volume&&offer.volumeUnit?`${offer.volume} ${offer.volumeUnit}`:offer.volume],[t("buyer.offer_preview_modal.kv.min_order"),offer.minOrder],[t("buyer.offer_preview_modal.kv.season"),offer.from&&offer.to?`${offer.from}–${offer.to}`:null]].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"6px 10px",background:"white",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12 }}>{v}</div></div>)}</div>
+          <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>{[["Wolumen",offer.volume&&offer.volumeUnit?`${offer.volume} ${offer.volumeUnit}`:offer.volume],["Min.",offer.minOrder],["Sezon",offer.from&&offer.to?`${offer.from}–${offer.to}`:null]].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"6px 10px",background:"white",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12 }}>{v}</div></div>)}</div>
         </div>
       </div>
       <p style={{ color:"#475569",lineHeight:1.7,marginBottom:12,fontSize:13,whiteSpace:"pre-line" }}>{renderDesc(offer.description)}</p>
-      {allPack.length>0&&<div style={{ marginBottom:10 }}><strong style={{ fontSize:11,color:"#64748b" }}>{t("buyer.offer_preview_modal.packaging_label")}</strong><div style={{ display:"flex",gap:4,marginTop:3,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p}>{p}</Badge>)}</div></div>}
+      {allPack.length>0&&<div style={{ marginBottom:10 }}><strong style={{ fontSize:11,color:"#64748b" }}>OPAKOWANIE:</strong><div style={{ display:"flex",gap:4,marginTop:3,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p}>{p}</Badge>)}</div></div>}
       {co&&<div style={{ padding:12,background:"#f8fafc",borderRadius:8,display:"flex",gap:10,fontSize:12 }}>{co.logo?<img src={co.logo} alt="" style={{ width:38,height:38,objectFit:"cover",borderRadius:7 }}/>:<div style={{ width:38,height:38,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center" }}><Building2 size={16} color="#94a3b8"/></div>}<div style={{ flex:1 }}><div style={{ fontWeight:700 }}>{co.name}</div><div style={{ color:"#64748b" }}>{FLAGS[co.country]||"🌐"} {co.city}</div></div>{ct&&<div><div><Phone size={11} style={{ verticalAlign:"middle" }}/> {ct.phone}</div><div><Mail size={11} style={{ verticalAlign:"middle" }}/> {ct.email}</div></div>}</div>}
     </Modal>
   );
