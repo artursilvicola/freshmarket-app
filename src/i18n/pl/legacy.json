@@ -680,6 +680,76 @@
         "error_prefix": "Błąd zapisu propozycji: {{message}}",
         "error_fallback": "spróbuj ponownie"
       }
+    },
+    "wysylki": {
+      "tabs": {
+        "sieci": "Sieci handlowe",
+        "history_format": "Historia ({{count}})"
+      },
+      "pkg_bar": {
+        "fallback_label": "Standard 10 wysyłek",
+        "usage_format": "{{used}}/{{max}} wysyłek",
+        "wallet_balance_format": "Portfel: {{balance}} EUR",
+        "no_credits_badge": "Brak wysyłek – dokup pakiet"
+      },
+      "sieci": {
+        "header_format": "Sieci handlowe ({{count}})",
+        "stats_format": "{{sent}} wysłanych · {{read}} przeczytanych",
+        "search_placeholder": "Szukaj sieci...",
+        "sent_badge_format": "{{count}} wysł.",
+        "mailing_label": "Mailing: {{date}}",
+        "buyer_cats_label": "Kupiec kategorii: {{cats}}",
+        "read_count_format": "{{read}}/{{total}} propozycji przeczytanych",
+        "send_to_button_format": "Wyślij propozycję do {{name}}"
+      },
+      "new": {
+        "card_title": "Wyślij propozycję do sieci",
+        "cancel": "Anuluj",
+        "guarantee_alert": "Gwarancja 14 dni — jeśli kupiec nie otworzy propozycji, środki wracają automatycznie na portfel.",
+        "offer_label": "Propozycja",
+        "select_empty": "— wybierz —",
+        "no_offers_warning_pre": "Brak aktywnych propozycji. ",
+        "no_offers_warning_cta": "Dodaj propozycję →",
+        "retailer_label": "Sieć handlowa",
+        "internal_title_label": "🔒 Własny:",
+        "public_title_label": "🌐 Dla kupca:",
+        "next_send_format": "Wysyłka: {{date}}",
+        "send_button": "Wyślij propozycję",
+        "cost_info_format": "Koszt: {{cost}} EUR · 1 wysyłka z pakietu"
+      },
+      "history": {
+        "tabs": {
+          "all": "Wszystkie",
+          "sent": "Wysłane",
+          "pending": "Kolejka",
+          "expired": "Wygasłe"
+        },
+        "empty_title": "Brak wysyłek w tej kategorii",
+        "empty_cta": "Wyślij pierwszą propozycję →",
+        "days_left_format": "{{count}}d"
+      },
+      "confirm_modal": {
+        "title": "Potwierdź wysyłkę",
+        "subtitle": "Zaraz pobierzemy 1 wysyłkę z pakietu",
+        "row_offer": "Propozycja",
+        "row_retailer": "Sieć handlowa",
+        "row_cost": "Koszt wysyłki",
+        "row_remaining": "Po wysyłce zostanie",
+        "cost_value_format": "1 wysyłka ({{perSend}} EUR)",
+        "remaining_value_format": "{{remaining}}/{{max}} wysyłek",
+        "rule_html": "<strong>⭐ Złota zasada 14 dni:</strong> jeśli kupiec nie otworzy propozycji w ciągu 14 dni, kredyt automatycznie wraca na Twój portfel.",
+        "cancel": "Anuluj",
+        "confirm": "Wyślij propozycję"
+      },
+      "toasts": {
+        "pending_review": "Konto czeka na zatwierdzenie przez administratora. Po aktywacji odblokujemy wysyłkę ofert.",
+        "account_inactive": "Konto jest aktualnie nieaktywne. Skontaktuj się z newsletter@freshmarket.eu.",
+        "preconnect_disabled": "PreConnect nie jest jeszcze aktywny dla Twojej firmy. Administrator włącza moduł indywidualnie.",
+        "no_credits_format": "Brak dostępnych kredytów w pakiecie ({{used}}/{{max}} wykorzystanych). Doładuj pakiet w „Finanse\".",
+        "send_error_format": "Błąd wysyłki: {{message}}",
+        "send_error_fallback": "spróbuj ponownie",
+        "queued_success": "Propozycja dodana do kolejki moderacji."
+      }
     }
   },
   "buyer": {

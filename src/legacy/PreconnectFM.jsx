@@ -2615,20 +2615,20 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if (account.role === "supplier" && co?.id) {
       const status = co.account_status || "active";
       if (status === "pending_review") {
-        fl("Konto czeka na zatwierdzenie przez administratora. Po aktywacji odblokujemy wysyłkę ofert.", "warning");
+        fl(t("supplier.wysylki.toasts.pending_review"), "warning");
         return;
       }
       if (status === "rejected" || status === "suspended") {
-        fl("Konto jest aktualnie nieaktywne. Skontaktuj się z newsletter@freshmarket.eu.", "error");
+        fl(t("supplier.wysylki.toasts.account_inactive"), "error");
         return;
       }
       if (!co.preconnect_enabled) {
-        fl("PreConnect nie jest jeszcze aktywny dla Twojej firmy. Administrator włącza moduł indywidualnie.", "warning");
+        fl(t("supplier.wysylki.toasts.preconnect_disabled"), "warning");
         return;
       }
     }
     if (rem <= 0) {
-      fl(`Brak dostępnych kredytów w pakiecie (${pkgUsed}/${pkgMax} wykorzystanych). Doładuj pakiet w "Finanse".`, "error");
+      fl(t("supplier.wysylki.toasts.no_credits_format", { used: pkgUsed, max: pkgMax }), "error");
       return;
     }
     const supplierKey = account.legacySupplierId || account.id;
@@ -2648,13 +2648,16 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     try {
       await upsertLegacySend(newSend);
     } catch (e) {
-      fl(`Błąd wysyłki: ${e?.message || "spróbuj ponownie"}`, "error");
+      // [P2-4c i18n] Raw e.message z upsertLegacySend zostaje passthrough
+      // (P2-11). Wrapper "Błąd wysyłki: ..." i fallback "spróbuj ponownie"
+      // bilingual.
+      fl(t("supplier.wysylki.toasts.send_error_format", { message: e?.message || t("supplier.wysylki.toasts.send_error_fallback") }), "error");
       return;
     }
     _setSendsRaw(prev => [...prev, newSend]);
     // Status moderacji pokazujemy w panelu. Nie wysyłamy tu maila, żeby
     // dostawca nie dostawał osobnej wiadomości po każdej dodanej ofercie.
-    fl("Propozycja dodana do kolejki moderacji.");
+    fl(t("supplier.wysylki.toasts.queued_success"));
     nav("wysylki");
   }
 
@@ -3944,6 +3947,7 @@ function HelpStripDashboard() {
 
 /* ── Wysyłki: unified hub (replaces Retail Chains + Preconnect + Send) ──── */
 function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies }) {
+  const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -3996,7 +4000,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
     <div>
       {/* Top nav: 3 views */}
       <div style={{ display:"flex",gap:0,marginBottom:20,background:"#f1f5f9",borderRadius:10,padding:4,width:"fit-content" }}>
-        {[["sieci","Sieci handlowe"],["list",`Historia (${mySends.length})`]].map(([v,l])=>(
+        {[["sieci", t("supplier.wysylki.tabs.sieci")], ["list", t("supplier.wysylki.tabs.history_format", { count: mySends.length })]].map(([v,l])=>(
           <button key={v} onClick={()=>setView(v)} disabled={v==="new"&&rem<=0} style={{ padding:"8px 18px",borderRadius:8,border:"none",background:view===v?"white":"transparent",fontWeight:view===v?600:400,fontSize:13,cursor:(v==="new"&&rem<=0)?"not-allowed":"pointer",fontFamily:"inherit",color:view===v?"#1e293b":"#64748b",boxShadow:view===v?"0 1px 4px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap",opacity:(v==="new"&&rem<=0)?0.45:1 }}>{l}</button>
         ))}
       </div>
@@ -4004,17 +4008,17 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
       {/* Package status bar — always visible */}
       <div style={{ display:"flex",gap:10,alignItems:"center",padding:"10px 16px",background:"linear-gradient(90deg,#0f172a,#1e3a5f)",borderRadius:10,marginBottom:18,flexWrap:"wrap" }}>
         <div style={{ flex:1,minWidth:160 }}>
-          <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",marginBottom:3 }}>{getPlanLabel(co?.pkg)||getPlanLabel(COMPANY_INIT.pkg)||"Standard 10 wysyłek"}</div>
+          <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",marginBottom:3 }}>{getPlanLabel(co?.pkg)||getPlanLabel(COMPANY_INIT.pkg)||t("supplier.wysylki.pkg_bar.fallback_label")}</div>
           <div style={{ display:"flex",alignItems:"center",gap:10 }}>
             <div style={{ flex:1,background:"rgba(255,255,255,0.12)",borderRadius:3,height:6,overflow:"hidden",maxWidth:180 }}>
               <div style={{ height:"100%",borderRadius:3,width:`${pct}%`,background:pct>=90?"#f59e0b":"#0d9488" }}/>
             </div>
-            <span style={{ fontSize:12,color:"rgba(255,255,255,0.6)" }}>{pkgUsed}/{pkgMax} wysyłek</span>
+            <span style={{ fontSize:12,color:"rgba(255,255,255,0.6)" }}>{t("supplier.wysylki.pkg_bar.usage_format", { used: pkgUsed, max: pkgMax })}</span>
           </div>
         </div>
-        {wallet.balance > 0 && <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><Wallet size={12}/>Portfel: {wallet.balance} EUR</div>}
+        {wallet.balance > 0 && <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><Wallet size={12}/>{t("supplier.wysylki.pkg_bar.wallet_balance_format", { balance: wallet.balance })}</div>}
         {rem <= 0
-          ? <span style={{ fontSize:11,background:"rgba(239,68,68,0.2)",color:"#fca5a5",padding:"3px 10px",borderRadius:8 }}>Brak wysyłek – dokup pakiet</span>
+          ? <span style={{ fontSize:11,background:"rgba(239,68,68,0.2)",color:"#fca5a5",padding:"3px 10px",borderRadius:8 }}>{t("supplier.wysylki.pkg_bar.no_credits_badge")}</span>
           : null}
       </div>
 
@@ -4022,14 +4026,17 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
       {view === "sieci" && (
         <div>
           <div style={{ display:"flex",gap:10,marginBottom:16,alignItems:"center",flexWrap:"wrap" }}>
-            <h3 style={{ margin:0,fontSize:15 }}>Sieci handlowe ({(retailers||[]).length})</h3>
+            <h3 style={{ margin:0,fontSize:15 }}>{t("supplier.wysylki.sieci.header_format", { count: (retailers||[]).length })}</h3>
             <div style={{ display:"flex",gap:8,marginLeft:"auto",alignItems:"center" }}>
               <span style={{ fontSize:12,color:"#64748b",background:"#f8fafc",padding:"5px 12px",borderRadius:8,border:"1px solid #e2e8f0" }}>
-                {sends.filter(s=>["sent","read","read_manual"].includes(s.status)).length} wysłanych · {sends.filter(s=>["read","read_manual"].includes(s.status)).length} przeczytanych
+                {t("supplier.wysylki.sieci.stats_format", {
+                  sent: sends.filter(s=>["sent","read","read_manual"].includes(s.status)).length,
+                  read: sends.filter(s=>["read","read_manual"].includes(s.status)).length,
+                })}
               </span>
               <input
                 value={search} onChange={e=>setSearch(e.target.value)}
-                placeholder="Szukaj sieci..."
+                placeholder={t("supplier.wysylki.sieci.search_placeholder")}
                 style={{ padding:"7px 14px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",width:180 }}
               />
             </div>
@@ -4048,7 +4055,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                       <div style={{ fontWeight:700,fontSize:14 }}>{r.name}</div>
                       <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[r.country]||"🌐"} {CNAMES[r.country]||r.country}</div>
                     </div>
-                    {hasSent && <Badge color="#0d9488" bg="rgba(13,148,136,0.08)">{rSends.length} wysł.</Badge>}
+                    {hasSent && <Badge color="#0d9488" bg="rgba(13,148,136,0.08)">{t("supplier.wysylki.sieci.sent_badge_format", { count: rSends.length })}</Badge>}
                   </div>
                   {/* Categories */}
                   <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
@@ -4057,10 +4064,10 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                   {/* Buyer info - NO personal data shown to supplier */}
                   <div style={{ padding:"8px 10px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0",fontSize:12 }}>
                     <div style={{ display:"flex",gap:14,color:"#64748b",alignItems:"center" }}>
-                      <span style={{ display:"flex",gap:4,alignItems:"center" }}><Calendar size={10}/> Mailing: {effectiveNextSend(r.nextSend)}</span>
-                      <span style={{ display:"flex",gap:4,alignItems:"center" }}><Users size={10}/> Kupiec kategorii: {getRetailerCats(r).join(", ")}</span>
+                      <span style={{ display:"flex",gap:4,alignItems:"center" }}><Calendar size={10}/> {t("supplier.wysylki.sieci.mailing_label", { date: effectiveNextSend(r.nextSend) })}</span>
+                      <span style={{ display:"flex",gap:4,alignItems:"center" }}><Users size={10}/> {t("supplier.wysylki.sieci.buyer_cats_label", { cats: getRetailerCats(r).join(", ") })}</span>
                     </div>
-                    {hasSent && <div style={{ marginTop:4,color:"#059669" }}>{rRead}/{rSends.length} propozycji przeczytanych</div>}
+                    {hasSent && <div style={{ marginTop:4,color:"#059669" }}>{t("supplier.wysylki.sieci.read_count_format", { read: rRead, total: rSends.length })}</div>}
                   </div>
                   {/* Action */}
                   <Btn
@@ -4069,7 +4076,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                     disabled={rem <= 0}
                     style={{ marginTop:2 }}
                   >
-                    <Send size={13}/> Wyślij propozycję do {r.name}
+                    <Send size={13}/> {t("supplier.wysylki.sieci.send_to_button_format", { name: r.name })}
                   </Btn>
                 </div>
               );
@@ -4081,23 +4088,23 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
       {/* ── VIEW: NEW SEND FORM ── */}
       {view === "new" && (
         <div style={{ maxWidth:600 }}>
-          <Card title="Wyślij propozycję do sieci" icon={Send} actions={<Btn sm outline onClick={()=>setView("sieci")}><X size={11}/> Anuluj</Btn>}>
+          <Card title={t("supplier.wysylki.new.card_title")} icon={Send} actions={<Btn sm outline onClick={()=>setView("sieci")}><X size={11}/> {t("supplier.wysylki.new.cancel")}</Btn>}>
             <div style={{ display:"flex",gap:8,padding:"10px 14px",background:"#f0fdf4",borderRadius:8,marginBottom:16,fontSize:12,color:"#047857",border:"1px solid #bbf7d0" }}>
               <ShieldCheck size={14} color="#059669" style={{ flexShrink:0,marginTop:1 }}/>
-              <div>Gwarancja 14 dni — jeśli kupiec nie otworzy propozycji, środki wracają automatycznie na portfel.</div>
+              <div>{t("supplier.wysylki.new.guarantee_alert")}</div>
             </div>
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14 }}>
-              <Inp label="Propozycja" required value={so} onChange={e=>setSo(e.target.value)}>
-                <option value="">— wybierz —</option>
+              <Inp label={t("supplier.wysylki.new.offer_label")} required value={so} onChange={e=>setSo(e.target.value)}>
+                <option value="">{t("supplier.wysylki.new.select_empty")}</option>
                 {ao.map(o=>{
                   const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o);
                   const lbl=priv&&priv!==pub?`🔒 ${priv}  |  🌐 ${pub}`:`${CEMOJI[o.category]||""} ${pub}`;
                   return <option key={o.id} value={o.id}>{lbl}</option>;
                 })}
               </Inp>
-              {ao.length===0&&<Alrt type="warning">Brak aktywnych propozycji. <button onClick={()=>nav("offer-create")} style={{ background:"none",border:"none",cursor:"pointer",color:"#d97706",fontWeight:700,fontSize:12,padding:0 }}>Dodaj propozycję →</button></Alrt>}
-              <Inp label="Sieć handlowa" required value={sr} onChange={e=>setSr(e.target.value)}>
-                <option value="">— wybierz —</option>
+              {ao.length===0&&<Alrt type="warning">{t("supplier.wysylki.new.no_offers_warning_pre")}<button onClick={()=>nav("offer-create")} style={{ background:"none",border:"none",cursor:"pointer",color:"#d97706",fontWeight:700,fontSize:12,padding:0 }}>{t("supplier.wysylki.new.no_offers_warning_cta")}</button></Alrt>}
+              <Inp label={t("supplier.wysylki.new.retailer_label")} required value={sr} onChange={e=>setSr(e.target.value)}>
+                <option value="">{t("supplier.wysylki.new.select_empty")}</option>
                 {(retailers||[]).filter(r=>r.active!==false).map(r=><option key={r.id} value={r.id}>{FLAGS[r.country]||"🌐"} {r.name}</option>)}
               </Inp>
             </div>
@@ -4107,19 +4114,19 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
               return (
                 <div style={{ display:"flex",gap:12,padding:12,background:"#f8fafc",borderRadius:8,marginBottom:14,fontSize:12,border:"1px solid #e2e8f0" }}>
                   <div style={{ flex:1 }}>
-                    {getInternalOfferTitle(o)&&<div style={{ display:"flex",alignItems:"center",gap:5,marginBottom:2 }}><span style={{ fontSize:10,fontWeight:700,color:"#64748b" }}>🔒 Własny:</span><strong style={{ fontSize:12 }}>{getInternalOfferTitle(o)}</strong></div>}
-                    <div style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ fontSize:10,fontWeight:700,color:"#0d9488" }}>🌐 Dla kupca:</span><span style={{ fontSize:12 }}>{getPublicOfferTitle(o)}</span></div>
+                    {getInternalOfferTitle(o)&&<div style={{ display:"flex",alignItems:"center",gap:5,marginBottom:2 }}><span style={{ fontSize:10,fontWeight:700,color:"#64748b" }}>{t("supplier.wysylki.new.internal_title_label")}</span><strong style={{ fontSize:12 }}>{getInternalOfferTitle(o)}</strong></div>}
+                    <div style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ fontSize:10,fontWeight:700,color:"#0d9488" }}>{t("supplier.wysylki.new.public_title_label")}</span><span style={{ fontSize:12 }}>{getPublicOfferTitle(o)}</span></div>
                     <div style={{ color:"#64748b",marginTop:3,fontSize:11 }}>{o?.volume} {o?.volumeUnit} · {FLAGS[o?.origin]||"🌐"}</div>
                   </div>
-                  <div style={{ display:"flex",alignItems:"center",gap:8 }}><RetailerLogo retailer={r} size={28}/><div><div style={{ fontWeight:600 }}>{r?.name}</div><div style={{ color:"#64748b" }}>Wysyłka: {effectiveNextSend(r?.nextSend)}</div></div></div>
+                  <div style={{ display:"flex",alignItems:"center",gap:8 }}><RetailerLogo retailer={r} size={28}/><div><div style={{ fontWeight:600 }}>{r?.name}</div><div style={{ color:"#64748b" }}>{t("supplier.wysylki.new.next_send_format", { date: effectiveNextSend(r?.nextSend) })}</div></div></div>
                 </div>
               );
             })()}
             <div style={{ display:"flex",gap:10,alignItems:"center",justifyContent:"space-between" }}>
               <Btn primary onClick={doSend} disabled={!so||!sr}>
-                <Send size={13}/> Wyślij propozycję
+                <Send size={13}/> {t("supplier.wysylki.new.send_button")}
               </Btn>
-              <span style={{ fontSize:12,color:"#94a3b8" }}>Koszt: {getPlanById(co?.pkg)?.perSend||40} EUR · 1 wysyłka z pakietu</span>
+              <span style={{ fontSize:12,color:"#94a3b8" }}>{t("supplier.wysylki.new.cost_info_format", { cost: getPlanById(co?.pkg)?.perSend||40 })}</span>
             </div>
           </Card>
         </div>
@@ -4130,7 +4137,12 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
         <div>
           {/* Filter tabs */}
           <div style={{ display:"flex",gap:0,marginBottom:12,background:"white",border:"1px solid #e2e8f0",borderRadius:10,overflow:"hidden",width:"fit-content" }}>
-            {[["all","Wszystkie",sends.length],["sent","Wysłane",sends.filter(s=>["sent","read","read_manual"].includes(s.status)).length],["pending","Kolejka",sends.filter(s=>["pending_moderation","approved","queued"].includes(s.status)).length],["expired","Wygasłe",sends.filter(s=>s.status==="unread_expired").length]].map(([k,l,n])=>(
+            {[
+              ["all", t("supplier.wysylki.history.tabs.all"), sends.length],
+              ["sent", t("supplier.wysylki.history.tabs.sent"), sends.filter(s=>["sent","read","read_manual"].includes(s.status)).length],
+              ["pending", t("supplier.wysylki.history.tabs.pending"), sends.filter(s=>["pending_moderation","approved","queued"].includes(s.status)).length],
+              ["expired", t("supplier.wysylki.history.tabs.expired"), sends.filter(s=>s.status==="unread_expired").length],
+            ].map(([k,l,n])=>(
               <div key={k} onClick={()=>setTab(k)} style={{ display:"flex",gap:6,alignItems:"center",padding:"9px 14px",cursor:"pointer",background:tab===k?"#f0fdfa":"white",borderRight:"1px solid #f1f5f9",borderBottom:tab===k?"2px solid #0d9488":"2px solid transparent" }}>
                 <span style={{ fontSize:13,fontWeight:tab===k?600:400,color:tab===k?"#0d9488":"#475569" }}>{l}</span>
                 <span style={{ fontSize:11,background:tab===k?"rgba(13,148,136,0.12)":"#f1f5f9",color:tab===k?"#0d9488":"#64748b",padding:"1px 7px",borderRadius:10,fontWeight:600 }}>{n}</span>
@@ -4140,8 +4152,8 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           {filtered.length===0 && (
             <div style={{ padding:40,textAlign:"center",color:"#94a3b8",background:"white",borderRadius:12,border:"1px solid #e2e8f0" }}>
               <Send size={28} style={{ marginBottom:8,opacity:0.25,display:"block",margin:"0 auto 10px" }}/>
-              <div style={{ fontWeight:600,marginBottom:4 }}>Brak wysyłek w tej kategorii</div>
-              {tab==="all"&&<div style={{ fontSize:12,marginTop:6 }}><button onClick={()=>setView("sieci")} style={{ background:"none",border:"none",cursor:"pointer",color:"#0d9488",fontWeight:600,fontSize:12,padding:0 }}>Wyślij pierwszą propozycję →</button></div>}
+              <div style={{ fontWeight:600,marginBottom:4 }}>{t("supplier.wysylki.history.empty_title")}</div>
+              {tab==="all"&&<div style={{ fontSize:12,marginTop:6 }}><button onClick={()=>setView("sieci")} style={{ background:"none",border:"none",cursor:"pointer",color:"#0d9488",fontWeight:600,fontSize:12,padding:0 }}>{t("supplier.wysylki.history.empty_cta")}</button></div>}
             </div>
           )}
           {filtered.map(s => {
@@ -4166,7 +4178,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                     {(s.status==="pending_moderation"||s.status==="queued")&&<Info size={11} color={sc?.[1]} style={{verticalAlign:"middle"}}/>}
                   </span>
                 {s.sentAt && !isRead && !isExpired && s.daysLeft > 0 && (
-                  <span style={{ fontSize:11,color:"#d97706",background:"#fffbeb",padding:"2px 8px",borderRadius:6,border:"1px solid #fde68a" }}>{s.daysLeft}d</span>
+                  <span style={{ fontSize:11,color:"#d97706",background:"#fffbeb",padding:"2px 8px",borderRadius:6,border:"1px solid #fde68a" }}>{t("supplier.wysylki.history.days_left_format", { count: s.daysLeft })}</span>
                 )}
                 {isExpired && (
                   <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"2px 8px",borderRadius:6,fontWeight:600 }}>+{getPlanById(co?.pkg)?.perSend||40}€</span>
@@ -4194,40 +4206,40 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                   <Send size={18} color="white"/>
                 </div>
                 <div>
-                  <div style={{ fontWeight:700,fontSize:16,color:"#0f172a" }}>Potwierdź wysyłkę</div>
-                  <div style={{ fontSize:12,color:"#64748b" }}>Zaraz pobierzemy 1 wysyłkę z pakietu</div>
+                  <div style={{ fontWeight:700,fontSize:16,color:"#0f172a" }}>{t("supplier.wysylki.confirm_modal.title")}</div>
+                  <div style={{ fontSize:12,color:"#64748b" }}>{t("supplier.wysylki.confirm_modal.subtitle")}</div>
                 </div>
               </div>
 
               <div style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
                 <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13 }}>
-                  <span style={{ color:"#64748b" }}>Propozycja</span>
+                  <span style={{ color:"#64748b" }}>{t("supplier.wysylki.confirm_modal.row_offer")}</span>
                   <strong style={{ color:"#1e293b",textAlign:"right" }}>{selectedOffer?.title || selectedOffer?.product || `#${so}`}</strong>
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
-                  <span style={{ color:"#64748b" }}>Sieć handlowa</span>
+                  <span style={{ color:"#64748b" }}>{t("supplier.wysylki.confirm_modal.row_retailer")}</span>
                   <strong style={{ color:"#1e293b",textAlign:"right" }}>{selectedRetailer?.name || `#${sr}`}</strong>
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
-                  <span style={{ color:"#64748b" }}>Koszt wysyłki</span>
-                  <strong style={{ color:"#1e293b" }}>1 wysyłka ({perSendCost} EUR)</strong>
+                  <span style={{ color:"#64748b" }}>{t("supplier.wysylki.confirm_modal.row_cost")}</span>
+                  <strong style={{ color:"#1e293b" }}>{t("supplier.wysylki.confirm_modal.cost_value_format", { perSend: perSendCost })}</strong>
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
-                  <span style={{ color:"#64748b" }}>Po wysyłce zostanie</span>
-                  <strong style={{ color: remainingAfter<=1 ? "#d97706" : "#059669" }}>{remainingAfter}/{pkgMax} wysyłek</strong>
+                  <span style={{ color:"#64748b" }}>{t("supplier.wysylki.confirm_modal.row_remaining")}</span>
+                  <strong style={{ color: remainingAfter<=1 ? "#d97706" : "#059669" }}>{t("supplier.wysylki.confirm_modal.remaining_value_format", { remaining: remainingAfter, max: pkgMax })}</strong>
                 </div>
               </div>
 
               <div style={{ fontSize:12,color:"#64748b",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:8,padding:"10px 12px",marginBottom:18,lineHeight:1.5 }}>
-                <strong style={{ color:"#065f46" }}>⭐ Złota zasada 14 dni:</strong> jeśli kupiec nie otworzy propozycji w ciągu 14 dni, kredyt automatycznie wraca na Twój portfel.
+                <Trans i18nKey="supplier.wysylki.confirm_modal.rule_html" ns="legacy" components={{ strong: <strong style={{ color:"#065f46" }} /> }}/>
               </div>
 
               <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
                 <button onClick={()=>setShowSendConfirm(false)} style={{ padding:"10px 18px",background:"white",color:"#475569",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14,fontWeight:500,cursor:"pointer",fontFamily:"inherit" }}>
-                  Anuluj
+                  {t("supplier.wysylki.confirm_modal.cancel")}
                 </button>
                 <button onClick={confirmAndSend} style={{ padding:"10px 18px",background:"#0d9488",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"flex",gap:6,alignItems:"center" }}>
-                  <Send size={13}/> Wyślij propozycję
+                  <Send size={13}/> {t("supplier.wysylki.confirm_modal.confirm")}
                 </button>
               </div>
             </div>

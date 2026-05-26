@@ -680,6 +680,76 @@
         "error_prefix": "Save error: {{message}}",
         "error_fallback": "please try again"
       }
+    },
+    "wysylki": {
+      "tabs": {
+        "sieci": "Retailers",
+        "history_format": "History ({{count}})"
+      },
+      "pkg_bar": {
+        "fallback_label": "Standard 10 submissions",
+        "usage_format": "{{used}}/{{max}} submissions",
+        "wallet_balance_format": "Wallet: {{balance}} EUR",
+        "no_credits_badge": "No submissions left — buy a package"
+      },
+      "sieci": {
+        "header_format": "Retailers ({{count}})",
+        "stats_format": "{{sent}} submitted · {{read}} read",
+        "search_placeholder": "Search retailers...",
+        "sent_badge_format": "{{count}} submitted",
+        "mailing_label": "Submission window: {{date}}",
+        "buyer_cats_label": "Buyer categories: {{cats}}",
+        "read_count_format": "{{read}}/{{total}} proposals read",
+        "send_to_button_format": "Submit proposal to {{name}}"
+      },
+      "new": {
+        "card_title": "Submit proposal to a retailer",
+        "cancel": "Cancel",
+        "guarantee_alert": "14-day guarantee — if the buyer doesn't open the proposal, the credit automatically returns to your wallet.",
+        "offer_label": "Proposal",
+        "select_empty": "— select —",
+        "no_offers_warning_pre": "No active proposals. ",
+        "no_offers_warning_cta": "Add proposal →",
+        "retailer_label": "Retailer",
+        "internal_title_label": "🔒 Your own:",
+        "public_title_label": "🌐 For the buyer:",
+        "next_send_format": "Submission window: {{date}}",
+        "send_button": "Submit proposal",
+        "cost_info_format": "Cost: {{cost}} EUR · 1 submission from the package"
+      },
+      "history": {
+        "tabs": {
+          "all": "All",
+          "sent": "Submitted",
+          "pending": "Queue",
+          "expired": "Expired"
+        },
+        "empty_title": "No submissions in this category",
+        "empty_cta": "Submit your first proposal →",
+        "days_left_format": "{{count}}d"
+      },
+      "confirm_modal": {
+        "title": "Confirm submission",
+        "subtitle": "We're about to charge 1 submission from your package",
+        "row_offer": "Proposal",
+        "row_retailer": "Retailer",
+        "row_cost": "Submission cost",
+        "row_remaining": "Remaining after submission",
+        "cost_value_format": "1 submission ({{perSend}} EUR)",
+        "remaining_value_format": "{{remaining}}/{{max}} submissions",
+        "rule_html": "<strong>⭐ The 14-day rule:</strong> if the buyer doesn't open the proposal within 14 days, the credit automatically returns to your wallet.",
+        "cancel": "Cancel",
+        "confirm": "Submit proposal"
+      },
+      "toasts": {
+        "pending_review": "Account is awaiting admin approval. Once activated, we'll unlock proposal submissions.",
+        "account_inactive": "The account is currently inactive. Please contact newsletter@freshmarket.eu.",
+        "preconnect_disabled": "PreConnect is not yet active for your company. The admin enables the module individually.",
+        "no_credits_format": "No credits available in the package ({{used}}/{{max}} used). Top up the package in “Finance”.",
+        "send_error_format": "Submission error: {{message}}",
+        "send_error_fallback": "please try again",
+        "queued_success": "Proposal added to the moderation queue."
+      }
     }
   },
   "buyer": {
