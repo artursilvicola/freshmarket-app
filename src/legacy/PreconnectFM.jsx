@@ -5540,6 +5540,8 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
 }
 /* ── Dashboard kupca — 2 bloki: PreConnect + Fresh Market 2026 ────────────── */
 function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) {
+  // [Krok P2-2b] Bilingual via legacy.buyer.dashboard.*
+  const { t } = useTranslation("legacy");
   const fmOpen = fmSettings?.schedulingOpen;
   const unread = sends
     ? sends.filter(s =>
@@ -5556,38 +5558,38 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
       <div style={{ marginBottom:20,background:"white",borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden" }}>
         <div onClick={()=>setHowOpenBuy(v=>!v)} style={{ display:"flex",alignItems:"center",gap:10,padding:"13px 18px",cursor:"pointer",userSelect:"none" }}>
           <Info size={15} color="#2563eb"/>
-          <span style={{ fontWeight:700,fontSize:14,color:"#1e293b",flex:1 }}>Jak to działa?</span>
-          <span style={{ fontSize:12,color:"#94a3b8" }}>{howOpenBuy?"Zwiń ▲":"Rozwiń ▼"}</span>
+          <span style={{ fontWeight:700,fontSize:14,color:"#1e293b",flex:1 }}>{t("buyer.dashboard.how_it_works.toggle_title")}</span>
+          <span style={{ fontSize:12,color:"#94a3b8" }}>{howOpenBuy ? t("buyer.dashboard.how_it_works.collapse") : t("buyer.dashboard.how_it_works.expand")}</span>
         </div>
         {howOpenBuy && (
           <div style={{ padding:"0 18px 18px",borderTop:"1px solid #f1f5f9" }}>
             <p style={{ fontSize:13,color:"#334155",lineHeight:1.7,marginTop:14,marginBottom:12 }}>
-              Witamy w panelu kupca Fresh Market. Ten panel służy do dwóch rzeczy: przeglądania <strong>propozycji asortymentowych od dostawców</strong> w module PreConnect oraz <strong>wyboru firm do spotkań</strong> podczas Fresh Market 2026.
+              {t("buyer.dashboard.how_it_works.intro_pre_link")}<strong>{t("buyer.dashboard.how_it_works.intro_offers")}</strong>{t("buyer.dashboard.how_it_works.intro_middle")}<strong>{t("buyer.dashboard.how_it_works.intro_meetings")}</strong>{t("buyer.dashboard.how_it_works.intro_post")}
             </p>
 
             <div style={{ fontWeight:700,fontSize:13,color:"#0d9488",marginBottom:8,display:"flex",alignItems:"center",gap:6 }}>
-              <Send size={13}/> Moduł PreConnect
+              <Send size={13}/> {t("buyer.dashboard.how_it_works.preconnect_section_title")}
             </div>
             <ul style={{ margin:"0 0 14px 0",paddingLeft:18,display:"flex",flexDirection:"column",gap:7 }}>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Propozycje asortymentowe:</strong> W tej sekcji otrzymujesz oferty od dostawców dopasowane do Twojej sieci handlowej.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Ocena propozycji:</strong> Możesz otworzyć szczegóły produktu, sprawdzić parametry, logistykę, certyfikaty i materiały dodatkowe.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Zapisane:</strong> Jeśli oferta jest interesująca, możesz ją zapisać do późniejszego przeglądu.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65,background:"#f0fdf4",padding:"6px 10px",borderRadius:7,listStyle:"none",marginLeft:-18,border:"1px solid #bbf7d0" }}>⭐ <strong>Status odczytu:</strong> Otwarcie szczegółów oznacza, że propozycja została odczytana przez kupca.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>{t("buyer.dashboard.how_it_works.preconnect_li_1_title")}</strong>{t("buyer.dashboard.how_it_works.preconnect_li_1_text")}</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>{t("buyer.dashboard.how_it_works.preconnect_li_2_title")}</strong>{t("buyer.dashboard.how_it_works.preconnect_li_2_text")}</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>{t("buyer.dashboard.how_it_works.preconnect_li_3_title")}</strong>{t("buyer.dashboard.how_it_works.preconnect_li_3_text")}</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65,background:"#f0fdf4",padding:"6px 10px",borderRadius:7,listStyle:"none",marginLeft:-18,border:"1px solid #bbf7d0" }}>⭐ <strong>{t("buyer.dashboard.how_it_works.preconnect_li_4_title")}</strong>{t("buyer.dashboard.how_it_works.preconnect_li_4_text")}</li>
             </ul>
 
             <div style={{ fontWeight:700,fontSize:13,color:"#7c3aed",marginBottom:8,display:"flex",alignItems:"center",gap:6 }}>
-              <Calendar size={13}/> Spotkania B2B — Fresh Market 2026
+              <Calendar size={13}/> {t("buyer.dashboard.how_it_works.fm_section_title")}
             </div>
             <ul style={{ margin:"0 0 14px 0",paddingLeft:18,display:"flex",flexDirection:"column",gap:7 }}>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Wybór dostawców:</strong> W tej sekcji widzisz firmy, które chcą spotkać się z Twoją siecią podczas Fresh Market 2026.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Twoja decyzja:</strong> Możesz oznaczyć dostawcę jako: <em>Chcę spotkanie</em>, <em>Daj szansę</em> albo <em>Nie</em>.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Plan spotkań:</strong> Na podstawie decyzji kupców i wyborów dostawców system przygotowuje propozycję harmonogramu spotkań.</li>
-              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>Publikacja wyników:</strong> Finalny plan spotkań pojawi się w panelu po zatwierdzeniu przez organizatora.</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>{t("buyer.dashboard.how_it_works.fm_li_1_title")}</strong>{t("buyer.dashboard.how_it_works.fm_li_1_text")}</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>{t("buyer.dashboard.how_it_works.fm_li_2_title")}</strong>{t("buyer.dashboard.how_it_works.fm_li_2_text_pre")}<em>{t("buyer.dashboard.how_it_works.fm_li_2_em1")}</em>{t("buyer.dashboard.how_it_works.fm_li_2_text_mid1")}<em>{t("buyer.dashboard.how_it_works.fm_li_2_em2")}</em>{t("buyer.dashboard.how_it_works.fm_li_2_text_mid2")}<em>{t("buyer.dashboard.how_it_works.fm_li_2_em3")}</em>{t("buyer.dashboard.how_it_works.fm_li_2_text_post")}</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>{t("buyer.dashboard.how_it_works.fm_li_3_title")}</strong>{t("buyer.dashboard.how_it_works.fm_li_3_text")}</li>
+              <li style={{ fontSize:12,color:"#475569",lineHeight:1.65 }}><strong>{t("buyer.dashboard.how_it_works.fm_li_4_title")}</strong>{t("buyer.dashboard.how_it_works.fm_li_4_text")}</li>
             </ul>
 
-            <div style={{ fontWeight:700,fontSize:12,color:"#334155",marginBottom:6 }}>Pomoc</div>
+            <div style={{ fontWeight:700,fontSize:12,color:"#334155",marginBottom:6 }}>{t("buyer.dashboard.how_it_works.help_section_title")}</div>
             <p style={{ fontSize:12,color:"#475569",lineHeight:1.65,margin:0 }}>
-              Jeśli masz pytania lub widzisz błędne dane, skontaktuj się z organizatorem przez czat lub dane kontaktowe w panelu.
+              {t("buyer.dashboard.how_it_works.help_text")}
             </p>
           </div>
         )}
@@ -5600,25 +5602,25 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
             <Send size={22} color="#6ee7b7"/>
           </div>
           <div style={{ flex:1 }}>
-            <div style={{ color:"white",fontWeight:800,fontSize:18,marginBottom:8 }}>PreConnect</div>
+            <div style={{ color:"white",fontWeight:800,fontSize:18,marginBottom:8 }}>{t("buyer.dashboard.preconnect_block.title")}</div>
             <div style={{ color:"rgba(255,255,255,0.7)",fontSize:13,lineHeight:1.8,maxWidth:580 }}>
-              <strong style={{ color:"#6ee7b7" }}>Przeglądaj propozycje od dostawców</strong> dopasowane do Twojej sieci.<br/>
-              Otwieraj szczegóły, porównuj produkty i zapisuj najciekawsze oferty.
+              <strong style={{ color:"#6ee7b7" }}>{t("buyer.dashboard.preconnect_block.desc_strong")}</strong>{t("buyer.dashboard.preconnect_block.desc_post")}<br/>
+              {t("buyer.dashboard.preconnect_block.desc_line2")}
             </div>
             {unread>0&&(
               <div style={{ marginTop:12,padding:"10px 14px",background:"rgba(13,148,136,0.2)",border:"1px solid rgba(13,148,136,0.4)",borderRadius:9,fontSize:12,color:"#6ee7b7",display:"flex",alignItems:"center",gap:8 }}>
                 <Bell size={14}/>
-                <span>{unread} {unread===1?"nowa propozycja czeka":"nowych propozycji czeka"} na przeczytanie</span>
+                <span>{unread===1 ? t("buyer.dashboard.preconnect_block.unread_one",{count:unread}) : t("buyer.dashboard.preconnect_block.unread_many",{count:unread})}</span>
               </div>
             )}
           </div>
         </div>
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
           <button onClick={()=>nav("b-offers")} style={{ padding:"14px 18px",background:"rgba(13,148,136,0.85)",border:"1px solid rgba(13,148,136,0.5)",borderRadius:10,color:"white",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:10 }}>
-            <Send size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>Zobacz propozycje</div><div style={{ fontSize:11,opacity:0.75,marginTop:2 }}>Propozycje asortymentowe od dostawców</div></div>
+            <Send size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>{t("buyer.dashboard.preconnect_block.see_offers_title")}</div><div style={{ fontSize:11,opacity:0.75,marginTop:2 }}>{t("buyer.dashboard.preconnect_block.see_offers_sub")}</div></div>
           </button>
           <button onClick={()=>nav("b-katalog")} style={{ padding:"14px 18px",background:"rgba(255,255,255,0.08)",border:"1px solid rgba(255,255,255,0.14)",borderRadius:10,color:"white",cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:10 }}>
-            <Building2 size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>Baza dostawców</div><div style={{ fontSize:11,opacity:0.65,marginTop:2 }}>Profile firm i certyfikaty</div></div>
+            <Building2 size={17}/><div><div style={{ fontWeight:700,fontSize:14 }}>{t("buyer.dashboard.preconnect_block.supplier_base_title")}</div><div style={{ fontSize:11,opacity:0.65,marginTop:2 }}>{t("buyer.dashboard.preconnect_block.supplier_base_sub")}</div></div>
           </button>
         </div>
       </div>
@@ -5632,24 +5634,30 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
           </div>
           <div style={{ flex:1 }}>
             <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap" }}>
-              <span style={{ fontWeight:800,fontSize:18,color:fmOpen?"#0f172a":"#94a3b8" }}>Fresh Market 2026</span>
+              <span style={{ fontWeight:800,fontSize:18,color:fmOpen?"#0f172a":"#94a3b8" }}>{t("buyer.dashboard.fm_block.title")}</span>
               {fmOpen
-                ? <span style={{ background:"#059669",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>● AKTYWNE</span>
-                : <span style={{ background:"#f1f5f9",color:"#94a3b8",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>🔒 ZAMKNIĘTE</span>
+                ? <span style={{ background:"#059669",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>{t("buyer.dashboard.fm_block.badge_active")}</span>
+                : <span style={{ background:"#f1f5f9",color:"#94a3b8",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20 }}>{t("buyer.dashboard.fm_block.badge_closed")}</span>
               }
             </div>
             <div style={{ fontSize:13,color:fmOpen?"#334155":"#94a3b8",lineHeight:1.8,maxWidth:580 }}>
-              <strong style={fmOpen?{color:"#059669"}:{color:"#94a3b8"}}>Wybieraj dostawców, z którymi chcesz spotkać się podczas wydarzenia.</strong> Oznacz firmy jako <em>Chcę spotkanie</em>, <em>Daj szansę</em> lub <em>Nie</em>, a system przygotuje plan rozmów.<br/>
+              <strong style={fmOpen?{color:"#059669"}:{color:"#94a3b8"}}>{t("buyer.dashboard.fm_block.desc_strong")}</strong>{t("buyer.dashboard.fm_block.desc_post_pre_em1")}<em>{t("buyer.dashboard.fm_block.desc_em1")}</em>{t("buyer.dashboard.fm_block.desc_post_em1")}<em>{t("buyer.dashboard.fm_block.desc_em2")}</em>{t("buyer.dashboard.fm_block.desc_post_em2")}<em>{t("buyer.dashboard.fm_block.desc_em3")}</em>{t("buyer.dashboard.fm_block.desc_post_em3")}<br/>
               {fmOpen
-                ? <>Wskaż wybory do <strong>16 września</strong>. Finalny harmonogram: <strong>22 września</strong>.</>
-                : <>Rejestracja zostanie otwarta wkrótce. Wybory: do <strong>16 września 2026</strong>. Finalny harmonogram: <strong>22 września</strong>.</>
+                ? <>{t("buyer.dashboard.fm_block.deadline_open_pre")}<strong>{t("buyer.dashboard.fm_block.deadline_open_date1")}</strong>{t("buyer.dashboard.fm_block.deadline_open_mid")}<strong>{t("buyer.dashboard.fm_block.deadline_open_date2")}</strong>{t("buyer.dashboard.fm_block.deadline_open_dot")}</>
+                : <>{t("buyer.dashboard.fm_block.deadline_closed_pre")}<strong>{t("buyer.dashboard.fm_block.deadline_closed_date1")}</strong>{t("buyer.dashboard.fm_block.deadline_closed_mid")}<strong>{t("buyer.dashboard.fm_block.deadline_closed_date2")}</strong>{t("buyer.dashboard.fm_block.deadline_closed_dot")}</>
               }
             </div>
           </div>
         </div>
         {!fmOpen&&(
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:20 }}>
-            {[["🎯","do 16 września","Wskazujesz firmy, z którymi chcesz się spotkać"],["🔒","16 września","Zamknięcie wyborów — dalsze zmiany tylko przez administratora"],["⚙️","17–22 września","Algorytm + ręczne korekty administratora"],["📋","22 września","Publikacja finalnego harmonogramu i numerów"],["🎪","24 września","Event — Fresh Market 2026"]].map(([ic,d,sub])=>(
+            {[
+              ["🎯", t("buyer.dashboard.fm_block.phase_until_16_label"), t("buyer.dashboard.fm_block.phase_until_16_sub")],
+              ["🔒", t("buyer.dashboard.fm_block.phase_close_label"),    t("buyer.dashboard.fm_block.phase_close_sub")],
+              ["⚙️", t("buyer.dashboard.fm_block.phase_algo_label"),     t("buyer.dashboard.fm_block.phase_algo_sub")],
+              ["📋", t("buyer.dashboard.fm_block.phase_publish_label"),  t("buyer.dashboard.fm_block.phase_publish_sub")],
+              ["🎪", t("buyer.dashboard.fm_block.phase_event_label"),    t("buyer.dashboard.fm_block.phase_event_sub")],
+            ].map(([ic,d,sub])=>(
               <div key={d} style={{ flex:1,minWidth:120,padding:"10px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
                 <div style={{ fontSize:16,marginBottom:3 }}>{ic}</div>
                 <div style={{ fontSize:11,fontWeight:700,color:"#334155" }}>{d}</div>
@@ -5661,15 +5669,15 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
         {fmOpen&&(
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
 <button onClick={()=>nav("fm-sched")} style={{ padding:"13px 22px",background:"#059669",border:"none",borderRadius:10,color:"white",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8 }}>
-              <Calendar size={15}/> Przejdź do Spotkań FM 2026
+              <Calendar size={15}/> {t("buyer.dashboard.fm_block.btn_goto_fm")}
             </button>
             <button onClick={()=>nav("fm-sched")} style={{ padding:"13px 22px",background:"white",border:"2px solid #059669",borderRadius:10,color:"#059669",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8 }}>
-              <Users size={15}/> Zobacz spotkania
+              <Users size={15}/> {t("buyer.dashboard.fm_block.btn_see_meetings")}
             </button>
           </div>
         )}
         <div style={{ paddingTop:14,borderTop:"1px solid #e2e8f0",fontSize:11,color:"#94a3b8" }}>
-          Pytania? Kontakt: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818
+          {t("buyer.dashboard.fm_block.contact_pre")}<strong>{t("buyer.dashboard.fm_block.contact_name")}</strong>{t("buyer.dashboard.fm_block.contact_post")}
         </div>
       </div>
     </div>
@@ -5678,6 +5686,8 @@ function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) 
 
 
 function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetailerId, retailers, companies, initialFilter, onSeenList }) {
+  // [Krok P2-2b] Bilingual via legacy.buyer.offers.*
+  const { t } = useTranslation("legacy");
   const STATUS_VISIBLE = ["sent","read","read_manual","opened","unread_expired"];
   const mySends = buyerRetailerId ? (sends||[]).filter(s => {
     if(!STATUS_VISIBLE.includes(s.status)) return false;
@@ -5729,26 +5739,26 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
   return (
     <div>
       <div style={{ marginBottom:14 }}>
-        <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#0d9488",marginBottom:4 }}>{isSavedView?"Zapisane":"PreConnect"}</div>
-        <div style={{ fontSize:22,fontWeight:800,color:"#0f172a",marginBottom:4,letterSpacing:-0.3 }}>{isSavedView?"Zapisane propozycje":"Propozycje asortymentowe"}</div>
+        <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#0d9488",marginBottom:4 }}>{isSavedView ? t("buyer.offers.header_label_saved") : t("buyer.offers.header_label_preconnect")}</div>
+        <div style={{ fontSize:22,fontWeight:800,color:"#0f172a",marginBottom:4,letterSpacing:-0.3 }}>{isSavedView ? t("buyer.offers.title_saved") : t("buyer.offers.title_preconnect")}</div>
         <div style={{ fontSize:13,color:"#64748b",lineHeight:1.5,maxWidth:680 }}>
           {isSavedView
-            ? <>Propozycje, które oznaczyłeś jako ciekawe.</>
-            : <>Konkretne produkty od zweryfikowanych dostawców. <span style={{ color:"#94a3b8" }}>Każda propozycja pokazuje, kto za nią stoi — typ firmy, kraj, certyfikaty.</span></>
+            ? <>{t("buyer.offers.subtitle_saved")}</>
+            : <>{t("buyer.offers.subtitle_preconnect_pre")}<span style={{ color:"#94a3b8" }}>{t("buyer.offers.subtitle_preconnect_post")}</span></>
           }
         </div>
       </div>
       <div style={{ display:"flex",gap:10,marginBottom:16,flexWrap:"wrap" }}>
-        <Stat hero label="Propozycje" value={filtered.length} sub={`${premiumCount} Premium · ${filtered.length-premiumCount} Standard`}/>
-        <Stat label="Zapisane" value={starredCount} color="#059669" sub="oznaczone"/>
+        <Stat hero label={t("buyer.offers.stats.offers_label")} value={filtered.length} sub={t("buyer.offers.stats.offers_sub",{premium:premiumCount,standard:filtered.length-premiumCount})}/>
+        <Stat label={t("buyer.offers.stats.saved_label")} value={starredCount} color="#059669" sub={t("buyer.offers.stats.saved_sub")}/>
       </div>
 
       {/* Quick filters — szybkie odrzucanie */}
       <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:10 }}>
         {[
-          { key:"verified", label:"Z certyfikatami", icon:"✓", color:"#059669" },
-          { key:"withPhotos", label:"Ze zdjęciami", icon:"📷", color:"#0d9488" },
-          { key:"starred", label:"Zapisane", icon:"♥", color:"#dc2626" },
+          { key:"verified", label:t("buyer.offers.filters.verified"), icon:"✓", color:"#059669" },
+          { key:"withPhotos", label:t("buyer.offers.filters.with_photos"), icon:"📷", color:"#0d9488" },
+          { key:"starred", label:t("buyer.offers.filters.starred"), icon:"♥", color:"#dc2626" },
         ].map(q => (
           <button key={q.key} onClick={()=>setFilters(f=>({...f,[q.key]:!f[q.key]}))}
             style={{ padding:"6px 12px",fontSize:12,fontWeight:filters[q.key]?700:500,borderRadius:20,
@@ -5760,14 +5770,14 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
         ))}
         <select value={filters.companyType} onChange={e=>setFilters(f=>({...f,companyType:e.target.value}))}
           style={{ padding:"6px 10px",fontSize:12,borderRadius:20,border:`1.5px solid ${filters.companyType?"#7c3aed":"#e2e8f0"}`,background:filters.companyType?"#faf5ff":"white",color:filters.companyType?"#7c3aed":"#64748b",cursor:"pointer",fontFamily:"inherit",fontWeight:filters.companyType?700:500 }}>
-          <option value="">Typ firmy: wszystkie</option>
-          {Object.entries(TYPE_LABELS).map(([k,v])=><option key={k} value={k}>{v}</option>)}
+          <option value="">{t("buyer.offers.filters.company_type_all")}</option>
+          {Object.entries(TYPE_LABELS).map(([k])=><option key={k} value={k}>{t(`common.type_labels.${k}`)}</option>)}
         </select>
       </div>
 
       <OfferFilters filters={filters} setFilters={setFilters} showStarred/>
-      {filters.starred&&starredCount===0&&<Alrt type="warning">Brak propozycji oznaczonych jako zapisane.</Alrt>}
-      {filtered.length===0&&!filters.starred&&<Alrt>Brak propozycji spełniających kryteria.</Alrt>}
+      {filters.starred&&starredCount===0&&<Alrt type="warning">{t("buyer.offers.empty_starred")}</Alrt>}
+      {filtered.length===0&&!filters.starred&&<Alrt>{t("buyer.offers.empty_no_match")}</Alrt>}
       {filtered.map(s=>{ const o=getOffer(s.offerId,offers); if(!o) return null;
         const dCo=getDisplayCo(s);
         const isPremium=o.tier==="premium"; const isStarred=(buyer.starred||[]).includes(o.id); const isNew=["sent","opened"].includes(s.status);
@@ -5792,24 +5802,24 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
               {/* Nazwa + typ firmy + kraj */}
               <div style={{ flex:1,minWidth:0 }}>
                 <div style={{ display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:3 }}>
-                  <span style={{ fontWeight:800,fontSize:15,color:"#0f172a",letterSpacing:-0.2 }}>{dCo?.name||"Dostawca"}</span>
+                  <span style={{ fontWeight:800,fontSize:15,color:"#0f172a",letterSpacing:-0.2 }}>{dCo?.name||t("buyer.offers.card.supplier_fallback")}</span>
                   {hasVerification
-                    ? <Badge color="#059669" bg="#ecfdf5"><CheckCircle size={9} style={{ verticalAlign:"middle",marginRight:2 }}/> Certyfikaty podane</Badge>
-                    : <Badge color="#dc2626" bg="#fef2f2"><AlertTriangle size={9} style={{ verticalAlign:"middle",marginRight:2 }}/> Brak podanych certyfikatów</Badge>
+                    ? <Badge color="#059669" bg="#ecfdf5"><CheckCircle size={9} style={{ verticalAlign:"middle",marginRight:2 }}/> {t("buyer.offers.card.certs_present")}</Badge>
+                    : <Badge color="#dc2626" bg="#fef2f2"><AlertTriangle size={9} style={{ verticalAlign:"middle",marginRight:2 }}/> {t("buyer.offers.card.certs_missing")}</Badge>
                   }
                 </div>
                 <div style={{ display:"flex",gap:5,flexWrap:"wrap",alignItems:"center" }}>
-                  {coTypes.map(t=><span key={t} style={{ fontSize:11,padding:"2px 8px",borderRadius:10,background:"#f1f5f9",color:"#475569",fontWeight:600 }}>{TYPE_LABELS[t]||t}</span>)}
+                  {coTypes.map(tp=><span key={tp} style={{ fontSize:11,padding:"2px 8px",borderRadius:10,background:"#f1f5f9",color:"#475569",fontWeight:600 }}>{t(`common.type_labels.${tp}`,{defaultValue:TYPE_LABELS[tp]||tp})}</span>)}
                   <span style={{ fontSize:12,color:"#64748b" }}>{FLAGS[dCo?.country]||"🌐"} {CNAMES[dCo?.country]||dCo?.country||""}{dCo?.city?` · ${dCo.city}`:""}</span>
                 </div>
               </div>
               {/* Save + open buttons */}
               <div style={{ display:"flex",gap:6,flexShrink:0,alignItems:"center" }}>
-                <button onClick={()=>toggleStar(o.id)} title={isStarred?"Usuń z zapisanych":"Zapisz"}
+                <button onClick={()=>toggleStar(o.id)} title={isStarred ? t("buyer.offers.card.star_remove") : t("buyer.offers.card.star_add")}
                   style={{ width:36,height:36,borderRadius:8,border:`1.5px solid ${isStarred?"#dc2626":"#e2e8f0"}`,background:isStarred?"#fef2f2":"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit",transition:"all 0.15s" }}>
                   <Heart size={15} color={isStarred?"#dc2626":"#94a3b8"} fill={isStarred?"#dc2626":"none"}/>
                 </button>
-                <Btn primary sm onClick={()=>nav("b-detail",s.id)}><ExternalLink size={11}/> Szczegóły</Btn>
+                <Btn primary sm onClick={()=>nav("b-detail",s.id)}><ExternalLink size={11}/> {t("buyer.offers.card.details_button")}</Btn>
               </div>
             </div>
 
@@ -5825,16 +5835,16 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                   </div>
                 : <div style={{ width:90,height:90,borderRadius:8,background:"#f8fafc",border:"1px dashed #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,flexDirection:"column",color:"#cbd5e1",fontSize:11 }}>
                     <span style={{ fontSize:30,marginBottom:2 }}>{CEMOJI[o.category]||"📦"}</span>
-                    <span style={{ fontSize:9 }}>brak zdjęć</span>
+                    <span style={{ fontSize:9 }}>{t("buyer.offers.card.no_photos_label")}</span>
                   </div>
               }
               <div style={{ flex:1,minWidth:0 }}>
                 {/* Badges */}
                 <div style={{ display:"flex",gap:5,alignItems:"center",marginBottom:5,flexWrap:"wrap" }}>
-                  {isPremium&&<Badge color="#d97706" bg="#fef3c7"><Star size={9} fill="#d97706" color="#d97706"/> Premium</Badge>}
-                  {isNew&&<Badge color="#0d9488">Nowa</Badge>}
+                  {isPremium&&<Badge color="#d97706" bg="#fef3c7"><Star size={9} fill="#d97706" color="#d97706"/> {t("buyer.offers.card.premium_badge")}</Badge>}
+                  {isNew&&<Badge color="#0d9488">{t("buyer.offers.card.new_badge")}</Badge>}
                   {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{o.positioning}</Badge>}
-                  {o.isBio&&<Badge color="#059669" bg="#f0fdf4">🌿 Bio</Badge>}
+                  {o.isBio&&<Badge color="#059669" bg="#f0fdf4">{t("buyer.offers.card.bio_badge")}</Badge>}
                   <Badge>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin}</Badge>
                 </div>
                 {/* Nazwa propozycji = produkt */}
@@ -5843,14 +5853,14 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                 <div style={{ fontSize:12,color:"#64748b",marginBottom:6,lineHeight:1.5 }}>
                   {o.product&&o.product!==o.title&&<><strong style={{ color:"#475569" }}>{o.product}</strong>{o.variety?` · ${o.variety}`:""} · </>}
                   {o.volumeMin&&o.volumeMax?`${o.volumeMin}–${o.volumeMax} ${o.volumeUnit||""}`:o.volume?`${o.volume} ${o.volumeUnit||""}`:""}
-                  {o.moq&&<> · Min. zamówienie: {o.moq}</>}
-                  {o.leadTime&&<> · Czas realizacji: {o.leadTime}</>}
+                  {o.moq&&<> · {t("buyer.offers.card.moq_label")}: {o.moq}</>}
+                  {o.leadTime&&<> · {t("buyer.offers.card.lead_time_label")}: {o.leadTime}</>}
                 </div>
                 {/* Certyfikaty */}
                 {allCerts.length>0&&(
                   <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>
                     {allCerts.map(c=><Badge key={c} color="#0d9488"><Award size={9} style={{verticalAlign:"middle",marginRight:2}}/>{c}</Badge>)}
-                    {o.deliveryRegions&&<Badge color="#64748b">📍 {o.deliveryRegions}</Badge>}
+                    {o.deliveryRegions&&<Badge color="#64748b">{t("buyer.offers.card.delivery_regions_prefix")}{o.deliveryRegions}</Badge>}
                   </div>
                 )}
                 {/* Wyróżnik / korzyść */}
@@ -5866,14 +5876,14 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                 {o.priceOffer&&(
                   <div style={{ display:"inline-flex",alignItems:"center",gap:7,marginTop:4,padding:"5px 10px",background:"#fffbeb",borderRadius:7,border:"1px solid #fde68a",fontSize:11 }}>
                     <span style={{ fontWeight:700,color:"#92400e" }}>{o.priceOffer} {o.currency||"EUR"}/{o.priceUnit||"kg"}</span>
-                    <span style={{ color:"#a16207",fontStyle:"italic" }}>cena orientacyjna · do potwierdzenia</span>
+                    <span style={{ color:"#a16207",fontStyle:"italic" }}>{t("buyer.offers.card.price_disclaimer")}</span>
                   </div>
                 )}
                 {/* Brakujące dane — szybkie ostrzeżenia */}
                 {(!hasVerification||!hasPhotos)&&(
                   <div style={{ display:"flex",gap:5,flexWrap:"wrap",marginTop:6 }}>
-                    {!hasVerification&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:10,background:"#fef2f2",color:"#dc2626",fontWeight:600 }}>⚠ brak podanych certyfikatów</span>}
-                    {!hasPhotos&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:10,background:"#fef2f2",color:"#dc2626",fontWeight:600 }}>⚠ brak zdjęć produktu</span>}
+                    {!hasVerification&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:10,background:"#fef2f2",color:"#dc2626",fontWeight:600 }}>{t("buyer.offers.card.warn_no_certs")}</span>}
+                    {!hasPhotos&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:10,background:"#fef2f2",color:"#dc2626",fontWeight:600 }}>{t("buyer.offers.card.warn_no_photos")}</span>}
                   </div>
                 )}
               </div>
@@ -5887,6 +5897,8 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
 
 
 function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role }) {
+  // [Krok P2-2b] Bilingual via legacy.buyer.catalog.*
+  const { t } = useTranslation("legacy");
   const [search, setSearch]         = useState("");
   const [filterCountry, setFilterCountry] = useState("");
   const [filterCat, setFilterCat]   = useState("");
@@ -5914,35 +5926,35 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
   return (
     <div>
       <div style={{marginBottom:20}}>
-        <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#64748b",marginBottom:4 }}>Baza pomocnicza</div>
-        <div style={{fontWeight:800,fontSize:22,marginBottom:4,color:"#0f172a",letterSpacing:-0.3}}>Dostawcy</div>
+        <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#64748b",marginBottom:4 }}>{t("buyer.catalog.header_label")}</div>
+        <div style={{fontWeight:800,fontSize:22,marginBottom:4,color:"#0f172a",letterSpacing:-0.3}}>{t("buyer.catalog.title")}</div>
         <div style={{fontSize:13,color:"#64748b",lineHeight:1.5,maxWidth:680}}>
-          Kompletna baza zweryfikowanych firm — certyfikaty, kraje, produkty i historia. <span style={{ color:"#94a3b8" }}>Po główne propozycje produktowe wróć do zakładki <strong>Propozycje asortymentowe</strong>.</span>
+          {t("buyer.catalog.subtitle_pre")}<span style={{ color:"#94a3b8" }}>{t("buyer.catalog.subtitle_post")}<strong>{t("buyer.catalog.subtitle_link")}</strong>.</span>
         </div>
         <div style={{fontSize:12,color:"#64748b",marginTop:10}}>
-          {companies.length} zweryfikowanych firm · {companies.filter(c=>activeOffersCount(c)>0).length} ma aktywne propozycje
+          {t("buyer.catalog.summary",{total:companies.length,withOffers:companies.filter(c=>activeOffersCount(c)>0).length})}
         </div>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
         <input value={search} onChange={e=>setSearch(e.target.value)}
-          placeholder="Szukaj dostawcy..."
+          placeholder={t("buyer.catalog.search_placeholder")}
           style={{flex:1,minWidth:180,padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
         <select value={filterCountry} onChange={e=>setFilterCountry(e.target.value)}
           style={{padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
-          <option value="">Wszystkie kraje</option>
+          <option value="">{t("buyer.catalog.country_filter_all")}</option>
           {[...new Set(companies.map(c=>c.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {CNAMES[c]||c}</option>)}
         </select>
         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
           style={{padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
-          <option value="">Wszystkie kategorie</option>
-          <option value="owoce">🍎 Owoce</option>
-          <option value="warzywa">🥕 Warzywa</option>
-          <option value="kwiaty">🌸 Kwiaty</option>
+          <option value="">{t("buyer.catalog.category_filter_all")}</option>
+          <option value="owoce">{t("buyer.catalog.category_options.owoce")}</option>
+          <option value="warzywa">{t("buyer.catalog.category_options.warzywa")}</option>
+          <option value="kwiaty">{t("buyer.catalog.category_options.kwiaty")}</option>
         </select>
       </div>
       {filtered.length===0&&(
         <div style={{padding:40,textAlign:"center",color:"#94a3b8",background:"white",borderRadius:12,border:"1px solid #e2e8f0"}}>
-          Brak dostawców spełniających kryteria.
+          {t("buyer.catalog.empty_no_match")}
         </div>
       )}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:14}}>
@@ -5960,7 +5972,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
               </div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                 {(co.categories||[]).map(cat=><span key={cat} style={{fontSize:11,padding:"2px 8px",borderRadius:12,background:"rgba(13,148,136,0.08)",color:"#0d9488",fontWeight:600}}>{CEMOJI[cat]} {cat}</span>)}
-                {(co.types||[]).slice(0,2).map(t=><span key={t} style={{fontSize:11,padding:"2px 8px",borderRadius:12,background:"#f1f5f9",color:"#475569"}}>{TYPE_LABELS[t]||t}</span>)}
+                {(co.types||[]).slice(0,2).map(tp=><span key={tp} style={{fontSize:11,padding:"2px 8px",borderRadius:12,background:"#f1f5f9",color:"#475569"}}>{t(`common.type_labels.${tp}`,{defaultValue:TYPE_LABELS[tp]||tp})}</span>)}
               </div>
               {co.products&&<div style={{fontSize:12,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{co.products}</div>}
               {(co.certs||[]).length>0&&(
@@ -5971,10 +5983,17 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
               )}
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:"auto",paddingTop:10,borderTop:"1px solid #f1f5f9"}}>
                 <span style={{fontSize:11,color:cnt>0?"#059669":"#94a3b8",fontWeight:600}}>
-                  {cnt>0?`${cnt} aktywn${cnt===1?"a":"e"} propozycj${cnt===1?"a":cnt<5?"e":"i"}` : "Brak propozycji"}
+                  {cnt===0
+                    ? t("buyer.catalog.card.no_offers")
+                    : cnt===1
+                      ? t("buyer.catalog.card.active_offers_one",{count:cnt})
+                      : cnt<5
+                        ? t("buyer.catalog.card.active_offers_few",{count:cnt})
+                        : t("buyer.catalog.card.active_offers_many",{count:cnt})
+                  }
                 </span>
                 <button onClick={()=>setPreviewCo(co)} style={{display:"flex",alignItems:"center",gap:5,padding:"6px 14px",borderRadius:7,border:"none",background:"#0d9488",color:"white",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                  <Eye size={12}/> Zobacz profil
+                  <Eye size={12}/> {t("buyer.catalog.card.see_profile")}
                 </button>
               </div>
             </div>
