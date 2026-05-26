@@ -10,7 +10,7 @@ export default function BuyerPanel() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <PanelTopBar
-        title="Panel Kupca"
+        titleKey="title.buyer"
         logo={
           <EntityLogo
             logoUrl={profile?.retailer_logo_url}
@@ -19,7 +19,7 @@ export default function BuyerPanel() {
           />
         }
         userLabel={profile?.name || user?.email}
-        roleLabel="Kupiec"
+        roleKey="role.buyer"
         roleColor="#2563eb"
         onSignOut={signOut}
       />
