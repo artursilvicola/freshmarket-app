@@ -10,6 +10,13 @@
  * tej funkcji.
  */
 import { supabase } from "./supabase";
+// [B2B Round prod-rollout / i18n MVP — P2-2 buyer panel]
+// i18n singleton dla bilingual error messages w funkcjach wywoływanych
+// z buyer flow (updateOwnBuyerProfile, updateOwnSupplierProfile,
+// changeOwnPassword). Klucze w legacy.errors.db.*. Pozostałe funkcje
+// db.js mają dalej hardcoded PL — będą bilingualizowane w kolejnych
+// branchach P2-N razem ze swoimi konsumentami w PreconnectFM.
+import i18n from "../i18n";
 
 const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
 
@@ -294,14 +301,15 @@ export async function updateBuyerProfile(id, patch) {
 }
 
 export async function updateOwnBuyerProfile(id, patch) {
-  if (!id) throw new Error("updateOwnBuyerProfile wymaga id");
+  // [P2-2] Bilingual via legacy.errors.db.*
+  if (!id) throw new Error(i18n.t("legacy:errors.db.buyer_profile_id_required"));
   const row = {
     name: normalizeText(patch.name),
     phone: normalizeText(patch.phone),
     position: normalizeText(patch.position),
     updated_at: new Date().toISOString(),
   };
-  if (!row.name) throw new Error("Imię i nazwisko są wymagane.");
+  if (!row.name) throw new Error(i18n.t("legacy:errors.db.buyer_profile_name_required"));
   const { data, error } = await supabase
     .from("profiles")
     .update(row)
@@ -316,14 +324,18 @@ export async function updateOwnBuyerProfile(id, patch) {
 // (imie/nazwisko, telefon, stanowisko). Email read-only (zmiana wymaga admina).
 // RLS: profiles UPDATE policy zezwala na self-edit gdzie id = auth.uid().
 export async function updateOwnSupplierProfile(id, patch) {
-  if (!id) throw new Error("updateOwnSupplierProfile wymaga id");
+  // [P2-2] Bilingual via legacy.errors.db.* — wspólne klucze z buyer
+  // (same teksty walidacji "Full name is required"). Caller PageSupplierProfile
+  // dalej PL w UI (zostaje na P2-3 supplier flow), ale jeśli kiedyś użyje
+  // i18n.language='en' to ten error też będzie po angielsku.
+  if (!id) throw new Error(i18n.t("legacy:errors.db.buyer_profile_id_required"));
   const row = {
     name: normalizeText(patch.name),
     phone: normalizeText(patch.phone),
     position: normalizeText(patch.position),
     updated_at: new Date().toISOString(),
   };
-  if (!row.name) throw new Error("Imię i nazwisko są wymagane.");
+  if (!row.name) throw new Error(i18n.t("legacy:errors.db.buyer_profile_name_required"));
   const { data, error } = await supabase
     .from("profiles")
     .update(row)
@@ -339,20 +351,22 @@ export async function updateOwnSupplierProfile(id, patch) {
 // signInWithPassword) zeby nie pozwolic na hijack sesji. Po sukcesie wola
 // supabase.auth.updateUser z nowym haslem.
 export async function changeOwnPassword(currentPassword, newPassword) {
-  if (!currentPassword) throw new Error("Wpisz aktualne hasło.");
+  // [P2-2] Bilingual via legacy.errors.db.password_* — używany przez
+  // ChangePasswordSection (buyer + supplier profile sections).
+  if (!currentPassword) throw new Error(i18n.t("legacy:errors.db.password_current_required"));
   if (!newPassword || newPassword.length < 8) {
-    throw new Error("Nowe hasło musi mieć minimum 8 znaków.");
+    throw new Error(i18n.t("legacy:errors.db.password_length"));
   }
   const { data: sessionData } = await supabase.auth.getSession();
   const email = sessionData?.session?.user?.email;
-  if (!email) throw new Error("Brak aktywnej sesji.");
+  if (!email) throw new Error(i18n.t("legacy:errors.db.password_no_session"));
   const { error: signErr } = await supabase.auth.signInWithPassword({
     email,
     password: currentPassword,
   });
-  if (signErr) throw new Error("Nieprawidłowe aktualne hasło.");
+  if (signErr) throw new Error(i18n.t("legacy:errors.db.password_current_invalid"));
   const { error: updErr } = await supabase.auth.updateUser({ password: newPassword });
-  if (updErr) throw new Error(updErr.message || "Nie udało się zmienić hasła.");
+  if (updErr) throw new Error(updErr.message || i18n.t("legacy:errors.db.password_change_failed"));
   return { ok: true };
 }
 

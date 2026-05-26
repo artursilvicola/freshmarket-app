@@ -47,9 +47,60 @@
     }
   },
   "supplier": {},
-  "buyer": {},
+  "buyer": {
+    "profile": {
+      "page_title": "Mój profil",
+      "card_data_title": "Dane",
+      "labels": {
+        "name": "Imię i nazwisko",
+        "position": "Stanowisko",
+        "retailer": "Sieć handlowa",
+        "email_admin_change": "Email (zmiana przez administratora)",
+        "phone": "Telefon"
+      },
+      "subscription_card_title": "Subskrypcja mailingowa",
+      "subscription_consent_label": "Zgoda na mailing Preconnect",
+      "subscription_consent_hint": "Raz w miesiącu, w pierwszy wtorek. Zgodę można wycofać w każdej chwili.",
+      "subscription_active_notice": "Subskrypcja aktywna · Następny mailing: 6 maja 2026",
+      "save_button": "Zapisz",
+      "saved_flash": "Profil zapisany."
+    },
+    "password": {
+      "card_title": "Zmiana hasła",
+      "notice": "Wpisz aktualne hasło i nowe (minimum 8 znaków). Po zmianie nadal będziesz zalogowany na tym urządzeniu.",
+      "labels": {
+        "current": "Aktualne hasło",
+        "new": "Nowe hasło (min 8 znaków)",
+        "repeat": "Powtórz nowe hasło"
+      },
+      "show": "pokaż",
+      "hide": "ukryj",
+      "show_title": "Pokaż hasło",
+      "hide_title": "Ukryj hasło",
+      "submit_button": "Zmień hasło",
+      "submitting": "Zmienianie...",
+      "errors": {
+        "empty_fields": "Wypełnij wszystkie pola.",
+        "length": "Nowe hasło musi mieć minimum 8 znaków.",
+        "mismatch": "Nowe hasło i potwierdzenie nie są takie same.",
+        "default_prefix": "Błąd: ",
+        "default_fallback": "nie udało się zmienić hasła"
+      },
+      "success": "Hasło zmienione pomyślnie."
+    }
+  },
   "admin": {},
   "fm": {},
   "chat": {},
-  "errors": {}
+  "errors": {
+    "db": {
+      "buyer_profile_id_required": "updateOwnBuyerProfile wymaga id",
+      "buyer_profile_name_required": "Imię i nazwisko są wymagane.",
+      "password_current_required": "Wpisz aktualne hasło.",
+      "password_length": "Nowe hasło musi mieć minimum 8 znaków.",
+      "password_no_session": "Brak aktywnej sesji.",
+      "password_current_invalid": "Nieprawidłowe aktualne hasło.",
+      "password_change_failed": "Nie udało się zmienić hasła."
+    }
+  }
 }

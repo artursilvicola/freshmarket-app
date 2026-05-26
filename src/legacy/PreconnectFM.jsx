@@ -5987,23 +5987,25 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
 }
 
 function PageBuyerProfile({ buyer, setBuyer, fl }) {
+  // [Krok P2-2] Bilingual via legacy.buyer.profile namespace
+  const { t } = useTranslation("legacy");
   const [b,setB]=useState({...buyer}); const u=(k,v)=>setB(p=>({...p,[k]:v}));
   return (
     <div style={{ maxWidth:560 }}>
-      <h2 style={{ marginBottom:16,fontSize:16 }}>Mój profil</h2>
-      <Card title="Dane" icon={User}>
+      <h2 style={{ marginBottom:16,fontSize:16 }}>{t("buyer.profile.page_title")}</h2>
+      <Card title={t("buyer.profile.card_data_title")} icon={User}>
         <Row>
-          <Inp label="Imię i nazwisko" required value={b.name} onChange={e=>u("name",e.target.value)}/>
-          <Inp label="Stanowisko" value={b.position} onChange={e=>u("position",e.target.value)}/>
+          <Inp label={t("buyer.profile.labels.name")} required value={b.name} onChange={e=>u("name",e.target.value)}/>
+          <Inp label={t("buyer.profile.labels.position")} value={b.position} onChange={e=>u("position",e.target.value)}/>
         </Row>
         <Row>
-          <Inp label="Sieć handlowa" value={b.company} readOnly />
-          <Inp label="Email (zmiana przez administratora)" type="email" value={b.email} readOnly />
+          <Inp label={t("buyer.profile.labels.retailer")} value={b.company} readOnly />
+          <Inp label={t("buyer.profile.labels.email_admin_change")} type="email" value={b.email} readOnly />
         </Row>
-        <Inp label="Telefon" value={b.phone} onChange={e=>u("phone",e.target.value)}/>
+        <Inp label={t("buyer.profile.labels.phone")} value={b.phone} onChange={e=>u("phone",e.target.value)}/>
       </Card>
-      <Card title="Subskrypcja mailingowa" icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>Zgoda na mailing Preconnect</div><div style={{ fontSize:12,color:"#64748b" }}>Raz w miesiącu, w pierwszy wtorek. Zgodę można wycofać w każdej chwili.</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>Subskrypcja aktywna · Następny mailing: 6 maja 2026</div>}</Card>
-      <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl("Profil zapisany."); }}>Zapisz</Btn></div>
+      <Card title={t("buyer.profile.subscription_card_title")} icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{t("buyer.profile.subscription_consent_label")}</div><div style={{ fontSize:12,color:"#64748b" }}>{t("buyer.profile.subscription_consent_hint")}</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>{t("buyer.profile.subscription_active_notice")}</div>}</Card>
+      <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl(t("buyer.profile.saved_flash")); }}>{t("buyer.profile.save_button")}</Btn></div>
       <ChangePasswordSection fl={fl}/>
     </div>
   );
@@ -6071,6 +6073,8 @@ function PageSupplierProfile({ account, co, fl }) {
 //   - nowe hasło min 8 znaków, musi być zgodne z potwierdzeniem
 //   - po sukcesie pola resetowane, flash potwierdzenia
 function ChangePasswordSection({ fl }) {
+  // [Krok P2-2] Bilingual via legacy.buyer.password namespace (shared by buyer + supplier)
+  const { t } = useTranslation("legacy");
   const [cur, setCur] = useState("");
   const [nw, setNw] = useState("");
   const [cf, setCf] = useState("");
@@ -6079,16 +6083,16 @@ function ChangePasswordSection({ fl }) {
   const [busy, setBusy] = useState(false);
 
   async function submit() {
-    if (!cur || !nw || !cf) { fl("Wypełnij wszystkie pola."); return; }
-    if (nw.length < 8) { fl("Nowe hasło musi mieć minimum 8 znaków."); return; }
-    if (nw !== cf) { fl("Nowe hasło i potwierdzenie nie są takie same."); return; }
+    if (!cur || !nw || !cf) { fl(t("buyer.password.errors.empty_fields")); return; }
+    if (nw.length < 8) { fl(t("buyer.password.errors.length")); return; }
+    if (nw !== cf) { fl(t("buyer.password.errors.mismatch")); return; }
     try {
       setBusy(true);
       await dbChangeOwnPassword(cur, nw);
       setCur(""); setNw(""); setCf("");
-      fl("Hasło zmienione pomyślnie.");
+      fl(t("buyer.password.success"));
     } catch (e) {
-      fl("Błąd: " + (e?.message || "nie udało się zmienić hasła"));
+      fl(t("buyer.password.errors.default_prefix") + (e?.message || t("buyer.password.errors.default_fallback")));
     } finally {
       setBusy(false);
     }
@@ -6100,26 +6104,26 @@ function ChangePasswordSection({ fl }) {
       <button
         type="button"
         onClick={() => setShow(!show)}
-        title={show ? "Ukryj hasło" : "Pokaż hasło"}
+        title={show ? t("buyer.password.hide_title") : t("buyer.password.show_title")}
         style={{ position: "absolute", right: 8, top: 26, padding: "4px 8px", background: "transparent", border: "none", cursor: "pointer", color: "#64748b", fontSize: 11 }}
       >
-        {show ? "ukryj" : "pokaż"}
+        {show ? t("buyer.password.hide") : t("buyer.password.show")}
       </button>
     </div>
   );
 
   return (
-    <Card title="Zmiana hasła" icon={Lock}>
+    <Card title={t("buyer.password.card_title")} icon={Lock}>
       <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
-        Wpisz aktualne hasło i nowe (minimum 8 znaków). Po zmianie nadal będziesz zalogowany na tym urządzeniu.
+        {t("buyer.password.notice")}
       </div>
-      <InputPwd label="Aktualne hasło" value={cur} onChange={(e) => setCur(e.target.value)} show={showCur} setShow={setShowCur} />
+      <InputPwd label={t("buyer.password.labels.current")} value={cur} onChange={(e) => setCur(e.target.value)} show={showCur} setShow={setShowCur} />
       <Row>
-        <InputPwd label="Nowe hasło (min 8 znaków)" value={nw} onChange={(e) => setNw(e.target.value)} show={showNw} setShow={setShowNw} />
-        <Inp label="Powtórz nowe hasło" type={showNw ? "text" : "password"} value={cf} onChange={(e) => setCf(e.target.value)} />
+        <InputPwd label={t("buyer.password.labels.new")} value={nw} onChange={(e) => setNw(e.target.value)} show={showNw} setShow={setShowNw} />
+        <Inp label={t("buyer.password.labels.repeat")} type={showNw ? "text" : "password"} value={cf} onChange={(e) => setCf(e.target.value)} />
       </Row>
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12, marginBottom: 24 }}>
-        <Btn primary onClick={submit} disabled={busy}>{busy ? "Zmienianie..." : "Zmień hasło"}</Btn>
+        <Btn primary onClick={submit} disabled={busy}>{busy ? t("buyer.password.submitting") : t("buyer.password.submit_button")}</Btn>
       </div>
     </Card>
   );
