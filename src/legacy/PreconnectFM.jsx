@@ -4914,7 +4914,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
         </Card>
 
         <Card title={t("supplier.offer_form.step1.quality_spec.card_title")} icon={Award}>
-          <Alrt type="info"><Trans i18nKey="supplier.offer_form.step1.quality_spec.info_alert_html" components={{ strong: <strong /> }}/></Alrt>
+          <Alrt type="info"><Trans i18nKey="supplier.offer_form.step1.quality_spec.info_alert_html" ns="legacy" components={{ strong: <strong /> }}/></Alrt>
           <Row>
             <Inp label={t("supplier.offer_form.step1.quality_spec.size_label")} value={f.size||""} onChange={e=>u("size",e.target.value)} placeholder={t("supplier.offer_form.step1.quality_spec.size_placeholder")} hint={t("supplier.offer_form.step1.quality_spec.size_hint")}/>
             <Inp label={t("supplier.offer_form.step1.quality_spec.quality_class_label")} value={f.qualityClass||""} onChange={e=>u("qualityClass",e.target.value)} hint={t("supplier.offer_form.step1.quality_spec.quality_class_hint")}>
@@ -5171,7 +5171,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
 
         <Card title={t("supplier.offer_form.step2.commercial.card_title")} icon={CreditCard}>
           <Alrt type="info">
-            <Trans i18nKey="supplier.offer_form.step2.commercial.info_alert_html" components={{ strong: <strong />, em: <em /> }}/>
+            <Trans i18nKey="supplier.offer_form.step2.commercial.info_alert_html" ns="legacy" components={{ strong: <strong />, em: <em /> }}/>
           </Alrt>
           <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:14 }}>
             <Inp label={t("supplier.offer_form.step2.commercial.currency_label")} value={f.currency||"EUR"} onChange={e=>u("currency",e.target.value)}>
@@ -5226,7 +5226,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           </div>
         </Card>
 
-        {Object.keys(errors).length>0&&<div style={{ background:"#fef2f2",border:"1.5px solid #fca5a5",borderRadius:9,padding:"10px 16px",marginBottom:8,display:"flex",gap:8,alignItems:"center",fontSize:13,color:"#dc2626" }}><span style={{fontSize:16}}>⚠</span><div><Trans i18nKey="supplier.offer_form.validation.error_banner_step2_html" components={{ strong: <strong /> }}/></div></div>}
+        {Object.keys(errors).length>0&&<div style={{ background:"#fef2f2",border:"1.5px solid #fca5a5",borderRadius:9,padding:"10px 16px",marginBottom:8,display:"flex",gap:8,alignItems:"center",fontSize:13,color:"#dc2626" }}><span style={{fontSize:16}}>⚠</span><div><Trans i18nKey="supplier.offer_form.validation.error_banner_step2_html" ns="legacy" components={{ strong: <strong /> }}/></div></div>}
         <div style={{ display:"flex",justifyContent:"space-between" }}>
           <Btn outline onClick={()=>setStep(1)}><ArrowLeft size={13}/> {t("supplier.offer_form.nav.back")}</Btn>
           <Btn primary onClick={()=>tryStep(3,REQUIRED_2)}>{t("supplier.offer_form.nav.next")} <ArrowLeft size={13} style={{ transform:"rotate(180deg)" }}/></Btn>
@@ -5235,7 +5235,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
 
       {/* ════ STEP 3: PREZENTACJA ════ */}
       {step===3&&<>
-        <Alrt type="warning"><Trans i18nKey="supplier.offer_form.step3.warning_alert_html" components={{ strong: <strong />, br: <br /> }}/></Alrt>
+        <Alrt type="warning"><Trans i18nKey="supplier.offer_form.step3.warning_alert_html" ns="legacy" components={{ strong: <strong />, br: <br /> }}/></Alrt>
 
         {/* [B2B Round prod-rollout / UX] Codex feedback: krótki przykład dobrej
             oferty w jednej linii — pokazuje strukturę "produkt + kaliber + klasa
@@ -5247,14 +5247,14 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
               {t("supplier.offer_form.step3.example.quote")}
             </div>
             <div style={{ fontSize:11,color:"#64748b",lineHeight:1.5 }}>
-              <Trans i18nKey="supplier.offer_form.step3.example.explanation_html" components={{ strong: <strong /> }}/>
+              <Trans i18nKey="supplier.offer_form.step3.example.explanation_html" ns="legacy" components={{ strong: <strong /> }}/>
             </div>
           </div>
         </details>
 
         <Card title={t("supplier.offer_form.step3.benefits.card_title")} icon={CheckCircle}>
           <Alrt type="success">
-            <Trans i18nKey="supplier.offer_form.step3.benefits.success_alert_html" components={{ strong: <strong /> }}/>
+            <Trans i18nKey="supplier.offer_form.step3.benefits.success_alert_html" ns="legacy" components={{ strong: <strong /> }}/>
           </Alrt>
           <div style={{ marginBottom:14 }}>
             <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step3.benefits.inspirations_label")}</label>
@@ -5324,12 +5324,12 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
 
         <Card title={t("supplier.offer_form.step3.actions.card_title")} icon={Send}>
           <Alrt type="info">
-            <Trans i18nKey="supplier.offer_form.step3.actions.info_alert_html" components={{ strong: <strong /> }}/>
+            <Trans i18nKey="supplier.offer_form.step3.actions.info_alert_html" ns="legacy" components={{ strong: <strong /> }}/>
           </Alrt>
         </Card>
 
         <Card title={t("supplier.offer_form.step3.title_card.card_title")} icon={FileText}>
-          <Alrt type="info"><Trans i18nKey="supplier.offer_form.step3.title_card.info_alert_html" components={{ strong: <strong /> }}/></Alrt>
+          <Alrt type="info"><Trans i18nKey="supplier.offer_form.step3.title_card.info_alert_html" ns="legacy" components={{ strong: <strong /> }}/></Alrt>
           <Inp label={t("supplier.offer_form.step3.title_card.title_label")} required value={f.title} onChange={e=>u("title",e.target.value)} hint={`${(f.title||"").length}/200`} placeholder={t("supplier.offer_form.step3.title_card.title_placeholder")} style={errStyle("title")}/><ErrMsg fieldKey="title"/>
           <div style={{ marginTop:10,padding:"10px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
             <Inp label={t("supplier.offer_form.step3.title_card.internal_title_label")} value={f.internalTitle||""} onChange={e=>u("internalTitle",e.target.value)} placeholder={t("supplier.offer_form.step3.title_card.internal_title_placeholder")} hint={t("supplier.offer_form.step3.title_card.internal_title_hint")}/>
