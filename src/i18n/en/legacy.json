@@ -129,10 +129,10 @@
           "cta": "See refunds"
         },
         "no_recent_sends": {
-          "title_one": "You have {{count}} active submission ready for submission",
-          "title_few": "You have {{count}} active submissions ready for submission",
-          "title_many": "You have {{count}} active submissions ready for submission",
-          "title_other": "You have {{count}} active submissions ready for submission",
+          "title_one": "You have {{count}} active product proposal ready for submission",
+          "title_few": "You have {{count}} active product proposals ready for submission",
+          "title_many": "You have {{count}} active product proposals ready for submission",
+          "title_other": "You have {{count}} active product proposals ready for submission",
           "desc": "Use the credits from your package. Choose retailers and prepare a submission for the next window.",
           "cta": "Prepare submission"
         },
@@ -149,28 +149,28 @@
       },
       "activity": {
         "buyer_viewed": {
-          "body_with_title": "<strong>The buyer viewed</strong> submission <em>„{{title}}\"</em>",
-          "body_no_title": "<strong>The buyer viewed</strong> a submission",
+          "body_with_title": "<strong>The buyer viewed</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>The buyer viewed</strong> a product proposal",
           "sub": "credit charged from the package"
         },
         "sent": {
-          "body_with_title": "<strong>Submitted</strong> submission <em>„{{title}}\"</em>",
-          "body_no_title": "<strong>Submitted</strong> a submission",
+          "body_with_title": "<strong>Submitted</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>Submitted</strong> a product proposal",
           "sub": "awaiting open (max 14 days)"
         },
         "expired": {
-          "body_with_title": "<strong>Submission expired</strong> <em>„{{title}}\"</em>",
-          "body_no_title": "<strong>Submission expired</strong>",
+          "body_with_title": "<strong>Product proposal expired</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>Product proposal expired</strong>",
           "sub": "credit refunded to the package"
         },
         "approved": {
-          "body_with_title": "<strong>Submission approved</strong> <em>„{{title}}\"</em>",
-          "body_no_title": "<strong>Submission approved</strong>",
+          "body_with_title": "<strong>Product proposal approved</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>Product proposal approved</strong>",
           "sub": "ready for submission"
         },
         "added": {
-          "body_with_title": "<strong>Submission added</strong> <em>„{{title}}\"</em>",
-          "body_no_title": "<strong>Submission added</strong>",
+          "body_with_title": "<strong>Product proposal added</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>Product proposal added</strong>",
           "sub": "status: draft"
         },
         "refund": {
