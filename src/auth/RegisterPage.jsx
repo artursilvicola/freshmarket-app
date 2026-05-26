@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "./AuthProvider";
 import { supabase } from "../lib/supabase";
 import { getCompanies, getRetailers } from "../lib/db";
@@ -18,10 +19,17 @@ import { getCompanies, getRetailers } from "../lib/db";
  *   2. Wskazuje istniejace company (dla supplier) lub retailer (dla buyer)
  *      z drop-downa - lub tworzy nowe inline.
  *   3. Klik "Utworz konto" -> POST do funkcji -> dostaje magic link.
+ *
+ * [B2B Round prod-rollout / i18n MVP — Krok 10 P1]
+ * Bilingual przez useTranslation('auth') namespace, sekcja admin_register.
+ * PL teksty zachowane 1:1 z oryginału (włącznie z brakiem polskich znaków
+ * — admin był do tego przyzwyczajony, nie "porządkujemy" przy okazji).
+ * EN czyste, terminologia v1.1.
  */
 export default function RegisterPage() {
   const { session } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation("auth");
 
   const [role, setRole] = useState("supplier");
   const [email, setEmail] = useState("");
@@ -53,15 +61,15 @@ export default function RegisterPage() {
 
     try {
       // Walidacja
-      if (!email) throw new Error("Email wymagany");
+      if (!email) throw new Error(t("admin_register.errors.email_required"));
       if (role === "supplier" && !companyId && !createNewCompany) {
-        throw new Error("Wybierz firme lub zaznacz 'Stworz nowa firme'");
+        throw new Error(t("admin_register.errors.company_required"));
       }
       if (role === "supplier" && createNewCompany && !newCompanyName) {
-        throw new Error("Nazwa nowej firmy wymagana");
+        throw new Error(t("admin_register.errors.new_company_name_required"));
       }
       if (role === "buyer" && !retailerId) {
-        throw new Error("Wybierz siec handlowa");
+        throw new Error(t("admin_register.errors.retailer_required"));
       }
 
       // Krok 1 (opcjonalny): stworz nowa firme
@@ -72,13 +80,13 @@ export default function RegisterPage() {
           .insert({ name: newCompanyName, country: newCompanyCountry })
           .select()
           .single();
-        if (coErr) throw new Error("Nie udalo sie utworzyc firmy: " + coErr.message);
+        if (coErr) throw new Error(t("admin_register.errors.create_company_failed", { message: coErr.message }));
         finalCompanyId = co.id;
       }
 
       // Krok 2: wywolaj Netlify Function
       const token = session?.access_token;
-      if (!token) throw new Error("Brak tokenu admina (zaloguj sie ponownie)");
+      if (!token) throw new Error(t("admin_register.errors.no_admin_token"));
 
       const res = await fetch("/.netlify/functions/admin-create-user", {
         method: "POST",
@@ -96,7 +104,7 @@ export default function RegisterPage() {
         }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Nieznany blad");
+      if (!res.ok) throw new Error(json.error || t("admin_register.errors.unknown_error"));
 
       setResult(json);
       // Reset formularza
@@ -116,17 +124,14 @@ export default function RegisterPage() {
   return (
     <div style={S.wrap}>
       <div style={S.card}>
-        <h1 style={S.h1}>Utworz konto B2B (admin)</h1>
-        <p style={S.sub}>
-          Konto powstaje natychmiast. Magic link pojawi sie ponizej — skopiuj go
-          albo wyslij uzytkownikowi mailem. Twoja sesja admina pozostaje aktywna.
-        </p>
+        <h1 style={S.h1}>{t("admin_register.title")}</h1>
+        <p style={S.sub}>{t("admin_register.subtitle")}</p>
 
         <div style={S.tabs}>
           {[
-            ["supplier", "Dostawca"],
-            ["buyer", "Kupiec"],
-            ["admin", "Admin"],
+            ["supplier", t("admin_register.tabs.supplier")],
+            ["buyer", t("admin_register.tabs.buyer")],
+            ["admin", t("admin_register.tabs.admin")],
           ].map(([k, label]) => (
             <button
               key={k}
@@ -141,7 +146,7 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit} style={S.form}>
           <label style={S.label}>
-            Email
+            {t("admin_register.labels.email")}
             <input
               type="email"
               required
@@ -152,7 +157,7 @@ export default function RegisterPage() {
           </label>
 
           <label style={S.label}>
-            Imie i nazwisko (opcjonalnie)
+            {t("admin_register.labels.name")}
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -162,13 +167,13 @@ export default function RegisterPage() {
 
           {role === "supplier" && !createNewCompany && (
             <label style={S.label}>
-              Firma (istniejaca)
+              {t("admin_register.labels.existing_company")}
               <select
                 value={companyId}
                 onChange={(e) => setCompanyId(e.target.value)}
                 style={S.input}
               >
-                <option value="">— wybierz —</option>
+                <option value="">{t("admin_register.select_placeholder")}</option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} {c.country ? `(${c.country})` : ""}
@@ -180,7 +185,7 @@ export default function RegisterPage() {
                 onClick={() => { setCreateNewCompany(true); setCompanyId(""); }}
                 style={S.linkBtn}
               >
-                Albo stworz nowa firme
+                {t("admin_register.toggle_create_new_company")}
               </button>
             </label>
           )}
@@ -188,7 +193,7 @@ export default function RegisterPage() {
           {role === "supplier" && createNewCompany && (
             <>
               <label style={S.label}>
-                Nazwa nowej firmy
+                {t("admin_register.labels.new_company_name")}
                 <input
                   required
                   value={newCompanyName}
@@ -197,18 +202,18 @@ export default function RegisterPage() {
                 />
               </label>
               <label style={S.label}>
-                Kraj
+                {t("admin_register.labels.country")}
                 <select
                   value={newCompanyCountry}
                   onChange={(e) => setNewCompanyCountry(e.target.value)}
                   style={S.input}
                 >
-                  <option value="PL">Polska</option>
-                  <option value="ES">Hiszpania</option>
-                  <option value="IT">Wlochy</option>
-                  <option value="DE">Niemcy</option>
-                  <option value="NL">Holandia</option>
-                  <option value="FR">Francja</option>
+                  <option value="PL">{t("admin_register.countries.PL")}</option>
+                  <option value="ES">{t("admin_register.countries.ES")}</option>
+                  <option value="IT">{t("admin_register.countries.IT")}</option>
+                  <option value="DE">{t("admin_register.countries.DE")}</option>
+                  <option value="NL">{t("admin_register.countries.NL")}</option>
+                  <option value="FR">{t("admin_register.countries.FR")}</option>
                 </select>
               </label>
               <button
@@ -216,21 +221,21 @@ export default function RegisterPage() {
                 onClick={() => setCreateNewCompany(false)}
                 style={S.linkBtn}
               >
-                Wybierz istniejaca firme
+                {t("admin_register.toggle_pick_existing_company")}
               </button>
             </>
           )}
 
           {role === "buyer" && (
             <label style={S.label}>
-              Siec handlowa
+              {t("admin_register.labels.retailer")}
               <select
                 required
                 value={retailerId}
                 onChange={(e) => setRetailerId(e.target.value)}
                 style={S.input}
               >
-                <option value="">— wybierz —</option>
+                <option value="">{t("admin_register.select_placeholder")}</option>
                 {retailers.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name} {r.country ? `(${r.country})` : ""}
@@ -244,27 +249,27 @@ export default function RegisterPage() {
           {result && (
             <div style={S.ok}>
               <p style={{ margin: 0, fontWeight: 600 }}>
-                Konto utworzone. Email: {result.email}
+                {t("admin_register.success.account_created", { email: result.email })}
               </p>
               {result.magic_link ? (
                 <p style={{ marginTop: 8, fontSize: 12, wordBreak: "break-all" }}>
-                  Magic link (skopiuj i wyslij uzytkownikowi):
+                  {t("admin_register.success.magic_link_label")}
                   <br />
                   <code style={{ fontSize: 11 }}>{result.magic_link}</code>
                 </p>
               ) : (
-                <p style={{ marginTop: 8 }}>{result.warning || "Magic link nie wygenerowany."}</p>
+                <p style={{ marginTop: 8 }}>{result.warning || t("admin_register.success.magic_link_missing")}</p>
               )}
             </div>
           )}
 
           <button type="submit" disabled={busy} style={S.btn}>
-            {busy ? "..." : "Utworz konto"}
+            {busy ? t("admin_register.submit_busy") : t("admin_register.submit_button")}
           </button>
         </form>
 
         <div style={S.footer}>
-          <Link to="/admin" style={S.link}>← Powrot do panelu admina</Link>
+          <Link to="/admin" style={S.link}>{t("admin_register.back_to_admin")}</Link>
         </div>
       </div>
     </div>
