@@ -694,10 +694,10 @@
       },
       "sieci": {
         "header_format": "Retailers ({{count}})",
-        "stats_format": "{{sent}} sent · {{read}} read",
+        "stats_format": "{{sent}} submitted · {{read}} read",
         "search_placeholder": "Search retailers...",
-        "sent_badge_format": "{{count}} sent",
-        "mailing_label": "Mailing: {{date}}",
+        "sent_badge_format": "{{count}} submitted",
+        "mailing_label": "Submission window: {{date}}",
         "buyer_cats_label": "Buyer categories: {{cats}}",
         "read_count_format": "{{read}}/{{total}} proposals read",
         "send_to_button_format": "Submit proposal to {{name}}"
@@ -713,7 +713,7 @@
         "retailer_label": "Retailer",
         "internal_title_label": "🔒 Your own:",
         "public_title_label": "🌐 For the buyer:",
-        "next_send_format": "Mailing: {{date}}",
+        "next_send_format": "Submission window: {{date}}",
         "send_button": "Submit proposal",
         "cost_info_format": "Cost: {{cost}} EUR · 1 submission from the package"
       },
@@ -725,7 +725,7 @@
           "expired": "Expired"
         },
         "empty_title": "No submissions in this category",
-        "empty_cta": "Send your first proposal →",
+        "empty_cta": "Submit your first proposal →",
         "days_left_format": "{{count}}d"
       },
       "confirm_modal": {
