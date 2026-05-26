@@ -750,6 +750,27 @@
         "send_error_fallback": "spróbuj ponownie",
         "queued_success": "Propozycja dodana do kolejki moderacji."
       }
+    },
+    "profile": {
+      "page_title": "Mój profil",
+      "card_data_title": "Dane konta",
+      "labels": {
+        "name": "Imię i nazwisko",
+        "position": "Stanowisko",
+        "company": "Firma",
+        "email_admin_change": "Email (zmiana przez administratora)",
+        "phone": "Telefon"
+      },
+      "admin_notice": "Email i dane firmy są zarządzane przez administratora Fresh Market. Możesz samodzielnie zmienić imię/nazwisko, stanowisko, telefon i hasło.",
+      "save_button": "Zapisz",
+      "saving": "Zapisywanie...",
+      "toasts": {
+        "missing_id": "Brak ID użytkownika — zaloguj się ponownie.",
+        "name_required": "Imię i nazwisko są wymagane.",
+        "saved": "Profil zapisany.",
+        "save_error_format": "Błąd zapisu: {{message}}",
+        "save_error_fallback": "nieznany"
+      }
     }
   },
   "buyer": {

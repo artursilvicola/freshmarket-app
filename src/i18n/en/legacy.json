@@ -750,6 +750,27 @@
         "send_error_fallback": "please try again",
         "queued_success": "Proposal added to the moderation queue."
       }
+    },
+    "profile": {
+      "page_title": "My profile",
+      "card_data_title": "Account data",
+      "labels": {
+        "name": "Full name",
+        "position": "Position",
+        "company": "Company",
+        "email_admin_change": "Email (changed by admin)",
+        "phone": "Phone"
+      },
+      "admin_notice": "Email and company data are managed by the Fresh Market admin. You can change your name, position, phone, and password yourself.",
+      "save_button": "Save",
+      "saving": "Saving...",
+      "toasts": {
+        "missing_id": "Missing user ID — please sign in again.",
+        "name_required": "Full name is required.",
+        "saved": "Profile saved.",
+        "save_error_format": "Save error: {{message}}",
+        "save_error_fallback": "unknown"
+      }
     }
   },
   "buyer": {

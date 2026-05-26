@@ -6251,6 +6251,7 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
 // nowe, potwierdzenie nowego). Zapis przez dbUpdateOwnSupplierProfile -> RLS
 // pozwala self-edit (profiles.id = auth.uid()).
 function PageSupplierProfile({ account, co, fl }) {
+  const { t } = useTranslation("legacy");
   const initial = {
     name: account?.name || "",
     email: account?.email || "",
@@ -6261,39 +6262,42 @@ function PageSupplierProfile({ account, co, fl }) {
   const [saving, setSaving] = useState(false);
   const u = (k, v) => setP((prev) => ({ ...prev, [k]: v }));
   async function save() {
-    if (!account?.id) { fl("Brak ID użytkownika — zaloguj się ponownie."); return; }
-    if (!p.name?.trim()) { fl("Imię i nazwisko są wymagane."); return; }
+    if (!account?.id) { fl(t("supplier.profile.toasts.missing_id")); return; }
+    if (!p.name?.trim()) { fl(t("supplier.profile.toasts.name_required")); return; }
     try {
       setSaving(true);
       await dbUpdateOwnSupplierProfile(account.id, {
         name: p.name, phone: p.phone, position: p.position,
       });
-      fl("Profil zapisany.");
+      fl(t("supplier.profile.toasts.saved"));
     } catch (e) {
-      fl("Błąd zapisu: " + (e?.message || "nieznany"));
+      // [P2-5 i18n] Raw e.message z dbUpdateOwnSupplierProfile jest już
+      // bilingual (P2-2c). Wrapper "Błąd zapisu: " i fallback "nieznany"
+      // tłumaczone tutaj.
+      fl(t("supplier.profile.toasts.save_error_format", { message: e?.message || t("supplier.profile.toasts.save_error_fallback") }));
     } finally {
       setSaving(false);
     }
   }
   return (
     <div style={{ maxWidth: 560 }}>
-      <h2 style={{ marginBottom: 16, fontSize: 16 }}>Mój profil</h2>
-      <Card title="Dane konta" icon={User}>
+      <h2 style={{ marginBottom: 16, fontSize: 16 }}>{t("supplier.profile.page_title")}</h2>
+      <Card title={t("supplier.profile.card_data_title")} icon={User}>
         <Row>
-          <Inp label="Imię i nazwisko" required value={p.name} onChange={(e) => u("name", e.target.value)} />
-          <Inp label="Stanowisko" value={p.position} onChange={(e) => u("position", e.target.value)} />
+          <Inp label={t("supplier.profile.labels.name")} required value={p.name} onChange={(e) => u("name", e.target.value)} />
+          <Inp label={t("supplier.profile.labels.position")} value={p.position} onChange={(e) => u("position", e.target.value)} />
         </Row>
         <Row>
-          <Inp label="Firma" value={co?.name || account?.name || ""} readOnly />
-          <Inp label="Email (zmiana przez administratora)" type="email" value={p.email} readOnly />
+          <Inp label={t("supplier.profile.labels.company")} value={co?.name || account?.name || ""} readOnly />
+          <Inp label={t("supplier.profile.labels.email_admin_change")} type="email" value={p.email} readOnly />
         </Row>
-        <Inp label="Telefon" value={p.phone} onChange={(e) => u("phone", e.target.value)} />
+        <Inp label={t("supplier.profile.labels.phone")} value={p.phone} onChange={(e) => u("phone", e.target.value)} />
         <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
-          Email i dane firmy są zarządzane przez administratora Fresh Market. Możesz samodzielnie zmienić imię/nazwisko, stanowisko, telefon i hasło.
+          {t("supplier.profile.admin_notice")}
         </div>
       </Card>
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
-        <Btn primary onClick={save} disabled={saving}>{saving ? "Zapisywanie..." : "Zapisz"}</Btn>
+        <Btn primary onClick={save} disabled={saving}>{saving ? t("supplier.profile.saving") : t("supplier.profile.save_button")}</Btn>
       </div>
       <ChangePasswordSection fl={fl} />
     </div>
