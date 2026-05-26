@@ -72,6 +72,93 @@ Razem to **3 fronty** do tłumaczenia:
 2. **Backend errors** (Netlify Functions zwracające `json.error` w PL)
 3. **Backend emails** (Resend templates dla offer lifecycle + account states)
 
+## Status P2-2 — buyer flow ZAKOŃCZONY (po P2-2c)
+
+P2-2 (buyer panel) został zrealizowany w 3 partiach. Czwarta planowana partia (P2-2d) **anulowana w obecnym zakresie** po review Codexa — patrz uzasadnienie niżej.
+
+### Wykonane partie P2-2
+
+| Partia | Branch (merged) | Zakres | Status |
+|---|---|---|---|
+| **P2-2a** | `feat/i18n-p2-2a-buyer-profile-password-preview` | `PageBuyerProfile` + `ChangePasswordSection` + `db.js` errors (buyer/supplier profile + password). `OfferPreviewModal` początkowo był w scope, **cofnięty** po review Codexa (scope bug — modal shared) | ✅ Merged `6a40711` |
+| **P2-2b** | `feat/i18n-p2-2b-buyer-dashboard-offers-catalog` | `PageBuyerDashboard` + `PageBuyerOffers` + `PageBuyerCatalog` (~131 kluczy) | ✅ Merged `aaa3b88` |
+| **P2-2c** | `feat/i18n-p2-2c-buyer-detail` | `PageBuyerDetail` (~99 kluczy, w tym CTA email subjects/bodies z `{{product}}` interpolation) | ✅ Merged `95fc316` |
+| **P2-2d** | (nie powstał) | Planowane: `PageSupplierProfile` + `CompanyPreviewModal` | ❌ **Anulowane** — patrz niżej |
+
+### Co działa dla buyer EN po P2-2c
+
+- `/kupiec` (Dashboard) — bilingual
+- `/kupiec/oferty` (PageBuyerOffers — lista propozycji + filtrowanie + zapisane) — bilingual
+- `/kupiec/katalog` (PageBuyerCatalog — baza dostawców) — bilingual
+- `/kupiec/oferta/<id>` (PageBuyerDetail — szczegóły propozycji + CTA z mailtos) — bilingual
+- `/kupiec/profil` (PageBuyerProfile) — bilingual
+- Zmiana hasła (ChangePasswordSection, shared z supplier profile) — bilingual
+- 7 `db.js` errors dla buyer profile + password — bilingual
+
+### Co NIE działa dla buyer EN (świadomie odłożone)
+
+- `CompanyPreviewModal` (otwiera się przy klikach "Pełny profil dostawcy" w PageBuyerCatalog/PageBuyerDetail) — **dalej PL**
+- `OfferPreviewModal` (klik podglądu w jakimś niezidentyfikowanym buyer flow) — **dalej PL**
+
+### Dlaczego P2-2d anulowane
+
+P2-2d miało objąć `PageSupplierProfile` + `CompanyPreviewModal`. Po audycie call-site'ów oba komponenty okazały się **shared** poza buyer flow:
+
+**`PageSupplierProfile`** — to supplier flow (panel `/dostawca/profil`), nie buyer. Wciągnięcie tego do branchu "buyer-only" byłoby zamieszaniem scope'u. Decyzja: **przeniesione do supplier phase** (P2-3 supplier dashboard lub P2-5 supplier company/finance).
+
+**`CompanyPreviewModal`** — używany w:
+- supplier preview (`role="supplier"`)
+- buyer catalog/detail (`role="buyer"`)
+- admin preview (`role="admin"`)
+- FM flows (też buyer-role w niektórych miejscach)
+- inne shared call sites bez jednoznacznego `role`
+
+Globalne tłumaczenie w branchu "buyer-only" powtórzyłoby błąd `OfferPreviewModal` z P2-2a (cofnięte po Codex review). Codex zaproponował 2 opcje:
+- **Opcja A (wybrana):** odłożyć do osobnego, świadomego branchu po fazach supplier+admin
+- Opcja B: warunkowe tłumaczenie z prop `i18nMode="buyer"` (precedens, ryzyko)
+
+Decyzja Artura: **Opcja A**. Czystsze.
+
+### Przeniesione na później
+
+| Element | Nowy plan | Uzasadnienie |
+|---|---|---|
+| `PageSupplierProfile` | **Supplier phase** (P2-3 lub P2-5) | Należy do `/dostawca/*` flow, nie `/kupiec/*` |
+| `CompanyPreviewModal` + `OfferPreviewModal` | **Nowy branch** `feat/i18n-p2-shared-modals` **po fazach supplier+admin** (P2-3 do P2-6/7) | Shared między 4+ rolami. Rekomendacja Artura: robić shared modale gdy więcej okolicznych ekranów będzie już EN, łatwiej review i mniej "samotnych" zmian |
+
+### Tag
+
+`v-i18n-buyer-flow` — annotated tag na main po P2-2c merge (commit `95fc316`). Bezpieczny punkt powrotu po zamknięciu buyer flow non-shared.
+
+### Sugerowana kolejność dalej (zaktualizowana)
+
+```
+P2-3 supplier dashboard          ← następny kodowy etap (rekomendacja Artura)
+  ↓
+P2-4 supplier offers + wysyłki
+  ↓
+P2-5 supplier firma + finanse
+  ↓
+P2-6a/6b admin core
+  ↓
+P2-7 admin extras
+  ↓
+P2-7b czat
+  ↓
+P2-8 FM uczestnicy
+  ↓
+P2-9 FM admin
+  ↓
+*** P2-shared-modals ***          ← CompanyPreviewModal + OfferPreviewModal
+*** (po większości okolicznych ekranów) ***
+  ↓
+P2-10 emails
+  ↓
+P2-11 backend errors (opcjonalne)
+```
+
+---
+
 ## Strukturalna mapa `PreconnectFM.jsx`
 
 Linie i komponenty (z grep `^(function|const|export) [A-Z]`):
