@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useTranslation, Trans } from "react-i18next";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import LoginPage from "./auth/LoginPage";
@@ -79,11 +80,13 @@ export default function App() {
 /** Po zalogowaniu kieruje do właściwego panelu wg roli z profilu. */
 function RoleRedirect() {
   const { user, role, loading } = useAuth();
+  // [B2B Round prod-rollout / i18n MVP — Krok 9 P1] Tłumaczenia shell.
+  const { t } = useTranslation("common");
 
   if (loading) {
     return (
       <div style={{ padding: 40, textAlign: "center", color: "#64748b" }}>
-        Ładowanie...
+        {t("loading")}
       </div>
     );
   }
@@ -96,35 +99,35 @@ function RoleRedirect() {
   // Brak roli — coś poszło nie tak z profilem
   return (
     <div style={{ padding: 40, textAlign: "center" }}>
-      <h2>Konto bez roli</h2>
+      <h2>{t("errors.no_role.title")}</h2>
       <p style={{ color: "#64748b" }}>
-        Twoje konto nie ma jeszcze przypisanej roli. Skontaktuj się z administratorem.
+        {t("errors.no_role.body")}
       </p>
     </div>
   );
 }
 
 function ConfigError() {
+  // [Krok 9 P1] Tłumaczenia shell — ConfigError renderowany przed AuthProvider,
+  // ale i18n init w main.jsx jest synchroniczny, więc useTranslation działa.
+  const { t } = useTranslation("common");
   return (
     <div style={{ padding: 40, fontFamily: "system-ui", color: "#1e293b", maxWidth: 720, margin: "0 auto" }}>
-      <h1 style={{ color: "#dc2626" }}>Brak konfiguracji Supabase</h1>
+      <h1 style={{ color: "#dc2626" }}>{t("config_error.title")}</h1>
       <p>
-        Plik <code>.env</code> nie ma ustawionych <code>VITE_SUPABASE_URL</code> lub{" "}
-        <code>VITE_SUPABASE_ANON_KEY</code>.
+        <Trans i18nKey="config_error.body" ns="common" components={{ code: <code /> }} />
       </p>
       <ol>
         <li>
-          Skopiuj <code>.env.example</code> jako <code>.env</code>
+          <Trans i18nKey="config_error.step_1" ns="common" components={{ code: <code /> }} />
         </li>
+        <li>{t("config_error.step_2")}</li>
         <li>
-          Wstaw klucze z panelu Supabase (Project Settings → API)
-        </li>
-        <li>
-          Zrestartuj <code>npm run dev</code>
+          <Trans i18nKey="config_error.step_3" ns="common" components={{ code: <code /> }} />
         </li>
       </ol>
       <p>
-        Pełna instrukcja: <code>SETUP_INSTRUKCJA.md</code>
+        <Trans i18nKey="config_error.full_instruction" ns="common" components={{ code: <code /> }} />
       </p>
     </div>
   );
