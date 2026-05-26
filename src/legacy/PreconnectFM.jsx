@@ -4596,6 +4596,8 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
 
 /* ── Offers ────────────────────────────────────────────────────────────── */
 function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
+  // [Krok P2-4 Commit 1] Bilingual via supplier.offers.*
+  const { t } = useTranslation("legacy");
   const myOffers = (offers||[]).filter(o=>!o.supplierId||o.supplierId===accountId);
   // [B2B Round prod-rollout / supplier-delete-offer]
   // Lokalny modal potwierdzający usunięcie. Pokazuje nazwę propozycji,
@@ -4605,21 +4607,22 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
     if (!offer) return;
     setOffers?.(prev => prev.filter(o => o.id !== offer.id));
     setConfirmDelete(null);
-    fl?.(`Propozycja „${getInternalOfferTitle(offer) || getPublicOfferTitle(offer) || "(bez nazwy)"}" usunięta.`, "success");
+    const title = getInternalOfferTitle(offer) || getPublicOfferTitle(offer) || t("supplier.offers.deleted_fallback_title");
+    fl?.(t("supplier.offers.deleted_flash", { title }), "success");
   }
   return (
     <div>
       <div style={{ marginBottom:14 }}>
-        <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#0d9488",marginBottom:4 }}>PreConnect</div>
-        <div style={{ fontSize:22,fontWeight:800,color:"#0f172a",letterSpacing:-0.3 }}>Moje propozycje asortymentowe</div>
+        <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:"#0d9488",marginBottom:4 }}>{t("supplier.offers.header_label")}</div>
+        <div style={{ fontSize:22,fontWeight:800,color:"#0f172a",letterSpacing:-0.3 }}>{t("supplier.offers.title")}</div>
         <div style={{ fontSize:13,color:"#64748b",lineHeight:1.5,maxWidth:680,marginTop:4 }}>
-          Lista Twoich propozycji produktowych. Każda pokazuje konkretne produkty kupcom — to nie jest klasyczne ofertowanie cenowe, więc <strong>cena jest opcjonalna</strong>.
+          {t("supplier.offers.desc_pre")}<strong>{t("supplier.offers.desc_strong")}</strong>{t("supplier.offers.desc_post")}
         </div>
       </div>
       <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:14 }}>
-        <Btn dark onClick={()=>nav("offer-create")}><Plus size={13}/> Dodaj propozycję asortymentową</Btn>
+        <Btn dark onClick={()=>nav("offer-create")}><Plus size={13}/> {t("supplier.offers.add_button")}</Btn>
       </div>
-      {myOffers.length===0&&<Alrt>Brak propozycji. Kliknij „Dodaj propozycję asortymentową" aby dodać pierwszą.</Alrt>}
+      {myOffers.length===0&&<Alrt>{t("supplier.offers.empty")}</Alrt>}
       {myOffers.map(o=>{ const sc=sends.filter(s=>s.offerId===o.id); const rc=sc.filter(s=>["read","read_manual"].includes(s.status)).length; const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o);
         // [B2B Round prod-rollout / supplier-delete-offer]
         // Usunąć można TYLKO propozycje które jeszcze nie zostały wysłane do żadnej sieci.
@@ -4633,32 +4636,32 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
             {priv && (
               <div style={{ display:"flex",gap:6,alignItems:"center",marginBottom:2 }}>
                 <strong style={{ fontSize:13,color:"#1e293b" }}>{priv}</strong>
-                <span style={{ fontSize:9,fontWeight:700,color:"#64748b",background:"#f1f5f9",padding:"1px 6px",borderRadius:4,letterSpacing:"0.03em",textTransform:"uppercase" }}>Tylko Ty</span>
+                <span style={{ fontSize:9,fontWeight:700,color:"#64748b",background:"#f1f5f9",padding:"1px 6px",borderRadius:4,letterSpacing:"0.03em",textTransform:"uppercase" }}>{t("supplier.offers.card.only_you_badge")}</span>
               </div>
             )}
             <div style={{ display:"flex",gap:6,alignItems:"center",marginBottom:2,flexWrap:"wrap" }}>
               <span style={{ fontSize:priv?11:14,fontWeight:priv?400:700,color:priv?"#64748b":"#1e293b" }}>{pub}</span>
-              {priv&&<span style={{ fontSize:9,fontWeight:700,color:"#0d9488",background:"rgba(13,148,136,0.08)",padding:"1px 6px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.03em" }}>Dla kupca</span>}
-              <Badge color={o.status==="active"?"#16a34a":"#64748b"}>{o.status==="active"?"Opublikowana":"Szkic"}</Badge>
-              {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">Premium</Badge>}
+              {priv&&<span style={{ fontSize:9,fontWeight:700,color:"#0d9488",background:"rgba(13,148,136,0.08)",padding:"1px 6px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.03em" }}>{t("supplier.offers.card.for_buyer_badge")}</span>}
+              <Badge color={o.status==="active"?"#16a34a":"#64748b"}>{o.status==="active"?t("supplier.offers.card.status_published"):t("supplier.offers.card.status_draft")}</Badge>
+              {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">{t("supplier.offers.card.premium_badge")}</Badge>}
             </div>
             <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin} · {o.volume} {o.volumeUnit}</div>
           </div>
-          <div style={{ display:"flex",gap:14,flexShrink:0 }}>{[["Sieci",sc.length,"#3b82f6"],["Przecz.",rc,"#059669"]].map(([l,v,cl])=><div key={l} style={{ textAlign:"center" }}><div style={{ fontSize:15,fontWeight:700,color:cl }}>{v}</div><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div></div>)}</div>
+          <div style={{ display:"flex",gap:14,flexShrink:0 }}>{[[t("supplier.offers.card.kpi_retailers"),sc.length,"#3b82f6"],[t("supplier.offers.card.kpi_read"),rc,"#059669"]].map(([l,v,cl])=><div key={l} style={{ textAlign:"center" }}><div style={{ fontSize:15,fontWeight:700,color:cl }}>{v}</div><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div></div>)}</div>
           <div style={{ display:"flex",gap:5,flexShrink:0 }}>
-            <Btn sm outline onClick={()=>nav("offer-edit",o.id)}><Edit size={11}/> Edytuj</Btn>
-            <Btn sm outline onClick={()=>nav("offer-copy",o.id)} title="Duplikuj propozycję — przyspiesza dodawanie podobnych produktów" style={{ borderColor:"#7c3aed",color:"#7c3aed" }}><Layers size={11}/> Duplikuj</Btn>
-            {o.status==="active"&&<Btn sm style={{ background:"rgba(13,148,136,0.08)",color:"#0d9488" }} onClick={()=>nav("wysylki",o.id)}><Send size={11}/> Wyślij</Btn>}
+            <Btn sm outline onClick={()=>nav("offer-edit",o.id)}><Edit size={11}/> {t("supplier.offers.card.btn_edit")}</Btn>
+            <Btn sm outline onClick={()=>nav("offer-copy",o.id)} title={t("supplier.offers.card.btn_duplicate_tooltip")} style={{ borderColor:"#7c3aed",color:"#7c3aed" }}><Layers size={11}/> {t("supplier.offers.card.btn_duplicate")}</Btn>
+            {o.status==="active"&&<Btn sm style={{ background:"rgba(13,148,136,0.08)",color:"#0d9488" }} onClick={()=>nav("wysylki",o.id)}><Send size={11}/> {t("supplier.offers.card.btn_send")}</Btn>}
             {/* [B2B Round prod-rollout / supplier-delete-offer]
                 Przycisk Usuń — tylko gdy propozycja NIE została jeszcze wysłana
                 do żadnej sieci. Po wysyłce ukryty (tooltip z wyjaśnieniem). */}
             {canDelete ? (
-              <Btn sm outline onClick={()=>setConfirmDelete(o)} title="Usuń propozycję (operacja nieodwracalna)" style={{ borderColor:"#dc2626",color:"#dc2626" }}>
-                <X size={11}/> Usuń
+              <Btn sm outline onClick={()=>setConfirmDelete(o)} title={t("supplier.offers.card.btn_delete_tooltip_can")} style={{ borderColor:"#dc2626",color:"#dc2626" }}>
+                <X size={11}/> {t("supplier.offers.card.btn_delete")}
               </Btn>
             ) : (
-              <Btn sm outline disabled title={`Nie można usunąć — propozycja wysłana do ${sc.length} ${sc.length===1?"sieci":"sieci"}. Po wysyłce trafia do pipeline admina.`} style={{ borderColor:"#e2e8f0",color:"#cbd5e1",cursor:"not-allowed" }}>
-                <Lock size={11}/> Usuń
+              <Btn sm outline disabled title={t("supplier.offers.card.btn_delete_tooltip_locked", { count: sc.length })} style={{ borderColor:"#e2e8f0",color:"#cbd5e1",cursor:"not-allowed" }}>
+                <Lock size={11}/> {t("supplier.offers.card.btn_delete")}
               </Btn>
             )}
           </div>
@@ -4673,17 +4676,26 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
               <div style={{ width:36,height:36,borderRadius:"50%",background:"#fef2f2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                 <AlertTriangle size={18} color="#dc2626"/>
               </div>
-              <div style={{ fontSize:16,fontWeight:700,color:"#0f172a" }}>Usuń propozycję?</div>
+              <div style={{ fontSize:16,fontWeight:700,color:"#0f172a" }}>{t("supplier.offers.delete_modal.title")}</div>
             </div>
             <div style={{ fontSize:13,color:"#475569",lineHeight:1.6,marginBottom:18 }}>
-              Czy na pewno chcesz usunąć propozycję <strong style={{ color:"#0f172a" }}>„{getInternalOfferTitle(confirmDelete) || getPublicOfferTitle(confirmDelete) || "(bez nazwy)"}"</strong>?
+              <Trans
+                i18nKey="supplier.offers.delete_modal.body_html"
+                ns="legacy"
+                values={{ title: getInternalOfferTitle(confirmDelete) || getPublicOfferTitle(confirmDelete) || t("supplier.offers.deleted_fallback_title") }}
+                components={{ strong: <strong style={{ color:"#0f172a" }} /> }}
+              />
               <br/><br/>
-              Operacja jest <strong style={{ color:"#dc2626" }}>nieodwracalna</strong>. Propozycja zostanie skasowana z bazy. Jeśli chcesz ją tylko ukryć przed kupcami, możesz zamiast tego zmienić status na „Szkic" w edycji.
+              <Trans
+                i18nKey="supplier.offers.delete_modal.warn_html"
+                ns="legacy"
+                components={{ strong: <strong style={{ color:"#dc2626" }} /> }}
+              />
             </div>
             <div style={{ display:"flex",gap:8,justifyContent:"flex-end" }}>
-              <Btn outline onClick={()=>setConfirmDelete(null)}>Anuluj</Btn>
+              <Btn outline onClick={()=>setConfirmDelete(null)}>{t("supplier.offers.delete_modal.cancel")}</Btn>
               <Btn onClick={()=>handleDelete(confirmDelete)} style={{ background:"#dc2626",color:"white",border:"none" }}>
-                <X size={12}/> Tak, usuń
+                <X size={12}/> {t("supplier.offers.delete_modal.confirm")}
               </Btn>
             </div>
           </div>
