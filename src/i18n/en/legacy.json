@@ -47,9 +47,70 @@
     }
   },
   "supplier": {},
-  "buyer": {},
+  "buyer": {
+    "profile": {
+      "page_title": "My profile",
+      "card_data_title": "Details",
+      "labels": {
+        "name": "Full name",
+        "position": "Position",
+        "retailer": "Retailer",
+        "email_admin_change": "Email (admin-managed)",
+        "phone": "Phone"
+      },
+      "subscription_card_title": "Email subscription",
+      "subscription_consent_label": "Consent to PreConnect mailing",
+      "subscription_consent_hint": "Once a month, on the first Tuesday. You can withdraw consent at any time.",
+      "subscription_active_notice": "Subscription active · Next mailing: 6 May 2026",
+      "save_button": "Save",
+      "saved_flash": "Profile saved."
+    },
+    "password": {
+      "card_title": "Change password",
+      "notice": "Enter your current password and a new one (minimum 8 characters). You will stay signed in on this device after the change.",
+      "labels": {
+        "current": "Current password",
+        "new": "New password (min. 8 characters)",
+        "repeat": "Repeat new password"
+      },
+      "show": "show",
+      "hide": "hide",
+      "show_title": "Show password",
+      "hide_title": "Hide password",
+      "submit_button": "Change password",
+      "submitting": "Changing...",
+      "errors": {
+        "empty_fields": "Please fill in all fields.",
+        "length": "New password must be at least 8 characters.",
+        "mismatch": "New password and confirmation don't match.",
+        "default_prefix": "Error: ",
+        "default_fallback": "failed to change password"
+      },
+      "success": "Password changed successfully."
+    },
+    "offer_preview_modal": {
+      "title": "Submission preview — buyer view",
+      "premium_badge": "Premium",
+      "packaging_label": "PACKAGING:",
+      "kv": {
+        "volume": "Volume",
+        "min_order": "Min.",
+        "season": "Season"
+      }
+    }
+  },
   "admin": {},
   "fm": {},
   "chat": {},
-  "errors": {}
+  "errors": {
+    "db": {
+      "buyer_profile_id_required": "updateOwnBuyerProfile requires id",
+      "buyer_profile_name_required": "Full name is required.",
+      "password_current_required": "Enter your current password.",
+      "password_length": "New password must be at least 8 characters.",
+      "password_no_session": "No active session.",
+      "password_current_invalid": "Current password is invalid.",
+      "password_change_failed": "Failed to change password."
+    }
+  }
 }
