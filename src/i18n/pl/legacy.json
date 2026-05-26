@@ -297,7 +297,10 @@
         "back": "Wróć",
         "cancel": "Anuluj",
         "preview_buyer": "Podgląd kupca",
-        "next": "Dalej"
+        "next": "Dalej",
+        "preview": "Podgląd",
+        "save_draft": "Zapisz szkic",
+        "publish": "Opublikuj propozycję"
       },
       "steps": {
         "1": {
@@ -607,6 +610,75 @@
             "no": "Nie"
           }
         }
+      },
+      "step3": {
+        "warning_alert_html": "<strong>Nie pisz:</strong> wysoka jakość · konkurencyjna cena · indywidualne podejście · wieloletnie doświadczenie.<br/><strong>Pisz konkretnie:</strong> standard partii, wolumen, logistyka, cena, czas reakcji, korzyść dla kupca.",
+        "example": {
+          "summary": "📋 Pokaż przykład dobrej oferty (1 zdanie)",
+          "quote": "„Jabłka Gala 70-80 mm, klasa I, 100 t/mies., dostawa DAP do centrum dystrybucji\"",
+          "explanation_html": "Każde pole konkretne i mierzalne: <strong>produkt + odmiana + kaliber + klasa + wolumen + logistyka</strong>. Kupiec wie od razu czego się spodziewać. Tego samego ducha trzymaj się w 3 pytaniach poniżej — operacyjnie, w liczbach."
+        },
+        "benefits": {
+          "card_title": "A. Co Cię wyróżnia?",
+          "success_alert_html": "<strong>To najważniejsza sekcja — ważniejsza niż cena.</strong> Odpowiedz konkretnie na 3 pytania, dlaczego kupiec ma wybrać właśnie Twoją propozycję. Nie pisz frazesów — pisz operacyjne, mierzalne fakty.",
+          "inspirations_label": "Inspiracje — kliknij żeby dodać",
+          "chips": {
+            "repeatable_quality": "powtarzalna jakość",
+            "stable_supply": "stabilna podaż",
+            "low_shrink": "niski shrink",
+            "fast_claim": "szybka reklamacja",
+            "promo_ready": "gotowość do promocji",
+            "shelf_ready_pkg": "opakowanie shelf-ready",
+            "private_label": "private label",
+            "marketing_support": "wsparcie marketingowe",
+            "sales_support": "wsparcie sprzedaży",
+            "batch_traceability": "identyfikowalność partii",
+            "tests_docs": "badania i dokumentacja",
+            "local_regional": "lokalne / regionalne",
+            "shop_convenience": "wygoda dla sklepu",
+            "shopper_convenience": "wygoda dla shoppera"
+          },
+          "required_label": "wymagane",
+          "optional_label": "opcjonalne",
+          "q1": "Dlaczego kupiec powinien zainteresować się tym produktem?",
+          "q1_placeholder": "np. powtarzalna jakość partii przez cały program — sortownia optyczna, klasa I gwarantowana",
+          "q2": "Co robisz lepiej lub inaczej niż inni dostawcy?",
+          "q2_placeholder": "np. stabilna podaż 200–500 t/mies. z własnej chłodni CA — brak zależności od skupu",
+          "q3": "Jak zmniejszasz ryzyko dla kupca?",
+          "q3_placeholder": "np. reklamacje rozpatrywane tego samego dnia, plan B: 2 packhousy + 5 gospodarstw partnerskich",
+          "shop_benefit_label": "Jak ten produkt pomoże sieci sprzedawać więcej lub lepiej?",
+          "shop_benefit_placeholder": "format wygodny dla półki, niska odpadowość, możliwość akcji sezonowej, wsparcie materiałami POS, gotowy do ekspozycji"
+        },
+        "risk": {
+          "card_title": "B. Bezpieczeństwo współpracy",
+          "optional_label": "opcjonalne",
+          "mitigation_label": "Jak zabezpieczasz jakość i ciągłość dostaw?",
+          "mitigation_placeholder": "monitoring jakości partii, reakcja reklamacyjna tego samego dnia, pełna identyfikowalność od pola do dostawy, dokumentacja online, plan awaryjny: 2 packhousy + 5 gospodarstw partnerskich",
+          "proof_label": "Co potwierdza Twoją wiarygodność?",
+          "proof_placeholder": "obsługiwane rynki: PL/DE/CZ, stałe wolumeny od 2019, referencje retail (na żądanie), zdjęcia procesu, aktualne badania GlobalGAP",
+          "now_label": "Dlaczego warto rozmawiać teraz?",
+          "now_placeholder": "np. start sezonu jesiennego — jabłka klasy Extra dostępne od września, wysoka dostępność z chłodni CA, okno przed promocją świąteczną"
+        },
+        "actions": {
+          "card_title": "C. Możliwe działania kupca",
+          "info_alert_html": "<strong>Uwaga:</strong> akcje są po stronie kupca. To kupiec decyduje, co zrobić po obejrzeniu Twojej propozycji. Może poprosić o próbkę, zapytać o aktualną cenę i wolumen, poprosić o specyfikację, umówić rozmowę, zapytać o program sezonowy albo umówić spotkanie na Fresh Market. Może też skontaktować się z Tobą bezpośrednio, korzystając z danych kontaktowych podanych w profilu."
+        },
+        "title_card": {
+          "card_title": "Nazwa propozycji dla kupca",
+          "info_alert_html": "<strong>To tytuł Twojej propozycji widoczny dla kupca na liście propozycji.</strong> Powinien od razu mówić, co oferujesz i dlaczego warto kliknąć w szczegóły. Wpisz produkt, kraj lub region pochodzenia oraz jeden najmocniejszy wyróżnik, np. sezon, kaliber, dostępność, certyfikat albo format opakowania.",
+          "title_label": "Nazwa propozycji dla kupca",
+          "title_placeholder": "np. Winogrona stołowe Murcja — bezpestkowe, kaliber AA, sezon VII–X",
+          "internal_title_label": "Własna nazwa propozycji",
+          "internal_title_placeholder": "np. Gala premium — wariant dla dużych sieci",
+          "internal_title_hint": "Niewidoczne dla kupca",
+          "internal_title_description": "To nazwa robocza tylko dla Ciebie. Kupiec jej nie zobaczy. Użyj jej, żeby łatwo rozróżniać podobne propozycje w swoim panelu, np. wariant dla dużych sieci, propozycję sezonową albo wariant premium."
+        }
+      },
+      "save_flash": {
+        "published": "Propozycja opublikowana!",
+        "draft_saved": "Szkic zapisany.",
+        "error_prefix": "Błąd zapisu propozycji: {{message}}",
+        "error_fallback": "spróbuj ponownie"
       }
     }
   },

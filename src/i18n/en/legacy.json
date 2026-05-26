@@ -297,7 +297,10 @@
         "back": "Back",
         "cancel": "Cancel",
         "preview_buyer": "Buyer preview",
-        "next": "Next"
+        "next": "Next",
+        "preview": "Preview",
+        "save_draft": "Save draft",
+        "publish": "Publish proposal"
       },
       "steps": {
         "1": {
@@ -607,6 +610,75 @@
             "no": "No"
           }
         }
+      },
+      "step3": {
+        "warning_alert_html": "<strong>Don't write:</strong> high quality · competitive price · individual approach · many years of experience.<br/><strong>Be specific:</strong> batch standard, volume, logistics, price, response time, benefit for the buyer.",
+        "example": {
+          "summary": "📋 Show an example of a good proposal (1 sentence)",
+          "quote": "“Gala apples 70-80 mm, class I, 100 t/month, DAP delivery to distribution center”",
+          "explanation_html": "Every field is specific and measurable: <strong>product + variety + caliber + class + volume + logistics</strong>. The buyer immediately knows what to expect. Keep the same spirit in the 3 questions below — operational, in numbers."
+        },
+        "benefits": {
+          "card_title": "A. What sets you apart?",
+          "success_alert_html": "<strong>This is the most important section — more important than price.</strong> Answer the 3 questions specifically: why should the buyer choose your proposal? Don't write clichés — write operational, measurable facts.",
+          "inspirations_label": "Inspiration — click to add",
+          "chips": {
+            "repeatable_quality": "repeatable quality",
+            "stable_supply": "stable supply",
+            "low_shrink": "low shrink",
+            "fast_claim": "fast claim handling",
+            "promo_ready": "promo-ready",
+            "shelf_ready_pkg": "shelf-ready packaging",
+            "private_label": "private label",
+            "marketing_support": "marketing support",
+            "sales_support": "sales support",
+            "batch_traceability": "batch traceability",
+            "tests_docs": "tests and documentation",
+            "local_regional": "local / regional",
+            "shop_convenience": "shop convenience",
+            "shopper_convenience": "shopper convenience"
+          },
+          "required_label": "required",
+          "optional_label": "optional",
+          "q1": "Why should the buyer be interested in this product?",
+          "q1_placeholder": "e.g. repeatable batch quality throughout the program — optical sorter, class I guaranteed",
+          "q2": "What do you do better or differently than other suppliers?",
+          "q2_placeholder": "e.g. stable supply of 200–500 t/month from our own CA cold storage — independent of purchase market",
+          "q3": "How do you reduce risk for the buyer?",
+          "q3_placeholder": "e.g. claims handled the same day, plan B: 2 packhouses + 5 partner farms",
+          "shop_benefit_label": "How will this product help the retailer sell more or better?",
+          "shop_benefit_placeholder": "shelf-friendly format, low waste, room for a seasonal campaign, POS material support, ready for display"
+        },
+        "risk": {
+          "card_title": "B. Cooperation safety",
+          "optional_label": "optional",
+          "mitigation_label": "How do you safeguard quality and supply continuity?",
+          "mitigation_placeholder": "batch quality monitoring, same-day claim response, full traceability from field to delivery, online documentation, contingency plan: 2 packhouses + 5 partner farms",
+          "proof_label": "What confirms your credibility?",
+          "proof_placeholder": "markets served: PL/DE/CZ, stable volumes since 2019, retail references (on request), process photos, current GlobalGAP tests",
+          "now_label": "Why is it worth talking now?",
+          "now_placeholder": "e.g. start of autumn season — Class Extra apples available from September, high availability from CA cold storage, window before holiday promo"
+        },
+        "actions": {
+          "card_title": "C. Possible buyer actions",
+          "info_alert_html": "<strong>Note:</strong> actions are on the buyer's side. The buyer decides what to do after reviewing your proposal. They can request a sample, ask about current price and volume, request a specification, schedule a call, ask about a seasonal program, or arrange a meeting at Fresh Market. They can also contact you directly using the contact details provided in your profile."
+        },
+        "title_card": {
+          "card_title": "Proposal title for the buyer",
+          "info_alert_html": "<strong>This is your proposal title visible to the buyer on the proposal list.</strong> It should immediately tell what you offer and why it's worth clicking for details. Enter the product, country or region of origin, and one strongest differentiator — e.g. season, caliber, availability, certification, or packaging format.",
+          "title_label": "Proposal title for the buyer",
+          "title_placeholder": "e.g. Table grapes Murcia — seedless, AA caliber, season VII–X",
+          "internal_title_label": "Your own proposal name",
+          "internal_title_placeholder": "e.g. Gala premium — variant for large retailers",
+          "internal_title_hint": "Not visible to the buyer",
+          "internal_title_description": "This is a working name just for you. The buyer won't see it. Use it to easily distinguish similar proposals in your panel — e.g. a variant for large retailers, a seasonal proposal, or a premium variant."
+        }
+      },
+      "save_flash": {
+        "published": "Proposal published!",
+        "draft_saved": "Draft saved.",
+        "error_prefix": "Save error: {{message}}",
+        "error_fallback": "please try again"
       }
     }
   },

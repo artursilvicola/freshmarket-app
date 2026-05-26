@@ -1540,9 +1540,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // [Krok P2-1 i18n MVP] Subskrybujemy legacy root na zmianę języka,
   // żeby date helpers (fmtPolishDate, NextWindowCard, ActivityCard) i
   // przyszłe konsumenty t() w widokach Page* odświeżały się natychmiast
-  // po kliknięciu PL/EN w LanguageSwitcher. W tym kroku NIE używamy t()
-  // w dużych widokach — subskrypcja jest tylko mechanizmem re-render.
-  useTranslation("legacy");
+  // po kliknięciu PL/EN w LanguageSwitcher.
+  //
+  // [P2-4b] App ma teraz dostęp do t() — używamy go w saveOffer dla flash
+  // toastów (success/draft/error) propagowanych do PageOfferForm przez prop.
+  const { t } = useTranslation("legacy");
 
   // lockedRole: jeśli ustawiony, ukrywamy switcher i blokujemy przełączanie
   // (admin może swobodnie udawać innych userów; dostawca/kupiec - nie)
@@ -2590,7 +2592,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     try {
       savedOffer = await upsertLegacyOffer(newOffer);
     } catch (e) {
-      fl(`Błąd zapisu propozycji: ${e?.message || "spróbuj ponownie"}`, "error");
+      // [P2-4b i18n] PL/EN — sufiks "spróbuj ponownie" fallback gdy brak
+      // e.message; raw upsertLegacyOffer error stays PL (passthrough, P2-11).
+      fl(t("supplier.offer_form.save_flash.error_prefix", { message: e?.message || t("supplier.offer_form.save_flash.error_fallback") }), "error");
       return;
     }
     const persistedOffer = savedOffer || newOffer;
@@ -2598,7 +2602,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       ? prev.map(o => o.id === d.id ? persistedOffer : o)
       : [...prev, persistedOffer]
     );
-    fl(st === "active" ? "Propozycja opublikowana!" : "Szkic zapisany.");
+    fl(st === "active" ? t("supplier.offer_form.save_flash.published") : t("supplier.offer_form.save_flash.draft_saved"));
     nav("offers");
   }
 
@@ -5231,46 +5235,61 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
 
       {/* ════ STEP 3: PREZENTACJA ════ */}
       {step===3&&<>
-        <Alrt type="warning"><strong>Nie pisz:</strong> wysoka jakość · konkurencyjna cena · indywidualne podejście · wieloletnie doświadczenie.<br/><strong>Pisz konkretnie:</strong> standard partii, wolumen, logistyka, cena, czas reakcji, korzyść dla kupca.</Alrt>
+        <Alrt type="warning"><Trans i18nKey="supplier.offer_form.step3.warning_alert_html" components={{ strong: <strong />, br: <br /> }}/></Alrt>
 
         {/* [B2B Round prod-rollout / UX] Codex feedback: krótki przykład dobrej
             oferty w jednej linii — pokazuje strukturę "produkt + kaliber + klasa
             + wolumen + logistyka", którą kupiec rozumie od razu. */}
         <details style={{ marginBottom:16,background:"#f0fdfa",border:"1px solid #99f6e4",borderRadius:10,padding:"10px 14px" }}>
-          <summary style={{ cursor:"pointer",fontSize:13,fontWeight:600,color:"#0d9488",userSelect:"none" }}>📋 Pokaż przykład dobrej oferty (1 zdanie)</summary>
+          <summary style={{ cursor:"pointer",fontSize:13,fontWeight:600,color:"#0d9488",userSelect:"none" }}>{t("supplier.offer_form.step3.example.summary")}</summary>
           <div style={{ marginTop:10,fontSize:13,color:"#134e4a",lineHeight:1.6 }}>
             <div style={{ padding:"10px 12px",background:"white",borderRadius:8,fontFamily:"ui-monospace, SF Mono, monospace",fontSize:12,color:"#1e293b",border:"1px solid #ccfbf1",marginBottom:8 }}>
-              „Jabłka Gala 70-80 mm, klasa I, 100 t/mies., dostawa DAP do centrum dystrybucji"
+              {t("supplier.offer_form.step3.example.quote")}
             </div>
             <div style={{ fontSize:11,color:"#64748b",lineHeight:1.5 }}>
-              Każde pole konkretne i mierzalne: <strong>produkt + odmiana + kaliber + klasa + wolumen + logistyka</strong>. Kupiec wie od razu czego się spodziewać. Tego samego ducha trzymaj się w 3 pytaniach poniżej — operacyjnie, w liczbach.
+              <Trans i18nKey="supplier.offer_form.step3.example.explanation_html" components={{ strong: <strong /> }}/>
             </div>
           </div>
         </details>
 
-        <Card title="A. Co Cię wyróżnia?" icon={CheckCircle}>
+        <Card title={t("supplier.offer_form.step3.benefits.card_title")} icon={CheckCircle}>
           <Alrt type="success">
-            <strong>To najważniejsza sekcja — ważniejsza niż cena.</strong> Odpowiedz konkretnie na 3 pytania, dlaczego kupiec ma wybrać właśnie Twoją propozycję. Nie pisz frazesów — pisz operacyjne, mierzalne fakty.
+            <Trans i18nKey="supplier.offer_form.step3.benefits.success_alert_html" components={{ strong: <strong /> }}/>
           </Alrt>
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Inspiracje — kliknij żeby dodać</label>
+            <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step3.benefits.inspirations_label")}</label>
             <div style={{ display:"flex",flexWrap:"wrap",gap:5 }}>
-              {["powtarzalna jakość","stabilna podaż","niski shrink","szybka reklamacja","gotowość do promocji","opakowanie shelf-ready","private label","wsparcie marketingowe","wsparcie sprzedaży","identyfikowalność partii","badania i dokumentacja","lokalne / regionalne","wygoda dla sklepu","wygoda dla shoppera"].map(b=>(
-                <span key={b} onClick={()=>{ if(!f.benefit1){u("benefit1",b);}else if(!f.benefit2){u("benefit2",b);}else if(!f.benefit3){u("benefit3",b);} }} style={{ padding:"3px 10px",background:"white",border:"1px solid #a7f3d0",borderRadius:20,fontSize:11,color:"#047857",cursor:"pointer",userSelect:"none" }}>{b}</span>
+              {[
+                ["powtarzalna jakość", t("supplier.offer_form.step3.benefits.chips.repeatable_quality")],
+                ["stabilna podaż", t("supplier.offer_form.step3.benefits.chips.stable_supply")],
+                ["niski shrink", t("supplier.offer_form.step3.benefits.chips.low_shrink")],
+                ["szybka reklamacja", t("supplier.offer_form.step3.benefits.chips.fast_claim")],
+                ["gotowość do promocji", t("supplier.offer_form.step3.benefits.chips.promo_ready")],
+                ["opakowanie shelf-ready", t("supplier.offer_form.step3.benefits.chips.shelf_ready_pkg")],
+                ["private label", t("supplier.offer_form.step3.benefits.chips.private_label")],
+                ["wsparcie marketingowe", t("supplier.offer_form.step3.benefits.chips.marketing_support")],
+                ["wsparcie sprzedaży", t("supplier.offer_form.step3.benefits.chips.sales_support")],
+                ["identyfikowalność partii", t("supplier.offer_form.step3.benefits.chips.batch_traceability")],
+                ["badania i dokumentacja", t("supplier.offer_form.step3.benefits.chips.tests_docs")],
+                ["lokalne / regionalne", t("supplier.offer_form.step3.benefits.chips.local_regional")],
+                ["wygoda dla sklepu", t("supplier.offer_form.step3.benefits.chips.shop_convenience")],
+                ["wygoda dla shoppera", t("supplier.offer_form.step3.benefits.chips.shopper_convenience")],
+              ].map(([v,lbl])=>(
+                <span key={v} onClick={()=>{ if(!f.benefit1){u("benefit1",v);}else if(!f.benefit2){u("benefit2",v);}else if(!f.benefit3){u("benefit3",v);} }} style={{ padding:"3px 10px",background:"white",border:"1px solid #a7f3d0",borderRadius:20,fontSize:11,color:"#047857",cursor:"pointer",userSelect:"none" }}>{lbl}</span>
               ))}
             </div>
           </div>
           <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:14 }}>
             {[
-              ["benefit1","1","*","Dlaczego kupiec powinien zainteresować się tym produktem?","np. powtarzalna jakość partii przez cały program — sortownia optyczna, klasa I gwarantowana"],
-              ["benefit2","2","*","Co robisz lepiej lub inaczej niż inni dostawcy?","np. stabilna podaż 200–500 t/mies. z własnej chłodni CA — brak zależności od skupu"],
-              ["benefit3","3","opcj.","Jak zmniejszasz ryzyko dla kupca?","np. reklamacje rozpatrywane tego samego dnia, plan B: 2 packhousy + 5 gospodarstw partnerskich"]
+              ["benefit1","1","*", t("supplier.offer_form.step3.benefits.q1"), t("supplier.offer_form.step3.benefits.q1_placeholder")],
+              ["benefit2","2","*", t("supplier.offer_form.step3.benefits.q2"), t("supplier.offer_form.step3.benefits.q2_placeholder")],
+              ["benefit3","3","opcj.", t("supplier.offer_form.step3.benefits.q3"), t("supplier.offer_form.step3.benefits.q3_placeholder")]
             ].map(([key,num,req,question,ph])=>(
               <div key={key}>
                 <div style={{ display:"flex",gap:8,alignItems:"flex-start",marginBottom:4 }}>
                   <div style={{ width:22,height:22,borderRadius:"50%",background:errors[key]?"#fef2f2":"#0d9488",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0,color:errors[key]?"#dc2626":"white",marginTop:2 }}>{num}</div>
                   <div style={{ flex:1 }}>
-                    <div style={{ fontSize:12,fontWeight:600,color:"#334155",marginBottom:4 }}>{question} <span style={{ fontSize:10,color:req==="*"?"#dc2626":"#94a3b8",fontWeight:500 }}>{req==="*"?"wymagane":"opcjonalne"}</span></div>
+                    <div style={{ fontSize:12,fontWeight:600,color:"#334155",marginBottom:4 }}>{question} <span style={{ fontSize:10,color:req==="*"?"#dc2626":"#94a3b8",fontWeight:500 }}>{req==="*"?t("supplier.offer_form.step3.benefits.required_label"):t("supplier.offer_form.step3.benefits.optional_label")}</span></div>
                     <input type="text" value={f[key]||""} onChange={e=>u(key,e.target.value)} placeholder={ph} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",boxSizing:"border-box",...errStyle(key) }}/>
                   </div>
                 </div>
@@ -5279,51 +5298,51 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             ))}
           </div>
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12,fontWeight:600,color:"#334155",display:"block",marginBottom:5 }}>Jak ten produkt pomoże sieci sprzedawać więcej lub lepiej? <span style={{ color:"#dc2626" }}>*</span></label>
-            <textarea value={f.shopBenefit||""} onChange={e=>u("shopBenefit",e.target.value)} placeholder="format wygodny dla półki, niska odpadowość, możliwość akcji sezonowej, wsparcie materiałami POS, gotowy do ekspozycji" rows={3} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",...errStyle("shopBenefit") }}/><ErrMsg fieldKey="shopBenefit"/>
+            <label style={{ fontSize:12,fontWeight:600,color:"#334155",display:"block",marginBottom:5 }}>{t("supplier.offer_form.step3.benefits.shop_benefit_label")} <span style={{ color:"#dc2626" }}>*</span></label>
+            <textarea value={f.shopBenefit||""} onChange={e=>u("shopBenefit",e.target.value)} placeholder={t("supplier.offer_form.step3.benefits.shop_benefit_placeholder")} rows={3} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",...errStyle("shopBenefit") }}/><ErrMsg fieldKey="shopBenefit"/>
             <div style={{ fontSize:10,color:"#94a3b8",textAlign:"right",marginTop:2 }}>{(f.shopBenefit||"").length}/250</div>
           </div>
         </Card>
 
-        <Card title="B. Bezpieczeństwo współpracy" icon={ShieldCheck}>
+        <Card title={t("supplier.offer_form.step3.risk.card_title")} icon={ShieldCheck}>
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12,fontWeight:600,color:"#334155",display:"block",marginBottom:5 }}>Jak zabezpieczasz jakość i ciągłość dostaw? <span style={{ fontSize:10,color:"#94a3b8",fontWeight:500,background:"#f1f5f9",padding:"1px 6px",borderRadius:4 }}>opcjonalne</span></label>
-            <textarea value={f.riskMitigation||""} onChange={e=>u("riskMitigation",e.target.value)} placeholder="monitoring jakości partii, reakcja reklamacyjna tego samego dnia, pełna identyfikowalność od pola do dostawy, dokumentacja online, plan awaryjny: 2 packhousy + 5 gospodarstw partnerskich" rows={3} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",}}/>
+            <label style={{ fontSize:12,fontWeight:600,color:"#334155",display:"block",marginBottom:5 }}>{t("supplier.offer_form.step3.risk.mitigation_label")} <span style={{ fontSize:10,color:"#94a3b8",fontWeight:500,background:"#f1f5f9",padding:"1px 6px",borderRadius:4 }}>{t("supplier.offer_form.step3.risk.optional_label")}</span></label>
+            <textarea value={f.riskMitigation||""} onChange={e=>u("riskMitigation",e.target.value)} placeholder={t("supplier.offer_form.step3.risk.mitigation_placeholder")} rows={3} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box",}}/>
             <div style={{ fontSize:10,color:"#94a3b8",textAlign:"right",marginTop:2 }}>{(f.riskMitigation||"").length}/350</div>
           </div>
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Co potwierdza Twoją wiarygodność? <span style={{ fontSize:10,color:"#94a3b8",fontWeight:500 }}>opcjonalne</span></label>
-            <textarea value={f.riskProof||""} onChange={e=>u("riskProof",e.target.value)} placeholder="obsługiwane rynki: PL/DE/CZ, stałe wolumeny od 2019, referencje retail (na żądanie), zdjęcia procesu, aktualne badania GlobalGAP" rows={2} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box" }}/>
+            <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step3.risk.proof_label")} <span style={{ fontSize:10,color:"#94a3b8",fontWeight:500 }}>{t("supplier.offer_form.step3.risk.optional_label")}</span></label>
+            <textarea value={f.riskProof||""} onChange={e=>u("riskProof",e.target.value)} placeholder={t("supplier.offer_form.step3.risk.proof_placeholder")} rows={2} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box" }}/>
             <div style={{ fontSize:10,color:"#94a3b8",textAlign:"right",marginTop:2 }}>{(f.riskProof||"").length}/300</div>
           </div>
           <div style={{ marginBottom:14 }}>
-            <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Dlaczego warto rozmawiać teraz? <span style={{ fontSize:10,color:"#94a3b8",fontWeight:500 }}>opcjonalne</span></label>
-            <textarea value={f.riskNow||""} onChange={e=>u("riskNow",e.target.value)} placeholder="np. start sezonu jesiennego — jabłka klasy Extra dostępne od września, wysoka dostępność z chłodni CA, okno przed promocją świąteczną" rows={2} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box" }}/>
+            <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step3.risk.now_label")} <span style={{ fontSize:10,color:"#94a3b8",fontWeight:500 }}>{t("supplier.offer_form.step3.risk.optional_label")}</span></label>
+            <textarea value={f.riskNow||""} onChange={e=>u("riskNow",e.target.value)} placeholder={t("supplier.offer_form.step3.risk.now_placeholder")} rows={2} style={{ width:"100%",padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box" }}/>
             <div style={{ fontSize:10,color:"#94a3b8",textAlign:"right",marginTop:2 }}>{(f.riskNow||"").length}/200</div>
           </div>
         </Card>
 
-        <Card title="C. Możliwe działania kupca" icon={Send}>
+        <Card title={t("supplier.offer_form.step3.actions.card_title")} icon={Send}>
           <Alrt type="info">
-            <strong>Uwaga:</strong> akcje są po stronie kupca. To kupiec decyduje, co zrobić po obejrzeniu Twojej propozycji. Może poprosić o próbkę, zapytać o aktualną cenę i wolumen, poprosić o specyfikację, umówić rozmowę, zapytać o program sezonowy albo umówić spotkanie na Fresh Market. Może też skontaktować się z Tobą bezpośrednio, korzystając z danych kontaktowych podanych w profilu.
+            <Trans i18nKey="supplier.offer_form.step3.actions.info_alert_html" components={{ strong: <strong /> }}/>
           </Alrt>
         </Card>
 
-        <Card title="Nazwa propozycji dla kupca" icon={FileText}>
-          <Alrt type="info"><strong>To tytuł Twojej propozycji widoczny dla kupca na liście propozycji.</strong> Powinien od razu mówić, co oferujesz i dlaczego warto kliknąć w szczegóły. Wpisz produkt, kraj lub region pochodzenia oraz jeden najmocniejszy wyróżnik, np. sezon, kaliber, dostępność, certyfikat albo format opakowania.</Alrt>
-          <Inp label="Nazwa propozycji dla kupca" required value={f.title} onChange={e=>u("title",e.target.value)} hint={`${(f.title||"").length}/200`} placeholder="np. Winogrona stołowe Murcja — bezpestkowe, kaliber AA, sezon VII–X" style={errStyle("title")}/><ErrMsg fieldKey="title"/>
+        <Card title={t("supplier.offer_form.step3.title_card.card_title")} icon={FileText}>
+          <Alrt type="info"><Trans i18nKey="supplier.offer_form.step3.title_card.info_alert_html" components={{ strong: <strong /> }}/></Alrt>
+          <Inp label={t("supplier.offer_form.step3.title_card.title_label")} required value={f.title} onChange={e=>u("title",e.target.value)} hint={`${(f.title||"").length}/200`} placeholder={t("supplier.offer_form.step3.title_card.title_placeholder")} style={errStyle("title")}/><ErrMsg fieldKey="title"/>
           <div style={{ marginTop:10,padding:"10px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
-            <Inp label="Własna nazwa propozycji" value={f.internalTitle||""} onChange={e=>u("internalTitle",e.target.value)} placeholder="np. Gala premium — wariant dla dużych sieci" hint="Niewidoczne dla kupca"/>
-            <div style={{ fontSize:11,color:"#64748b",marginTop:4,lineHeight:1.5 }}>To nazwa robocza tylko dla Ciebie. Kupiec jej nie zobaczy. Użyj jej, żeby łatwo rozróżniać podobne propozycje w swoim panelu, np. wariant dla dużych sieci, propozycję sezonową albo wariant premium.</div>
+            <Inp label={t("supplier.offer_form.step3.title_card.internal_title_label")} value={f.internalTitle||""} onChange={e=>u("internalTitle",e.target.value)} placeholder={t("supplier.offer_form.step3.title_card.internal_title_placeholder")} hint={t("supplier.offer_form.step3.title_card.internal_title_hint")}/>
+            <div style={{ fontSize:11,color:"#64748b",marginTop:4,lineHeight:1.5 }}>{t("supplier.offer_form.step3.title_card.internal_title_description")}</div>
           </div>
         </Card>
 
         <div style={{ display:"flex",gap:8,justifyContent:"space-between",marginBottom:24 }}>
-          <Btn outline onClick={()=>setStep(2)}><ArrowLeft size={13}/> Wróć</Btn>
+          <Btn outline onClick={()=>setStep(2)}><ArrowLeft size={13}/> {t("supplier.offer_form.nav.back")}</Btn>
           <div style={{ display:"flex",gap:8 }}>
-            <Btn outline onClick={()=>setShowPrev(true)}><Eye size={13}/> Podgląd</Btn>
-            <Btn outline onClick={()=>doSave("draft")}>Zapisz szkic</Btn>
-            <Btn primary onClick={()=>{ const errs={}; REQUIRED_3.forEach(k=>{ const v=f[k]; if(!v||(Array.isArray(v)&&v.length===0)) errs[k]=true; }); if(Object.keys(errs).length>0){setErrors(errs);setTimeout(()=>{const el=document.querySelector("[data-fielderr='true']");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});},60);return;} doSave("active"); }}>Opublikuj propozycję</Btn>
+            <Btn outline onClick={()=>setShowPrev(true)}><Eye size={13}/> {t("supplier.offer_form.nav.preview")}</Btn>
+            <Btn outline onClick={()=>doSave("draft")}>{t("supplier.offer_form.nav.save_draft")}</Btn>
+            <Btn primary onClick={()=>{ const errs={}; REQUIRED_3.forEach(k=>{ const v=f[k]; if(!v||(Array.isArray(v)&&v.length===0)) errs[k]=true; }); if(Object.keys(errs).length>0){setErrors(errs);setTimeout(()=>{const el=document.querySelector("[data-fielderr='true']");if(el)el.scrollIntoView({behavior:"smooth",block:"center"});},60);return;} doSave("active"); }}>{t("supplier.offer_form.nav.publish")}</Btn>
           </div>
         </div>
       </>}
