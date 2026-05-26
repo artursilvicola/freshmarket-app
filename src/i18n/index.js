@@ -29,9 +29,11 @@ import { initReactI18next } from "react-i18next";
 import plCommon from "./pl/common.json";
 import plAuth from "./pl/auth.json";
 import plPanel from "./pl/panel.json";
+import plLegacy from "./pl/legacy.json";
 import enCommon from "./en/common.json";
 import enAuth from "./en/auth.json";
 import enPanel from "./en/panel.json";
+import enLegacy from "./en/legacy.json";
 import { detectInitialLocale } from "./locale";
 
 const resources = {
@@ -39,11 +41,13 @@ const resources = {
     common: plCommon,
     auth: plAuth,
     panel: plPanel,
+    legacy: plLegacy,
   },
   en: {
     common: enCommon,
     auth: enAuth,
     panel: enPanel,
+    legacy: enLegacy,
   },
 };
 
@@ -63,8 +67,11 @@ i18n
     // a CI guard w końcówce P0 dopilnuje że pliki nie rozjeżdżają się.
     fallbackLng: false,
     // [Krok 8 P1] Dodany namespace "panel" dla PanelTopBar (admin/supplier/buyer).
-    // Wnętrza paneli zostaną dodane w Krokach 9-11 (lub osobnym namespace).
-    ns: ["common", "auth", "panel"],
+    // [Krok P2-1] Dodany namespace "legacy" dla src/legacy/PreconnectFM.jsx.
+    // Sekcje legacy: common, supplier, buyer, admin, fm, chat, errors (BINDING
+    // decyzja Codexa). P2-1 dostarcza tylko display labels — konsumenci JS
+    // const w PreconnectFM zostają nietknięci do kolejnych branchy P2-N.
+    ns: ["common", "auth", "panel", "legacy"],
     defaultNS: "common",
     interpolation: {
       escapeValue: false,       // React sam escapuje

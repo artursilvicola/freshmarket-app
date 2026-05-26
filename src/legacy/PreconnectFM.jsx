@@ -56,6 +56,10 @@ import FreshMarketLogo from "../components/FreshMarketLogo";
 // [B2B Round prod-rollout / email-open-tracking] Potrzebny do auth.getSession()
 // gdy wołamy /.netlify/functions/notify-supplier-read z auth tokenem.
 import { supabase } from "../lib/supabase";
+// [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
+// W tym kroku UŻYWANY TYLKO w fmtPolishDate poniżej; kolejne branche P2-N
+// będą używać i18n / useTranslation w widokach Page* zgodnie z planem.
+import i18n from "../i18n";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -3294,8 +3298,24 @@ function getNextSendWindow(today = new Date()) {
 const PL_DAYS = ["niedziela","poniedziałek","wtorek","środa","czwartek","piątek","sobota"];
 const PL_MONTHS = ["stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","września","października","listopada","grudnia"];
 const PL_MONTHS_SHORT = ["sty","lut","mar","kwi","maj","cze","lip","sie","wrz","paź","lis","gru"];
+// [Krok P2-1 i18n MVP] Tablice EN obok PL — BINDING decyzja Codexa:
+// in-place w PreconnectFM.jsx, BEZ Intl.DateTimeFormat, BEZ nowego modułu.
+// "may" / "Jan" itd. małymi literami zachowują polski styl ciągłego zdania
+// "Wednesday, 26 may 2026" — w EN miesiąc zwyczajowo wielką literą, ale
+// żeby nie zmieniać zachowania (gdyby cytat fmt'a był sklejony z innym
+// tekstem), trzymamy lowercase. Konsumenci mogą capitalizować jeśli trzeba.
+const EN_DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const EN_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const EN_MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+// fmtPolishDate zostaje pod tą nazwą (callerzy nie ruszamy w P2-1), ale
+// wewnętrznie dispatchuje tablicę po aktualnym i18n.language. Dla locale 'pl'
+// (default + fallback) zachowuje obecne zachowanie PL bez regresji.
+// Dla 'en' zwraca format "Wednesday, 26 May 2026" — w EN miesiąc wielką literą.
 function fmtPolishDate(d) {
-  return `${PL_DAYS[d.getDay()]}, ${d.getDate()} ${PL_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  const isEn = i18n.language === "en";
+  const days = isEn ? EN_DAYS : PL_DAYS;
+  const months = isEn ? EN_MONTHS : PL_MONTHS;
+  return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 function dayDiff(a, b) {
   return Math.ceil((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000));

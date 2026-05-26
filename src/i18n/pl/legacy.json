@@ -1,0 +1,55 @@
+{
+  "_meta": {
+    "language": "Polski",
+    "namespace": "legacy",
+    "_note": "Klucze dla src/legacy/PreconnectFM.jsx (P2). Sekcje BINDING per decyzja Codexa: common, supplier, buyer, admin, fm, chat, errors. P2-1 dodaje TYLKO display labels ze słowników const (STATUS_TIPS, STATUS_MAP labels, CTA_MAP, TYPE_LABELS) — konsumenci JS const w PreconnectFM nadal działają, klucze JSON są gotowe do użycia w P2-2+ branchach."
+  },
+  "common": {
+    "status_tips": {
+      "pending_moderation": "Propozycja oczekuje na weryfikację przez administratora przed wysyłką do kupca.",
+      "queued": "Propozycja w kolejce do wysyłki w najbliższym terminie mailingowym.",
+      "approved": "Propozycja zatwierdzona — zostanie wysłana w zaplanowanym terminie.",
+      "sent": "Propozycja dostarczona do kupca. Oczekujemy potwierdzenia odczytu (14 dni).",
+      "read": "Kupiec zapoznał się z propozycją.",
+      "read_manual": "Kupiec potwierdził zapoznanie się z propozycją.",
+      "unread_expired": "Propozycja nie została odczytana w ciągu 14 dni. Środki zwrócono na portfel.",
+      "rejected": "Propozycja odrzucona przez administratora."
+    },
+    "status_map": {
+      "queued": "W kolejce",
+      "pending_moderation": "Do moderacji",
+      "approved": "Zatwierdzona",
+      "rejected": "Odrzucona",
+      "sent": "Dostarczona, nieodczytana",
+      "opened": "Odczytana",
+      "read": "Odczytana",
+      "read_manual": "Odczytana ✓",
+      "unread_expired": "Wygasła, kredyt zwrócony",
+      "refunded": "Zwrot kredytu"
+    },
+    "cta_map": {
+      "samples": "Poproś o próbkę",
+      "spec": "Poproś o specyfikację",
+      "rfq": "Zapytaj o cenę i wolumen",
+      "call": "Umów rozmowę",
+      "long_term": "Zapytaj o program sezonowy",
+      "meet_fm": "Umów spotkanie na Fresh Market"
+    },
+    "type_labels": {
+      "producent": "🌱 Producent",
+      "eksporter": "✈ Eksporter",
+      "importer": "📥 Importer",
+      "firma_handlowa": "🤝 Firma Handlowa",
+      "pakowalnia": "📦 Pakowalnia",
+      "firma_logistyczna": "🚛 Firma Logistyczna",
+      "kooperatywa": "🤲 Kooperatywa",
+      "agent": "🔎 Agent/Broker"
+    }
+  },
+  "supplier": {},
+  "buyer": {},
+  "admin": {},
+  "fm": {},
+  "chat": {},
+  "errors": {}
+}
