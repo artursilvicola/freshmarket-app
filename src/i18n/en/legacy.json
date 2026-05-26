@@ -1,0 +1,55 @@
+{
+  "_meta": {
+    "language": "English",
+    "namespace": "legacy",
+    "_note": "Klucze symetryczne z pl/legacy.json. Terminologia v1.1: Submission/Retailer/Admin, sentence case. P2-1 dodaje TYLKO display labels."
+  },
+  "common": {
+    "status_tips": {
+      "pending_moderation": "The submission is awaiting admin review before delivery to the buyer.",
+      "queued": "Submission queued for delivery in the next mailing window.",
+      "approved": "Submission approved — it will be delivered on the scheduled date.",
+      "sent": "Submission delivered to the buyer. Awaiting read confirmation (14 days).",
+      "read": "The buyer has reviewed the submission.",
+      "read_manual": "The buyer confirmed reviewing the submission.",
+      "unread_expired": "The submission was not read within 14 days. The credit was refunded to your wallet.",
+      "rejected": "The submission was rejected by the admin."
+    },
+    "status_map": {
+      "queued": "Queued",
+      "pending_moderation": "Pending moderation",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "sent": "Delivered, unread",
+      "opened": "Opened",
+      "read": "Read",
+      "read_manual": "Read ✓",
+      "unread_expired": "Expired, credit refunded",
+      "refunded": "Credit refunded"
+    },
+    "cta_map": {
+      "samples": "Request samples",
+      "spec": "Request specification",
+      "rfq": "Ask for price and volume",
+      "call": "Schedule a call",
+      "long_term": "Ask about seasonal program",
+      "meet_fm": "Schedule a Fresh Market meeting"
+    },
+    "type_labels": {
+      "producent": "🌱 Producer",
+      "eksporter": "✈ Exporter",
+      "importer": "📥 Importer",
+      "firma_handlowa": "🤝 Trading company",
+      "pakowalnia": "📦 Packing house",
+      "firma_logistyczna": "🚛 Logistics company",
+      "kooperatywa": "🤲 Cooperative",
+      "agent": "🔎 Agent / Broker"
+    }
+  },
+  "supplier": {},
+  "buyer": {},
+  "admin": {},
+  "fm": {},
+  "chat": {},
+  "errors": {}
+}
