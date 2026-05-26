@@ -232,6 +232,46 @@
         "btn_open": "Open selection →",
         "btn_soon": "See FM schedule →"
       },
+      "offers": {
+        "header_label": "PreConnect",
+        "title": "My product proposals",
+        "desc_pre": "List of your product proposals. Each one shows specific products to buyers — this is not classic price quoting, so ",
+        "desc_strong": "price is optional",
+        "desc_post": ".",
+        "add_button": "Add product proposal",
+        "empty": "No proposals. Click “Add product proposal” to add the first one.",
+        "card": {
+          "only_you_badge": "Only you",
+          "for_buyer_badge": "For the buyer",
+          "status_published": "Published",
+          "status_draft": "Draft",
+          "premium_badge": "Premium",
+          "kpi_retailers": "Retailers",
+          "kpi_read": "Read",
+          "btn_edit": "Edit",
+          "btn_duplicate": "Duplicate",
+          "btn_duplicate_tooltip": "Duplicate proposal — speeds up adding similar products",
+          "btn_send": "Send",
+          "btn_delete": "Delete",
+          "btn_delete_tooltip_can": "Delete proposal (irreversible)",
+          "btn_delete_tooltip_locked_one": "Cannot delete — proposal sent to {{count}} retailer. After sending it lives in the admin pipeline.",
+          "btn_delete_tooltip_locked_few": "Cannot delete — proposal sent to {{count}} retailers. After sending it lives in the admin pipeline.",
+          "btn_delete_tooltip_locked_many": "Cannot delete — proposal sent to {{count}} retailers. After sending it lives in the admin pipeline.",
+          "btn_delete_tooltip_locked_other": "Cannot delete — proposal sent to {{count}} retailers. After sending it lives in the admin pipeline."
+        },
+        "delete_modal": {
+          "title": "Delete proposal?",
+          "body_pre": "Are you sure you want to delete proposal ",
+          "body_post": "?",
+          "warn_pre": "This operation is ",
+          "warn_strong": "irreversible",
+          "warn_post": ". The proposal will be removed from the database. If you just want to hide it from buyers, you can change its status to “Draft” in edit mode instead.",
+          "cancel": "Cancel",
+          "confirm": "Yes, delete"
+        },
+        "deleted_flash": "Proposal “{{title}}” deleted.",
+        "deleted_fallback_title": "(no title)"
+      },
       "onboarding": {
         "header_label": "Start here",
         "header_progress": "({{done}}/{{total}})",
