@@ -194,6 +194,59 @@
         "total_few": "{{count}} submissions total",
         "total_many": "{{count}} submissions total",
         "total_other": "{{count}} submissions total"
+      },
+      "activity_card": {
+        "header": "Last activity",
+        "empty_meta": "no events",
+        "total_one": "{{count}} event",
+        "total_few": "{{count}} events",
+        "total_many": "{{count}} events",
+        "total_other": "{{count}} events",
+        "empty_body": "Send your first submission to see history here."
+      },
+      "time_rel": {
+        "just_now": "just now",
+        "hours_ago_one": "{{count}} hour ago",
+        "hours_ago_other": "{{count}} hours ago",
+        "days_ago_one": "{{count}} day ago",
+        "days_ago_few": "{{count}} days ago",
+        "days_ago_many": "{{count}} days ago",
+        "days_ago_other": "{{count}} days ago"
+      },
+      "fm_compact": {
+        "header": "FM 2026 Meetings",
+        "phase_published": "Plan published",
+        "phase_open": "Selection active",
+        "phase_soon": "Coming soon",
+        "main_published": "Schedule ready — see your meeting numbers.",
+        "main_open": "Selection open — go to FM 2026.",
+        "main_soon_pre": "Selection opens · ",
+        "main_soon_date": "1 September",
+        "step_soon": "Soon",
+        "step_choice": "Selection",
+        "step_algo": "Algorithm",
+        "step_plan": "Plan",
+        "btn_published": "See meetings →",
+        "btn_open": "Open selection →",
+        "btn_soon": "See FM schedule →"
+      },
+      "onboarding": {
+        "header_label": "Start here",
+        "header_progress": "({{done}}/{{total}})",
+        "step_profile_label": "Complete company details",
+        "step_profile_hint": "Name, Tax ID, country, short description — minimum so the buyer knows who the submission is from.",
+        "step_profile_cta": "Open profile",
+        "step_logo_label": "Upload company logo",
+        "step_logo_hint": "Shown in the email to the buyer and next to submissions. PNG/JPG, ~400×400 px.",
+        "step_logo_cta": "Upload logo",
+        "step_offer_label": "Add your first product submission",
+        "step_offer_hint": "Product + brief specification + 1–3 photos.",
+        "step_offer_cta": "Add submission",
+        "step_package_label": "Package unlocks after account approval",
+        "step_package_hint": "Pricing visible for preview. Purchase will be available right after admin approval.",
+        "step_package_cta": "See pricing",
+        "step_send_label": "Submit to retailers",
+        "step_send_hint": "First submission after account activation."
       }
     }
   },
