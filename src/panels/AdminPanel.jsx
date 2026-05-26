@@ -18,13 +18,13 @@ export default function AdminPanel() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <PanelTopBar
-        title="Panel Administratora"
+        titleKey="title.admin"
         // [B2B Round branding-and-header-logos] admin nie reprezentuje jednej
         // firmy ani sieci — w nagłówku siedzi systemowe logo Fresh Market
         // (variant="dark" — ciemne litery na białym pasku).
         logo={<FreshMarketLogo variant="dark" size={26} showText={false} />}
         userLabel={profile?.name || user?.email}
-        roleLabel="Admin"
+        roleKey="role.admin"
         roleColor="#7c3aed"
         onSignOut={signOut}
       />

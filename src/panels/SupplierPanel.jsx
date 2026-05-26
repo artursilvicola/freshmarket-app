@@ -10,7 +10,7 @@ export default function SupplierPanel() {
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
       <PanelTopBar
-        title="Panel Dostawcy"
+        titleKey="title.supplier"
         logo={
           <EntityLogo
             logoUrl={profile?.company_logo_url}
@@ -19,7 +19,7 @@ export default function SupplierPanel() {
           />
         }
         userLabel={profile?.name || user?.email}
-        roleLabel="Dostawca"
+        roleKey="role.supplier"
         roleColor="#0d9488"
         onSignOut={signOut}
       />

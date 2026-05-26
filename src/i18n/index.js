@@ -28,18 +28,22 @@ import { initReactI18next } from "react-i18next";
 // można przejść na dynamic imports + i18next-http-backend.
 import plCommon from "./pl/common.json";
 import plAuth from "./pl/auth.json";
+import plPanel from "./pl/panel.json";
 import enCommon from "./en/common.json";
 import enAuth from "./en/auth.json";
+import enPanel from "./en/panel.json";
 import { detectInitialLocale } from "./locale";
 
 const resources = {
   pl: {
     common: plCommon,
     auth: plAuth,
+    panel: plPanel,
   },
   en: {
     common: enCommon,
     auth: enAuth,
+    panel: enPanel,
   },
 };
 
@@ -58,7 +62,9 @@ i18n
     // zamiast maskować innym językiem. Symetrię pl/en wymuszamy świadomie,
     // a CI guard w końcówce P0 dopilnuje że pliki nie rozjeżdżają się.
     fallbackLng: false,
-    ns: ["common", "auth"],     // Aktywne namespace'y w P0. Reszta w P1/P2.
+    // [Krok 8 P1] Dodany namespace "panel" dla PanelTopBar (admin/supplier/buyer).
+    // Wnętrza paneli zostaną dodane w Krokach 9-11 (lub osobnym namespace).
+    ns: ["common", "auth", "panel"],
     defaultNS: "common",
     interpolation: {
       escapeValue: false,       // React sam escapuje

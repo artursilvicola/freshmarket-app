@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "language": "Polski",
+    "namespace": "panel",
+    "_note": "Klucze dla PanelTopBar (admin/supplier/buyer). Krok 8 P1 — wąsko: tylko topbar. Kolejne kroki P1 (9-11) dodadzą wnętrza paneli osobno."
+  },
+  "topbar": {
+    "signout": "Wyloguj"
+  },
+  "title": {
+    "admin": "Panel Administratora",
+    "supplier": "Panel Dostawcy",
+    "buyer": "Panel Kupca"
+  },
+  "role": {
+    "admin": "Admin",
+    "super_admin": "Super admin",
+    "supplier": "Dostawca",
+    "buyer": "Kupiec"
+  }
+}

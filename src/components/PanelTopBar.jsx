@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import LanguageSwitcher from "./LanguageSwitcher";
 
 /**
@@ -13,22 +14,38 @@ import LanguageSwitcher from "./LanguageSwitcher";
  * "Wyloguj" — dostępny we wszystkich 3 panelach (Admin/Supplier/Buyer)
  * po zalogowaniu. Przed loginem switcher jest w stronach auth.
  *
+ * [B2B Round prod-rollout / i18n MVP — Krok 8 P1]
+ * Tłumaczenia przez useTranslation('panel'). API jest backward-compatible:
+ *   - jeśli caller poda `titleKey` / `roleKey` → render przez t(key)
+ *   - jeśli caller dalej używa starych `title` / `roleLabel` (stringów) → render bez tłumaczenia
+ * Pozwala migrować callerów stopniowo bez psucia istniejących użyć
+ * (np. legacy/PreconnectFM gdyby kiedyś wywołał ten komponent bezpośrednio).
+ *
  * Props:
- *   title:     string  — np. "Panel Dostawcy"
+ *   title:     string  — np. "Panel Dostawcy" (legacy, surowy string)
+ *   titleKey:  string  — klucz i18n w namespace 'panel', np. "title.supplier" (preferowane)
  *   logo:      JSX     — element loga (32x32 lub zbliżony) po lewej od tytułu
  *   userLabel: string  — imię/email zalogowanego usera (po prawej)
- *   roleLabel: string  — kolorowy badge "Dostawca"/"Kupiec"/"Admin"
+ *   roleLabel: string  — kolorowy badge "Dostawca"/"Kupiec"/"Admin" (legacy)
+ *   roleKey:   string  — klucz i18n w namespace 'panel', np. "role.supplier" (preferowane)
  *   roleColor: string  — kolor tła badge'a
  *   onSignOut: () => void
  */
 export default function PanelTopBar({
   title,
+  titleKey,
   logo,
   userLabel,
   roleLabel,
+  roleKey,
   roleColor,
   onSignOut,
 }) {
+  const { t } = useTranslation("panel");
+  // Klucze i18n wygrywają nad surowymi stringami (backward compat).
+  const displayTitle = titleKey ? t(titleKey) : title;
+  const displayRole = roleKey ? t(roleKey) : roleLabel;
+
   return (
     <div
       style={{
@@ -45,7 +62,7 @@ export default function PanelTopBar({
     >
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         {logo}
-        <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{displayTitle}</div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <span
@@ -58,7 +75,7 @@ export default function PanelTopBar({
             fontWeight: 600,
           }}
         >
-          {roleLabel}
+          {displayRole}
         </span>
         <span style={{ fontSize: 13, color: "#475569" }}>{userLabel}</span>
         <LanguageSwitcher variant="panel" />
@@ -74,7 +91,7 @@ export default function PanelTopBar({
             color: "#475569",
           }}
         >
-          Wyloguj
+          {t("topbar.signout")}
         </button>
       </div>
     </div>

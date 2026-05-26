@@ -1,0 +1,21 @@
+{
+  "_meta": {
+    "language": "English",
+    "namespace": "panel",
+    "_note": "Klucze symetryczne z pl/panel.json. Terminologia v1.1: Supplier/Buyer/Admin, sentence case."
+  },
+  "topbar": {
+    "signout": "Sign out"
+  },
+  "title": {
+    "admin": "Admin panel",
+    "supplier": "Supplier panel",
+    "buyer": "Buyer panel"
+  },
+  "role": {
+    "admin": "Admin",
+    "super_admin": "Super admin",
+    "supplier": "Supplier",
+    "buyer": "Buyer"
+  }
+}
