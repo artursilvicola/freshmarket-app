@@ -42,5 +42,23 @@
     "privacy": "Privacy Policy",
     "contact": "Contact",
     "copyright": "© {{year}} <bold>Fresh Market</bold> · KJOW Sp. z o.o."
+  },
+  "loading": "Loading...",
+  "errors": {
+    "no_role": {
+      "title": "Account without a role",
+      "body": "Your account does not yet have a role assigned. Please contact the admin."
+    }
+  },
+  "config_error": {
+    "title": "Supabase configuration missing",
+    "body": "The <code>.env</code> file does not have <code>VITE_SUPABASE_URL</code> or <code>VITE_SUPABASE_ANON_KEY</code> set.",
+    "step_1": "Copy <code>.env.example</code> to <code>.env</code>",
+    "step_2": "Paste the keys from Supabase dashboard (Project Settings → API)",
+    "step_3": "Restart <code>npm run dev</code>",
+    "full_instruction": "Full instructions: <code>SETUP_INSTRUKCJA.md</code>"
+  },
+  "language_switcher": {
+    "title": "Zmień język / Change language"
   }
 }

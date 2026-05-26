@@ -36,7 +36,8 @@ import {
  * NIE używany jeszcze w PreconnectFM.jsx — Krok 4+ doda to.
  */
 export default function LanguageSwitcher({ variant = "compact" }) {
-  const { i18n } = useTranslation();
+  // [Krok 9 P1] t() dla tooltip (namespace 'common' jako default).
+  const { t, i18n } = useTranslation();
   const current = normalizeLocale(i18n.language);
 
   async function handleChange(newLocale) {
@@ -100,7 +101,10 @@ export default function LanguageSwitcher({ variant = "compact" }) {
   if (variant === "panel") {
     return (
       <div
-        title="Zmień język / Change language"
+        // [Krok 9 P1] Tooltip wciąż bilingual (ten sam string w pl i en),
+        // żeby obie grupy użytkowników rozumiały co robi ten przycisk
+        // przed kliknięciem. Klucz language_switcher.title w common.json.
+        title={t("language_switcher.title")}
         style={{
           display: "inline-flex",
           alignItems: "center",

@@ -1,4 +1,5 @@
 import { Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "./AuthProvider";
 
 /**
@@ -7,11 +8,13 @@ import { useAuth } from "./AuthProvider";
  */
 export function ProtectedRoute({ children, allowedRoles }) {
   const { user, role, loading } = useAuth();
+  // [B2B Round prod-rollout / i18n MVP — Krok 9 P1] Loading w common namespace.
+  const { t } = useTranslation("common");
 
   if (loading) {
     return (
       <div style={{ padding: 40, textAlign: "center", color: "#64748b" }}>
-        Ładowanie...
+        {t("loading")}
       </div>
     );
   }
