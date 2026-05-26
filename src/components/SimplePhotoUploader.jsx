@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { Upload, X, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 
 /**
@@ -73,8 +74,13 @@ export default function SimplePhotoUploader({
   multi = true,
   max = 8,
   accept = "image/*",
-  label = "Kliknij lub przeciągnij zdjęcia",
+  // [Krok 11 P1] label: default undefined żeby caller mógł nadpisać własnym
+  // stringiem (np. "Wgraj logo firmy"). Jeśli brak — fallback do t() poniżej.
+  // Stary default "Kliknij lub przeciągnij zdjęcia" jest teraz w common.uploader.
+  label,
 }) {
+  // [Krok 11 P1] Bilingual przez useTranslation ('common' default ns).
+  const { t } = useTranslation();
   const fileInputRef = useRef();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -87,12 +93,12 @@ export default function SimplePhotoUploader({
 
   const handleFiles = async (files) => {
     if (!pathPrefix) {
-      setError("Brak ścieżki — komponent źle skonfigurowany.");
+      setError(t("uploader.errors.no_path_prefix"));
       return;
     }
     const fileArr = Array.from(files);
     if (multi && list.length + fileArr.length > max) {
-      setError(`Limit ${max} zdjęć — usuń stare przed dodaniem nowych.`);
+      setError(t("uploader.errors.limit_reached", { max }));
       return;
     }
     if (!multi && fileArr.length > 1) {
@@ -129,7 +135,7 @@ export default function SimplePhotoUploader({
         newUrls.push(pub.publicUrl);
         setProgress(Math.round((i / fileArr.length) * 100));
       } catch (e) {
-        setError(`Błąd przy ${file.name}: ${e.message}`);
+        setError(t("uploader.errors.upload_failed", { file: file.name, message: e.message }));
       }
     }
 
@@ -143,7 +149,7 @@ export default function SimplePhotoUploader({
   };
 
   const handleDelete = (urlToRemove) => {
-    if (!confirm("Usunąć zdjęcie?")) return;
+    if (!confirm(t("uploader.confirm_delete"))) return;
     if (multi) {
       onChange?.(list.filter((u) => u !== urlToRemove));
     } else {
@@ -177,15 +183,18 @@ export default function SimplePhotoUploader({
         {uploading ? (
           <>
             <Loader2 size={28} style={{ color: "#0d9488", animation: "spin 1s linear infinite" }} />
-            <div style={{ marginTop: 6, fontSize: 13, color: "#475569" }}>Wgrywanie... {progress}%</div>
+            <div style={{ marginTop: 6, fontSize: 13, color: "#475569" }}>{t("uploader.uploading", { progress })}</div>
             <style>{`@keyframes spin { from {transform:rotate(0)} to {transform:rotate(360deg)} }`}</style>
           </>
         ) : (
           <>
             <Upload size={24} style={{ color: "#64748b" }} />
-            <div style={{ marginTop: 6, fontSize: 13, color: "#475569", fontWeight: 500 }}>{label}</div>
+            {/* [Krok 11] Caller może nadpisać label własnym stringiem; fallback do i18n. */}
+            <div style={{ marginTop: 6, fontSize: 13, color: "#475569", fontWeight: 500 }}>{label ?? t("uploader.click_or_drag")}</div>
             <div style={{ marginTop: 3, fontSize: 11, color: "#94a3b8" }}>
-              JPG, PNG, WebP {multi ? `· max ${max} zdjęć` : ""}
+              {multi
+                ? t("uploader.hint_simple_multi", { max })
+                : t("uploader.hint_simple_single")}
             </div>
           </>
         )}
@@ -237,7 +246,7 @@ export default function SimplePhotoUploader({
                   borderRadius: "50%", width: 22, height: 22,
                   display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
                 }}
-                aria-label="Usuń zdjęcie"
+                aria-label={t("uploader.delete_alt")}
               >
                 <X size={12} />
               </button>
