@@ -61,6 +61,16 @@ export const handler = async (event) => {
   const acceptedPrivacyVersion = String(body.accepted_privacy_version || "1.0").trim();
   const acceptedAt = new Date().toISOString();
 
+  // [B2B Round prod-rollout / i18n MVP — Krok 3b]
+  // Walidacja locale — przyjmujemy tylko obsługiwane języki (pl/en).
+  // Brak / nieprawidłowa wartość → domyślnie 'pl'. Lista języków zsynchronizowana
+  // z src/i18n/locale.js SUPPORTED_LOCALES — gdy dodajemy nowy język, trzeba
+  // zaktualizować obie listy. Backend NIE robi automatycznej walidacji przez
+  // CHECK constraint w DB (świadomie — patrz migracja 036).
+  const SUPPORTED_LOCALES = ["pl", "en"];
+  const rawLocale = String(body.locale || "pl").trim().toLowerCase().split(/[-_]/)[0];
+  const locale = SUPPORTED_LOCALES.includes(rawLocale) ? rawLocale : "pl";
+
   // ── Walidacja ──────────────────────────────────────────────────────
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     return json(400, { error: "Podaj poprawny adres email." });
@@ -88,6 +98,10 @@ export const handler = async (event) => {
   }
 
   // ── Krok 1: utwórz auth user ────────────────────────────────────────
+  // [B2B Round prod-rollout / i18n MVP — Krok 3b]
+  // locale w user_metadata żeby Supabase Auth template (welcome, password reset)
+  // mógł odczytać preferowany język nowego usera. Resend transactional używa
+  // tego samego locale dla maili welcome/registration_accepted niżej.
   const { data: userData, error: userErr } = await supaSvc.auth.admin.createUser({
     email,
     password,
@@ -98,6 +112,7 @@ export const handler = async (event) => {
       accepted_terms_version: acceptedTermsVersion,
       accepted_privacy_version: acceptedPrivacyVersion,
       accepted_at: acceptedAt,
+      locale,
     },
   });
   if (userErr || !userData?.user) {
@@ -130,6 +145,10 @@ export const handler = async (event) => {
   }
 
   // ── Krok 3: utwórz profile (rola supplier) ─────────────────────────
+  // [B2B Round prod-rollout / i18n MVP — Krok 3b]
+  // locale zapisujemy tutaj — defaultem migracji 036 jest 'pl', ale jeśli user
+  // przed rejestracją przełączył język na 'en', tutaj wpisujemy 'en' żeby od razu
+  // mieć właściwą wartość (zamiast czekać na pierwszy login + pending sync).
   const { error: profErr } = await supaSvc
     .from("profiles")
     .upsert(
@@ -145,6 +164,7 @@ export const handler = async (event) => {
         accepted_terms_version: acceptedTermsVersion,
         accepted_privacy_version: acceptedPrivacyVersion,
         accepted_at: acceptedAt,
+        locale,
       },
       { onConflict: "id" }
     );
@@ -166,11 +186,17 @@ export const handler = async (event) => {
   // ── Krok 4: wyślij maile (fire-and-forget, nie blokujemy odpowiedzi) ──
   // Mail A do supplera + powiadomienie do admina. Każdy template
   // renderuje się w supplier-email-templates.js. Wysyłka przez Resend.
+  //
+  // [B2B Round prod-rollout / i18n MVP — Krok 6]
+  // Welcome mail do supplera idzie w jego języku (locale z body request,
+  // walidowane wyżej do 'pl'|'en' z fallback do 'pl'). Admin notification
+  // ZOSTAJE PL — to mail do zespołu Fresh Market (newsletter@freshmarket.eu),
+  // operacyjnie używamy polskiego niezależnie od locale supplera.
   const tpls = [
     {
       template: "registration_accepted",
       to: email,
-      payload: { companyName, contactName, appUrl: env.b2bAppUrl },
+      payload: { companyName, contactName, appUrl: env.b2bAppUrl, locale },
     },
     {
       template: "admin_new_registration",

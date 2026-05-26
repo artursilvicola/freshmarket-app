@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation, Trans } from "react-i18next";
 import { selfRegisterSupplier } from "../lib/db";
 import { supabase } from "../lib/supabase";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import LanguageSwitcher from "../components/LanguageSwitcher";
+import i18n from "../i18n";
+import { normalizeLocale } from "../i18n/locale";
 import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/legal-versions";
 
 /**
@@ -19,6 +23,10 @@ import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/legal-versions";
  */
 export default function RegisterSupplierPage() {
   const navigate = useNavigate();
+  // [B2B Round prod-rollout / i18n MVP — Krok 4] Tłumaczenia z namespace "auth".
+  const { t } = useTranslation("auth");
+  const locale = normalizeLocale(i18n.language);
+
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -35,13 +43,19 @@ export default function RegisterSupplierPage() {
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  // [Krok 4] Linki do regulaminu/polityki zależne od języka — anglojęzyczny
+  // user nie powinien być rzucony na polskie dokumenty. EN wersja /regulations
+  // i /privacy-policy zostanie wgrana w osobnym PR w P0.
+  const termsHref = locale === "en" ? "/regulations" : "/regulamin";
+  const privacyHref = locale === "en" ? "/privacy-policy" : "/polityka-prywatnosci";
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErr(null);
     setBusy(true);
     try {
-      if (!form.accept) throw new Error("Zaakceptuj informację o procesie zatwierdzenia konta.");
-      if (form.password.length < 8) throw new Error("Hasło musi mieć minimum 8 znaków.");
+      if (!form.accept) throw new Error(t("register.accept_required"));
+      if (form.password.length < 8) throw new Error(t("register.password_too_short"));
 
       const result = await selfRegisterSupplier({
         email: form.email,
@@ -53,6 +67,12 @@ export default function RegisterSupplierPage() {
         nip: form.nip,
         accepted_terms_version: TERMS_VERSION,
         accepted_privacy_version: PRIVACY_VERSION,
+        // [B2B Round prod-rollout / i18n MVP — Krok 3b]
+        // Przekazujemy aktualnie wybrany język żeby nowy profile.locale
+        // od razu miał właściwą wartość (zamiast domyślnego 'pl'). Backend
+        // (register-supplier-self) walidouje i zapisuje do profiles.locale
+        // + auth.users.user_metadata.locale (dla maili welcome).
+        locale,
       });
 
       // Auto-login: supplier od razu trafia do panelu (w stanie pending_review)
@@ -87,7 +107,7 @@ export default function RegisterSupplierPage() {
         setTimeout(() => navigate("/dostawca", { replace: true }), 800);
       }
     } catch (e) {
-      setErr(e.message || "Błąd rejestracji.");
+      setErr(e.message || t("register.error_default"));
     } finally {
       setBusy(false);
     }
@@ -96,31 +116,45 @@ export default function RegisterSupplierPage() {
   if (done?.ok) {
     return (
       <div style={S.wrap}>
+        <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+          <LanguageSwitcher variant="auth" />
+        </div>
         <div style={S.card}>
           {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
           <div style={S.brand}>
             <FreshMarketLogo variant="dark" size={44} showText={false} />
             <div>
-              <h1 style={S.h1}>Rejestracja przyjęta</h1>
-              <p style={S.sub}>Czekamy na decyzję administratora</p>
+              <h1 style={S.h1}>{t("register.success_title")}</h1>
+              <p style={S.sub}>{t("register.success_subtitle")}</p>
             </div>
           </div>
           <div style={S.ok}>
-            ✓ Konto zostało utworzone. Wysłaliśmy potwierdzenie na <strong>{form.email}</strong>.
-            Konto firmy <strong>{form.company_name}</strong> czeka na zatwierdzenie przez administratora.
+            {/* [Krok 4] success_description_email + success_description_company mają
+                <strong> tagi i interpolation, więc Trans z components+values. */}
+            <Trans
+              i18nKey="register.success_description_email"
+              ns="auth"
+              values={{ email: form.email }}
+              components={{ strong: <strong /> }}
+            />
+            {" "}
+            <Trans
+              i18nKey="register.success_description_company"
+              ns="auth"
+              values={{ company: form.company_name }}
+              components={{ strong: <strong /> }}
+            />
           </div>
           <p style={{ fontSize: 13, color: "#475569", marginTop: 16, lineHeight: 1.6 }}>
-            W tym czasie możesz zalogować się i uzupełnić profil firmy: dodać logo, opis,
-            certyfikaty. PreConnect (wysyłka ofert do sieci) i Spotkania B2B będą dostępne
-            po aktywacji.
+            {t("register.success_profile_hint")}
           </p>
           {!done.autoLogin && (
             <Link to="/login" style={{ ...S.btn, display: "inline-block", textAlign: "center", marginTop: 16, textDecoration: "none" }}>
-              Przejdź do logowania
+              {t("register.success_go_to_login")}
             </Link>
           )}
           {done.autoLogin && (
-            <div style={{ marginTop: 16, fontSize: 13, color: "#64748b" }}>Logowanie…</div>
+            <div style={{ marginTop: 16, fontSize: 13, color: "#64748b" }}>{t("register.success_logging_in")}</div>
           )}
         </div>
       </div>
@@ -129,88 +163,90 @@ export default function RegisterSupplierPage() {
 
   return (
     <div style={S.wrap}>
+      <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+        <LanguageSwitcher variant="auth" />
+      </div>
       <div style={S.card}>
         {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>
           <FreshMarketLogo variant="dark" size={44} showText={false} />
           <div>
-            <h1 style={S.h1}>Rejestracja dostawcy</h1>
-            <p style={S.sub}>Fresh Market PreConnect</p>
+            <h1 style={S.h1}>{t("register.title")}</h1>
+            <p style={S.sub}>{t("register.subtitle")}</p>
           </div>
         </div>
         <form onSubmit={handleSubmit} style={S.form}>
           <label style={S.label}>
-            Email służbowy *
-            <input type="email" required value={form.email} onChange={(e) => set("email", e.target.value)} style={S.input} placeholder="kontakt@firma.pl" autoComplete="email"/>
+            {t("register.labels.email")}
+            <input type="email" required value={form.email} onChange={(e) => set("email", e.target.value)} style={S.input} placeholder={t("common.email_placeholder_business")} autoComplete="email"/>
           </label>
           <label style={S.label}>
-            Hasło (min. 8 znaków) *
+            {t("register.labels.password")}
             <input type="password" required minLength={8} value={form.password} onChange={(e) => set("password", e.target.value)} style={S.input} autoComplete="new-password"/>
           </label>
           <label style={S.label}>
-            Nazwa firmy *
+            {t("register.labels.company_name")}
             <input type="text" required value={form.company_name} onChange={(e) => set("company_name", e.target.value)} style={S.input}/>
           </label>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <label style={S.label}>
-              Kraj
+              {t("register.labels.country")}
+              {/* [Krok 4] Nazwy krajów po ISO code → label. Lista jest krótka i
+                  tłumaczenia per-locale są bardzo proste — trzymamy w JSX jako
+                  ternary, bo wynoszenie do JSON wymuszałoby 12+ kluczy które
+                  są de facto nazwami własnymi państw. */}
               <select value={form.country} onChange={(e) => set("country", e.target.value)} style={S.input}>
-                <option value="PL">Polska</option>
-                <option value="DE">Niemcy</option>
-                <option value="CZ">Czechy</option>
-                <option value="SK">Słowacja</option>
-                <option value="HU">Węgry</option>
-                <option value="LT">Litwa</option>
-                <option value="UA">Ukraina</option>
-                <option value="ES">Hiszpania</option>
-                <option value="IT">Włochy</option>
-                <option value="NL">Holandia</option>
-                <option value="FR">Francja</option>
-                <option value="RO">Rumunia</option>
+                <option value="PL">{locale === "en" ? "Poland" : "Polska"}</option>
+                <option value="DE">{locale === "en" ? "Germany" : "Niemcy"}</option>
+                <option value="CZ">{locale === "en" ? "Czechia" : "Czechy"}</option>
+                <option value="SK">{locale === "en" ? "Slovakia" : "Słowacja"}</option>
+                <option value="HU">{locale === "en" ? "Hungary" : "Węgry"}</option>
+                <option value="LT">{locale === "en" ? "Lithuania" : "Litwa"}</option>
+                <option value="UA">{locale === "en" ? "Ukraine" : "Ukraina"}</option>
+                <option value="ES">{locale === "en" ? "Spain" : "Hiszpania"}</option>
+                <option value="IT">{locale === "en" ? "Italy" : "Włochy"}</option>
+                <option value="NL">{locale === "en" ? "Netherlands" : "Holandia"}</option>
+                <option value="FR">{locale === "en" ? "France" : "Francja"}</option>
+                <option value="RO">{locale === "en" ? "Romania" : "Rumunia"}</option>
               </select>
             </label>
             <label style={S.label}>
-              NIP / VAT
+              {t("register.labels.nip")}
               <input type="text" value={form.nip} onChange={(e) => set("nip", e.target.value)} style={S.input}/>
             </label>
           </div>
           <label style={S.label}>
-            Imię i nazwisko (osoba kontaktowa)
+            {t("register.labels.contact_name")}
             <input type="text" value={form.contact_name} onChange={(e) => set("contact_name", e.target.value)} style={S.input}/>
           </label>
           <label style={S.label}>
-            Telefon kontaktowy
+            {t("register.labels.contact_phone")}
             <input type="tel" value={form.contact_phone} onChange={(e) => set("contact_phone", e.target.value)} style={S.input}/>
           </label>
 
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#475569", lineHeight: 1.5, cursor: "pointer" }}>
             <input type="checkbox" checked={form.accept} onChange={(e) => set("accept", e.target.checked)} style={{ marginTop: 3 }}/>
             <span>
-              Akceptuję{" "}
-              <a href="/regulamin" target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600 }}>Regulamin</a>
-              {" "}oraz{" "}
-              <a href="/polityka-prywatnosci" target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600 }}>Politykę Prywatności</a>.
-              Rozumiem, że konto trafia do <strong>weryfikacji administratora</strong>.
-              Do czasu zatwierdzenia mogę zalogować się i uzupełnić profil, ale nie wysyłam ofert
-              do sieci ani nie biorę udziału w Spotkaniach B2B.
+              {t("register.consent_accept_intro")}
+              <a href={termsHref} target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600 }}>{t("register.consent_terms")}</a>
+              {t("register.consent_and")}
+              <a href={privacyHref} target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600 }}>{t("register.consent_privacy")}</a>
+              .
+              {" "}
+              <Trans i18nKey="register.consent_process_understanding" ns="auth" components={{ strong: <strong /> }} />
               <br/><br/>
-              Moje dane będą widoczne dla <strong>kupców z sieci handlowych i dystrybutorów</strong> wyłącznie
-              w zakresie, w jakim sam wyślę im propozycję, wybiorę ich w ramach Spotkań B2B
-              albo zostanę z nimi dopasowany w ramach zaakceptowanej procedury FM B2B.
-              Operator <strong>nie udostępnia danych innym odbiorcom w celach marketingowych</strong>;
-              dane mogą być przetwarzane przez <strong>dostawców technicznych działających na zlecenie
-              Operatora</strong> (lista w Polityce Prywatności).
+              <Trans i18nKey="register.consent_data_visibility" ns="auth" components={{ strong: <strong /> }} />
             </span>
           </label>
 
           {err && <div style={S.err}>{err}</div>}
 
           <button type="submit" disabled={busy} style={S.btn}>
-            {busy ? "Rejestrowanie…" : "Załóż konto dostawcy"}
+            {busy ? t("register.submitting") : t("register.submit_button")}
           </button>
         </form>
         <div style={S.footer}>
-          Masz już konto? <Link to="/login" style={S.link}>Zaloguj się</Link>
+          {t("register.already_have_account")} <Link to="/login" style={S.link}>{t("register.sign_in_link")}</Link>
         </div>
       </div>
     </div>

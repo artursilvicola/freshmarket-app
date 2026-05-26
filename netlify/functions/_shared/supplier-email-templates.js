@@ -17,19 +17,40 @@
  *   G. offer_expired            — oferta wygasła (14 dni bez odczytu)
  */
 
-const FOOTER = (appUrl) => `
+// [B2B Round prod-rollout / i18n MVP — Krok 6]
+// Wybór języka maili transakcyjnych. Hierarchia (zgodnie z planem):
+//   1) payload.locale (z body request /register-supplier-self albo z
+//      backendu który już wie locale usera — najwyższy priorytet),
+//   2) user_metadata.locale jeśli kiedyś dorzucimy do wywołania,
+//   3) profiles.locale jeśli wywołujący backend już dołączy do payloadu,
+//   4) fallback 'pl'.
+// Funkcja po prostu normalizuje string do supported locales — nie sięga
+// do DB, bo render template'a jest synchroniczny i lekki.
+const SUPPORTED_TPL_LOCALES = ["pl", "en"];
+function pickLocale(input) {
+  if (!input) return "pl";
+  const raw = String(input).trim().toLowerCase().split(/[-_]/)[0];
+  return SUPPORTED_TPL_LOCALES.includes(raw) ? raw : "pl";
+}
+
+const FOOTER = (appUrl, locale = "pl") => {
+  const addressLine = locale === "en"
+    ? "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Poland"
+    : "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska";
+  return `
 <tr><td style="background:#0f172a;padding:18px 28px;text-align:center;">
   <div style="color:rgba(255,255,255,0.92);font-weight:700;font-size:13px;margin-bottom:4px;">Fresh Market PreConnect</div>
   <div style="color:rgba(255,255,255,0.45);font-size:11px;line-height:1.7;">
-    KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska<br>
+    ${addressLine}<br>
     <a href="${esc(appUrl)}" style="color:rgba(255,255,255,0.7);text-decoration:none;">freshmarket.eu</a> ·
     <a href="mailto:newsletter@freshmarket.eu" style="color:rgba(255,255,255,0.7);text-decoration:none;">newsletter@freshmarket.eu</a>
   </div>
 </td></tr>`;
+};
 
-function shell({ title, accent = "#0d9488", body, appUrl }) {
+function shell({ title, accent = "#0d9488", body, appUrl, locale = "pl" }) {
   return `<!DOCTYPE html>
-<html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head>
+<html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title></head>
 <body style="margin:0;padding:0;background:#ececec;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ececec;padding:24px 12px;">
   <tr><td align="center">
@@ -38,7 +59,7 @@ function shell({ title, accent = "#0d9488", body, appUrl }) {
         <div style="color:white;font-weight:800;font-size:20px;letter-spacing:-0.4px;">Fresh Market <span style="color:rgba(255,255,255,0.6);font-weight:600;font-size:12px;">PreConnect</span></div>
       </td></tr>
       ${body}
-      ${FOOTER(appUrl)}
+      ${FOOTER(appUrl, locale)}
     </table>
   </td></tr>
 </table>
@@ -56,7 +77,20 @@ function ctaButton(label, url, color = "#0d9488") {
 }
 
 // ── A. Registration accepted ──────────────────────────────────────────────
-export function tplRegistrationAccepted({ companyName, contactName, appUrl }) {
+// [B2B Round prod-rollout / i18n MVP — Krok 6]
+// Welcome mail po self-registration dostawcy. Locale-aware: dispatch
+// na pl/en po payload.locale (z register-supplier-self.js, który czyta
+// z body request po Kroku 3b). Fallback do 'pl' gdy locale brak / inny.
+//
+// Treść EN zgodna z terminologią v1.1: Submission (nie Shipment),
+// Retailer (nie Network), Admin review (nie Administrator).
+export function tplRegistrationAccepted({ companyName, contactName, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplRegistrationAcceptedEN({ companyName, contactName, appUrl });
+  return tplRegistrationAcceptedPL({ companyName, contactName, appUrl });
+}
+
+function tplRegistrationAcceptedPL({ companyName, contactName, appUrl }) {
   const subject = "Fresh Market – otrzymaliśmy zgłoszenie rejestracyjne";
   const greet = contactName ? `Dzień dobry ${esc(contactName)},` : "Dzień dobry,";
   const body = `
@@ -71,7 +105,25 @@ export function tplRegistrationAccepted({ companyName, contactName, appUrl }) {
   </ul>
   ${ctaButton("Otwórz panel dostawcy", `${appUrl}/dostawca`)}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, body, appUrl }) };
+  return { subject, html: shell({ title: subject, body, appUrl, locale: "pl" }) };
+}
+
+function tplRegistrationAcceptedEN({ companyName, contactName, appUrl }) {
+  const subject = "Fresh Market – we received your registration";
+  const greet = contactName ? `Hello ${esc(contactName)},` : "Hello,";
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock(greet)}
+  ${pBlock(`thank you for registering <strong>${esc(companyName)}</strong> on the Fresh Market PreConnect platform.`)}
+  ${pBlock("Your account has been created and is awaiting <strong>admin approval</strong>. In the meantime you can sign in to the panel and complete your company profile: basic details, logo, certificates, description. The more complete the profile, the faster the approval decision.")}
+  ${pBlock("Once your account is approved you will receive a separate email and we will unlock:")}
+  <ul style="color:#334155;font-size:14px;line-height:1.7;padding-left:18px;margin:0 0 10px;">
+    <li>access to PreConnect — submissions to retailers,</li>
+    <li>access to Fresh Market 2026 B2B Meetings (activated individually).</li>
+  </ul>
+  ${ctaButton("Open supplier panel", `${appUrl}/dostawca`)}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, body, appUrl, locale: "en" }) };
 }
 
 // ── B. Account activated ──────────────────────────────────────────────────

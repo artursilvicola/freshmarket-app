@@ -1,6 +1,6 @@
 # Słownik terminologii Fresh Market B2B — PL → EN
 
-**Status:** Draft do akceptacji (przed startem prac i18n)
+**Status:** ✅ **Accepted v1.1 for i18n implementation** (zaakceptowane 25 maja 2026 przez Artur Stasiak + walidacja Codex)
 **Cel:** ustalenie standardu terminologii ZANIM ruszymy kod. Po akceptacji ten plik jest źródłem prawdy dla wszystkich tłumaczeń (UI, maile, dokumenty legal).
 
 **Zasady:**

@@ -1,8 +1,10 @@
 import { useEffect, useState, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation, Trans } from "react-i18next";
 import { useAuth } from "./AuthProvider";
 import { getPayuOrderByExt } from "../lib/db";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 /**
  * PurchaseReturnPage — landing po powrocie z PayU.
@@ -20,6 +22,8 @@ export default function PurchaseReturnPage() {
   const [params] = useSearchParams();
   const ext = params.get("ext");
   const { user, role, loading: authLoading } = useAuth();
+  // [B2B Round prod-rollout / i18n MVP — Krok 4]
+  const { t } = useTranslation("auth");
   const [state, setState] = useState({ status: "loading", order: null, err: null });
   const stopRef = useRef(false);
 
@@ -35,7 +39,7 @@ export default function PurchaseReturnPage() {
       return;
     }
     if (!ext) {
-      setState({ status: "error", order: null, err: "Brak parametru ext w URL." });
+      setState({ status: "error", order: null, err: t("purchase_return.error_missing_ext") });
       return;
     }
 
@@ -49,7 +53,7 @@ export default function PurchaseReturnPage() {
         const order = await getPayuOrderByExt(ext);
         if (stopRef.current) return;
         if (!order) {
-          setState({ status: "error", order: null, err: "Zamówienie nie znalezione." });
+          setState({ status: "error", order: null, err: t("purchase_return.error_order_not_found") });
           return;
         }
         if (order.status !== "pending" && order.status !== "created") {
@@ -64,41 +68,40 @@ export default function PurchaseReturnPage() {
         setTimeout(tick, POLL_MS);
       } catch (e) {
         if (stopRef.current) return;
-        setState({ status: "error", order: null, err: e?.message || "Błąd pobierania statusu." });
+        setState({ status: "error", order: null, err: e?.message || t("purchase_return.error_status_fetch") });
       }
     }
     tick();
-  }, [ext, user, authLoading, navigate]);
+    // [Krok 4] t jest stabilną referencją per-render i18next, więc include
+    // w dep array zgodnie z react-hooks/exhaustive-deps.
+  }, [ext, user, authLoading, navigate, t]);
 
   // ── Renderery ───────────────────────────────────────────────────────
   const homeLink = role === "admin" ? "/admin" : role === "buyer" ? "/kupiec" : "/dostawca";
 
   if (state.status === "loading" || authLoading) {
     return (
-      <Layout title="Sprawdzamy płatność…" sub="Łączymy się z PayU.">
+      <Layout title={t("purchase_return.loading_title")} sub={t("purchase_return.loading_subtitle")}>
         <div style={S.spinner}>⏳</div>
-        <p style={S.muted}>To może chwilę potrwać.</p>
+        <p style={S.muted}>{t("purchase_return.loading_hint")}</p>
       </Layout>
     );
   }
 
   if (state.status === "error") {
     return (
-      <Layout title="Wystąpił błąd" sub="Nie udało się sprawdzić statusu płatności.">
+      <Layout title={t("purchase_return.error_title")} sub={t("purchase_return.error_subtitle")}>
         <div style={S.errBox}>{state.err}</div>
-        <Link to={homeLink} style={S.btn}>Wróć do panelu</Link>
+        <Link to={homeLink} style={S.btn}>{t("purchase_return.back_to_panel")}</Link>
       </Layout>
     );
   }
 
   if (state.status === "timeout") {
     return (
-      <Layout title="Płatność w toku" sub="PayU jeszcze nie potwierdził transakcji.">
-        <p style={S.muted}>
-          To czasem trwa kilka minut (zwłaszcza przelewy bankowe). Sprawdź panel za chwilę —
-          pakiet zostanie aktywowany automatycznie po potwierdzeniu od PayU.
-        </p>
-        <Link to={homeLink} style={S.btn}>Wróć do panelu</Link>
+      <Layout title={t("purchase_return.timeout_title")} sub={t("purchase_return.timeout_subtitle")}>
+        <p style={S.muted}>{t("purchase_return.timeout_hint")}</p>
+        <Link to={homeLink} style={S.btn}>{t("purchase_return.back_to_panel")}</Link>
       </Layout>
     );
   }
@@ -107,42 +110,53 @@ export default function PurchaseReturnPage() {
   const order = state.order;
   if (order.status === "completed") {
     return (
-      <Layout title="Pakiet aktywny ✓" sub="Płatność zaksięgowana.">
+      <Layout title={t("purchase_return.completed_title")} sub={t("purchase_return.completed_subtitle")}>
         <p style={S.success}>
-          Twój pakiet <strong>{order.plan_id}</strong> został aktywowany. Wysyłki dostępne od zaraz.
+          {/* [Krok 4] Trans bo wewnątrz <strong>{{plan}}</strong> mieszane HTML+interpolacja */}
+          <Trans
+            i18nKey="purchase_return.completed_message"
+            ns="auth"
+            values={{ plan: order.plan_id }}
+            components={{ strong: <strong /> }}
+          />
         </p>
-        <p style={S.muted}>Kwota: {Number(order.price_eur).toFixed(2)} {order.currency}</p>
-        <Link to={homeLink} style={S.btn}>Przejdź do panelu</Link>
+        <p style={S.muted}>
+          {t("purchase_return.completed_amount", {
+            amount: Number(order.price_eur).toFixed(2),
+            currency: order.currency,
+          })}
+        </p>
+        <Link to={homeLink} style={S.btn}>{t("purchase_return.go_to_panel")}</Link>
       </Layout>
     );
   }
 
   if (order.status === "canceled") {
     return (
-      <Layout title="Płatność anulowana" sub="Nie pobrano środków.">
-        <p style={S.muted}>Zamówienie zostało anulowane przed potwierdzeniem płatności.</p>
-        <Link to={homeLink} style={S.btn}>Wróć do panelu</Link>
+      <Layout title={t("purchase_return.canceled_title")} sub={t("purchase_return.canceled_subtitle")}>
+        <p style={S.muted}>{t("purchase_return.canceled_message")}</p>
+        <Link to={homeLink} style={S.btn}>{t("purchase_return.back_to_panel")}</Link>
       </Layout>
     );
   }
 
   if (order.status === "rejected" || order.status === "failed") {
     return (
-      <Layout title="Płatność odrzucona" sub="Transakcja nie została zrealizowana.">
+      <Layout title={t("purchase_return.rejected_title")} sub={t("purchase_return.rejected_subtitle")}>
         <p style={S.muted}>
           {order.failure_reason
-            ? `Powód: ${order.failure_reason}`
-            : "Bank lub PayU odrzucił płatność. Spróbuj ponownie lub wybierz inną metodę."}
+            ? t("purchase_return.rejected_reason", { reason: order.failure_reason })
+            : t("purchase_return.rejected_default")}
         </p>
-        <Link to={homeLink} style={S.btn}>Wróć do panelu</Link>
+        <Link to={homeLink} style={S.btn}>{t("purchase_return.back_to_panel")}</Link>
       </Layout>
     );
   }
 
   // Fallback
   return (
-    <Layout title={`Status: ${order.status}`} sub="">
-      <Link to={homeLink} style={S.btn}>Wróć do panelu</Link>
+    <Layout title={t("purchase_return.status_fallback", { status: order.status })} sub="">
+      <Link to={homeLink} style={S.btn}>{t("purchase_return.back_to_panel")}</Link>
     </Layout>
   );
 }
@@ -150,6 +164,9 @@ export default function PurchaseReturnPage() {
 function Layout({ title, sub, children }) {
   return (
     <div style={S.wrap}>
+      <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+        <LanguageSwitcher variant="auth" />
+      </div>
       <div style={S.card}>
         {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>

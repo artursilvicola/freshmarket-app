@@ -5,11 +5,16 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import FreshMarketLogo from "../components/FreshMarketLogo";
+import LanguageSwitcher from "../components/LanguageSwitcher";
 
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
+  // [B2B Round prod-rollout / i18n MVP — Krok 4]
+  const { t } = useTranslation("auth");
+
   const [pwd, setPwd] = useState("");
   const [cf, setCf] = useState("");
   const [show, setShow] = useState(false);
@@ -39,21 +44,21 @@ export default function ResetPasswordPage() {
     setErr(null);
     setMsg(null);
     if (!pwd || pwd.length < 8) {
-      setErr("Hasło musi mieć minimum 8 znaków.");
+      setErr(t("reset_password.password_too_short"));
       return;
     }
     if (pwd !== cf) {
-      setErr("Hasła nie są takie same.");
+      setErr(t("reset_password.passwords_dont_match"));
       return;
     }
     try {
       setBusy(true);
       const { error } = await supabase.auth.updateUser({ password: pwd });
       if (error) throw error;
-      setMsg("Hasło zmienione. Przekierowuję do panelu...");
+      setMsg(t("reset_password.success_redirect"));
       setTimeout(() => navigate("/", { replace: true }), 1500);
     } catch (e) {
-      setErr(e?.message || "Nie udało się zmienić hasła.");
+      setErr(e?.message || t("reset_password.default_error"));
     } finally {
       setBusy(false);
     }
@@ -61,27 +66,30 @@ export default function ResetPasswordPage() {
 
   return (
     <div style={S.wrap}>
+      <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+        <LanguageSwitcher variant="auth" />
+      </div>
       <div style={S.card}>
         {/* [B2B Round prod-rollout / branding] Brand logo zamiast placeholdera FM */}
         <div style={S.brand}>
           <FreshMarketLogo variant="dark" size={44} showText={false} />
           <div>
-            <h1 style={S.h1}>Reset hasła</h1>
-            <p style={S.sub}>Ustaw nowe hasło do swojego konta</p>
+            <h1 style={S.h1}>{t("reset_password.title")}</h1>
+            <p style={S.sub}>{t("reset_password.subtitle")}</p>
           </div>
         </div>
 
         {!ready ? (
           <div style={S.info}>
-            Weryfikuję link resetu... Jeśli to trwa dłużej niż 5 sekund, link może być nieprawidłowy lub wygasł.
+            {t("reset_password.verifying")}
             <div style={{ marginTop: 12 }}>
-              <a href="/login" style={S.link}>Wróć do logowania</a>
+              <a href="/login" style={S.link}>{t("reset_password.back_to_login")}</a>
             </div>
           </div>
         ) : (
           <form onSubmit={submit} style={S.form}>
             <label style={S.label}>
-              Nowe hasło (min 8 znaków)
+              {t("reset_password.new_password_label")}
               <div style={{ position: "relative" }}>
                 <input
                   type={show ? "text" : "password"}
@@ -95,15 +103,15 @@ export default function ResetPasswordPage() {
                   type="button"
                   onClick={() => setShow(!show)}
                   style={S.showBtn}
-                  title={show ? "Ukryj" : "Pokaż"}
+                  title={show ? t("reset_password.hide_title") : t("reset_password.show_title")}
                 >
-                  {show ? "ukryj" : "pokaż"}
+                  {show ? t("reset_password.hide") : t("reset_password.show")}
                 </button>
               </div>
             </label>
 
             <label style={S.label}>
-              Powtórz hasło
+              {t("reset_password.repeat_password_label")}
               <input
                 type={show ? "text" : "password"}
                 required
@@ -118,7 +126,7 @@ export default function ResetPasswordPage() {
             {msg && <div style={S.ok}>{msg}</div>}
 
             <button type="submit" disabled={busy} style={S.btn}>
-              {busy ? "Ustawianie..." : "Ustaw nowe hasło"}
+              {busy ? t("reset_password.submitting") : t("reset_password.submit_button")}
             </button>
           </form>
         )}

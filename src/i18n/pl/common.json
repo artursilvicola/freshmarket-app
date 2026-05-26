@@ -1,0 +1,46 @@
+{
+  "_meta": {
+    "language": "Polski",
+    "language_code": "pl",
+    "_note": "Krok 1: minimalna struktura. Klucze dodawane sukcesywnie w kolejnych krokach P0/P1/P2."
+  },
+  "actions": {
+    "add": "Dodaj",
+    "edit": "Edytuj",
+    "save": "Zapisz",
+    "save_changes": "Zapisz zmiany",
+    "cancel": "Anuluj",
+    "delete": "Usuń",
+    "confirm": "Potwierdź",
+    "send": "Wyślij",
+    "submit": "Wyślij",
+    "download": "Pobierz",
+    "upload": "Wgraj",
+    "back": "Wstecz",
+    "next": "Dalej",
+    "done": "Gotowe",
+    "close": "Zamknij",
+    "open": "Otwórz",
+    "yes": "Tak",
+    "no": "Nie"
+  },
+  "status": {
+    "success": "Sukces",
+    "error": "Błąd",
+    "warning": "Ostrzeżenie",
+    "info": "Informacja",
+    "loading": "Ładowanie…",
+    "saved": "Zapisano",
+    "copied": "Skopiowano",
+    "no_data": "Brak danych",
+    "no_results": "Brak wyników",
+    "required": "Wymagane",
+    "optional": "Opcjonalne"
+  },
+  "footer": {
+    "terms": "Regulamin",
+    "privacy": "Polityka Prywatności",
+    "contact": "Kontakt",
+    "copyright": "© {{year}} <bold>Fresh Market</bold> · KJOW Sp. z o.o."
+  }
+}
