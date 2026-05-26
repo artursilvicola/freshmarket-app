@@ -57,9 +57,11 @@ import FreshMarketLogo from "../components/FreshMarketLogo";
 // gdy wołamy /.netlify/functions/notify-supplier-read z auth tokenem.
 import { supabase } from "../lib/supabase";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
-// W tym kroku UŻYWANY TYLKO w fmtPolishDate poniżej; kolejne branche P2-N
-// będą używać i18n / useTranslation w widokach Page* zgodnie z planem.
+// W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
+// kolejne branche P2-N będą używać i18n / useTranslation w widokach Page*
+// zgodnie z planem.
 import i18n from "../i18n";
+import { useTranslation } from "react-i18next";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -1535,6 +1537,13 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
 
 
 export default function App({ initialRole = "supplier", currentUser = null } = {}) {
+  // [Krok P2-1 i18n MVP] Subskrybujemy legacy root na zmianę języka,
+  // żeby date helpers (fmtPolishDate, NextWindowCard, ActivityCard) i
+  // przyszłe konsumenty t() w widokach Page* odświeżały się natychmiast
+  // po kliknięciu PL/EN w LanguageSwitcher. W tym kroku NIE używamy t()
+  // w dużych widokach — subskrypcja jest tylko mechanizmem re-render.
+  useTranslation("legacy");
+
   // lockedRole: jeśli ustawiony, ukrywamy switcher i blokujemy przełączanie
   // (admin może swobodnie udawać innych userów; dostawca/kupiec - nie)
   const lockedRole = initialRole !== "admin" ? initialRole : null;
@@ -3300,17 +3309,14 @@ const PL_MONTHS = ["stycznia","lutego","marca","kwietnia","maja","czerwca","lipc
 const PL_MONTHS_SHORT = ["sty","lut","mar","kwi","maj","cze","lip","sie","wrz","paź","lis","gru"];
 // [Krok P2-1 i18n MVP] Tablice EN obok PL — BINDING decyzja Codexa:
 // in-place w PreconnectFM.jsx, BEZ Intl.DateTimeFormat, BEZ nowego modułu.
-// "may" / "Jan" itd. małymi literami zachowują polski styl ciągłego zdania
-// "Wednesday, 26 may 2026" — w EN miesiąc zwyczajowo wielką literą, ale
-// żeby nie zmieniać zachowania (gdyby cytat fmt'a był sklejony z innym
-// tekstem), trzymamy lowercase. Konsumenci mogą capitalizować jeśli trzeba.
+// EN months and days are capitalized (standard English convention).
+// Format stays the same shape as PL — "Wednesday, 26 May 2026".
 const EN_DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const EN_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const EN_MONTHS_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 // fmtPolishDate zostaje pod tą nazwą (callerzy nie ruszamy w P2-1), ale
 // wewnętrznie dispatchuje tablicę po aktualnym i18n.language. Dla locale 'pl'
 // (default + fallback) zachowuje obecne zachowanie PL bez regresji.
-// Dla 'en' zwraca format "Wednesday, 26 May 2026" — w EN miesiąc wielką literą.
 function fmtPolishDate(d) {
   const isEn = i18n.language === "en";
   const days = isEn ? EN_DAYS : PL_DAYS;
@@ -3598,14 +3604,20 @@ function PkgCard({ pkgMax, pkgUsed, rem, nav, placeholder }) {
 }
 
 function NextWindowCard({ window: w, days, nav, dim }) {
-  const dayName = PL_DAYS[w.getDay()];
+  // [Krok P2-1] Dispatch po locale — in-place. PL/EN tablice są obok siebie
+  // (linie ~3294-3306). Tekst "Najbliższe okno wysyłki" / "za X dni" zostaje
+  // PL w tym kroku — tłumaczenie widoków supplier dashboard zaplanowane w P2-3.
+  const isEn = i18n.language === "en";
+  const days_ = isEn ? EN_DAYS : PL_DAYS;
+  const months_ = isEn ? EN_MONTHS : PL_MONTHS;
+  const dayName = days_[w.getDay()];
   return (
     <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
       <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b", marginBottom:10 }}>Najbliższe okno wysyłki</div>
       <div style={{ display:"flex", alignItems:"center", gap:12 }}>
         <div>
           <div style={{ fontSize:17, fontWeight:700, color: dim ? "#94a3b8" : "#0f172a", letterSpacing:"-0.01em", lineHeight:1.15 }}>
-            {dayName}, {w.getDate()} {PL_MONTHS[w.getMonth()]} {w.getFullYear()}
+            {dayName}, {w.getDate()} {months_[w.getMonth()]} {w.getFullYear()}
           </div>
           <div style={{ fontSize:11.5, color: dim ? "#94a3b8" : "#059669", fontWeight:600, marginTop:2 }}>za {days} {pluralDni(days)}</div>
         </div>
@@ -3650,6 +3662,8 @@ function KpiRow({ waiting, seen, expired, ratePct, placeholder }) {
 function ActivityCard({ events }) {
   function relTime(ts) {
     const diff = Date.now() - ts;
+    // [Krok P2-1] Teksty "przed chwilą" / "godz. temu" / "dni temu"
+    // zostają PL — tłumaczenie tych krótkich wyrażeń względnych w P2-3.
     if (diff < 60 * 60 * 1000) return "przed chwilą";
     if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / (60*60*1000))} godz. temu`;
     if (diff < 7 * 24 * 60 * 60 * 1000) {
@@ -3657,7 +3671,9 @@ function ActivityCard({ events }) {
       return `${n} ${pluralDni(n)} temu`;
     }
     const d = new Date(ts);
-    return `${d.getDate()} ${PL_MONTHS_SHORT[d.getMonth()]}`;
+    // [Krok P2-1] Format "26 maj" / "26 May" — dispatch po locale, in-place.
+    const months_ = i18n.language === "en" ? EN_MONTHS_SHORT : PL_MONTHS_SHORT;
+    return `${d.getDate()} ${months_[d.getMonth()]}`;
   }
   return (
     <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
