@@ -4299,6 +4299,7 @@ function materialIsPdf(url) {
 }
 
 function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers }) {
+  const { t } = useTranslation("legacy");
   const [c,setC]=useState({...co, contacts:Array.isArray(co.contacts)?co.contacts:[]}); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
   const u = (k, v) => setC(prev => ({ ...prev, [k]: v }));
   // Pomocnik do edycji zagnieżdżonych pól w profile_data.
@@ -4322,7 +4323,8 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
   const materials = Array.isArray(pd.materials) ? pd.materials : [];
   const supplierPitch = typeof pd.supplier_pitch === "string" ? pd.supplier_pitch : "";
 
-  const contactRoles = [["sales","Handlowy"],["quality","Jakościowy"],["logistics","Logistyka"],["management","Zarząd"],["other","Inny"]];
+  // [P2-5 i18n] Klucze stałe — labelki przepuszczamy przez t() w call site.
+  const contactRoles = [["sales", t("supplier.company.contacts.role_options.sales")], ["quality", t("supplier.company.contacts.role_options.quality")], ["logistics", t("supplier.company.contacts.role_options.logistics")], ["management", t("supplier.company.contacts.role_options.management")], ["other", t("supplier.company.contacts.role_options.other")]];
   const normalizeContacts=(list=[]) => (Array.isArray(list)?list:[])
     .map((ct,i)=>({
       ...ct,
@@ -4373,7 +4375,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
   const updateContact=(i,patch)=>u("contacts",contacts.map((ct,idx)=>idx===i?{...ct,...patch}:ct));
   const removeContact=(i)=>u("contacts",contacts.filter((_,idx)=>idx!==i));
   const saveProfile=async()=>{
-    if(!c.logo){fl("Wgraj logo firmy.","warning");return;}
+    if(!c.logo){fl(t("supplier.company.toasts.logo_required"),"warning");return;}
     const nextContacts = normalizeContacts(contacts);
     const id = c.id || companyId;
     const next = {
@@ -4408,9 +4410,12 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
       const savedContacts = id ? await dbSaveCompanyContacts(id, nextContacts) : nextContacts;
       const savedProfile = {...next, contacts:savedContacts, completeness:calcCompleteness({...next, contacts:savedContacts})};
       setCo(savedProfile);
-      fl("Profil zapisany.");
+      fl(t("supplier.company.toasts.saved"));
     } catch(e) {
-      fl(`Nie udało się zapisać kontaktów: ${e?.message || e}`,"error");
+      // [P2-5 i18n] Raw e.message z dbSaveCompanyContacts/dbUpdateCompany —
+      // saveCompanyContacts już bilingual (P2-5 errors.db.company_id_required),
+      // updateCompany przepuszcza raw Supabase error (passthrough → P2-11).
+      fl(t("supplier.company.toasts.contacts_error_format", { message: e?.message || e }),"error");
     } finally {
       setSaving(false);
     }
@@ -4422,21 +4427,21 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
       <div style={{ background:"#eff6ff",border:"1px solid #93c5fd",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",gap:10,alignItems:"flex-start" }}>
         <Bot size={18} color="#3b82f6" style={{ flexShrink:0,marginTop:1 }}/>
         <div style={{ flex:1,fontSize:13,color:"#1e40af" }}>
-          <strong>AI Auto-fill</strong> — AI wygeneruje krótki i standardowy opis firmy na podstawie Twoich danych, materiałów i strony WWW. Im więcej uzupełnisz pól poniżej (zaplecze, rynki, certyfikaty), tym bogatszy będzie profil.
+          <strong>{t("supplier.company.ai_banner.strong")}</strong>{t("supplier.company.ai_banner.body")}
         </div>
         <div style={{ display:"flex",gap:6 }}>
-          <Btn sm onClick={()=>setAiModal(true)} style={{ background:"#3b82f6",color:"white",border:"none" }}><Sparkles size={12}/> Generuj AI</Btn>
-          <Btn sm outline onClick={()=>setShowPreview(true)}><Eye size={12}/> Podgląd</Btn>
+          <Btn sm onClick={()=>setAiModal(true)} style={{ background:"#3b82f6",color:"white",border:"none" }}><Sparkles size={12}/> {t("supplier.company.ai_banner.generate_btn")}</Btn>
+          <Btn sm outline onClick={()=>setShowPreview(true)}><Eye size={12}/> {t("supplier.company.ai_banner.preview_btn")}</Btn>
         </div>
       </div>
-      {aiModal&&<div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={()=>!aiLoad&&setAiModal(false)}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:14,padding:24,maxWidth:420,width:"90%" }}><h3 style={{ marginBottom:14 }}>AI Auto-fill</h3><div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>AI wykorzysta dane firmy z profilu, profil rozszerzony i treść Twojej strony, aby zaproponować dwa opisy: krótki (do podglądu) i standardowy (główny opis profilu).</div><Inp label="Strona WWW" value={c.website} onChange={e=>u("website",e.target.value)}/>{aiLoad&&<Alrt type="success"><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> Analizuję stronę i przygotowuję opisy...</Alrt>}<div style={{ display:"flex",gap:8 }}><Btn primary onClick={()=>void runAI(c, patch => setC(prev=>({ ...prev, ...patch })))} disabled={aiLoad} full style={{ background:"#3b82f6" }}>Generuj</Btn><Btn outline onClick={()=>setAiModal(false)} disabled={aiLoad}>Anuluj</Btn></div></div></div>}
+      {aiModal&&<div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={()=>!aiLoad&&setAiModal(false)}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:14,padding:24,maxWidth:420,width:"90%" }}><h3 style={{ marginBottom:14 }}>{t("supplier.company.ai_modal.title")}</h3><div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>{t("supplier.company.ai_modal.description")}</div><Inp label={t("supplier.company.ai_modal.website_label")} value={c.website} onChange={e=>u("website",e.target.value)}/>{aiLoad&&<Alrt type="success"><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.company.ai_modal.analyzing")}</Alrt>}<div style={{ display:"flex",gap:8 }}><Btn primary onClick={()=>void runAI(c, patch => setC(prev=>({ ...prev, ...patch })))} disabled={aiLoad} full style={{ background:"#3b82f6" }}>{t("supplier.company.ai_modal.generate_btn")}</Btn><Btn outline onClick={()=>setAiModal(false)} disabled={aiLoad}>{t("supplier.company.ai_modal.cancel")}</Btn></div></div></div>}
       {/* Completeness */}
       <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 16px",marginBottom:14 }}>
-        <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}><span>Kompletność profilu</span><span style={{ fontWeight:700,color:completeness>=80?"#059669":"#d97706" }}>{completeness}%</span></div>
+        <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}><span>{t("supplier.company.completeness_label")}</span><span style={{ fontWeight:700,color:completeness>=80?"#059669":"#d97706" }}>{completeness}%</span></div>
         <div style={{ background:"#e2e8f0",borderRadius:3,height:5,overflow:"hidden" }}><div style={{ height:"100%",background:completeness>=80?"#059669":"#d97706",borderRadius:3,width:`${completeness}%` }}/></div>
       </div>
       {/* Logo */}
-      <Card title="Logo" icon={Award}>
+      <Card title={t("supplier.company.logo.card_title")} icon={Award}>
         <div style={{ display:"flex",gap:14,alignItems:"flex-start" }}>
           <div style={{ width:76,height:76,borderRadius:10,border:`2px dashed ${c.logo?"#0d9488":"#dc2626"}`,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:c.logo?"white":"#fef2f2" }}>{c.logo?<img src={c.logo} alt="" style={{ width:"100%",height:"100%",objectFit:"contain" }}/>:<Building2 size={24} color="#dc2626"/>}</div>
           <div style={{ flex:1 }}>
@@ -4446,105 +4451,124 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
               value={c.logo || null}
               onChange={(newUrl) => u("logo", newUrl)}
               multi={false}
-              label={c.logo ? "Kliknij aby zmienić logo" : "Kliknij aby wgrać logo firmy"}
+              label={c.logo ? t("supplier.company.logo.upload_change") : t("supplier.company.logo.upload_new")}
             />
-            {!c.logo && <div style={{ fontSize:11,color:"#dc2626",marginTop:6 }}>Wymagane do publikacji</div>}
+            {!c.logo && <div style={{ fontSize:11,color:"#dc2626",marginTop:6 }}>{t("supplier.company.logo.required_for_publish")}</div>}
           </div>
         </div>
       </Card>
-      <Card title="Dane podstawowe" icon={Building2}>
-        <Row><Inp label="Nazwa firmy" required value={c.name} onChange={e=>u("name",e.target.value)}/><Inp label="NIP/VAT" value={c.nip} onChange={e=>u("nip",e.target.value)}/></Row>
-        <Row><Inp label="Kraj" value={c.country} onChange={e=>u("country",e.target.value)}><option value="">—</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</Inp><Inp label="Miasto" value={c.city} onChange={e=>u("city",e.target.value)}/></Row>
-        <Row><Inp label="Strona WWW" value={c.website||""} onChange={e=>u("website",e.target.value)}/><Inp label="Telefon" value={c.phone||""} onChange={e=>u("phone",e.target.value)}/></Row>
+      <Card title={t("supplier.company.basics.card_title")} icon={Building2}>
+        <Row><Inp label={t("supplier.company.basics.name_label")} required value={c.name} onChange={e=>u("name",e.target.value)}/><Inp label={t("supplier.company.basics.nip_label")} value={c.nip} onChange={e=>u("nip",e.target.value)}/></Row>
+        <Row><Inp label={t("supplier.company.basics.country_label")} value={c.country} onChange={e=>u("country",e.target.value)}><option value="">{t("supplier.company.basics.country_dash")}</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</Inp><Inp label={t("supplier.company.basics.city_label")} value={c.city} onChange={e=>u("city",e.target.value)}/></Row>
+        <Row><Inp label={t("supplier.company.basics.website_label")} value={c.website||""} onChange={e=>u("website",e.target.value)}/><Inp label={t("supplier.company.basics.phone_label")} value={c.phone||""} onChange={e=>u("phone",e.target.value)}/></Row>
       </Card>
       {/* Opisy AI — dwa warstwy: krótki (podgląd) + standardowy (główny) */}
-      <Card title="Opis firmy" icon={Bot} actions={
+      <Card title={t("supplier.company.desc.card_title")} icon={Bot} actions={
         true
-          ? <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>Gotowy do wyświetlenia</span>
+          ? <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>{t("supplier.company.desc.ready_badge")}</span>
           : c.ai_review_status === "edited"
-          ? <span style={{ fontSize:11,color:"#0d9488",background:"#ccfbf1",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>Edytowany</span>
-          : <span style={{ fontSize:11,color:"#92400e",background:"#fef3c7",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>Czeka na review</span>
+          ? <span style={{ fontSize:11,color:"#0d9488",background:"#ccfbf1",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>{t("supplier.company.desc.edited_badge")}</span>
+          : <span style={{ fontSize:11,color:"#92400e",background:"#fef3c7",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>{t("supplier.company.desc.review_badge")}</span>
       }>
         <Inp
-          label="Opis krótki (2–3 zdania, ~200–300 znaków)"
+          label={t("supplier.company.desc.short_label")}
           ta
           value={c.description_short || ""}
           onChange={e=>setC(prev=>({ ...prev, description_short:e.target.value, ai_review_status:"edited" }))}
           style={{ minHeight: 56 }}
-          hint="Pokazywany w karcie firmy u kupca i w podglądzie. Nie powtarzaj nazwy firmy — kupiec już ją widzi."
+          hint={t("supplier.company.desc.short_hint")}
         />
         <Inp
-          label="Opis standardowy (4–6 zdań, ~450–700 znaków)"
+          label={t("supplier.company.desc.standard_label")}
           ta
           value={c.description || ""}
           onChange={e=>setC(prev=>({ ...prev, description:e.target.value, ai_review_status:"edited" }))}
-          hint="Główny opis profilu. Generowany przez AI z Twoich danych — możesz go ręcznie poprawić."
+          hint={t("supplier.company.desc.standard_hint")}
         />
       </Card>
-      <Card title="Typ firmy i kategorie" icon={Leaf}>
+      <Card title={t("supplier.company.types.card_title")} icon={Leaf}>
         <div style={{ marginBottom:12 }}>
-          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Typ firmy <span style={{ color:"#94a3b8",fontWeight:400 }}>(widoczne dla kupców)</span></label>
-          <TagToggle items={[["producent","Producent"],["eksporter","Eksporter"],["importer","Importer"],["firma_handlowa","Firma Handlowa"],["pakowalnia","Pakowalnia"],["firma_logistyczna","Firma Logistyczna"],["kooperatywa","Kooperatywa"],["agent","Agent/Broker"]]} active={c.types} onChange={v=>u("types",v)}/>
+          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.company.types.types_label")} <span style={{ color:"#94a3b8",fontWeight:400 }}>{t("supplier.company.types.types_label_note")}</span></label>
+          <TagToggle items={[
+            ["producent", t("supplier.company.types.company_type_options.producent")],
+            ["eksporter", t("supplier.company.types.company_type_options.eksporter")],
+            ["importer", t("supplier.company.types.company_type_options.importer")],
+            ["firma_handlowa", t("supplier.company.types.company_type_options.firma_handlowa")],
+            ["pakowalnia", t("supplier.company.types.company_type_options.pakowalnia")],
+            ["firma_logistyczna", t("supplier.company.types.company_type_options.firma_logistyczna")],
+            ["kooperatywa", t("supplier.company.types.company_type_options.kooperatywa")],
+            ["agent", t("supplier.company.types.company_type_options.agent")],
+          ]} active={c.types} onChange={v=>u("types",v)}/>
         </div>
         <div style={{ marginBottom:12 }}>
-          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Kategorie produktowe</label>
-          <TagToggle items={[["owoce","Owoce"],["warzywa","Warzywa"],["kwiaty","Kwiaty"],["zioła","Zioła"],["inne","Inne"]]} active={c.categories} onChange={v=>u("categories",v)}/>
+          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.company.types.categories_label")}</label>
+          <TagToggle items={[
+            ["owoce", t("supplier.company.types.category_options.owoce")],
+            ["warzywa", t("supplier.company.types.category_options.warzywa")],
+            ["kwiaty", t("supplier.company.types.category_options.kwiaty")],
+            ["zioła", t("supplier.company.types.category_options.ziola")],
+            ["inne", t("supplier.company.types.category_options.inne")],
+          ]} active={c.categories} onChange={v=>u("categories",v)}/>
         </div>
-        <Row><Inp label="Produkty" value={c.products||""} onChange={e=>u("products",e.target.value)}/><Inp label="Rynki sprzedaży" value={c.markets||""} onChange={e=>u("markets",e.target.value)}/></Row>
+        <Row><Inp label={t("supplier.company.types.products_label")} value={c.products||""} onChange={e=>u("products",e.target.value)}/><Inp label={t("supplier.company.types.markets_label")} value={c.markets||""} onChange={e=>u("markets",e.target.value)}/></Row>
       </Card>
       {/* Profil rozszerzony — sekcje opcjonalne, każda dodaje sygnał dla AI */}
-      <Card title="Profil rozszerzony — podstawy" icon={Building2}>
-        <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>Pola opcjonalne. Im więcej wypełnisz, tym bogatszy profil dla kupca.</div>
+      <Card title={t("supplier.company.ext_basics.card_title")} icon={Building2}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>{t("supplier.company.ext_basics.info")}</div>
         <Row>
           <Inp
-            label="Rok założenia"
+            label={t("supplier.company.ext_basics.founded_year_label")}
             type="number"
             value={basics.founded_year || ""}
             onChange={e=>setPd("basics", "founded_year", e.target.value ? parseInt(e.target.value, 10) : null)}
           />
           <Inp
-            label="Liczba pracowników"
+            label={t("supplier.company.ext_basics.employees_label")}
             value={basics.employees || ""}
             onChange={e=>setPd("basics", "employees", e.target.value || null)}
           >
-            {EMPLOYEES_OPTIONS.map(([k,v])=>(<option key={k} value={k}>{v}</option>))}
+            {EMPLOYEES_OPTIONS.map(([k])=>{
+              // [P2-5 i18n] empty key -> "empty" path, "1-10" -> "1_10" etc.
+              const pathKey = k === "" ? "empty" : k.replace(/[-+]/g, m => m === "+" ? "_plus" : "_");
+              return <option key={k} value={k}>{t(`supplier.company.ext_basics.employees_options.${pathKey}`)}</option>;
+            })}
           </Inp>
         </Row>
       </Card>
-      <Card title="Profil rozszerzony — oferta" icon={Tag}>
+      <Card title={t("supplier.company.ext_offer.card_title")} icon={Tag}>
         <Row>
-          <Inp label="Produkty całoroczne" value={offer.products_year_round || ""} onChange={e=>setPd("offer","products_year_round",e.target.value||null)} hint="np. jabłka, gruszki, kapusta"/>
-          <Inp label="Produkty sezonowe" value={offer.products_seasonal || ""} onChange={e=>setPd("offer","products_seasonal",e.target.value||null)} hint="np. truskawki (V–VII), wiśnie (VI–VII)"/>
+          <Inp label={t("supplier.company.ext_offer.year_round_label")} value={offer.products_year_round || ""} onChange={e=>setPd("offer","products_year_round",e.target.value||null)} hint={t("supplier.company.ext_offer.year_round_hint")}/>
+          <Inp label={t("supplier.company.ext_offer.seasonal_label")} value={offer.products_seasonal || ""} onChange={e=>setPd("offer","products_seasonal",e.target.value||null)} hint={t("supplier.company.ext_offer.seasonal_hint")}/>
         </Row>
         <div style={{ marginBottom:12 }}>
-          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Typ obsługiwanych klientów</label>
-          <TagToggle items={CUSTOMER_TYPE_OPTIONS} active={offer.customer_types || []} onChange={v=>setPd("offer","customer_types",v)}/>
+          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.company.ext_offer.customer_types_label")}</label>
+          <TagToggle items={CUSTOMER_TYPE_OPTIONS.map(([k])=>[k, t(`supplier.company.ext_offer.customer_type_options.${k}`)])} active={offer.customer_types || []} onChange={v=>setPd("offer","customer_types",v)}/>
         </div>
         <label style={{ display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer" }}>
           <input type="checkbox" checked={!!offer.private_label} onChange={e=>setPd("offer","private_label",e.target.checked)} />
-          <span>Oferujemy markę własną / private label</span>
+          <span>{t("supplier.company.ext_offer.private_label_toggle")}</span>
         </label>
       </Card>
-      <Card title="Profil rozszerzony — handel i rynki" icon={Send}>
+      <Card title={t("supplier.company.ext_trade.card_title")} icon={Send}>
         <Inp
-          label="Kraje eksportu (kody ISO oddzielone przecinkami)"
+          label={t("supplier.company.ext_trade.export_countries_label")}
           value={exportCountriesText}
           onChange={e=>setPd("trade","export_countries", parseCountryList(e.target.value))}
-          hint="np. DE, CZ, SK, FR, NL"
+          hint={t("supplier.company.ext_trade.export_countries_hint")}
         />
-        <Inp label="Główne rynki (opisowo)" value={trade.main_markets || ""} onChange={e=>setPd("trade","main_markets",e.target.value||null)} hint="np. EU Środkowa, kraje DACH, rynek krajowy"/>
+        <Inp label={t("supplier.company.ext_trade.main_markets_label")} value={trade.main_markets || ""} onChange={e=>setPd("trade","main_markets",e.target.value||null)} hint={t("supplier.company.ext_trade.main_markets_hint")}/>
         <div style={{ marginBottom:12 }}>
-          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>Typ współpracy</label>
-          <TagToggle items={PARTNERSHIP_OPTIONS} active={trade.partnership_types || []} onChange={v=>setPd("trade","partnership_types",v)}/>
+          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.company.ext_trade.partnership_label")}</label>
+          <TagToggle items={PARTNERSHIP_OPTIONS.map(([k])=>[k, t(`supplier.company.ext_trade.partnership_options.${k}`)])} active={trade.partnership_types || []} onChange={v=>setPd("trade","partnership_types",v)}/>
         </div>
-        <Inp label="Typowe wolumeny" value={trade.typical_volumes || ""} onChange={e=>setPd("trade","typical_volumes",e.target.value||null)} hint="np. 10–50 ton tygodniowo, 1–2 TIR-y dziennie"/>
+        <Inp label={t("supplier.company.ext_trade.typical_volumes_label")} value={trade.typical_volumes || ""} onChange={e=>setPd("trade","typical_volumes",e.target.value||null)} hint={t("supplier.company.ext_trade.typical_volumes_hint")}/>
       </Card>
-      <Card title="Profil rozszerzony — zaplecze operacyjne" icon={ShieldCheck}>
-        <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>Zaznacz, czym dysponujesz lub co jesteś w stanie zaoferować.</div>
-        <TagToggle items={CAPABILITY_OPTIONS} active={ops.capabilities || []} onChange={v=>setPd("operations","capabilities",v)}/>
+      <Card title={t("supplier.company.ext_ops.card_title")} icon={ShieldCheck}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>{t("supplier.company.ext_ops.info")}</div>
+        <TagToggle items={CAPABILITY_OPTIONS.map(([k])=>[k, t(`supplier.company.ext_ops.capability_options.${k}`)])} active={ops.capabilities || []} onChange={v=>setPd("operations","capabilities",v)}/>
       </Card>
-      <Card title="Materiały (PDF, katalogi, zdjęcia)" icon={Award}>
-        <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>Wgraj katalog handlowy, broszurę, zdjęcia zakładu / pakowania / produktów. Kupiec zobaczy je w podglądzie profilu.</div>
+      <Card title={t("supplier.company.materials.card_title")} icon={Award}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>{t("supplier.company.materials.info")}</div>
         <SimplePhotoUploader
           bucket="company-materials"
           pathPrefix={c.id || ""}
@@ -4553,7 +4577,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           multi={true}
           max={12}
           accept="image/*,application/pdf"
-          label="Kliknij lub przeciągnij PDF / zdjęcie"
+          label={t("supplier.company.materials.uploader_label")}
         />
         {materials.length > 0 && (
           <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:10 }}>
@@ -4565,46 +4589,46 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           </div>
         )}
       </Card>
-      <Card title="Co chcesz podkreślić kupcowi?" icon={Sparkles}>
+      <Card title={t("supplier.company.pitch.card_title")} icon={Sparkles}>
         <Inp
           ta
           value={supplierPitch}
           onChange={e=>setPdRoot("supplier_pitch", e.target.value)}
-          hint="Wolny tekst — AI uwzględni jako sygnał Twoich priorytetów handlowych. Nie skopiuje dosłownie."
+          hint={t("supplier.company.pitch.hint")}
           style={{ minHeight: 80 }}
         />
       </Card>
-      {(c.certs||[]).length>0&&<Card title="Certyfikaty" icon={ShieldCheck}>{c.certs.map((ct,i)=><div key={i} style={{ display:"flex",gap:10,padding:"8px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:6,fontSize:13,border:"1px solid #bbf7d0" }}><ShieldCheck size={13} color="#059669"/><strong style={{ color:"#0d9488" }}>{ct.type}</strong><span style={{ color:"#64748b" }}>Nr: {ct.number}</span><span style={{ marginLeft:"auto",color:"#059669" }}>do {ct.valid}</span></div>)}</Card>}
-      <Card title="Kontakty" icon={Users} actions={<Btn sm outline onClick={()=>addContact()}><Plus size={12}/> Dodaj kontakt</Btn>}>
+      {(c.certs||[]).length>0&&<Card title={t("supplier.company.certs.card_title")} icon={ShieldCheck}>{c.certs.map((ct,i)=><div key={i} style={{ display:"flex",gap:10,padding:"8px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:6,fontSize:13,border:"1px solid #bbf7d0" }}><ShieldCheck size={13} color="#059669"/><strong style={{ color:"#0d9488" }}>{ct.type}</strong><span style={{ color:"#64748b" }}>{t("supplier.company.certs.number_prefix_format", { number: ct.number })}</span><span style={{ marginLeft:"auto",color:"#059669" }}>{t("supplier.company.certs.valid_prefix_format", { date: ct.valid })}</span></div>)}</Card>}
+      <Card title={t("supplier.company.contacts.card_title")} icon={Users} actions={<Btn sm outline onClick={()=>addContact()}><Plus size={12}/> {t("supplier.company.contacts.add_btn")}</Btn>}>
         {contacts.length===0 ? (
           <div style={{ padding:"14px 16px",background:"#f8fafc",border:"1px dashed #cbd5e1",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12 }}>
-            <div style={{ fontSize:13,color:"#64748b" }}>Dodaj osobę kontaktową widoczną dla kupców.</div>
-            <Btn sm primary onClick={()=>addContact()}><Plus size={12}/> Dodaj pierwszy kontakt</Btn>
+            <div style={{ fontSize:13,color:"#64748b" }}>{t("supplier.company.contacts.empty_info")}</div>
+            <Btn sm primary onClick={()=>addContact()}><Plus size={12}/> {t("supplier.company.contacts.add_first_btn")}</Btn>
           </div>
         ) : (
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:12 }}>
             {contacts.map((ct,i)=>(
               <div key={ct.id||i} style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
                 <div style={{ display:"flex",alignItems:"flex-start",gap:8 }}>
-                  <Inp label="Rola" value={ct.role||"sales"} onChange={e=>updateContact(i,{role:e.target.value})} style={{ minWidth:0 }}>
+                  <Inp label={t("supplier.company.contacts.role_label")} value={ct.role||"sales"} onChange={e=>updateContact(i,{role:e.target.value})} style={{ minWidth:0 }}>
                     {contactRoles.map(([value,label])=><option key={value} value={value}>{label}</option>)}
                   </Inp>
-                  <button type="button" title="Usuń kontakt" onClick={()=>removeContact(i)} style={{ marginTop:23,width:32,height:32,borderRadius:8,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0 }}>
+                  <button type="button" title={t("supplier.company.contacts.remove_title")} onClick={()=>removeContact(i)} style={{ marginTop:23,width:32,height:32,borderRadius:8,border:"1px solid #fecaca",background:"#fff",color:"#dc2626",display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",flexShrink:0 }}>
                     <X size={14}/>
                   </button>
                 </div>
-                <Inp label="Imię i nazwisko" value={ct.name||""} onChange={e=>updateContact(i,{name:e.target.value})}/>
-                <Inp label="Stanowisko" value={ct.position||""} onChange={e=>updateContact(i,{position:e.target.value})}/>
-                <Inp label="Telefon" value={ct.phone||""} onChange={e=>updateContact(i,{phone:e.target.value})}/>
-                <Inp label="Email" value={ct.email||""} onChange={e=>updateContact(i,{email:e.target.value})}/>
+                <Inp label={t("supplier.company.contacts.name_label")} value={ct.name||""} onChange={e=>updateContact(i,{name:e.target.value})}/>
+                <Inp label={t("supplier.company.contacts.position_label")} value={ct.position||""} onChange={e=>updateContact(i,{position:e.target.value})}/>
+                <Inp label={t("supplier.company.contacts.phone_label")} value={ct.phone||""} onChange={e=>updateContact(i,{phone:e.target.value})}/>
+                <Inp label={t("supplier.company.contacts.email_label")} value={ct.email||""} onChange={e=>updateContact(i,{email:e.target.value})}/>
               </div>
             ))}
           </div>
         )}
       </Card>
       <div style={{ display:"flex",gap:8,justifyContent:"flex-end",marginBottom:24 }}>
-        <Btn outline onClick={()=>setShowPreview(true)}><Eye size={13}/> Podgląd kupca</Btn>
-        <Btn primary disabled={saving} onClick={()=>void saveProfile()}>{saving?"Zapisywanie...":"Zapisz profil"}</Btn>
+        <Btn outline onClick={()=>setShowPreview(true)}><Eye size={13}/> {t("supplier.company.actions.preview_buyer")}</Btn>
+        <Btn primary disabled={saving} onClick={()=>void saveProfile()}>{saving?t("supplier.company.actions.saving"):t("supplier.company.actions.save_btn")}</Btn>
       </div>
     </div>
   );

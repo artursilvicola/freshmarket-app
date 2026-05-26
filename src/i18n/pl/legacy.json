@@ -953,6 +953,178 @@
           "paid_badge": "Opłacone"
         }
       }
+    },
+    "company": {
+      "ai_banner": {
+        "strong": "AI Auto-fill",
+        "body": " — AI wygeneruje krótki i standardowy opis firmy na podstawie Twoich danych, materiałów i strony WWW. Im więcej uzupełnisz pól poniżej (zaplecze, rynki, certyfikaty), tym bogatszy będzie profil.",
+        "generate_btn": "Generuj AI",
+        "preview_btn": "Podgląd"
+      },
+      "ai_modal": {
+        "title": "AI Auto-fill",
+        "description": "AI wykorzysta dane firmy z profilu, profil rozszerzony i treść Twojej strony, aby zaproponować dwa opisy: krótki (do podglądu) i standardowy (główny opis profilu).",
+        "website_label": "Strona WWW",
+        "analyzing": "Analizuję stronę i przygotowuję opisy...",
+        "generate_btn": "Generuj",
+        "cancel": "Anuluj"
+      },
+      "completeness_label": "Kompletność profilu",
+      "logo": {
+        "card_title": "Logo",
+        "upload_change": "Kliknij aby zmienić logo",
+        "upload_new": "Kliknij aby wgrać logo firmy",
+        "required_for_publish": "Wymagane do publikacji"
+      },
+      "basics": {
+        "card_title": "Dane podstawowe",
+        "name_label": "Nazwa firmy",
+        "nip_label": "NIP/VAT",
+        "country_label": "Kraj",
+        "country_dash": "—",
+        "city_label": "Miasto",
+        "website_label": "Strona WWW",
+        "phone_label": "Telefon"
+      },
+      "desc": {
+        "card_title": "Opis firmy",
+        "ready_badge": "Gotowy do wyświetlenia",
+        "edited_badge": "Edytowany",
+        "review_badge": "Czeka na review",
+        "short_label": "Opis krótki (2–3 zdania, ~200–300 znaków)",
+        "short_hint": "Pokazywany w karcie firmy u kupca i w podglądzie. Nie powtarzaj nazwy firmy — kupiec już ją widzi.",
+        "standard_label": "Opis standardowy (4–6 zdań, ~450–700 znaków)",
+        "standard_hint": "Główny opis profilu. Generowany przez AI z Twoich danych — możesz go ręcznie poprawić."
+      },
+      "types": {
+        "card_title": "Typ firmy i kategorie",
+        "types_label": "Typ firmy",
+        "types_label_note": "(widoczne dla kupców)",
+        "categories_label": "Kategorie produktowe",
+        "products_label": "Produkty",
+        "markets_label": "Rynki sprzedaży",
+        "company_type_options": {
+          "producent": "Producent",
+          "eksporter": "Eksporter",
+          "importer": "Importer",
+          "firma_handlowa": "Firma Handlowa",
+          "pakowalnia": "Pakowalnia",
+          "firma_logistyczna": "Firma Logistyczna",
+          "kooperatywa": "Kooperatywa",
+          "agent": "Agent/Broker"
+        },
+        "category_options": {
+          "owoce": "Owoce",
+          "warzywa": "Warzywa",
+          "kwiaty": "Kwiaty",
+          "ziola": "Zioła",
+          "inne": "Inne"
+        }
+      },
+      "ext_basics": {
+        "card_title": "Profil rozszerzony — podstawy",
+        "info": "Pola opcjonalne. Im więcej wypełnisz, tym bogatszy profil dla kupca.",
+        "founded_year_label": "Rok założenia",
+        "employees_label": "Liczba pracowników",
+        "employees_options": {
+          "empty": "—",
+          "1_10": "1–10",
+          "11_50": "11–50",
+          "51_200": "51–200",
+          "201_500": "201–500",
+          "500_plus": "500+"
+        }
+      },
+      "ext_offer": {
+        "card_title": "Profil rozszerzony — oferta",
+        "year_round_label": "Produkty całoroczne",
+        "year_round_hint": "np. jabłka, gruszki, kapusta",
+        "seasonal_label": "Produkty sezonowe",
+        "seasonal_hint": "np. truskawki (V–VII), wiśnie (VI–VII)",
+        "customer_types_label": "Typ obsługiwanych klientów",
+        "customer_type_options": {
+          "retail": "Retail",
+          "wholesale": "Hurt",
+          "horeca": "HoReCa",
+          "processing": "Przetwórstwo",
+          "export": "Eksport"
+        },
+        "private_label_toggle": "Oferujemy markę własną / private label"
+      },
+      "ext_trade": {
+        "card_title": "Profil rozszerzony — handel i rynki",
+        "export_countries_label": "Kraje eksportu (kody ISO oddzielone przecinkami)",
+        "export_countries_hint": "np. DE, CZ, SK, FR, NL",
+        "main_markets_label": "Główne rynki (opisowo)",
+        "main_markets_hint": "np. EU Środkowa, kraje DACH, rynek krajowy",
+        "partnership_label": "Typ współpracy",
+        "partnership_options": {
+          "programy_stale": "Programy stałe",
+          "spot": "Spot",
+          "promocje": "Promocje",
+          "sezonowe_akcje": "Sezonowe akcje"
+        },
+        "typical_volumes_label": "Typowe wolumeny",
+        "typical_volumes_hint": "np. 10–50 ton tygodniowo, 1–2 TIR-y dziennie"
+      },
+      "ext_ops": {
+        "card_title": "Profil rozszerzony — zaplecze operacyjne",
+        "info": "Zaznacz, czym dysponujesz lub co jesteś w stanie zaoferować.",
+        "capability_options": {
+          "sortownia": "Sortownia",
+          "pakowalnia": "Pakowalnia",
+          "chlodnia": "Chłodnia",
+          "linia_optyczna": "Linia optyczna",
+          "etykietowanie": "Etykietowanie",
+          "konfekcjonowanie": "Konfekcjonowanie",
+          "retail_ready": "Przygotowanie pod retail",
+          "wlasna_logistyka": "Własna logistyka",
+          "partner_logistyczny": "Partner logistyczny"
+        }
+      },
+      "materials": {
+        "card_title": "Materiały (PDF, katalogi, zdjęcia)",
+        "info": "Wgraj katalog handlowy, broszurę, zdjęcia zakładu / pakowania / produktów. Kupiec zobaczy je w podglądzie profilu.",
+        "uploader_label": "Kliknij lub przeciągnij PDF / zdjęcie"
+      },
+      "pitch": {
+        "card_title": "Co chcesz podkreślić kupcowi?",
+        "hint": "Wolny tekst — AI uwzględni jako sygnał Twoich priorytetów handlowych. Nie skopiuje dosłownie."
+      },
+      "certs": {
+        "card_title": "Certyfikaty",
+        "number_prefix_format": "Nr: {{number}}",
+        "valid_prefix_format": "do {{date}}"
+      },
+      "contacts": {
+        "card_title": "Kontakty",
+        "add_btn": "Dodaj kontakt",
+        "empty_info": "Dodaj osobę kontaktową widoczną dla kupców.",
+        "add_first_btn": "Dodaj pierwszy kontakt",
+        "remove_title": "Usuń kontakt",
+        "role_label": "Rola",
+        "name_label": "Imię i nazwisko",
+        "position_label": "Stanowisko",
+        "phone_label": "Telefon",
+        "email_label": "Email",
+        "role_options": {
+          "sales": "Handlowy",
+          "quality": "Jakościowy",
+          "logistics": "Logistyka",
+          "management": "Zarząd",
+          "other": "Inny"
+        }
+      },
+      "actions": {
+        "preview_buyer": "Podgląd kupca",
+        "save_btn": "Zapisz profil",
+        "saving": "Zapisywanie..."
+      },
+      "toasts": {
+        "logo_required": "Wgraj logo firmy.",
+        "saved": "Profil zapisany.",
+        "contacts_error_format": "Nie udało się zapisać kontaktów: {{message}}"
+      }
     }
   },
   "buyer": {
