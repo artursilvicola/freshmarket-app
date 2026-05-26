@@ -60,5 +60,22 @@
   },
   "language_switcher": {
     "title": "Zmień język / Change language"
+  },
+  "uploader": {
+    "click_or_drag": "Click or drag photos",
+    "hint_full": "JPG, PNG, WebP, GIF · max 5 MB · up to {{max}} photos",
+    "hint_simple_multi": "JPG, PNG, WebP · max {{max}} photos",
+    "hint_simple_single": "JPG, PNG, WebP",
+    "uploading": "Uploading... {{progress}}%",
+    "confirm_delete": "Delete photo?",
+    "delete_alt": "Delete photo",
+    "errors": {
+      "no_company_id": "Missing company_id in profile — please contact the admin.",
+      "no_offer_id": "Missing offerId — save the offer first, then add photos.",
+      "no_path_prefix": "Missing path — component misconfigured.",
+      "limit_reached": "Limit of {{max}} photos — remove old ones before adding new.",
+      "upload_failed": "Error on {{file}}: {{message}}",
+      "delete_failed": "Failed to delete: {{message}}"
+    }
   }
 }

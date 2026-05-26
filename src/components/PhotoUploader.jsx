@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { Upload, X, Image as ImageIcon, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../auth/AuthProvider";
 
@@ -27,6 +28,10 @@ export default function PhotoUploader({
   max = 8,
 }) {
   const { profile } = useAuth();
+  // [B2B Round prod-rollout / i18n MVP — Krok 11 P1] Bilingual przez useTranslation
+  // ('common' default ns). Wszystkie interpolacje przez {{file}}/{{message}}/{{max}}/
+  // {{progress}} — żeby dodanie 3. języka nie wymagało zmiany kodu.
+  const { t } = useTranslation();
   const fileInputRef = useRef();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -38,16 +43,16 @@ export default function PhotoUploader({
 
   const handleFiles = async (files) => {
     if (!companyId) {
-      setError("Brak company_id w profilu — skontaktuj się z administratorem.");
+      setError(t("uploader.errors.no_company_id"));
       return;
     }
     if (!offerId) {
-      setError("Brak offerId — najpierw zapisz ofertę, potem dodaj zdjęcia.");
+      setError(t("uploader.errors.no_offer_id"));
       return;
     }
     const fileArr = Array.from(files);
     if (photos.length + fileArr.length > max) {
-      setError(`Limit ${max} zdjęć — usuń stare przed dodaniem nowych.`);
+      setError(t("uploader.errors.limit_reached", { max }));
       return;
     }
 
@@ -93,7 +98,7 @@ export default function PhotoUploader({
         newPhotos.push(row);
         setProgress(Math.round((i / fileArr.length) * 100));
       } catch (e) {
-        setError(`Błąd przy ${file.name}: ${e.message}`);
+        setError(t("uploader.errors.upload_failed", { file: file.name, message: e.message }));
       }
     }
 
@@ -105,7 +110,7 @@ export default function PhotoUploader({
   };
 
   const handleDelete = async (photo) => {
-    if (!confirm("Usunąć zdjęcie?")) return;
+    if (!confirm(t("uploader.confirm_delete"))) return;
     try {
       // Usuń z Storage
       await supabase.storage.from(bucket).remove([photo.storage_path]);
@@ -115,7 +120,7 @@ export default function PhotoUploader({
       setPhotos(updated);
       onChange?.(updated);
     } catch (e) {
-      setError(`Nie udało się usunąć: ${e.message}`);
+      setError(t("uploader.errors.delete_failed", { message: e.message }));
     }
   };
 
@@ -152,7 +157,7 @@ export default function PhotoUploader({
               style={{ color: "#0d9488", animation: "spin 1s linear infinite" }}
             />
             <div style={{ marginTop: 8, fontSize: 14, color: "#475569" }}>
-              Wgrywanie... {progress}%
+              {t("uploader.uploading", { progress })}
             </div>
             <style>{`@keyframes spin { from {transform:rotate(0)} to {transform:rotate(360deg)} }`}</style>
           </>
@@ -160,10 +165,10 @@ export default function PhotoUploader({
           <>
             <Upload size={28} style={{ color: "#64748b" }} />
             <div style={{ marginTop: 8, fontSize: 14, color: "#475569", fontWeight: 500 }}>
-              Kliknij lub przeciągnij zdjęcia
+              {t("uploader.click_or_drag")}
             </div>
             <div style={{ marginTop: 4, fontSize: 12, color: "#94a3b8" }}>
-              JPG, PNG, WebP, GIF · max 5 MB · do {max} zdjęć
+              {t("uploader.hint_full", { max })}
             </div>
           </>
         )}
@@ -250,7 +255,7 @@ export default function PhotoUploader({
                   justifyContent: "center",
                   cursor: "pointer",
                 }}
-                aria-label="Usuń zdjęcie"
+                aria-label={t("uploader.delete_alt")}
               >
                 <X size={14} />
               </button>
