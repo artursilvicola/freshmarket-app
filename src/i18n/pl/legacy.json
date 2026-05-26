@@ -207,6 +207,8 @@
       "time_rel": {
         "just_now": "przed chwilą",
         "hours_ago_one": "{{count}} godz. temu",
+        "hours_ago_few": "{{count}} godz. temu",
+        "hours_ago_many": "{{count}} godz. temu",
         "hours_ago_other": "{{count}} godz. temu",
         "days_ago_one": "{{count}} dzień temu",
         "days_ago_few": "{{count}} dni temu",

@@ -129,10 +129,10 @@
           "cta": "See refunds"
         },
         "no_recent_sends": {
-          "title_one": "You have {{count}} active submission ready to send",
-          "title_few": "You have {{count}} active submissions ready to send",
-          "title_many": "You have {{count}} active submissions ready to send",
-          "title_other": "You have {{count}} active submissions ready to send",
+          "title_one": "You have {{count}} active submission ready for submission",
+          "title_few": "You have {{count}} active submissions ready for submission",
+          "title_many": "You have {{count}} active submissions ready for submission",
+          "title_other": "You have {{count}} active submissions ready for submission",
           "desc": "Use the credits from your package. Choose retailers and prepare a submission for the next window.",
           "cta": "Prepare submission"
         },
@@ -154,8 +154,8 @@
           "sub": "credit charged from the package"
         },
         "sent": {
-          "body_with_title": "<strong>Sent</strong> submission <em>„{{title}}\"</em>",
-          "body_no_title": "<strong>Sent</strong> a submission",
+          "body_with_title": "<strong>Submitted</strong> submission <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Submitted</strong> a submission",
           "sub": "awaiting open (max 14 days)"
         },
         "expired": {
@@ -166,7 +166,7 @@
         "approved": {
           "body_with_title": "<strong>Submission approved</strong> <em>„{{title}}\"</em>",
           "body_no_title": "<strong>Submission approved</strong>",
-          "sub": "ready to send"
+          "sub": "ready for submission"
         },
         "added": {
           "body_with_title": "<strong>Submission added</strong> <em>„{{title}}\"</em>",
@@ -202,11 +202,13 @@
         "total_few": "{{count}} events",
         "total_many": "{{count}} events",
         "total_other": "{{count}} events",
-        "empty_body": "Send your first submission to see history here."
+        "empty_body": "Prepare your first submission to see history here."
       },
       "time_rel": {
         "just_now": "just now",
         "hours_ago_one": "{{count}} hour ago",
+        "hours_ago_few": "{{count}} hours ago",
+        "hours_ago_many": "{{count}} hours ago",
         "hours_ago_other": "{{count}} hours ago",
         "days_ago_one": "{{count}} day ago",
         "days_ago_few": "{{count}} days ago",
