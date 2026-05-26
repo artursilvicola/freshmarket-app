@@ -61,7 +61,7 @@ import { supabase } from "../lib/supabase";
 // kolejne branche P2-N będą używać i18n / useTranslation w widokach Page*
 // zgodnie z planem.
 import i18n from "../i18n";
-import { useTranslation } from "react-i18next";
+import { useTranslation, Trans } from "react-i18next";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -3345,6 +3345,8 @@ function pickSupplierDashState({ co, fmSettings }) {
 // ── KOMPONENT GŁÓWNY ────────────────────────────────────────────────────────
 
 function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed }) {
+  // [Krok P2-3b] Bilingual via supplier.dashboard.next_step_variants/activity/refunds_strip/kpi_section
+  const { t } = useTranslation("legacy");
   const dashState = pickSupplierDashState({ co, fmSettings });
 
   // Refundy dla tego supplera (active, nie odrzucone)
@@ -3376,62 +3378,50 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
   const fmDaysOpen = daysToFmOpen(today);
 
   // ── Next Step priority chain ─────────────────────────────────────────────
-  let nextStep;
+  // [Krok P2-3b] Bilingual przez supplier.dashboard.next_step_variants.*
+  // 7 wariantów wybiera się jednym variant key + interpolacje + i18next plurals
+  // (refunds, no_recent_sends — _one/_few/_many/_other). Plural variant title
+  // używa `t(...title, {count})` które auto-wybiera _one/_few/_many/_other.
+  let nextStepVariant; let nextStepVars = {}; let nextStepGoto;
   if (co?.account_status === "pending_review") {
-    nextStep = {
-      title: "Uzupełnij profil firmy, żeby przyspieszyć akceptację",
-      desc: "Admin zatwierdza szybciej konta z kompletnymi danymi: opis firmy, logo, certyfikaty i przynajmniej 1 propozycja w katalogu.",
-      cta: "Otwórz profil firmy",
-      goto: "company",
-    };
+    nextStepVariant = "pending_review"; nextStepGoto = "company";
   } else if (!pkgMax || pkgMax === 0) {
-    nextStep = {
-      title: "Wybierz pakiet wysyłek żeby zacząć",
-      desc: "Bez kredytów nie wyślesz propozycji do sieci. Pakiety od 1 wysyłki w górę.",
-      cta: "Wybierz pakiet",
-      goto: "finanse",
-    };
+    nextStepVariant = "no_package"; nextStepGoto = "finanse";
   } else if (myActiveOffers.length === 0) {
-    nextStep = {
-      title: "Dodaj swoją pierwszą propozycję asortymentową",
-      desc: "Produkt + krótka specyfikacja + zdjęcia. Po zatwierdzeniu przez moderację możesz wysłać do sieci.",
-      cta: "Dodaj propozycję",
-      goto: "offers",
-    };
+    nextStepVariant = "no_offers"; nextStepGoto = "offers";
   } else if (refunds.length > 0) {
-    const total = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    nextStep = {
-      title: `Masz ${refunds.length === 1 ? "1 zwrot" : `${refunds.length} zwroty`} kredytów do sprawdzenia${total ? ` — ${total} €` : ""}`,
-      desc: "Kupcy nie otworzyli Twoich propozycji w terminie 14 dni. Kredyty wróciły do pakietu automatycznie.",
-      cta: "Zobacz zwroty",
-      goto: "finanse",
-    };
+    const totalAmount = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const totalSuffix = totalAmount
+      ? t("supplier.dashboard.next_step_variants.refunds.total_suffix_format", { total: totalAmount })
+      : "";
+    nextStepVariant = "refunds";
+    nextStepVars = { count: refunds.length, totalSuffix };
+    nextStepGoto = "finanse";
   } else if (recentSends.length === 0) {
-    nextStep = {
-      title: myActiveOffers.length === 1
-        ? "Masz 1 aktywną propozycję gotową do wysyłki"
-        : `Masz ${myActiveOffers.length} aktywne propozycje gotowe do wysyłki`,
-      desc: "Wykorzystaj kredyty z pakietu. Wybierz sieci i przygotuj wysyłkę w najbliższym oknie.",
-      cta: "Przygotuj wysyłkę",
-      goto: "wysylki",
-    };
+    nextStepVariant = "no_recent_sends";
+    nextStepVars = { count: myActiveOffers.length };
+    nextStepGoto = "wysylki";
   } else if (pkgMax > 0 && pkgUsed / pkgMax > 0.8) {
-    nextStep = {
-      title: "Pakiet kończy się — kup uzupełnienie",
-      desc: `Wykorzystałeś ${pkgUsed} z ${pkgMax} kredytów (${Math.round(pkgUsed / pkgMax * 100)}%). Bez nowego pakietu nie wyślesz w najbliższym oknie.`,
-      cta: "Kup pakiet",
-      goto: "finanse",
-    };
+    nextStepVariant = "package_low";
+    nextStepVars = { used: pkgUsed, max: pkgMax, pct: Math.round(pkgUsed / pkgMax * 100) };
+    nextStepGoto = "finanse";
   } else {
-    nextStep = {
-      title: "Wszystko gotowe — kontynuuj wysyłki",
-      desc: `Masz ${rem} kredytów do wykorzystania. Najbliższe okno: ${fmtPolishDate(nextWindow)}.`,
-      cta: "Przygotuj wysyłkę",
-      goto: "wysylki",
-    };
+    nextStepVariant = "default";
+    nextStepVars = { credits: rem, date: fmtPolishDate(nextWindow) };
+    nextStepGoto = "wysylki";
   }
+  const nextStep = {
+    title: t(`supplier.dashboard.next_step_variants.${nextStepVariant}.title`, nextStepVars),
+    desc: t(`supplier.dashboard.next_step_variants.${nextStepVariant}.desc`, nextStepVars),
+    cta: t(`supplier.dashboard.next_step_variants.${nextStepVariant}.cta`),
+    goto: nextStepGoto,
+  };
 
   // ── Activity feed: ostatnie 6 zdarzeń ────────────────────────────────────
+  // [Krok P2-3b] Activity event DATA pozostaje hardcoded PL JSX w tym commicie.
+  // Tłumaczenie ActivityCard + restrukturyzacja events array na {type, title,
+  // amount, sub} z renderowaniem przez <Trans> — zaplanowane w P2-3c (Commit 2)
+  // razem z całą ActivityCard.
   const offerById = new Map((offers || []).map(o => [o.id, o]));
   const events = [];
   for (const s of mySends) {
@@ -3450,11 +3440,11 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     if (o.supplierId && o.supplierId !== accountId) continue;
     const ts = new Date(o.updatedAt || o.createdAt || 0).getTime();
     if (!ts) continue;
-    const t = o.title || o.product || "";
+    const t2 = o.title || o.product || "";
     if (o.status === "active") {
-      events.push({ ts, dot: "#059669", body: <><strong>Propozycja zatwierdzona</strong>{t ? <> <em>„{t}"</em></> : null}</>, sub: "gotowa do wysłania" });
+      events.push({ ts, dot: "#059669", body: <><strong>Propozycja zatwierdzona</strong>{t2 ? <> <em>„{t2}"</em></> : null}</>, sub: "gotowa do wysłania" });
     } else if (o.status === "draft") {
-      events.push({ ts, dot: "#94a3b8", body: <><strong>Dodano propozycję</strong>{t ? <> <em>„{t}"</em></> : null}</>, sub: "status: szkic" });
+      events.push({ ts, dot: "#94a3b8", body: <><strong>Dodano propozycję</strong>{t2 ? <> <em>„{t2}"</em></> : null}</>, sub: "status: szkic" });
     }
   }
   for (const r of refunds) {
@@ -3484,8 +3474,8 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
         </div>
         <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px", marginBottom:12, opacity:0.6 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-            <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Wysyłki PreConnect — ostatnie 30 dni</div>
-            <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>brak danych</div>
+            <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>{t("supplier.dashboard.kpi_section.header")}</div>
+            <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>{t("supplier.dashboard.kpi_section.no_data")}</div>
           </div>
           <KpiRow waiting={null} seen={null} expired={null} ratePct={null} placeholder />
         </div>
@@ -3511,19 +3501,22 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
 
       <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px", marginBottom:12 }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-          <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Wysyłki PreConnect — ostatnie 30 dni</div>
-          <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>{recentSends.length} wysyłek łącznie</div>
+          <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>{t("supplier.dashboard.kpi_section.header")}</div>
+          <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>{t("supplier.dashboard.kpi_section.total", { count: recentSends.length })}</div>
         </div>
         <KpiRow waiting={stWaiting} seen={stSeen} expired={stExpired} ratePct={stRatePct} />
       </div>
 
       {refunds.length > 0 && (() => {
-        const total = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const totalAmount = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const totalSuffix = totalAmount
+          ? t("supplier.dashboard.refunds_strip.total_suffix_format", { total: totalAmount })
+          : "";
         return (
           <div style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, marginBottom:12, fontSize:11.5, color:"#065f46" }}>
             <span style={{ width:7, height:7, borderRadius:"50%", background:"#059669", flexShrink:0 }} />
-            <span><strong style={{ fontWeight:600 }}>{refunds.length === 1 ? "1 zwrot kredytu" : `${refunds.length} zwrotów kredytów`}{total ? ` (${total} €)` : ""}</strong> w tym miesiącu — kupcy nie otworzyli w terminie. Kredyty wróciły do pakietu automatycznie.</span>
-            <button onClick={() => nav("finanse")} style={{ background:"none", border:"none", color:"#059669", fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", padding:0, marginLeft:"auto" }}>Zobacz</button>
+            <span>{t("supplier.dashboard.refunds_strip.label", { count: refunds.length, totalSuffix })}</span>
+            <button onClick={() => nav("finanse")} style={{ background:"none", border:"none", color:"#059669", fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", padding:0, marginLeft:"auto" }}>{t("supplier.dashboard.refunds_strip.see_button")}</button>
           </div>
         );
       })()}

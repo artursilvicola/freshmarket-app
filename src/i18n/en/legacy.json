@@ -102,6 +102,98 @@
         "in_days_few": "in {{count}} days",
         "in_days_many": "in {{count}} days",
         "in_days_other": "in {{count}} days"
+      },
+      "next_step_variants": {
+        "pending_review": {
+          "title": "Complete your company profile to speed up approval",
+          "desc": "Admins approve accounts faster when they have complete data: company description, logo, certificates, and at least 1 submission in the catalog.",
+          "cta": "Open company profile"
+        },
+        "no_package": {
+          "title": "Choose a submission package to start",
+          "desc": "Without credits you can't submit proposals to retailers. Packages start from 1 submission upwards.",
+          "cta": "Choose package"
+        },
+        "no_offers": {
+          "title": "Add your first product submission",
+          "desc": "Product + brief specification + photos. After moderation approval you can submit to retailers.",
+          "cta": "Add submission"
+        },
+        "refunds": {
+          "title_one": "You have 1 credit refund to review{{totalSuffix}}",
+          "title_few": "You have {{count}} credit refunds to review{{totalSuffix}}",
+          "title_many": "You have {{count}} credit refunds to review{{totalSuffix}}",
+          "title_other": "You have {{count}} credit refunds to review{{totalSuffix}}",
+          "total_suffix_format": " — {{total}} €",
+          "desc": "Buyers didn't open your submissions within the 14-day window. Credits returned to your package automatically.",
+          "cta": "See refunds"
+        },
+        "no_recent_sends": {
+          "title_one": "You have {{count}} active submission ready to send",
+          "title_few": "You have {{count}} active submissions ready to send",
+          "title_many": "You have {{count}} active submissions ready to send",
+          "title_other": "You have {{count}} active submissions ready to send",
+          "desc": "Use the credits from your package. Choose retailers and prepare a submission for the next window.",
+          "cta": "Prepare submission"
+        },
+        "package_low": {
+          "title": "Package running low — buy a top-up",
+          "desc": "You've used {{used}} of {{max}} credits ({{pct}}%). Without a new package you won't be able to submit in the next window.",
+          "cta": "Buy package"
+        },
+        "default": {
+          "title": "All set — keep submitting",
+          "desc": "You have {{credits}} credits available. Next window: {{date}}.",
+          "cta": "Prepare submission"
+        }
+      },
+      "activity": {
+        "buyer_viewed": {
+          "body_with_title": "<strong>The buyer viewed</strong> submission <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>The buyer viewed</strong> a submission",
+          "sub": "credit charged from the package"
+        },
+        "sent": {
+          "body_with_title": "<strong>Sent</strong> submission <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Sent</strong> a submission",
+          "sub": "awaiting open (max 14 days)"
+        },
+        "expired": {
+          "body_with_title": "<strong>Submission expired</strong> <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Submission expired</strong>",
+          "sub": "credit refunded to the package"
+        },
+        "approved": {
+          "body_with_title": "<strong>Submission approved</strong> <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Submission approved</strong>",
+          "sub": "ready to send"
+        },
+        "added": {
+          "body_with_title": "<strong>Submission added</strong> <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Submission added</strong>",
+          "sub": "status: draft"
+        },
+        "refund": {
+          "body_with_amount": "<strong>Credit refund</strong> (+{{amount}} €)",
+          "body_no_amount": "<strong>Credit refund</strong>",
+          "sub_default": "submission expired unopened"
+        }
+      },
+      "refunds_strip": {
+        "label_one": "1 credit refund{{totalSuffix}} this month — buyers didn't open in time. Credits returned to your package automatically.",
+        "label_few": "{{count}} credit refunds{{totalSuffix}} this month — buyers didn't open in time. Credits returned to your package automatically.",
+        "label_many": "{{count}} credit refunds{{totalSuffix}} this month — buyers didn't open in time. Credits returned to your package automatically.",
+        "label_other": "{{count}} credit refunds{{totalSuffix}} this month — buyers didn't open in time. Credits returned to your package automatically.",
+        "total_suffix_format": " ({{total}} €)",
+        "see_button": "See"
+      },
+      "kpi_section": {
+        "header": "PreConnect submissions — last 30 days",
+        "no_data": "no data",
+        "total_one": "1 submission total",
+        "total_few": "{{count}} submissions total",
+        "total_many": "{{count}} submissions total",
+        "total_other": "{{count}} submissions total"
       }
     }
   },
