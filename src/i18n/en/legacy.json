@@ -46,7 +46,65 @@
       "agent": "🔎 Agent / Broker"
     }
   },
-  "supplier": {},
+  "supplier": {
+    "dashboard": {
+      "next_step": {
+        "label": "Your next step"
+      },
+      "pkg_card": {
+        "header": "PreConnect credits",
+        "active_package_format": "active package: Standard {{max}}",
+        "no_active_package": "no active package",
+        "credits_total_suffix": "/ {{max}} credits",
+        "placeholder_hint": "Choose a package to start sending",
+        "usage_format": "{{used}} used · {{remaining}} available",
+        "see_pricing": "See pricing",
+        "buy_package": "Buy package"
+      },
+      "next_window": {
+        "header": "Next sending window",
+        "see_schedule": "See schedule"
+      },
+      "kpi_row": {
+        "waiting_label": "Waiting",
+        "waiting_meta": "waiting to be opened or auto-refunded",
+        "seen_label": "Seen / settled",
+        "seen_meta": "buyer opened, credit charged",
+        "expired_label": "Expired",
+        "expired_meta": "unopened in 14 days · credit refunded",
+        "rate_label": "Seen rate",
+        "rate_meta": "seen out of completed submissions",
+        "placeholder_dash": "—",
+        "placeholder_hint": "no submissions"
+      },
+      "help_strip": {
+        "toggle_label": "How does it work? — PreConnect and FM 2026 Meetings flow",
+        "preconnect_section_title": "PreConnect module (year-round)",
+        "preconnect_li_1_strong": "Product submissions",
+        "preconnect_li_1_rest": " are created in the ",
+        "preconnect_li_1_em": "My submissions",
+        "preconnect_li_1_end": " tab. After moderation approval they are ready to send.",
+        "preconnect_li_2_strong": "Submissions",
+        "preconnect_li_2_rest": " go out on the first Tuesday of each month. Each submission to a retailer = 1 credit from the package.",
+        "preconnect_li_3_strong": "The 14-day rule:",
+        "preconnect_li_3_rest": " if the buyer doesn't open the submission within 14 days, the credit returns to your package automatically.",
+        "fm_section_title": "FM 2026 Meetings module (trade show)",
+        "fm_li_1_strong": "Preferences",
+        "fm_li_1_rest": " (1–16 September): you choose up to 5 priority retailers + any number of backup ones.",
+        "fm_li_2_strong": "Algorithm + corrections",
+        "fm_li_2_rest": " (17–22 September): matching retailer ↔ supplier pairs.",
+        "fm_li_3_strong": "Plan",
+        "fm_li_3_rest": " (from 22 September): you receive a list with meeting numbers. Details (times, locations) at event-day registration.",
+        "fm_li_4": "Have a question? Message the admin via the chat in the bottom-right corner."
+      },
+      "time": {
+        "in_days_one": "in {{count}} day",
+        "in_days_few": "in {{count}} days",
+        "in_days_many": "in {{count}} days",
+        "in_days_other": "in {{count}} days"
+      }
+    }
+  },
   "buyer": {
     "profile": {
       "page_title": "My profile",

@@ -46,7 +46,65 @@
       "agent": "🔎 Agent/Broker"
     }
   },
-  "supplier": {},
+  "supplier": {
+    "dashboard": {
+      "next_step": {
+        "label": "Twój następny krok"
+      },
+      "pkg_card": {
+        "header": "Kredyty PreConnect",
+        "active_package_format": "aktywny pakiet: Standard {{max}}",
+        "no_active_package": "brak aktywnego pakietu",
+        "credits_total_suffix": "/ {{max}} kredytów",
+        "placeholder_hint": "Wybierz pakiet, aby rozpocząć wysyłki",
+        "usage_format": "{{used}} wykorzystanych · {{remaining}} dostępnych",
+        "see_pricing": "Zobacz cennik",
+        "buy_package": "Kup pakiet"
+      },
+      "next_window": {
+        "header": "Najbliższe okno wysyłki",
+        "see_schedule": "Zobacz harmonogram"
+      },
+      "kpi_row": {
+        "waiting_label": "Czekają",
+        "waiting_meta": "czekają na otwarcie lub automatyczny zwrot",
+        "seen_label": "Zobaczone / rozliczone",
+        "seen_meta": "kupiec otworzył, kredyt pobrany",
+        "expired_label": "Wygasłe",
+        "expired_meta": "nieotwarte w 14 dni · kredyt zwrócony",
+        "rate_label": "Współczynnik zobaczeń",
+        "rate_meta": "zobaczone z zakończonych wysyłek",
+        "placeholder_dash": "—",
+        "placeholder_hint": "brak wysyłek"
+      },
+      "help_strip": {
+        "toggle_label": "Jak to działa? — przepływ PreConnect i Spotkań FM 2026",
+        "preconnect_section_title": "Moduł PreConnect (całoroczny)",
+        "preconnect_li_1_strong": "Propozycje asortymentowe",
+        "preconnect_li_1_rest": " tworzysz w zakładce ",
+        "preconnect_li_1_em": "Moje propozycje",
+        "preconnect_li_1_end": ". Po zatwierdzeniu moderacji są gotowe do wysyłki.",
+        "preconnect_li_2_strong": "Wysyłki",
+        "preconnect_li_2_rest": " realizowane są w pierwszy wtorek miesiąca. Każda wysyłka do sieci = 1 kredyt z pakietu.",
+        "preconnect_li_3_strong": "Złota zasada 14 dni:",
+        "preconnect_li_3_rest": " jeśli kupiec nie otworzy propozycji w 14 dni, kredyt wraca automatycznie do Twojego pakietu.",
+        "fm_section_title": "Moduł Spotkania FM 2026 (targi)",
+        "fm_li_1_strong": "Preferencje",
+        "fm_li_1_rest": " (1–16 września): wybierasz maks. 5 sieci głównych + dowolnie rezerwowych.",
+        "fm_li_2_strong": "Algorytm + korekty",
+        "fm_li_2_rest": " (17–22 września): dopasowanie par sieć ↔ dostawca.",
+        "fm_li_3_strong": "Plan",
+        "fm_li_3_rest": " (od 22 września): otrzymujesz listę z numerami spotkań. Szczegóły (godziny, miejsca) na rejestracji w dniu eventu.",
+        "fm_li_4": "Masz pytanie? Napisz do admina w czacie w prawym dolnym rogu."
+      },
+      "time": {
+        "in_days_one": "za {{count}} dzień",
+        "in_days_few": "za {{count}} dni",
+        "in_days_many": "za {{count}} dni",
+        "in_days_other": "za {{count}} dni"
+      }
+    }
+  },
   "buyer": {
     "profile": {
       "page_title": "Mój profil",

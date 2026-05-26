@@ -3547,6 +3547,9 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
 // ── KOMPONENTY POMOCNICZE ────────────────────────────────────────────────
 
 function NextStepCard({ nextStep, nav }) {
+  // [Krok P2-3a] Tylko label bilingual; nextStep.title/desc/cta nadal PL
+  // — to logic-heavy PageDashboard core (P2-3b).
+  const { t } = useTranslation("legacy");
   return (
     <div style={{
       background:"linear-gradient(135deg,#0d9488 0%,#0f766e 100%)",
@@ -3562,7 +3565,7 @@ function NextStepCard({ nextStep, nav }) {
         <Zap size={16} />
       </div>
       <div style={{ flex:1, minWidth:0 }}>
-        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.08em", fontWeight:700, color:"rgba(255,255,255,0.7)", marginBottom:2 }}>Twój następny krok</div>
+        <div style={{ fontSize:10, textTransform:"uppercase", letterSpacing:"0.08em", fontWeight:700, color:"rgba(255,255,255,0.7)", marginBottom:2 }}>{t("supplier.dashboard.next_step.label")}</div>
         <div style={{ fontWeight:700, fontSize:14.5, marginBottom:2, letterSpacing:"-0.01em" }}>{nextStep.title}</div>
         <div style={{ fontSize:12, color:"rgba(255,255,255,0.82)", lineHeight:1.5 }}>{nextStep.desc}</div>
       </div>
@@ -3575,6 +3578,8 @@ function NextStepCard({ nextStep, nav }) {
 }
 
 function PkgCard({ pkgMax, pkgUsed, rem, nav, placeholder }) {
+  // [Krok P2-3a] Bilingual via supplier.dashboard.pkg_card.*
+  const { t } = useTranslation("legacy");
   const max = pkgMax || 0;
   const used = pkgUsed || 0;
   const remaining = rem != null ? rem : (max - used);
@@ -3582,21 +3587,21 @@ function PkgCard({ pkgMax, pkgUsed, rem, nav, placeholder }) {
   return (
     <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Kredyty PreConnect</div>
+        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>{t("supplier.dashboard.pkg_card.header")}</div>
         <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>
-          {max > 0 ? `aktywny pakiet: Standard ${max}` : "brak aktywnego pakietu"}
+          {max > 0 ? t("supplier.dashboard.pkg_card.active_package_format", { max }) : t("supplier.dashboard.pkg_card.no_active_package")}
         </div>
       </div>
       <div style={{ fontSize:22, fontWeight:700, color: placeholder ? "#94a3b8" : "#0f172a", letterSpacing:"-0.02em", lineHeight:1.1 }}>
-        {remaining}<span style={{ color:"#64748b", fontWeight:500, fontSize:15, marginLeft:2 }}>/ {max} kredytów</span>
+        {remaining}<span style={{ color:"#64748b", fontWeight:500, fontSize:15, marginLeft:2 }}>{t("supplier.dashboard.pkg_card.credits_total_suffix", { max })}</span>
       </div>
       <div style={{ marginTop:8, height:6, background:"#f1f5f9", borderRadius:99, overflow:"hidden", border:"1px solid #e2e8f0" }}>
         <div style={{ height:"100%", background: pct > 80 ? "#d97706" : "#0d9488", width:`${pct}%`, borderRadius:99 }} />
       </div>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10, fontSize:11, color:"#64748b" }}>
-        <div>{placeholder ? "Wybierz pakiet, aby rozpocząć wysyłki" : `${used} wykorzystanych · ${remaining} dostępnych`}</div>
+        <div>{placeholder ? t("supplier.dashboard.pkg_card.placeholder_hint") : t("supplier.dashboard.pkg_card.usage_format", { used, remaining })}</div>
         <button onClick={() => nav("finanse")} style={{ background:"none", border:"none", color:"#0d9488", fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", padding:0 }}>
-          {placeholder ? "Zobacz cennik" : "Kup pakiet"}
+          {placeholder ? t("supplier.dashboard.pkg_card.see_pricing") : t("supplier.dashboard.pkg_card.buy_package")}
         </button>
       </div>
     </div>
@@ -3604,28 +3609,31 @@ function PkgCard({ pkgMax, pkgUsed, rem, nav, placeholder }) {
 }
 
 function NextWindowCard({ window: w, days, nav, dim }) {
-  // [Krok P2-1] Dispatch po locale — in-place. PL/EN tablice są obok siebie
-  // (linie ~3294-3306). Tekst "Najbliższe okno wysyłki" / "za X dni" zostaje
-  // PL w tym kroku — tłumaczenie widoków supplier dashboard zaplanowane w P2-3.
+  // [Krok P2-3a] Bilingual via supplier.dashboard.next_window.*
+  // Date arrays już dispatch po locale z P2-1.
+  // "za X dni" zastąpione i18next plurals (supplier.dashboard.time.in_days_*)
+  // — pluralDni helper PRZESTAJE BYĆ TU UŻYWANY (zostaje w pliku dla
+  // ActivityCard + FmCompactCard, usunięcie helpera w P2-3c).
+  const { t } = useTranslation("legacy");
   const isEn = i18n.language === "en";
   const days_ = isEn ? EN_DAYS : PL_DAYS;
   const months_ = isEn ? EN_MONTHS : PL_MONTHS;
   const dayName = days_[w.getDay()];
   return (
     <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
-      <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b", marginBottom:10 }}>Najbliższe okno wysyłki</div>
+      <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b", marginBottom:10 }}>{t("supplier.dashboard.next_window.header")}</div>
       <div style={{ display:"flex", alignItems:"center", gap:12 }}>
         <div>
           <div style={{ fontSize:17, fontWeight:700, color: dim ? "#94a3b8" : "#0f172a", letterSpacing:"-0.01em", lineHeight:1.15 }}>
             {dayName}, {w.getDate()} {months_[w.getMonth()]} {w.getFullYear()}
           </div>
-          <div style={{ fontSize:11.5, color: dim ? "#94a3b8" : "#059669", fontWeight:600, marginTop:2 }}>za {days} {pluralDni(days)}</div>
+          <div style={{ fontSize:11.5, color: dim ? "#94a3b8" : "#059669", fontWeight:600, marginTop:2 }}>{t("supplier.dashboard.time.in_days", { count: days })}</div>
         </div>
         {!dim && (
           <button
             onClick={() => nav("wysylki")}
             style={{ marginLeft:"auto", padding:"6px 12px", background:"white", border:"1px solid #cbd5e1", color:"#1e293b", borderRadius:6, fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}
-          >Zobacz harmonogram</button>
+          >{t("supplier.dashboard.next_window.see_schedule")}</button>
         )}
       </div>
     </div>
@@ -3633,11 +3641,14 @@ function NextWindowCard({ window: w, days, nav, dim }) {
 }
 
 function KpiRow({ waiting, seen, expired, ratePct, placeholder }) {
+  // [Krok P2-3a] Bilingual via supplier.dashboard.kpi_row.*
+  const { t } = useTranslation("legacy");
+  const dash = t("supplier.dashboard.kpi_row.placeholder_dash");
   const kpis = [
-    { lbl:"Czekają",                color:"#f97316", val: waiting, meta:"czekają na otwarcie lub automatyczny zwrot" },
-    { lbl:"Zobaczone / rozliczone", color:"#059669", val: seen,    meta:"kupiec otworzył, kredyt pobrany" },
-    { lbl:"Wygasłe",                color:"#94a3b8", val: expired, meta:"nieotwarte w 14 dni · kredyt zwrócony" },
-    { lbl:"Współczynnik zobaczeń",  color:"#2563eb", val: ratePct === null ? "—" : (ratePct != null ? `${ratePct}%` : "—"), meta:"zobaczone z zakończonych wysyłek" },
+    { lbl:t("supplier.dashboard.kpi_row.waiting_label"), color:"#f97316", val: waiting, meta:t("supplier.dashboard.kpi_row.waiting_meta") },
+    { lbl:t("supplier.dashboard.kpi_row.seen_label"),    color:"#059669", val: seen,    meta:t("supplier.dashboard.kpi_row.seen_meta") },
+    { lbl:t("supplier.dashboard.kpi_row.expired_label"), color:"#94a3b8", val: expired, meta:t("supplier.dashboard.kpi_row.expired_meta") },
+    { lbl:t("supplier.dashboard.kpi_row.rate_label"),    color:"#2563eb", val: ratePct === null ? dash : (ratePct != null ? `${ratePct}%` : dash), meta:t("supplier.dashboard.kpi_row.rate_meta") },
   ];
   return (
     <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10 }}>
@@ -3648,10 +3659,10 @@ function KpiRow({ waiting, seen, expired, ratePct, placeholder }) {
             {k.lbl}
           </div>
           <div style={{ fontSize:22, fontWeight:700, color: placeholder ? "#94a3b8" : "#0f172a", letterSpacing:"-0.02em", lineHeight:1.05 }}>
-            {placeholder ? "—" : k.val}
+            {placeholder ? dash : k.val}
           </div>
           <div style={{ marginTop:4, fontSize:11, color:"#64748b", lineHeight:1.35 }}>
-            {placeholder ? "brak wysyłek" : k.meta}
+            {placeholder ? t("supplier.dashboard.kpi_row.placeholder_hint") : k.meta}
           </div>
         </div>
       ))}
@@ -3860,32 +3871,34 @@ function OnboardingChecklist({ co, pkgMax, rem, activeOffersCount, mySendsCount,
 }
 
 function HelpStripDashboard() {
+  // [Krok P2-3a] Bilingual via supplier.dashboard.help_strip.*
+  const { t } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
   return (
     <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, overflow:"hidden" }}>
       <div onClick={() => setOpen(v => !v)} style={{ padding:"10px 14px", display:"flex", alignItems:"center", gap:9, fontSize:12, color:"#475569", cursor:"pointer", userSelect:"none" }}>
         <Info size={13} color="#2563eb" />
-        <span>Jak to działa? — przepływ PreConnect i Spotkań FM 2026</span>
+        <span>{t("supplier.dashboard.help_strip.toggle_label")}</span>
         <span style={{ marginLeft:"auto", color:"#94a3b8", fontSize:10 }}>{open ? "▲" : "▼"}</span>
       </div>
       {open && (
         <div style={{ padding:"0 14px 14px", borderTop:"1px solid #f1f5f9", fontSize:12, color:"#475569", lineHeight:1.6 }}>
           <div style={{ fontWeight:700, color:"#0d9488", marginTop:10, marginBottom:5, display:"flex", alignItems:"center", gap:6 }}>
-            <Send size={12} /> Moduł PreConnect (całoroczny)
+            <Send size={12} /> {t("supplier.dashboard.help_strip.preconnect_section_title")}
           </div>
           <ul style={{ margin:0, paddingLeft:18 }}>
-            <li><strong>Propozycje asortymentowe</strong> tworzysz w zakładce <em>Moje propozycje</em>. Po zatwierdzeniu moderacji są gotowe do wysyłki.</li>
-            <li><strong>Wysyłki</strong> realizowane są w pierwszy wtorek miesiąca. Każda wysyłka do sieci = 1 kredyt z pakietu.</li>
-            <li><strong>Złota zasada 14 dni:</strong> jeśli kupiec nie otworzy propozycji w 14 dni, kredyt wraca automatycznie do Twojego pakietu.</li>
+            <li><strong>{t("supplier.dashboard.help_strip.preconnect_li_1_strong")}</strong>{t("supplier.dashboard.help_strip.preconnect_li_1_rest")}<em>{t("supplier.dashboard.help_strip.preconnect_li_1_em")}</em>{t("supplier.dashboard.help_strip.preconnect_li_1_end")}</li>
+            <li><strong>{t("supplier.dashboard.help_strip.preconnect_li_2_strong")}</strong>{t("supplier.dashboard.help_strip.preconnect_li_2_rest")}</li>
+            <li><strong>{t("supplier.dashboard.help_strip.preconnect_li_3_strong")}</strong>{t("supplier.dashboard.help_strip.preconnect_li_3_rest")}</li>
           </ul>
           <div style={{ fontWeight:700, color:"#7c3aed", marginTop:10, marginBottom:5, display:"flex", alignItems:"center", gap:6 }}>
-            <Calendar size={12} /> Moduł Spotkania FM 2026 (targi)
+            <Calendar size={12} /> {t("supplier.dashboard.help_strip.fm_section_title")}
           </div>
           <ul style={{ margin:0, paddingLeft:18 }}>
-            <li><strong>Preferencje</strong> (1–16 września): wybierasz maks. 5 sieci głównych + dowolnie rezerwowych.</li>
-            <li><strong>Algorytm + korekty</strong> (17–22 września): dopasowanie par sieć ↔ dostawca.</li>
-            <li><strong>Plan</strong> (od 22 września): otrzymujesz listę z numerami spotkań. Szczegóły (godziny, miejsca) na rejestracji w dniu eventu.</li>
-            <li>Masz pytanie? Napisz do admina w czacie w prawym dolnym rogu.</li>
+            <li><strong>{t("supplier.dashboard.help_strip.fm_li_1_strong")}</strong>{t("supplier.dashboard.help_strip.fm_li_1_rest")}</li>
+            <li><strong>{t("supplier.dashboard.help_strip.fm_li_2_strong")}</strong>{t("supplier.dashboard.help_strip.fm_li_2_rest")}</li>
+            <li><strong>{t("supplier.dashboard.help_strip.fm_li_3_strong")}</strong>{t("supplier.dashboard.help_strip.fm_li_3_rest")}</li>
+            <li>{t("supplier.dashboard.help_strip.fm_li_4")}</li>
           </ul>
         </div>
       )}
