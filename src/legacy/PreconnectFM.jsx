@@ -61,7 +61,7 @@ import { supabase } from "../lib/supabase";
 // kolejne branche P2-N będą używać i18n / useTranslation w widokach Page*
 // zgodnie z planem.
 import i18n from "../i18n";
-import { useTranslation } from "react-i18next";
+import { useTranslation, Trans } from "react-i18next";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
 const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
@@ -3326,7 +3326,9 @@ function fmtPolishDate(d) {
 function dayDiff(a, b) {
   return Math.ceil((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000));
 }
-function pluralDni(n) { return n === 1 ? "dzień" : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) ? "dni" : "dni"; }
+// [Krok P2-3c] pluralDni helper USUNIĘTY — wszystkie 3 call sites (NextWindowCard
+// P2-3a, ActivityCard.relTime P2-3c, FmCompactCard P2-3c) przeniesione na
+// i18next plurals (supplier.dashboard.time.in_days_*, time_rel.days_ago_*).
 function daysToFmOpen(today = new Date()) {
   const y = today.getFullYear();
   let t = new Date(y, 8, 1); // 1 września
@@ -3345,6 +3347,8 @@ function pickSupplierDashState({ co, fmSettings }) {
 // ── KOMPONENT GŁÓWNY ────────────────────────────────────────────────────────
 
 function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed }) {
+  // [Krok P2-3b] Bilingual via supplier.dashboard.next_step_variants/activity/refunds_strip/kpi_section
+  const { t } = useTranslation("legacy");
   const dashState = pickSupplierDashState({ co, fmSettings });
 
   // Refundy dla tego supplera (active, nie odrzucone)
@@ -3376,62 +3380,49 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
   const fmDaysOpen = daysToFmOpen(today);
 
   // ── Next Step priority chain ─────────────────────────────────────────────
-  let nextStep;
+  // [Krok P2-3b] Bilingual przez supplier.dashboard.next_step_variants.*
+  // 7 wariantów wybiera się jednym variant key + interpolacje + i18next plurals
+  // (refunds, no_recent_sends — _one/_few/_many/_other). Plural variant title
+  // używa `t(...title, {count})` które auto-wybiera _one/_few/_many/_other.
+  let nextStepVariant; let nextStepVars = {}; let nextStepGoto;
   if (co?.account_status === "pending_review") {
-    nextStep = {
-      title: "Uzupełnij profil firmy, żeby przyspieszyć akceptację",
-      desc: "Admin zatwierdza szybciej konta z kompletnymi danymi: opis firmy, logo, certyfikaty i przynajmniej 1 propozycja w katalogu.",
-      cta: "Otwórz profil firmy",
-      goto: "company",
-    };
+    nextStepVariant = "pending_review"; nextStepGoto = "company";
   } else if (!pkgMax || pkgMax === 0) {
-    nextStep = {
-      title: "Wybierz pakiet wysyłek żeby zacząć",
-      desc: "Bez kredytów nie wyślesz propozycji do sieci. Pakiety od 1 wysyłki w górę.",
-      cta: "Wybierz pakiet",
-      goto: "finanse",
-    };
+    nextStepVariant = "no_package"; nextStepGoto = "finanse";
   } else if (myActiveOffers.length === 0) {
-    nextStep = {
-      title: "Dodaj swoją pierwszą propozycję asortymentową",
-      desc: "Produkt + krótka specyfikacja + zdjęcia. Po zatwierdzeniu przez moderację możesz wysłać do sieci.",
-      cta: "Dodaj propozycję",
-      goto: "offers",
-    };
+    nextStepVariant = "no_offers"; nextStepGoto = "offers";
   } else if (refunds.length > 0) {
-    const total = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-    nextStep = {
-      title: `Masz ${refunds.length === 1 ? "1 zwrot" : `${refunds.length} zwroty`} kredytów do sprawdzenia${total ? ` — ${total} €` : ""}`,
-      desc: "Kupcy nie otworzyli Twoich propozycji w terminie 14 dni. Kredyty wróciły do pakietu automatycznie.",
-      cta: "Zobacz zwroty",
-      goto: "finanse",
-    };
+    const totalAmount = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const totalSuffix = totalAmount
+      ? t("supplier.dashboard.next_step_variants.refunds.total_suffix_format", { total: totalAmount })
+      : "";
+    nextStepVariant = "refunds";
+    nextStepVars = { count: refunds.length, totalSuffix };
+    nextStepGoto = "finanse";
   } else if (recentSends.length === 0) {
-    nextStep = {
-      title: myActiveOffers.length === 1
-        ? "Masz 1 aktywną propozycję gotową do wysyłki"
-        : `Masz ${myActiveOffers.length} aktywne propozycje gotowe do wysyłki`,
-      desc: "Wykorzystaj kredyty z pakietu. Wybierz sieci i przygotuj wysyłkę w najbliższym oknie.",
-      cta: "Przygotuj wysyłkę",
-      goto: "wysylki",
-    };
+    nextStepVariant = "no_recent_sends";
+    nextStepVars = { count: myActiveOffers.length };
+    nextStepGoto = "wysylki";
   } else if (pkgMax > 0 && pkgUsed / pkgMax > 0.8) {
-    nextStep = {
-      title: "Pakiet kończy się — kup uzupełnienie",
-      desc: `Wykorzystałeś ${pkgUsed} z ${pkgMax} kredytów (${Math.round(pkgUsed / pkgMax * 100)}%). Bez nowego pakietu nie wyślesz w najbliższym oknie.`,
-      cta: "Kup pakiet",
-      goto: "finanse",
-    };
+    nextStepVariant = "package_low";
+    nextStepVars = { used: pkgUsed, max: pkgMax, pct: Math.round(pkgUsed / pkgMax * 100) };
+    nextStepGoto = "finanse";
   } else {
-    nextStep = {
-      title: "Wszystko gotowe — kontynuuj wysyłki",
-      desc: `Masz ${rem} kredytów do wykorzystania. Najbliższe okno: ${fmtPolishDate(nextWindow)}.`,
-      cta: "Przygotuj wysyłkę",
-      goto: "wysylki",
-    };
+    nextStepVariant = "default";
+    nextStepVars = { credits: rem, date: fmtPolishDate(nextWindow) };
+    nextStepGoto = "wysylki";
   }
+  const nextStep = {
+    title: t(`supplier.dashboard.next_step_variants.${nextStepVariant}.title`, nextStepVars),
+    desc: t(`supplier.dashboard.next_step_variants.${nextStepVariant}.desc`, nextStepVars),
+    cta: t(`supplier.dashboard.next_step_variants.${nextStepVariant}.cta`),
+    goto: nextStepGoto,
+  };
 
   // ── Activity feed: ostatnie 6 zdarzeń ────────────────────────────────────
+  // [Krok P2-3c] Strukturalny event: {ts, dot, type, title?, amount?, sub}.
+  // Rendering przez <Trans> w ActivityCard. Sub jako plain string przez t()
+  // w miejscu pushowania (`r.msg` jako override gdy refund ma własną wiadomość).
   const offerById = new Map((offers || []).map(o => [o.id, o]));
   const events = [];
   for (const s of mySends) {
@@ -3439,26 +3430,32 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     if (!ts) continue;
     const ofTitle = offerById.get(s.offerId)?.title || offerById.get(s.offerId)?.product || "";
     if (s.status === "read" || s.status === "read_manual") {
-      events.push({ ts, dot: "#059669", body: <><strong>Kupiec zobaczył</strong> propozycję{ofTitle ? <> <em>„{ofTitle}"</em></> : null}</>, sub: "kredyt pobrany z pakietu" });
+      events.push({ ts, dot: "#059669", type: "buyer_viewed", title: ofTitle, sub: t("supplier.dashboard.activity.buyer_viewed.sub") });
     } else if (s.status === "sent") {
-      events.push({ ts, dot: "#2563eb", body: <><strong>Wysłano</strong> propozycję{ofTitle ? <> <em>„{ofTitle}"</em></> : null}</>, sub: "czeka na otwarcie (max 14 dni)" });
+      events.push({ ts, dot: "#2563eb", type: "sent", title: ofTitle, sub: t("supplier.dashboard.activity.sent.sub") });
     } else if (s.status === "expired" || s.status === "refunded") {
-      events.push({ ts, dot: "#94a3b8", body: <><strong>Wysyłka wygasła</strong>{ofTitle ? <> <em>„{ofTitle}"</em></> : null}</>, sub: "kredyt zwrócony do pakietu" });
+      events.push({ ts, dot: "#94a3b8", type: "expired", title: ofTitle, sub: t("supplier.dashboard.activity.expired.sub") });
     }
   }
   for (const o of (offers || [])) {
     if (o.supplierId && o.supplierId !== accountId) continue;
     const ts = new Date(o.updatedAt || o.createdAt || 0).getTime();
     if (!ts) continue;
-    const t = o.title || o.product || "";
+    const oTitle = o.title || o.product || "";
     if (o.status === "active") {
-      events.push({ ts, dot: "#059669", body: <><strong>Propozycja zatwierdzona</strong>{t ? <> <em>„{t}"</em></> : null}</>, sub: "gotowa do wysłania" });
+      events.push({ ts, dot: "#059669", type: "approved", title: oTitle, sub: t("supplier.dashboard.activity.approved.sub") });
     } else if (o.status === "draft") {
-      events.push({ ts, dot: "#94a3b8", body: <><strong>Dodano propozycję</strong>{t ? <> <em>„{t}"</em></> : null}</>, sub: "status: szkic" });
+      events.push({ ts, dot: "#94a3b8", type: "added", title: oTitle, sub: t("supplier.dashboard.activity.added.sub") });
     }
   }
   for (const r of refunds) {
-    events.push({ ts: r.timestamp || Date.now(), dot: "#059669", body: <><strong>Zwrot kredytu</strong>{r.amount ? <> (+{r.amount} €)</> : null}</>, sub: r.msg || "wysyłka wygasła nieotwarta" });
+    events.push({
+      ts: r.timestamp || Date.now(),
+      dot: "#059669",
+      type: "refund",
+      amount: r.amount || null,
+      sub: r.msg || t("supplier.dashboard.activity.refund.sub_default"),
+    });
   }
   events.sort((a, b) => b.ts - a.ts);
   const activity = events.slice(0, 6);
@@ -3484,8 +3481,8 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
         </div>
         <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px", marginBottom:12, opacity:0.6 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-            <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Wysyłki PreConnect — ostatnie 30 dni</div>
-            <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>brak danych</div>
+            <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>{t("supplier.dashboard.kpi_section.header")}</div>
+            <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>{t("supplier.dashboard.kpi_section.no_data")}</div>
           </div>
           <KpiRow waiting={null} seen={null} expired={null} ratePct={null} placeholder />
         </div>
@@ -3511,19 +3508,22 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
 
       <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px", marginBottom:12 }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-          <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Wysyłki PreConnect — ostatnie 30 dni</div>
-          <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>{recentSends.length} wysyłek łącznie</div>
+          <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>{t("supplier.dashboard.kpi_section.header")}</div>
+          <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>{t("supplier.dashboard.kpi_section.total", { count: recentSends.length })}</div>
         </div>
         <KpiRow waiting={stWaiting} seen={stSeen} expired={stExpired} ratePct={stRatePct} />
       </div>
 
       {refunds.length > 0 && (() => {
-        const total = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const totalAmount = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+        const totalSuffix = totalAmount
+          ? t("supplier.dashboard.refunds_strip.total_suffix_format", { total: totalAmount })
+          : "";
         return (
           <div style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:8, marginBottom:12, fontSize:11.5, color:"#065f46" }}>
             <span style={{ width:7, height:7, borderRadius:"50%", background:"#059669", flexShrink:0 }} />
-            <span><strong style={{ fontWeight:600 }}>{refunds.length === 1 ? "1 zwrot kredytu" : `${refunds.length} zwrotów kredytów`}{total ? ` (${total} €)` : ""}</strong> w tym miesiącu — kupcy nie otworzyli w terminie. Kredyty wróciły do pakietu automatycznie.</span>
-            <button onClick={() => nav("finanse")} style={{ background:"none", border:"none", color:"#059669", fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", padding:0, marginLeft:"auto" }}>Zobacz</button>
+            <span>{t("supplier.dashboard.refunds_strip.label", { count: refunds.length, totalSuffix })}</span>
+            <button onClick={() => nav("finanse")} style={{ background:"none", border:"none", color:"#059669", fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", padding:0, marginLeft:"auto" }}>{t("supplier.dashboard.refunds_strip.see_button")}</button>
           </div>
         );
       })()}
@@ -3671,38 +3671,57 @@ function KpiRow({ waiting, seen, expired, ratePct, placeholder }) {
 }
 
 function ActivityCard({ events }) {
+  // [Krok P2-3c] Bilingual via supplier.dashboard.activity_card.* + time_rel.*
+  // i18next plurals dla godzin/dni; date arrays już dispatchują locale (P2-1).
+  // pluralDni helper USUNIĘTY — ten był jego ostatnim call site w ActivityCard.
+  const { t } = useTranslation("legacy");
   function relTime(ts) {
     const diff = Date.now() - ts;
-    // [Krok P2-1] Teksty "przed chwilą" / "godz. temu" / "dni temu"
-    // zostają PL — tłumaczenie tych krótkich wyrażeń względnych w P2-3.
-    if (diff < 60 * 60 * 1000) return "przed chwilą";
-    if (diff < 24 * 60 * 60 * 1000) return `${Math.floor(diff / (60*60*1000))} godz. temu`;
+    if (diff < 60 * 60 * 1000) return t("supplier.dashboard.time_rel.just_now");
+    if (diff < 24 * 60 * 60 * 1000) {
+      const h = Math.floor(diff / (60*60*1000));
+      return t("supplier.dashboard.time_rel.hours_ago", { count: h });
+    }
     if (diff < 7 * 24 * 60 * 60 * 1000) {
       const n = Math.floor(diff / (24*60*60*1000));
-      return `${n} ${pluralDni(n)} temu`;
+      return t("supplier.dashboard.time_rel.days_ago", { count: n });
     }
     const d = new Date(ts);
-    // [Krok P2-1] Format "26 maj" / "26 May" — dispatch po locale, in-place.
     const months_ = i18n.language === "en" ? EN_MONTHS_SHORT : PL_MONTHS_SHORT;
     return `${d.getDate()} ${months_[d.getMonth()]}`;
   }
+
+  // Render body przez Trans — wybiera klucz po `e.type` + obsługuje
+  // refund (body_with_amount / body_no_amount) i ogólne (body_with_title /
+  // body_no_title). Components z <strong>/<em> zachowują wizualne wyróżnienie.
+  function renderBody(e) {
+    if (e.type === "refund") {
+      return e.amount
+        ? <Trans i18nKey="supplier.dashboard.activity.refund.body_with_amount" ns="legacy" values={{ amount: e.amount }} components={{ strong: <strong /> }} />
+        : <Trans i18nKey="supplier.dashboard.activity.refund.body_no_amount" ns="legacy" components={{ strong: <strong /> }} />;
+    }
+    return e.title
+      ? <Trans i18nKey={`supplier.dashboard.activity.${e.type}.body_with_title`} ns="legacy" values={{ title: e.title }} components={{ strong: <strong />, em: <em /> }} />
+      : <Trans i18nKey={`supplier.dashboard.activity.${e.type}.body_no_title`} ns="legacy" components={{ strong: <strong /> }} />;
+  }
+
   return (
     <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Ostatnia aktywność</div>
+        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>{t("supplier.dashboard.activity_card.header")}</div>
         <div style={{ marginLeft:"auto", fontSize:11, color:"#94a3b8" }}>
-          {events.length === 0 ? "brak zdarzeń" : `${events.length} ${events.length === 1 ? "zdarzenie" : (events.length < 5 ? "zdarzenia" : "zdarzeń")}`}
+          {events.length === 0 ? t("supplier.dashboard.activity_card.empty_meta") : t("supplier.dashboard.activity_card.total", { count: events.length })}
         </div>
       </div>
       {events.length === 0 ? (
         <div style={{ fontSize:12.5, color:"#94a3b8", padding:"6px 0" }}>
-          Wyślij pierwszą propozycję, żeby zobaczyć historię tutaj.
+          {t("supplier.dashboard.activity_card.empty_body")}
         </div>
       ) : events.map((e, i) => (
         <div key={i} style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"8px 0", borderBottom: i === events.length - 1 ? "none" : "1px solid #f1f5f9" }}>
           <div style={{ width:7, height:7, borderRadius:"50%", background:e.dot, marginTop:6, flexShrink:0 }} />
           <div style={{ flex:1, minWidth:0, fontSize:12.5, lineHeight:1.45, color:"#334155" }}>
-            <div>{e.body}</div>
+            <div>{renderBody(e)}</div>
             <div style={{ fontSize:10.5, color:"#94a3b8", marginTop:1 }}>{relTime(e.ts)}{e.sub ? ` · ${e.sub}` : ""}</div>
           </div>
         </div>
@@ -3712,8 +3731,18 @@ function ActivityCard({ events }) {
 }
 
 function FmCompactCard({ daysToOpen, schedulingOpen, planPublished, nav, fmSettings }) {
-  const phaseLabel = planPublished ? "Plan opublikowany" : schedulingOpen ? "Wybór sieci aktywny" : "Wkrótce";
-  const bigText = (schedulingOpen || planPublished) ? null : `za ${daysToOpen} ${pluralDni(daysToOpen)}`;
+  // [Krok P2-3c] Bilingual via supplier.dashboard.fm_compact.* + time.in_days
+  // (i18next plurals dla "za X dni" — usunęło ostatnie użycie pluralDni
+  // w PreconnectFM, helper można teraz wyciąć z pliku).
+  const { t } = useTranslation("legacy");
+  const phaseLabel = planPublished
+    ? t("supplier.dashboard.fm_compact.phase_published")
+    : schedulingOpen
+      ? t("supplier.dashboard.fm_compact.phase_open")
+      : t("supplier.dashboard.fm_compact.phase_soon");
+  const bigText = (schedulingOpen || planPublished)
+    ? null
+    : t("supplier.dashboard.time.in_days", { count: daysToOpen });
   const handleClick = () => {
     if (planPublished || schedulingOpen) {
       try { nav(resolveFMRoute(fmSettings)); } catch (e) { nav("fm-sched"); }
@@ -3722,7 +3751,7 @@ function FmCompactCard({ daysToOpen, schedulingOpen, planPublished, nav, fmSetti
   return (
     <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px" }}>
       <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10 }}>
-        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>Spotkania FM 2026</div>
+        <div style={{ fontSize:10.5, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.06em", color:"#64748b" }}>{t("supplier.dashboard.fm_compact.header")}</div>
         <div style={{ marginLeft:"auto", padding:"2px 8px", borderRadius:99, background:"#f1f5f9", color:"#64748b", fontSize:9.5, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.05em" }}>{phaseLabel}</div>
       </div>
       {bigText && (
@@ -3730,17 +3759,17 @@ function FmCompactCard({ daysToOpen, schedulingOpen, planPublished, nav, fmSetti
       )}
       <div style={{ fontSize:12, color:"#475569", lineHeight:1.55 }}>
         {planPublished
-          ? "Grafik gotowy — zobacz numery swoich spotkań."
+          ? t("supplier.dashboard.fm_compact.main_published")
           : schedulingOpen
-            ? "Wybór sieci otwarty — przejdź do FM 2026."
-            : <>Otwarcie wyboru sieci · <strong style={{ color:"#0f172a" }}>1 września</strong></>}
+            ? t("supplier.dashboard.fm_compact.main_open")
+            : <>{t("supplier.dashboard.fm_compact.main_soon_pre")}<strong style={{ color:"#0f172a" }}>{t("supplier.dashboard.fm_compact.main_soon_date")}</strong></>}
       </div>
       <div style={{ display:"flex", alignItems:"center", margin:"10px 0", padding:"0 2px" }}>
         {[
-          { l:"Wkrótce",  s: (schedulingOpen || planPublished) ? "done" : "current" },
-          { l:"Wybór",    s: planPublished ? "done" : schedulingOpen ? "current" : "pending" },
-          { l:"Algorytm", s: planPublished ? "done" : "pending" },
-          { l:"Plan",     s: planPublished ? "current" : "pending" },
+          { l:t("supplier.dashboard.fm_compact.step_soon"),   s: (schedulingOpen || planPublished) ? "done" : "current" },
+          { l:t("supplier.dashboard.fm_compact.step_choice"), s: planPublished ? "done" : schedulingOpen ? "current" : "pending" },
+          { l:t("supplier.dashboard.fm_compact.step_algo"),   s: planPublished ? "done" : "pending" },
+          { l:t("supplier.dashboard.fm_compact.step_plan"),   s: planPublished ? "current" : "pending" },
         ].map((step, i, arr) => (
           <div key={i} style={{ flex:1, textAlign:"center", position:"relative", fontSize:9.5, color:"#94a3b8", fontWeight:600 }}>
             <div style={{
@@ -3770,52 +3799,54 @@ function FmCompactCard({ daysToOpen, schedulingOpen, planPublished, nav, fmSetti
           fontFamily:"inherit",
           opacity: (schedulingOpen || planPublished) ? 1 : 0.7,
         }}
-      >{planPublished ? "Zobacz spotkania →" : schedulingOpen ? "Otwórz wybór sieci →" : "Zobacz program FM →"}</button>
+      >{planPublished ? t("supplier.dashboard.fm_compact.btn_published") : schedulingOpen ? t("supplier.dashboard.fm_compact.btn_open") : t("supplier.dashboard.fm_compact.btn_soon")}</button>
     </div>
   );
 }
 
 function OnboardingChecklist({ co, pkgMax, rem, activeOffersCount, mySendsCount, nav }) {
+  // [Krok P2-3c] Bilingual via supplier.dashboard.onboarding.*
   // Krok 4 (pakiet) jest wyszarzony w pending_review — cennik można oglądać,
-  // ale zakup zablokowany do akceptacji konta. Sygnał w mockupie v4.
+  // ale zakup zablokowany do akceptacji konta.
+  const { t } = useTranslation("legacy");
   const steps = [
     {
       key: "profile",
-      label: "Uzupełnij dane firmy",
-      hint: "Nazwa, NIP, kraj, krótki opis — minimum żeby kupiec wiedział kogo dotyczy oferta.",
+      label: t("supplier.dashboard.onboarding.step_profile_label"),
+      hint: t("supplier.dashboard.onboarding.step_profile_hint"),
       done: !!(co?.name && co?.country && (co?.description || co?.description_short)),
-      cta: "Otwórz profil",
+      cta: t("supplier.dashboard.onboarding.step_profile_cta"),
       goto: "company",
     },
     {
       key: "logo",
-      label: "Wgraj logo firmy",
-      hint: "Pokazuje się w mailu do kupca i przy ofertach. PNG/JPG, ~400×400 px.",
+      label: t("supplier.dashboard.onboarding.step_logo_label"),
+      hint: t("supplier.dashboard.onboarding.step_logo_hint"),
       done: !!(co?.logo_url || co?.logo),
-      cta: "Wgraj logo",
+      cta: t("supplier.dashboard.onboarding.step_logo_cta"),
       goto: "company",
     },
     {
       key: "offer",
-      label: "Dodaj pierwszą propozycję asortymentową",
-      hint: "Produkt + krótka specyfikacja + 1–3 zdjęcia.",
+      label: t("supplier.dashboard.onboarding.step_offer_label"),
+      hint: t("supplier.dashboard.onboarding.step_offer_hint"),
       done: activeOffersCount > 0,
-      cta: "Dodaj propozycję",
+      cta: t("supplier.dashboard.onboarding.step_offer_cta"),
       goto: "offers",
     },
     {
       key: "package",
-      label: "Pakiet odblokujemy po akceptacji konta",
-      hint: "Cennik dostępny do podglądu. Zakup będzie możliwy zaraz po zatwierdzeniu konta przez administratora.",
+      label: t("supplier.dashboard.onboarding.step_package_label"),
+      hint: t("supplier.dashboard.onboarding.step_package_hint"),
       done: false,
-      cta: "Zobacz cennik",
+      cta: t("supplier.dashboard.onboarding.step_package_cta"),
       goto: "finanse",
       dim: true,
     },
     {
       key: "send",
-      label: "Wyślij propozycję do sieci",
-      hint: "Pierwsza wysyłka po aktywacji konta.",
+      label: t("supplier.dashboard.onboarding.step_send_label"),
+      hint: t("supplier.dashboard.onboarding.step_send_hint"),
       done: mySendsCount > 0,
       cta: null,
     },
@@ -3825,7 +3856,7 @@ function OnboardingChecklist({ co, pkgMax, rem, activeOffersCount, mySendsCount,
     <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"14px 16px", marginBottom:12 }}>
       <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:12 }}>
         <div style={{ fontWeight:700, fontSize:13, color:"#0f172a" }}>
-          Zacznij tutaj <span style={{ color:"#64748b", fontWeight:500, marginLeft:5, fontSize:11.5 }}>({doneCount}/{steps.length})</span>
+          {t("supplier.dashboard.onboarding.header_label")} <span style={{ color:"#64748b", fontWeight:500, marginLeft:5, fontSize:11.5 }}>{t("supplier.dashboard.onboarding.header_progress", { done: doneCount, total: steps.length })}</span>
         </div>
         <div style={{ flex:1, height:5, background:"#f1f5f9", borderRadius:99, overflow:"hidden" }}>
           <div style={{ width:`${(doneCount/steps.length)*100}%`, height:"100%", background:"#0d9488", borderRadius:99 }} />

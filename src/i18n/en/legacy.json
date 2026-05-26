@@ -102,6 +102,153 @@
         "in_days_few": "in {{count}} days",
         "in_days_many": "in {{count}} days",
         "in_days_other": "in {{count}} days"
+      },
+      "next_step_variants": {
+        "pending_review": {
+          "title": "Complete your company profile to speed up approval",
+          "desc": "Admins approve accounts faster when they have complete data: company description, logo, certificates, and at least 1 submission in the catalog.",
+          "cta": "Open company profile"
+        },
+        "no_package": {
+          "title": "Choose a submission package to start",
+          "desc": "Without credits you can't submit proposals to retailers. Packages start from 1 submission upwards.",
+          "cta": "Choose package"
+        },
+        "no_offers": {
+          "title": "Add your first product submission",
+          "desc": "Product + brief specification + photos. After moderation approval you can submit to retailers.",
+          "cta": "Add submission"
+        },
+        "refunds": {
+          "title_one": "You have 1 credit refund to review{{totalSuffix}}",
+          "title_few": "You have {{count}} credit refunds to review{{totalSuffix}}",
+          "title_many": "You have {{count}} credit refunds to review{{totalSuffix}}",
+          "title_other": "You have {{count}} credit refunds to review{{totalSuffix}}",
+          "total_suffix_format": " — {{total}} €",
+          "desc": "Buyers didn't open your submissions within the 14-day window. Credits returned to your package automatically.",
+          "cta": "See refunds"
+        },
+        "no_recent_sends": {
+          "title_one": "You have {{count}} active product proposal ready for submission",
+          "title_few": "You have {{count}} active product proposals ready for submission",
+          "title_many": "You have {{count}} active product proposals ready for submission",
+          "title_other": "You have {{count}} active product proposals ready for submission",
+          "desc": "Use the credits from your package. Choose retailers and prepare a submission for the next window.",
+          "cta": "Prepare submission"
+        },
+        "package_low": {
+          "title": "Package running low — buy a top-up",
+          "desc": "You've used {{used}} of {{max}} credits ({{pct}}%). Without a new package you won't be able to submit in the next window.",
+          "cta": "Buy package"
+        },
+        "default": {
+          "title": "All set — keep submitting",
+          "desc": "You have {{credits}} credits available. Next window: {{date}}.",
+          "cta": "Prepare submission"
+        }
+      },
+      "activity": {
+        "buyer_viewed": {
+          "body_with_title": "<strong>The buyer viewed</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>The buyer viewed</strong> a product proposal",
+          "sub": "credit charged from the package"
+        },
+        "sent": {
+          "body_with_title": "<strong>Submitted</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>Submitted</strong> a product proposal",
+          "sub": "awaiting open (max 14 days)"
+        },
+        "expired": {
+          "body_with_title": "<strong>Product proposal expired</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>Product proposal expired</strong>",
+          "sub": "credit refunded to the package"
+        },
+        "approved": {
+          "body_with_title": "<strong>Product proposal approved</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>Product proposal approved</strong>",
+          "sub": "ready for submission"
+        },
+        "added": {
+          "body_with_title": "<strong>Product proposal added</strong> <em>“{{title}}”</em>",
+          "body_no_title": "<strong>Product proposal added</strong>",
+          "sub": "status: draft"
+        },
+        "refund": {
+          "body_with_amount": "<strong>Credit refund</strong> (+{{amount}} €)",
+          "body_no_amount": "<strong>Credit refund</strong>",
+          "sub_default": "submission expired unopened"
+        }
+      },
+      "refunds_strip": {
+        "label_one": "1 credit refund{{totalSuffix}} this month — buyers didn't open in time. Credits returned to your package automatically.",
+        "label_few": "{{count}} credit refunds{{totalSuffix}} this month — buyers didn't open in time. Credits returned to your package automatically.",
+        "label_many": "{{count}} credit refunds{{totalSuffix}} this month — buyers didn't open in time. Credits returned to your package automatically.",
+        "label_other": "{{count}} credit refunds{{totalSuffix}} this month — buyers didn't open in time. Credits returned to your package automatically.",
+        "total_suffix_format": " ({{total}} €)",
+        "see_button": "See"
+      },
+      "kpi_section": {
+        "header": "PreConnect submissions — last 30 days",
+        "no_data": "no data",
+        "total_one": "1 submission total",
+        "total_few": "{{count}} submissions total",
+        "total_many": "{{count}} submissions total",
+        "total_other": "{{count}} submissions total"
+      },
+      "activity_card": {
+        "header": "Last activity",
+        "empty_meta": "no events",
+        "total_one": "{{count}} event",
+        "total_few": "{{count}} events",
+        "total_many": "{{count}} events",
+        "total_other": "{{count}} events",
+        "empty_body": "Prepare your first submission to see history here."
+      },
+      "time_rel": {
+        "just_now": "just now",
+        "hours_ago_one": "{{count}} hour ago",
+        "hours_ago_few": "{{count}} hours ago",
+        "hours_ago_many": "{{count}} hours ago",
+        "hours_ago_other": "{{count}} hours ago",
+        "days_ago_one": "{{count}} day ago",
+        "days_ago_few": "{{count}} days ago",
+        "days_ago_many": "{{count}} days ago",
+        "days_ago_other": "{{count}} days ago"
+      },
+      "fm_compact": {
+        "header": "FM 2026 Meetings",
+        "phase_published": "Plan published",
+        "phase_open": "Selection active",
+        "phase_soon": "Coming soon",
+        "main_published": "Schedule ready — see your meeting numbers.",
+        "main_open": "Selection open — go to FM 2026.",
+        "main_soon_pre": "Selection opens · ",
+        "main_soon_date": "1 September",
+        "step_soon": "Soon",
+        "step_choice": "Selection",
+        "step_algo": "Algorithm",
+        "step_plan": "Plan",
+        "btn_published": "See meetings →",
+        "btn_open": "Open selection →",
+        "btn_soon": "See FM schedule →"
+      },
+      "onboarding": {
+        "header_label": "Start here",
+        "header_progress": "({{done}}/{{total}})",
+        "step_profile_label": "Complete company details",
+        "step_profile_hint": "Name, Tax ID, country, short description — minimum so the buyer knows who the submission is from.",
+        "step_profile_cta": "Open profile",
+        "step_logo_label": "Upload company logo",
+        "step_logo_hint": "Shown in the email to the buyer and next to submissions. PNG/JPG, ~400×400 px.",
+        "step_logo_cta": "Upload logo",
+        "step_offer_label": "Add your first product submission",
+        "step_offer_hint": "Product + brief specification + 1–3 photos.",
+        "step_offer_cta": "Add submission",
+        "step_package_label": "Package unlocks after account approval",
+        "step_package_hint": "Pricing visible for preview. Purchase will be available right after admin approval.",
+        "step_package_cta": "See pricing",
+        "step_send_label": "Submit to retailers",
+        "step_send_hint": "First submission after account activation."
       }
     }
   },

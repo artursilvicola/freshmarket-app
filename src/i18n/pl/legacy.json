@@ -102,6 +102,153 @@
         "in_days_few": "za {{count}} dni",
         "in_days_many": "za {{count}} dni",
         "in_days_other": "za {{count}} dni"
+      },
+      "next_step_variants": {
+        "pending_review": {
+          "title": "Uzupełnij profil firmy, żeby przyspieszyć akceptację",
+          "desc": "Admin zatwierdza szybciej konta z kompletnymi danymi: opis firmy, logo, certyfikaty i przynajmniej 1 propozycja w katalogu.",
+          "cta": "Otwórz profil firmy"
+        },
+        "no_package": {
+          "title": "Wybierz pakiet wysyłek żeby zacząć",
+          "desc": "Bez kredytów nie wyślesz propozycji do sieci. Pakiety od 1 wysyłki w górę.",
+          "cta": "Wybierz pakiet"
+        },
+        "no_offers": {
+          "title": "Dodaj swoją pierwszą propozycję asortymentową",
+          "desc": "Produkt + krótka specyfikacja + zdjęcia. Po zatwierdzeniu przez moderację możesz wysłać do sieci.",
+          "cta": "Dodaj propozycję"
+        },
+        "refunds": {
+          "title_one": "Masz 1 zwrot kredytów do sprawdzenia{{totalSuffix}}",
+          "title_few": "Masz {{count}} zwroty kredytów do sprawdzenia{{totalSuffix}}",
+          "title_many": "Masz {{count}} zwrotów kredytów do sprawdzenia{{totalSuffix}}",
+          "title_other": "Masz {{count}} zwrotów kredytów do sprawdzenia{{totalSuffix}}",
+          "total_suffix_format": " — {{total}} €",
+          "desc": "Kupcy nie otworzyli Twoich propozycji w terminie 14 dni. Kredyty wróciły do pakietu automatycznie.",
+          "cta": "Zobacz zwroty"
+        },
+        "no_recent_sends": {
+          "title_one": "Masz {{count}} aktywną propozycję gotową do wysyłki",
+          "title_few": "Masz {{count}} aktywne propozycje gotowe do wysyłki",
+          "title_many": "Masz {{count}} aktywnych propozycji gotowych do wysyłki",
+          "title_other": "Masz {{count}} aktywnych propozycji gotowych do wysyłki",
+          "desc": "Wykorzystaj kredyty z pakietu. Wybierz sieci i przygotuj wysyłkę w najbliższym oknie.",
+          "cta": "Przygotuj wysyłkę"
+        },
+        "package_low": {
+          "title": "Pakiet kończy się — kup uzupełnienie",
+          "desc": "Wykorzystałeś {{used}} z {{max}} kredytów ({{pct}}%). Bez nowego pakietu nie wyślesz w najbliższym oknie.",
+          "cta": "Kup pakiet"
+        },
+        "default": {
+          "title": "Wszystko gotowe — kontynuuj wysyłki",
+          "desc": "Masz {{credits}} kredytów do wykorzystania. Najbliższe okno: {{date}}.",
+          "cta": "Przygotuj wysyłkę"
+        }
+      },
+      "activity": {
+        "buyer_viewed": {
+          "body_with_title": "<strong>Kupiec zobaczył</strong> propozycję <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Kupiec zobaczył</strong> propozycję",
+          "sub": "kredyt pobrany z pakietu"
+        },
+        "sent": {
+          "body_with_title": "<strong>Wysłano</strong> propozycję <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Wysłano</strong> propozycję",
+          "sub": "czeka na otwarcie (max 14 dni)"
+        },
+        "expired": {
+          "body_with_title": "<strong>Wysyłka wygasła</strong> <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Wysyłka wygasła</strong>",
+          "sub": "kredyt zwrócony do pakietu"
+        },
+        "approved": {
+          "body_with_title": "<strong>Propozycja zatwierdzona</strong> <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Propozycja zatwierdzona</strong>",
+          "sub": "gotowa do wysłania"
+        },
+        "added": {
+          "body_with_title": "<strong>Dodano propozycję</strong> <em>„{{title}}\"</em>",
+          "body_no_title": "<strong>Dodano propozycję</strong>",
+          "sub": "status: szkic"
+        },
+        "refund": {
+          "body_with_amount": "<strong>Zwrot kredytu</strong> (+{{amount}} €)",
+          "body_no_amount": "<strong>Zwrot kredytu</strong>",
+          "sub_default": "wysyłka wygasła nieotwarta"
+        }
+      },
+      "refunds_strip": {
+        "label_one": "1 zwrot kredytu{{totalSuffix}} w tym miesiącu — kupcy nie otworzyli w terminie. Kredyty wróciły do pakietu automatycznie.",
+        "label_few": "{{count}} zwroty kredytów{{totalSuffix}} w tym miesiącu — kupcy nie otworzyli w terminie. Kredyty wróciły do pakietu automatycznie.",
+        "label_many": "{{count}} zwrotów kredytów{{totalSuffix}} w tym miesiącu — kupcy nie otworzyli w terminie. Kredyty wróciły do pakietu automatycznie.",
+        "label_other": "{{count}} zwrotów kredytów{{totalSuffix}} w tym miesiącu — kupcy nie otworzyli w terminie. Kredyty wróciły do pakietu automatycznie.",
+        "total_suffix_format": " ({{total}} €)",
+        "see_button": "Zobacz"
+      },
+      "kpi_section": {
+        "header": "Wysyłki PreConnect — ostatnie 30 dni",
+        "no_data": "brak danych",
+        "total_one": "1 wysyłka łącznie",
+        "total_few": "{{count}} wysyłki łącznie",
+        "total_many": "{{count}} wysyłek łącznie",
+        "total_other": "{{count}} wysyłek łącznie"
+      },
+      "activity_card": {
+        "header": "Ostatnia aktywność",
+        "empty_meta": "brak zdarzeń",
+        "total_one": "{{count}} zdarzenie",
+        "total_few": "{{count}} zdarzenia",
+        "total_many": "{{count}} zdarzeń",
+        "total_other": "{{count}} zdarzeń",
+        "empty_body": "Wyślij pierwszą propozycję, żeby zobaczyć historię tutaj."
+      },
+      "time_rel": {
+        "just_now": "przed chwilą",
+        "hours_ago_one": "{{count}} godz. temu",
+        "hours_ago_few": "{{count}} godz. temu",
+        "hours_ago_many": "{{count}} godz. temu",
+        "hours_ago_other": "{{count}} godz. temu",
+        "days_ago_one": "{{count}} dzień temu",
+        "days_ago_few": "{{count}} dni temu",
+        "days_ago_many": "{{count}} dni temu",
+        "days_ago_other": "{{count}} dni temu"
+      },
+      "fm_compact": {
+        "header": "Spotkania FM 2026",
+        "phase_published": "Plan opublikowany",
+        "phase_open": "Wybór sieci aktywny",
+        "phase_soon": "Wkrótce",
+        "main_published": "Grafik gotowy — zobacz numery swoich spotkań.",
+        "main_open": "Wybór sieci otwarty — przejdź do FM 2026.",
+        "main_soon_pre": "Otwarcie wyboru sieci · ",
+        "main_soon_date": "1 września",
+        "step_soon": "Wkrótce",
+        "step_choice": "Wybór",
+        "step_algo": "Algorytm",
+        "step_plan": "Plan",
+        "btn_published": "Zobacz spotkania →",
+        "btn_open": "Otwórz wybór sieci →",
+        "btn_soon": "Zobacz program FM →"
+      },
+      "onboarding": {
+        "header_label": "Zacznij tutaj",
+        "header_progress": "({{done}}/{{total}})",
+        "step_profile_label": "Uzupełnij dane firmy",
+        "step_profile_hint": "Nazwa, NIP, kraj, krótki opis — minimum żeby kupiec wiedział kogo dotyczy oferta.",
+        "step_profile_cta": "Otwórz profil",
+        "step_logo_label": "Wgraj logo firmy",
+        "step_logo_hint": "Pokazuje się w mailu do kupca i przy ofertach. PNG/JPG, ~400×400 px.",
+        "step_logo_cta": "Wgraj logo",
+        "step_offer_label": "Dodaj pierwszą propozycję asortymentową",
+        "step_offer_hint": "Produkt + krótka specyfikacja + 1–3 zdjęcia.",
+        "step_offer_cta": "Dodaj propozycję",
+        "step_package_label": "Pakiet odblokujemy po akceptacji konta",
+        "step_package_hint": "Cennik dostępny do podglądu. Zakup będzie możliwy zaraz po zatwierdzeniu konta przez administratora.",
+        "step_package_cta": "Zobacz cennik",
+        "step_send_label": "Wyślij propozycję do sieci",
+        "step_send_hint": "Pierwsza wysyłka po aktywacji konta."
       }
     }
   },
