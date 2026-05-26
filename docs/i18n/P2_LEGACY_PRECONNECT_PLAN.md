@@ -1,8 +1,64 @@
 # P2 — Plan migracji `src/legacy/PreconnectFM.jsx` na bilingual PL/EN
 
-**Status:** plan do akceptacji Codexa, **zero zmian w kodzie** w tym kroku.
+**Status:** **zaakceptowany przez Codexa z BINDING decyzjami** (patrz sekcja niżej). Zero zmian w kodzie w tym dokumencie.
 
 Branch: `feat/i18n-p2-legacy-plan` · Baseline: `main` (po Krok 12 audit merge `f327025`, tag `v-i18n-nonlegacy`)
+
+## Decyzje Codexa (BINDING)
+
+Pytania otwarte z pierwszej wersji dokumentu (sekcja "Notes do dyskusji" niżej) zostały rozstrzygnięte. Te decyzje są wiążące dla wszystkich branchy P2-N — implementacja musi się do nich dostosować.
+
+### 1. Namespace i18n
+
+**Decyzja:** jeden plik `legacy.json` z sekcjami:
+```
+common, supplier, buyer, admin, fm, chat, errors
+```
+
+**Uzasadnienie:** najprostsze i najbezpieczniejsze. Jeden plik = jedna lista kluczy do zsynchronizowania PL↔EN. Sekcje wewnątrz pozwalają na czytelność (cały Buyer panel w jednej sekcji), ale bez podziału na osobne pliki które trzeba ładować osobno w `src/i18n/index.js`.
+
+**Wpływ na branche P2-N:**
+- Każdy branch dodaje klucze TYLKO do swojej sekcji (P2-2 → `buyer.*`, P2-3 → `supplier.*`, etc.)
+- Sekcja `common` reservowana na reużywalne (np. `confirm_delete`, `loading`, `back`) używane przez wiele Page*
+- Sekcja `errors` reservowana na komunikaty z `db.js` bilingualizowane razem z odpowiednią Page*
+- Po każdym branchu sanity check: `pl/legacy.json` i `en/legacy.json` symetryczne
+
+### 2. P2-6 split na P2-6a + P2-6b
+
+**Decyzja:** **TAK, dzielimy.** Zatwierdzony podział:
+- **P2-6a:** Admin Dashboard + Retailers + Firmy
+- **P2-6b:** Admin Pipeline (osobny branch ze względu na rozmiar i krytyczność moderacji)
+
+**Uzasadnienie:** Pipeline (linia 6528, ~700 linii) to najbardziej krytyczna ścieżka admina (moderacja propozycji + wysyłka batch do retailerów). Łączenie z lżejszymi Dash/Retailers/Firmy zwiększyłoby ryzyko PR-a do review.
+
+### 3. Czat osobny branch P2-7b
+
+**Decyzja:** **TAK, osobno.** `P2-7b: Chat` jako dedykowany branch z `FloatingChat` + `PageAdminChat`.
+
+**Uzasadnienie:** czat ma:
+- heavy state (threads, messages, unread counters)
+- integration z AI (suggest reply)
+- floating UI z animacjami i open/close logic
+
+Mieszanie z brandingiem/team management to nieuzasadnione ryzyko. Czat zasługuje na własny PR z osobnym test planem.
+
+### 4. Daty: NIE używać `Intl.DateTimeFormat` teraz
+
+**Decyzja:** zachowujemy obecne podejście — tablice `PL_DAYS` / `PL_MONTHS` / `PL_MONTHS_SHORT` (linie 3294-3296) **dostają wersje EN obok**. Klucze w `legacy.common.*` lub osobny moduł stałych.
+
+**Uzasadnienie:** `Intl.DateTimeFormat` to zmiana zachowania formatowania, nie tłumaczenie tekstu. To **refaktor** który wykracza poza zakres "i18n migration". Może być osobnym cleanup'em w przyszłości, ale **NIE w P2**.
+
+**Wpływ na branche:**
+- P2-1 (setup) dodaje `EN_DAYS` / `EN_MONTHS` / `EN_MONTHS_SHORT` (analogiczne tablice EN), z dispatch'em po `i18n.language`
+- Funkcje formatujące daty w PreconnectFM (jest ich kilka) muszą sięgać po właściwą tablicę zależnie od locale
+
+### 5. P2-11 (backend errors) — ODŁOŻONE
+
+**Decyzja:** **odkładamy.** Najpierw kończymy P2-1 do P2-10 (frontend legacy + maile Resend). Decyzja o P2-11 dopiero **po zakończeniu P2-10**, w osobnym review Codexa.
+
+**Uzasadnienie:** P2-11 (15+ Netlify functions × ~5-10 PL error stringów = ~100 zmian po stronie backendu) to duży nakład pracy o marginalnym zysku dla edge case'ów. Lepiej najpierw skończyć główny temat (frontend), zobaczyć ile rzeczywiście brakuje, potem podjąć decyzję na danych.
+
+---
 
 ## Stan wyjściowy (przed P2)
 
@@ -131,15 +187,16 @@ Zasada: **jeden branch = jeden spójny obszar UI** + **bez refaktoru logiki**, t
 **Branch:** `feat/i18n-p2-1-setup`
 
 **Zakres:**
-- Stworzenie `src/i18n/{pl,en}/legacy.json` (nowy namespace `legacy`)
+- Stworzenie `src/i18n/{pl,en}/legacy.json` (nowy namespace `legacy`) z sekcjami **`common`, `supplier`, `buyer`, `admin`, `fm`, `chat`, `errors`** (BINDING)
 - Rejestracja w `src/i18n/index.js`
 - Słowniki przeniesione do JSON: `STATUS_TIPS`, `STATUS_MAP`, `CTA_MAP`, `TYPE_LABELS`, `CEMOJI`/CNAMES — **tylko display labels, nie wartości seed danych**
 - Małe komponenty: `Alrt`, `TagToggle` jeśli mają hardcoded teksty (sprawdzić)
-- `PL_DAYS`/`PL_MONTHS` (linie 3294-3296) — sztywne polskie nazwy dni/miesięcy do tłumaczenia
+- `PL_DAYS`/`PL_MONTHS`/`PL_MONTHS_SHORT` (linie 3294-3296) — **BINDING decyzja: NIE `Intl.DateTimeFormat`**. Dodajemy obok analogiczne `EN_DAYS`/`EN_MONTHS`/`EN_MONTHS_SHORT`. Funkcje formatujące daty wybierają tablicę po `i18n.language === "en" ? EN_* : PL_*` (lub przez helper `getLocaleDaysMonths()` w nowym module `src/legacy/date-locale.js` jeśli używanych jest kilka razy)
 
 **Wyłączone:**
 - Nie ruszamy seed data structures (RETAILERS, COMPANIES_DB) — tylko display
 - Nie ruszamy FM_* constants
+- Nie zmieniamy zachowania formatowania dat (zostaje obecny format, tylko polskie/angielskie nazwy)
 
 **Wielkość:** ~50-80 stringów. Bardzo small risk. **Cel: ustawić wzorzec dla P2.**
 
@@ -233,30 +290,42 @@ Zasada: **jeden branch = jeden spójny obszar UI** + **bez refaktoru logiki**, t
 
 **Powiązany db.js:** `createBuyerAccount` (3), `adminUpdateBuyerAccount` (3), `validateBuyerAccountPayload` (5), `sendRetailerBatch` (1) — **12 stringów**
 
-**Wielkość:** ~400-600 stringów, ~1500 linii. Bardzo duża — **rozważyć podział na 2 podbranche**:
-- 6a: Dash + Retailers + Firmy
-- 6b: Pipeline (moderacja, najbardziej krytyczna sciężka)
+**Wielkość:** ~400-600 stringów, ~1500 linii. Bardzo duża — **podzielony na 2 branche (BINDING decyzja Codexa)**:
+- **P2-6a:** Dash + Retailers + Firmy (~800 linii, lżejsza część)
+- **P2-6b:** Pipeline (moderacja, ~700 linii, najbardziej krytyczna ścieżka)
 
 **Test plan:** admin moderuje ofertę, dodaje kupca, edytuje firmę, dodaje sieć handlową.
 
 ---
 
-#### **P2-7: Admin extras + email newsletter + AI** 🛠
+#### **P2-7: Admin extras + email newsletter** 🛠
 
 **Branch:** `feat/i18n-p2-7-admin-extras`
 
-**Zakres:**
+**Zakres (po BINDING decyzji Codexa — czat WYJĘTY do P2-7b):**
 - `EmailNewsletterModal` (7697) — modal wysyłki zbiorczej
 - `PageAdminBranding` (10394) — upload brand logo
 - `PageAdminTeam` (10598) — super_admin management
-- `FloatingChat` (1199) — może iść tu, ale to heavy → rozważyć osobny branch
-- `PageAdminChat` (1303) — analogicznie
 
-**Powiązany db.js:** `uploadBrandLogo` (5), `notifySupplier` (3), `suggestAdminChatReplyAI` (2), `promoteToAdmin` (4), `demoteFromAdmin` (3), `setSuperAdmin` (3) — **20 stringów**
+**Powiązany db.js:** `uploadBrandLogo` (5), `notifySupplier` (3), `promoteToAdmin` (4), `demoteFromAdmin` (3), `setSuperAdmin` (3) — **18 stringów**
 
-**Wielkość:** ~300-400 stringów, ~1000 linii. Duża.
+**Wielkość:** ~200-300 stringów, ~700 linii. Średnia (mniejsza po wyjęciu czata).
 
-**Decyzja do dyskusji:** czat (Floating + Admin) ma heavy state. Może iść osobny **P2-7b: czat** jeśli to ryzykowne.
+---
+
+#### **P2-7b: Czat (Floating + Admin)** 💬
+
+**Branch:** `feat/i18n-p2-7b-chat`
+
+**Zakres (osobny branch — BINDING decyzja Codexa):**
+- `FloatingChat` (1199) — floating UI dla supplier/buyer z threads
+- `PageAdminChat` (1303) — admin chat panel z AI suggest reply
+
+**Powiązany db.js:** `suggestAdminChatReplyAI` (2 errors), `getFmMessages`, `saveFmMessage`, `markFmMessageRead`
+
+**Wielkość:** ~200-300 stringów, ~2000 linii (od 1199 do ~3300). Średnia/duża.
+
+**Ryzyko:** heavy state (threads, unread counters), animacje open/close, integracja AI suggest. Osobny PR pozwala na dedykowany test plan: open/close, send message, mark read, AI suggest button.
 
 ---
 
@@ -376,7 +445,10 @@ Dla każdego branchu P2-N: bilingualizacja `db.js` ograniczona do **funkcji wywo
 - P2-4 (Supplier offers) → `saveOffer` (jeśli ma user-facing throw)
 - P2-5 (Finanse) → `createPayuOrder`, `saveCompanyContacts`, `generateCompanyDescriptionAI`
 - P2-6 (Admin core) → `createBuyerAccount`, `adminUpdateBuyerAccount`, `validateBuyerAccountPayload`, `sendRetailerBatch`
-- P2-7 (Admin extras) → `uploadBrandLogo`, `notifySupplier`, `suggestAdminChatReplyAI`, `promoteToAdmin`, `demoteFromAdmin`, `setSuperAdmin`
+- P2-6a (Admin Dash/Retailers/Firmy) → wybrane fragmenty admin operacji bez Pipeline
+- P2-6b (Admin Pipeline) → moderacja + batch
+- P2-7 (Admin extras bez czata) → `uploadBrandLogo`, `notifySupplier`, `promoteToAdmin`, `demoteFromAdmin`, `setSuperAdmin`
+- P2-7b (Czat) → `suggestAdminChatReplyAI`
 - P2-8/9 (FM) → `saveFm*` series (większość to dev sanity)
 
 Razem: po zakończeniu P2-2 do P2-9 → **wszystkie 32 user-facing errors z `db.js` bilingual**.
@@ -415,30 +487,39 @@ Razem: po zakończeniu P2-2 do P2-9 → **wszystkie 32 user-facing errors z `db.
 | P2-3 Supplier Dash | 1+JSON | ~500 | 150-200 | 🟡 med |
 | P2-4 Supplier Offers | 1+JSON | ~1100 | 300-400 | 🟠 high |
 | P2-5 Supplier Co/Finance | 1+JSON | ~800 | 200-300 | 🟡 med |
-| P2-6 Admin Core | 1+JSON | ~1500 | 400-600 | 🔴 very high |
-| P2-7 Admin Extras | 1+JSON | ~1000 | 300-400 | 🟠 high |
+| **P2-6a Admin (Dash+Retailers+Firmy)** | 1+JSON | ~800 | 250-350 | 🟠 high |
+| **P2-6b Admin Pipeline** | 1+JSON | ~700 | 150-250 | 🔴 very high |
+| P2-7 Admin Extras (bez czata) | 1+JSON | ~700 | 200-300 | 🟡 med |
+| **P2-7b Czat (Floating + Admin)** | 1+JSON | ~2000 | 200-300 | 🟠 high |
 | P2-8 FM Participants | 1+JSON | ~1100 | 300-400 | 🟠 high |
 | P2-9 FM Admin | 1+JSON | ~1400 | 400-600 | 🔴 very high |
 | P2-10 Emails | ~8+JSON | ~600 | 8 templates × 2 = 16 wersji | 🟡 med |
-| P2-11 Backend | ~15+ | ~200 | 100+ | 🟠 high (opcjonalne) |
+| P2-11 Backend (ODŁOŻONE) | ~15+ | ~200 | 100+ | 🟠 high — decyzja po P2-10 |
 
 **Łączny budżet:** ~10 866 linii do przejrzenia + nowe legacy.json ~2000 linii kluczy.
 
 ## Notes do dyskusji z Codexem
 
+> **STATUS: ROZSTRZYGNIĘTE.** Wszystkie 5 pytań poniżej dostały BINDING decyzje — patrz sekcja "Decyzje Codexa (BINDING)" na górze dokumentu. Lista zostaje jako historyczny zapis pytań.
+
 1. **Czy zachować jeden namespace `legacy` dla całego PreconnectFM** czy podzielić na `legacy.buyer`, `legacy.supplier`, `legacy.admin`, `legacy.fm`?
    - **Rekomendacja:** jeden `legacy.json` z sekcjami `buyer.*`, `supplier.*`, `admin.*`, `fm.*`, `common.*`. Łatwiej zarządzać, mniej duplikatów (np. `confirm_delete` może być reużywany).
+   - **Decyzja Codexa:** ✅ jeden `legacy.json` z sekcjami `common`, `supplier`, `buyer`, `admin`, `fm`, `chat`, `errors` (dodane `chat` i `errors`).
 
 2. **Czy P2-6 dzielić na 6a/6b?**
    - Admin Pipeline (6528) to ~700 linii i najbardziej krytyczna ścieżka. Rekomendacja: **TAK**, podział pomaga przy review Codexa.
+   - **Decyzja Codexa:** ✅ TAK — P2-6a (Dash + Retailers + Firmy) + P2-6b (Pipeline).
 
 3. **Czy P2-7 zawiera czat?**
    - Czat ma heavy state + threads + tooltips. Rekomendacja: **NIE**, czat dostaje osobny **P2-7b**.
+   - **Decyzja Codexa:** ✅ NIE — czat jako osobny P2-7b.
 
 4. **PL_DAYS / PL_MONTHS / PL_MONTHS_SHORT:**
    - Można użyć natywnego `Intl.DateTimeFormat(locale, ...)` zamiast hardcoded tablic. To **refaktor**, ale w pełni izolowany do funkcji formatowania dat. Decyzja do Codexa: refaktor czy zostawić tablice w obu językach?
+   - **Decyzja Codexa:** ✅ NIE `Intl` — tablice EN obok PL, formatery wybierają wg `i18n.language`.
 
 5. **Decyzja o P2-11 (backend errors)** — implementacja czy odłożenie?
+   - **Decyzja Codexa:** ✅ ODŁOŻONE do decyzji po P2-10.
 
 ## Sugerowana kolejność wykonania
 
@@ -457,9 +538,9 @@ P2-6a (Admin Dash + Retailers + Firmy)
   ↓
 P2-6b (Admin Pipeline)
   ↓
-P2-7 (Admin extras + branding + team)
+P2-7 (Admin extras + branding + team — bez czata)
   ↓
-P2-7b (Czat — opcjonalnie osobno)
+P2-7b (Czat — osobny branch, BINDING decyzja)
   ↓
 P2-8 (FM Buyer + Supplier)
   ↓
