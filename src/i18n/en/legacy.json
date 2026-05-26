@@ -56,13 +56,13 @@
         "active_package_format": "active package: Standard {{max}}",
         "no_active_package": "no active package",
         "credits_total_suffix": "/ {{max}} credits",
-        "placeholder_hint": "Choose a package to start sending",
+        "placeholder_hint": "Choose a package to start submissions",
         "usage_format": "{{used}} used · {{remaining}} available",
         "see_pricing": "See pricing",
         "buy_package": "Buy package"
       },
       "next_window": {
-        "header": "Next sending window",
+        "header": "Next submission window",
         "see_schedule": "See schedule"
       },
       "kpi_row": {
@@ -83,7 +83,7 @@
         "preconnect_li_1_strong": "Product submissions",
         "preconnect_li_1_rest": " are created in the ",
         "preconnect_li_1_em": "My submissions",
-        "preconnect_li_1_end": " tab. After moderation approval they are ready to send.",
+        "preconnect_li_1_end": " tab. After moderation approval they are ready for submission.",
         "preconnect_li_2_strong": "Submissions",
         "preconnect_li_2_rest": " go out on the first Tuesday of each month. Each submission to a retailer = 1 credit from the package.",
         "preconnect_li_3_strong": "The 14-day rule:",
