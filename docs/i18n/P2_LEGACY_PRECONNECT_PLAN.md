@@ -191,12 +191,13 @@ Zasada: **jeden branch = jeden spójny obszar UI** + **bez refaktoru logiki**, t
 - Rejestracja w `src/i18n/index.js`
 - Słowniki przeniesione do JSON: `STATUS_TIPS`, `STATUS_MAP`, `CTA_MAP`, `TYPE_LABELS`, `CEMOJI`/CNAMES — **tylko display labels, nie wartości seed danych**
 - Małe komponenty: `Alrt`, `TagToggle` jeśli mają hardcoded teksty (sprawdzić)
-- `PL_DAYS`/`PL_MONTHS`/`PL_MONTHS_SHORT` (linie 3294-3296) — **BINDING decyzja: NIE `Intl.DateTimeFormat`**. Dodajemy obok analogiczne `EN_DAYS`/`EN_MONTHS`/`EN_MONTHS_SHORT`. Funkcje formatujące daty wybierają tablicę po `i18n.language === "en" ? EN_* : PL_*` (lub przez helper `getLocaleDaysMonths()` w nowym module `src/legacy/date-locale.js` jeśli używanych jest kilka razy)
+- `PL_DAYS`/`PL_MONTHS`/`PL_MONTHS_SHORT` (linie 3294-3296) — **BINDING decyzja: NIE `Intl.DateTimeFormat`**. Dodajemy obok analogiczne `EN_DAYS`/`EN_MONTHS`/`EN_MONTHS_SHORT` **in-place w `PreconnectFM.jsx`**. Funkcje formatujące daty wybierają tablicę po `i18n.language === "en" ? EN_* : PL_*` inline, w miejscu użycia.
 
 **Wyłączone:**
 - Nie ruszamy seed data structures (RETAILERS, COMPANIES_DB) — tylko display
 - Nie ruszamy FM_* constants
 - Nie zmieniamy zachowania formatowania dat (zostaje obecny format, tylko polskie/angielskie nazwy)
+- **Nie tworzymy nowego modułu** (np. `src/legacy/date-locale.js`). W P2-1 dodajemy `EN_DAYS`/`EN_MONTHS`/`EN_MONTHS_SHORT` obok istniejących `PL_*` w `PreconnectFM.jsx` i wybieramy tablice in-place po `i18n.language`. **Bez refaktoru struktury** — żadnych nowych plików w `src/legacy/`, żadnego ekstrahowania helperów do osobnych modułów.
 
 **Wielkość:** ~50-80 stringów. Bardzo small risk. **Cel: ustawić wzorzec dla P2.**
 
