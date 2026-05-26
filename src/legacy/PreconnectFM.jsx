@@ -6149,6 +6149,10 @@ function ChangePasswordSection({ fl }) {
 }
 
 function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, buyerRetailerId, sends, onOpened }) {
+  // [Krok P2-2c] Bilingual via legacy.buyer.detail.*
+  // CompanyPreviewModal (open via showCoModal) zostaje PL — shared modal,
+  // czeka na P2-2d osobno.
+  const { t } = useTranslation("legacy");
   const supplierCo = getSupplierCo(send, offers, companies) || co || COMPANY_INIT;
   const [showCoModal, setShowCoModal] = useState(false);
   // [B2B Round 5.3] First time buyer opens this detail: flip status sent -> read
@@ -6161,7 +6165,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
     if (!send || send.status !== "sent" || typeof onOpened !== "function") return;
     onOpened(send);
   }, [sendId, sendStatus, onOpened]); // eslint-disable-line react-hooks/exhaustive-deps
-  if(!send) return <div><Btn outline onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> Wróć</Btn></div>;
+  if(!send) return <div><Btn outline onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> {t("buyer.detail.top.back_short")}</Btn></div>;
   const o=getOffer(send.offerId,offers); if(!o) return null;
   const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
   const allPack=[...(o.packaging||[]),o.customPackaging].filter(Boolean);
@@ -6201,10 +6205,10 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
     <div style={{ maxWidth:960 }}>
       {/* Top bar */}
       <div style={{ marginBottom:14,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
-        <Btn outline sm onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> Wróć do propozycji</Btn>
+        <Btn outline sm onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> {t("buyer.detail.top.back_to_offers")}</Btn>
         <label style={{ display:"flex",alignItems:"center",gap:7,padding:"6px 12px",background:isStarred?"#f0fdf4":"#f8fafc",border:`1.5px solid ${isStarred?"#059669":"#e2e8f0"}`,borderRadius:8,cursor:"pointer",userSelect:"none" }}>
           <input type="checkbox" checked={isStarred} onChange={()=>toggleStar(o.id)} style={{ width:15,height:15,cursor:"pointer",accentColor:"#059669" }}/>
-          <span style={{ fontSize:13,fontWeight:isStarred?600:400,color:isStarred?"#059669":"#64748b" }}>{isStarred?"Zapisana ✓":"Zapisz propozycję"}</span>
+          <span style={{ fontSize:13,fontWeight:isStarred?600:400,color:isStarred?"#059669":"#64748b" }}>{isStarred ? t("buyer.detail.top.save_saved") : t("buyer.detail.top.save_unsaved")}</span>
         </label>
       </div>
 
@@ -6230,7 +6234,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
           </div>
           <div style={{ fontWeight:700,fontSize:16,color:"#0f172a",marginBottom:8 }}>{o.title||o.product}</div>
           <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>
-            {[["Wolumen",vol],["Min. zamówienie",o.moq||o.minOrder],["Czas realizacji",o.leadTime],["Sezon",o.from&&o.to?`${o.from} – ${o.to}`:null]].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"5px 10px",background:"white",borderRadius:7,border:"1px solid #bbf7d0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12,color:"#0d9488" }}>{v}</div></div>)}
+            {[[t("buyer.detail.hero.kv_volume"),vol],[t("buyer.detail.hero.kv_moq"),o.moq||o.minOrder],[t("buyer.detail.hero.kv_lead_time"),o.leadTime],[t("buyer.detail.hero.kv_season"),o.from&&o.to?`${o.from} – ${o.to}`:null]].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"5px 10px",background:"white",borderRadius:7,border:"1px solid #bbf7d0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12,color:"#0d9488" }}>{v}</div></div>)}
           </div>
         </div>
       </div>
@@ -6240,13 +6244,13 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
         <div>
 
           {/* Identyfikacja */}
-          <Sec label="Identyfikacja produktu" icon="🎯" defaultOpen={true}>
-            <KV items={[["Nazwa",o.product],["Odmiana",o.variety],["Kategoria",o.category],["Podkategoria",o.subcategory],["Kraj",o.origin?`${FLAGS[o.origin]||"🌐"} ${CNAMES[o.origin]||o.origin}`:null],["Region",o.region],["Typ propozycji",o.offerType],["Pozycjonowanie",o.positioning]]}/>
+          <Sec label={t("buyer.detail.sections.identification")} icon="🎯" defaultOpen={true}>
+            <KV items={[[t("buyer.detail.kv.name"),o.product],[t("buyer.detail.kv.variety"),o.variety],[t("buyer.detail.kv.category"),o.category],[t("buyer.detail.kv.subcategory"),o.subcategory],[t("buyer.detail.kv.country"),o.origin?`${FLAGS[o.origin]||"🌐"} ${CNAMES[o.origin]||o.origin}`:null],[t("buyer.detail.kv.region"),o.region],[t("buyer.detail.kv.offer_type"),o.offerType],[t("buyer.detail.kv.positioning"),o.positioning]]}/>
           </Sec>
 
           {/* Co Cię wyróżnia — przeniesione tuż pod Identyfikację, otwarte domyślnie */}
           {(o.benefit1||o.benefit2||o.benefit3||o.shopBenefit)&&(
-            <Sec label="Co wyróżnia tego dostawcę?" icon="✅" color="#059669" bg="#f0fdf4" defaultOpen={true}>
+            <Sec label={t("buyer.detail.sections.what_distinguishes")} icon="✅" color="#059669" bg="#f0fdf4" defaultOpen={true}>
               <div style={{ display:"flex",flexDirection:"column",gap:7,marginBottom:o.shopBenefit?10:0 }}>
                 {[o.benefit1,o.benefit2,o.benefit3].filter(Boolean).map((b,i)=>(
                   <div key={i} style={{ display:"flex",gap:9,alignItems:"flex-start" }}>
@@ -6256,7 +6260,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
                 ))}
               </div>
               {o.shopBenefit&&<div style={{ padding:"10px 12px",background:"#dcfce7",borderRadius:7,fontSize:13,color:"#065f46",lineHeight:1.65,border:"1px solid #bbf7d0" }}>
-                <div style={{ fontSize:10,fontWeight:700,color:"#047857",textTransform:"uppercase",marginBottom:3 }}>Jak pomaga sprzedaży w sklepie</div>
+                <div style={{ fontSize:10,fontWeight:700,color:"#047857",textTransform:"uppercase",marginBottom:3 }}>{t("buyer.detail.sections.shop_benefit_label")}</div>
                 {o.shopBenefit}
               </div>}
             </Sec>
@@ -6264,7 +6268,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
           {/* Zdjęcia produktu — accordion, domyślnie zamknięty, pełen podgląd po rozwinięciu */}
           {(o.photos||[]).length>0 && (
-            <Sec label={`Zdjęcia produktu (${o.photos.length})`} icon="📸" color="#0d9488" bg="#f0fdfa" defaultOpen={false}>
+            <Sec label={t("buyer.detail.sections.photos_format",{count:o.photos.length})} icon="📸" color="#0d9488" bg="#f0fdfa" defaultOpen={false}>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:12 }}>
                 {o.photos.map((p,i)=>(
                   <a key={i} href={p} target="_blank" rel="noreferrer" style={{
@@ -6277,7 +6281,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
                     cursor:"zoom-in",
                     position:"relative",
                   }}>
-                    <img src={p} alt={`Zdjęcie ${i+1}`} loading="lazy" style={{
+                    <img src={p} alt={t("buyer.detail.sections.photo_alt_format",{n:i+1})} loading="lazy" style={{
                       width:"100%",
                       height:"100%",
                       objectFit:"contain",
@@ -6292,83 +6296,83 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
                       fontWeight:600,
                       padding:"2px 8px",
                       borderRadius:10,
-                    }}>{i===0 ? "Główne" : `Zdjęcie ${i+1}`}</span>
+                    }}>{i===0 ? t("buyer.detail.sections.photo_main") : t("buyer.detail.sections.photo_alt_format",{n:i+1})}</span>
                   </a>
                 ))}
               </div>
-              <div style={{ fontSize:11,color:"#64748b",marginTop:10 }}>Kliknij zdjęcie, by otworzyć w pełnym rozmiarze.</div>
+              <div style={{ fontSize:11,color:"#64748b",marginTop:10 }}>{t("buyer.detail.sections.photos_click_hint")}</div>
             </Sec>
           )}
 
           {/* Specyfikacja jakościowa */}
-          <Sec label="Specyfikacja jakościowa" icon="📊" color="#2563eb" bg="#eff6ff" defaultOpen={false}>
-            <KV items={[["Kaliber / rozmiar",o.size],["Klasa jakości",o.qualityClass],["Marka / brand",o.brand],["Tryb sprzedaży",o.saleMode],["Brix",o.brix],["Kolor / wybarwienie",o.colorSpec],["Bio / Organic",o.isBio?"Tak":null]]}/>
+          <Sec label={t("buyer.detail.sections.quality_spec")} icon="📊" color="#2563eb" bg="#eff6ff" defaultOpen={false}>
+            <KV items={[[t("buyer.detail.kv.size"),o.size],[t("buyer.detail.kv.quality_class"),o.qualityClass],[t("buyer.detail.kv.brand"),o.brand],[t("buyer.detail.kv.sale_mode"),o.saleMode],[t("buyer.detail.kv.brix"),o.brix],[t("buyer.detail.kv.color_spec"),o.colorSpec],[t("buyer.detail.kv.bio_organic"),o.isBio?t("buyer.detail.kv.bio_yes"):null]]}/>
             {o.qualitySpec&&<div style={{ marginTop:10,padding:"10px 12px",background:"#f8fafc",borderRadius:7,fontSize:13,color:"#334155",lineHeight:1.65,border:"1px solid #e2e8f0" }}>{o.qualitySpec}</div>}
           </Sec>
 
           {/* Kwiaty */}
           {(o.stemLength||o.vaseLife||o.bouquetCount)&&(
-            <Sec label="Parametry kwiatowe" icon="🌸" color="#7c3aed" bg="#faf5ff" defaultOpen={false}>
-              <KV items={[["Długość pędu",o.stemLength],["Faza otwarcia",o.openingPhase],["Szt. w bukiecie",o.bouquetCount],["Vase life",o.vaseLife],["Kolor / mix",o.flowerColor]]}/>
+            <Sec label={t("buyer.detail.sections.flower_params")} icon="🌸" color="#7c3aed" bg="#faf5ff" defaultOpen={false}>
+              <KV items={[[t("buyer.detail.kv.stem_length"),o.stemLength],[t("buyer.detail.kv.opening_phase"),o.openingPhase],[t("buyer.detail.kv.bouquet_count"),o.bouquetCount],[t("buyer.detail.kv.vase_life"),o.vaseLife],[t("buyer.detail.kv.flower_color"),o.flowerColor]]}/>
             </Sec>
           )}
 
           {/* Dostępność i wolumen */}
-          <Sec label="Dostępność i wolumen" icon="📅" defaultOpen={false}>
-            <KV items={[["Dostępność od",o.from],["Dostępność do",o.to],["Model dostępności",o.availabilityModel],["Wolumen min.",o.volumeMin?`${o.volumeMin} ${o.volumeUnit||""}`:null],["Wolumen maks.",o.volumeMax?`${o.volumeMax} ${o.volumeUnit||""}`:null],["Min. zamówienie",o.moq||o.minOrder],["Czas realizacji",o.leadTime],["Promo +%",o.promoVolumePct||o.promoVolume]]}/>
+          <Sec label={t("buyer.detail.sections.availability")} icon="📅" defaultOpen={false}>
+            <KV items={[[t("buyer.detail.kv.availability_from"),o.from],[t("buyer.detail.kv.availability_to"),o.to],[t("buyer.detail.kv.availability_model"),o.availabilityModel],[t("buyer.detail.kv.volume_min"),o.volumeMin?`${o.volumeMin} ${o.volumeUnit||""}`:null],[t("buyer.detail.kv.volume_max"),o.volumeMax?`${o.volumeMax} ${o.volumeUnit||""}`:null],[t("buyer.detail.kv.moq"),o.moq||o.minOrder],[t("buyer.detail.kv.lead_time"),o.leadTime],[t("buyer.detail.kv.promo_volume"),o.promoVolumePct||o.promoVolume]]}/>
             {(o.deliveryDays||[]).length>0&&<div style={{ marginTop:8,display:"flex",gap:5,flexWrap:"wrap" }}>{(o.deliveryDays||[]).map(d=><Badge key={d} color="#0d9488">{d}</Badge>)}</div>}
           </Sec>
 
           {/* Opakowanie */}
-          <Sec label="Opakowanie i paletyzacja" icon="📦" color="#d97706" bg="#fffbeb" defaultOpen={false}>
+          <Sec label={t("buyer.detail.sections.packaging")} icon="📦" color="#d97706" bg="#fffbeb" defaultOpen={false}>
             {allPack.length>0&&<div style={{ marginBottom:10,display:"flex",gap:5,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p} color="#d97706" bg="#fef3c7">{p}</Badge>)}</div>}
-            <KV items={[["Opis opakowania",o.packagingDesc],["Typ palety",o.palletType],["Wys. palety",o.palletHeight],["Kartony/warstwę",o.cartonsPerLayer],["Warstwy/paletę",o.layersPerPallet],["Jedn./paletę",o.unitsPerPallet],["Shelf-ready (SRP)",o.srp]]}/>
+            <KV items={[[t("buyer.detail.kv.packaging_desc"),o.packagingDesc],[t("buyer.detail.kv.pallet_type"),o.palletType],[t("buyer.detail.kv.pallet_height"),o.palletHeight],[t("buyer.detail.kv.cartons_per_layer"),o.cartonsPerLayer],[t("buyer.detail.kv.layers_per_pallet"),o.layersPerPallet],[t("buyer.detail.kv.units_per_pallet"),o.unitsPerPallet],[t("buyer.detail.kv.srp"),o.srp]]}/>
           </Sec>
 
           {/* Logistyka */}
-          <Sec label="Logistyka i reklamacje" icon="🚛" color="#1d4ed8" bg="#eff6ff" defaultOpen={false}>
-            <KV items={[["Model dostawy",o.deliveryModel],["Miejsce załadunku",o.loadingPoint],["Regiony dostaw",o.deliveryRegions],["Organizacja transportu",o.coldChain],["Temperatura",o.tempTransport]]}/>
+          <Sec label={t("buyer.detail.sections.logistics")} icon="🚛" color="#1d4ed8" bg="#eff6ff" defaultOpen={false}>
+            <KV items={[[t("buyer.detail.kv.delivery_model"),o.deliveryModel],[t("buyer.detail.kv.loading_point"),o.loadingPoint],[t("buyer.detail.kv.delivery_regions"),o.deliveryRegions],[t("buyer.detail.kv.cold_chain"),o.coldChain],[t("buyer.detail.kv.temp_transport"),o.tempTransport]]}/>
           </Sec>
 
           {/* Certyfikaty */}
           {(allCerts.length>0||o.traceability||o.certNumber)&&(
-            <Sec label="Certyfikaty i identyfikowalność" icon="🛡️" color="#059669" bg="#f0fdf4" defaultOpen={false}>
-              <KV items={[["Identyfikowalność",o.traceability],["Numer certyfikatu",o.certNumber],["Ważny do",o.certValid],["Aktualne badania",o.currentTests]]}/>
+            <Sec label={t("buyer.detail.sections.certs")} icon="🛡️" color="#059669" bg="#f0fdf4" defaultOpen={false}>
+              <KV items={[[t("buyer.detail.kv.traceability"),o.traceability],[t("buyer.detail.kv.cert_number"),o.certNumber],[t("buyer.detail.kv.cert_valid"),o.certValid],[t("buyer.detail.kv.current_tests"),o.currentTests]]}/>
               {allCerts.length>0&&<div style={{ marginTop:8,display:"flex",gap:5,flexWrap:"wrap" }}>{allCerts.map(c=><Badge key={c} color="#059669">{c}</Badge>)}</div>}
             </Sec>
           )}
 
           {/* Warunki handlowe */}
           {(o.priceOffer||o.incoterm||o.samplesAvail||o.promoPrice||o.contractProgram)&&(
-            <Sec label="Cena orientacyjna i warunki handlowe" icon="💰" color="#d97706" bg="#fffbeb" defaultOpen={false}>
+            <Sec label={t("buyer.detail.sections.price_terms")} icon="💰" color="#d97706" bg="#fffbeb" defaultOpen={false}>
               {o.priceOffer&&<div style={{ marginBottom:10,padding:"12px 14px",background:"#fef3c7",borderRadius:8,border:"1px solid #fde68a" }}>
                 <div style={{ display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:6 }}>
                   <div style={{ fontWeight:700,fontSize:18,color:"#92400e" }}>{o.priceOffer} {o.currency||"EUR"}/{o.priceUnit||"kg"}</div>
-                  <Badge color="#d97706" bg="#fffbeb">Cena orientacyjna</Badge>
+                  <Badge color="#d97706" bg="#fffbeb">{t("buyer.detail.sections.price_indicative_badge")}</Badge>
                   {o.incoterm&&<Badge color="#d97706" bg="#fffbeb">{o.incoterm}</Badge>}
-                  {o.priceFrom&&o.priceTo&&<span style={{ fontSize:11,color:"#92400e" }}>Aktualna: {o.priceFrom} – {o.priceTo}</span>}
+                  {o.priceFrom&&o.priceTo&&<span style={{ fontSize:11,color:"#92400e" }}>{t("buyer.detail.sections.price_current_format",{from:o.priceFrom,to:o.priceTo})}</span>}
                 </div>
                 <div style={{ fontSize:11,color:"#a16207",fontStyle:"italic",lineHeight:1.5 }}>
-                  ⓘ Cena ma charakter orientacyjny i wymaga potwierdzenia z dostawcą. Aktualną cenę i warunki otrzymasz po kontakcie.
+                  {t("buyer.detail.sections.price_disclaimer")}
                 </div>
               </div>}
-              <KV items={[["Cena promo możliwa",o.promoPrice],["Program kontraktowy",o.contractProgram],["Próbki",o.samplesAvail]]}/>
+              <KV items={[[t("buyer.detail.kv.promo_price"),o.promoPrice],[t("buyer.detail.kv.contract_program"),o.contractProgram],[t("buyer.detail.kv.samples_avail"),o.samplesAvail]]}/>
             </Sec>
           )}
 
           {/* Bezpieczeństwo współpracy */}
           {(o.riskMitigation||o.riskProof||o.riskNow)&&(
-            <Sec label="Bezpieczeństwo współpracy" icon="🔒" color="#dc2626" bg="#fef2f2" defaultOpen={false}>
+            <Sec label={t("buyer.detail.sections.risks")} icon="🔒" color="#dc2626" bg="#fef2f2" defaultOpen={false}>
               {o.riskMitigation&&<div style={{ marginBottom:8,padding:"10px 12px",background:"#fff",borderRadius:7,fontSize:13,color:"#1e293b",lineHeight:1.65,border:"1px solid #fca5a5" }}>
-                <div style={{ fontSize:10,fontWeight:700,color:"#dc2626",textTransform:"uppercase",marginBottom:3 }}>Jak dostawca zabezpiecza współpracę</div>
+                <div style={{ fontSize:10,fontWeight:700,color:"#dc2626",textTransform:"uppercase",marginBottom:3 }}>{t("buyer.detail.sections.risk_mitigation_label")}</div>
                 {o.riskMitigation}
               </div>}
               {o.riskProof&&<div style={{ marginBottom:8,padding:"10px 12px",background:"#fff",borderRadius:7,fontSize:13,color:"#1e293b",lineHeight:1.65,border:"1px solid #e2e8f0" }}>
-                <div style={{ fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",marginBottom:3 }}>Potwierdzenie wiarygodności</div>
+                <div style={{ fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",marginBottom:3 }}>{t("buyer.detail.sections.risk_proof_label")}</div>
                 {o.riskProof}
               </div>}
               {o.riskNow&&<div style={{ padding:"10px 12px",background:"#fffbeb",borderRadius:7,fontSize:13,color:"#92400e",lineHeight:1.65,border:"1px solid #fde68a" }}>
-                <div style={{ fontSize:10,fontWeight:700,color:"#d97706",textTransform:"uppercase",marginBottom:3 }}>Dlaczego teraz?</div>
+                <div style={{ fontSize:10,fontWeight:700,color:"#d97706",textTransform:"uppercase",marginBottom:3 }}>{t("buyer.detail.sections.risk_now_label")}</div>
                 {o.riskNow}
               </div>}
             </Sec>
@@ -6376,36 +6380,26 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
           {/* Fallback stary opis */}
           {!o.benefit1&&!o.qualitySpec&&o.description&&(
-            <Sec label="Opis propozycji" icon="📝" defaultOpen>
+            <Sec label={t("buyer.detail.sections.description_fallback")} icon="📝" defaultOpen>
               <p style={{ color:"#475569",lineHeight:1.7,margin:0,fontSize:13,whiteSpace:"pre-line" }}>{renderDesc(o.description)}</p>
             </Sec>
           )}
 
           {/* CTA — możliwe akcje kupca (zawsze widoczne, pełna lista CTA_MAP) */}
           <div style={{ padding:16,background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"1px solid #bbf7d0",borderRadius:10,marginBottom:12 }}>
-            <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"#047857",marginBottom:6 }}>Możliwe działania</div>
-            <div style={{ fontSize:12,color:"#475569",marginBottom:10 }}>Skontaktuj się z dostawcą — możesz poprosić o próbkę, zapytać o aktualną cenę, poprosić o specyfikację lub umówić rozmowę.</div>
+            <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"#047857",marginBottom:6 }}>{t("buyer.detail.cta.section_label")}</div>
+            <div style={{ fontSize:12,color:"#475569",marginBottom:10 }}>{t("buyer.detail.cta.section_intro")}</div>
             <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
-              {Object.entries(CTA_MAP).map(([key,label],i)=>{
-                const ctaLabel=label;
+              {Object.keys(CTA_MAP).map((key,i)=>{
+                // [P2-2c] CTA label przez common.cta_map.* (P2-1), subject/body
+                // przez buyer.detail.cta.subjects/bodies.* z interpolacją {{product}}.
+                // mailto encodeURIComponent + sklejanie zostawione bez zmian.
+                const productName = o.title || o.product;
+                const ctaLabel = t(`common.cta_map.${key}`);
                 const supplierEmail=(supplierCo?.contacts?.[0]?.email)||"";
-                const subjectMap={
-                  samples:`Preconnect – prośba o próbkę: ${o.title||o.product}`,
-                  spec:`Preconnect – prośba o specyfikację: ${o.title||o.product}`,
-                  rfq:`Preconnect – zapytanie o cenę i wolumen: ${o.title||o.product}`,
-                  call:`Preconnect – prośba o rozmowę: ${o.title||o.product}`,
-                  long_term:`Preconnect – program sezonowy: ${o.title||o.product}`,
-                  meet_fm:`Preconnect – spotkanie Fresh Market 2026: ${o.title||o.product}`,
-                };
-                const bodyMap={
-                  samples:`Dzień dobry,\n\nW związku z propozycją Preconnect na Fresh Market 2026 pt. "${o.title||o.product}" chciałbym/chciałabym poprosić o przesłanie próbki produktu.\n\nProszę o kontakt w celu uzgodnienia szczegółów.\n\nPozdrawiam`,
-                  spec:`Dzień dobry,\n\nW związku z propozycją Preconnect na Fresh Market 2026 pt. "${o.title||o.product}" proszę o przesłanie pełnej specyfikacji technicznej i dokumentacji jakościowej.\n\nPozdrawiam`,
-                  rfq:`Dzień dobry,\n\nW związku z propozycją Preconnect na Fresh Market 2026 pt. "${o.title||o.product}" chciałbym/chciałabym zapytać o aktualną cenę i dostępne wolumeny.\n\nProszę o przesłanie aktualnej ceny, dostępnych wolumenów oraz warunków dostawy.\n\nPozdrawiam`,
-                  call:`Dzień dobry,\n\nW związku z propozycją Preconnect na Fresh Market 2026 pt. "${o.title||o.product}" chciałbym/chciałabym umówić rozmowę telefoniczną.\n\nCzy mogą mi Państwo zaproponować termin?\n\nPozdrawiam`,
-                  long_term:`Dzień dobry,\n\nW związku z propozycją Preconnect na Fresh Market 2026 pt. "${o.title||o.product}" chciałbym/chciałabym zapytać o możliwość uruchomienia programu sezonowego / kontraktu długoterminowego.\n\nProszę o kontakt w celu omówienia szczegółów.\n\nPozdrawiam`,
-                  meet_fm:`Dzień dobry,\n\nW związku z propozycją Preconnect na Fresh Market 2026 pt. "${o.title||o.product}" chciałbym/chciałabym umówić spotkanie podczas targów Fresh Market 2026 (24 września, Ożarów Mazowiecki).\n\nCzy jest taka możliwość?\n\nPozdrawiam`,
-                };
-                const mailto=`mailto:${supplierEmail}?subject=${encodeURIComponent(subjectMap[key]||"Preconnect – zapytanie")}&body=${encodeURIComponent(bodyMap[key]||"")}`;
+                const subject = t(`buyer.detail.cta.subjects.${key}`, { product: productName, defaultValue: t("buyer.detail.cta.subject_fallback") });
+                const body = t(`buyer.detail.cta.bodies.${key}`, { product: productName, defaultValue: "" });
+                const mailto=`mailto:${supplierEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                 return (
                   <a key={key} href={mailto} style={{ background:i===0?"#0d9488":"white",color:i===0?"white":"#0d9488",border:i===0?"none":"2px solid #0d9488",padding:"9px 20px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6 }}>
                     <Mail size={13}/>{ctaLabel}
@@ -6418,7 +6412,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
         {/* RIGHT — dostawca + kontakt */}
         <div>
-          <Card title="Dostawca" icon={Building2}>
+          <Card title={t("buyer.detail.supplier_card.title")} icon={Building2}>
             {(() => {
               const supCerts = (supplierCo?.certs||[]).length>0;
               const initials = (supplierCo?.name||"FM").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
@@ -6436,19 +6430,19 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
                 </div>
                 <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:8 }}>
                   {supCerts
-                    ? <Badge color="#059669" bg="#ecfdf5"><CheckCircle size={9} style={{ verticalAlign:"middle",marginRight:2 }}/> Certyfikaty podane</Badge>
-                    : <Badge color="#dc2626" bg="#fef2f2"><AlertTriangle size={9} style={{ verticalAlign:"middle",marginRight:2 }}/> Brak podanych certyfikatów</Badge>
+                    ? <Badge color="#059669" bg="#ecfdf5"><CheckCircle size={9} style={{ verticalAlign:"middle",marginRight:2 }}/> {t("buyer.detail.supplier_card.certs_present")}</Badge>
+                    : <Badge color="#dc2626" bg="#fef2f2"><AlertTriangle size={9} style={{ verticalAlign:"middle",marginRight:2 }}/> {t("buyer.detail.supplier_card.certs_missing")}</Badge>
                   }
-                  {(supplierCo?.types||[]).map(t=><Badge key={t} color="#0d9488">{TYPE_LABELS[t]||t}</Badge>)}
+                  {(supplierCo?.types||[]).map(tp=><Badge key={tp} color="#0d9488">{t(`common.type_labels.${tp}`,{defaultValue:TYPE_LABELS[tp]||tp})}</Badge>)}
                 </div>
                 <button onClick={()=>setShowCoModal(true)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"6px 14px",borderRadius:7,border:"1px solid #0d9488",background:"rgba(13,148,136,0.06)",color:"#0d9488",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                  <Eye size={12}/> Pełny profil dostawcy
+                  <Eye size={12}/> {t("buyer.detail.supplier_card.full_profile_button")}
                 </button>
               </>;
             })()}
           </Card>
-          <Card title="Kontakt z dostawcą" icon={Phone}>
-            <div style={{ marginBottom:8,padding:"6px 10px",background:"#f0fdf4",borderRadius:6,fontSize:11,color:"#047857",border:"1px solid #bbf7d0" }}>Możesz kontaktować się bezpośrednio</div>
+          <Card title={t("buyer.detail.contact_card.title")} icon={Phone}>
+            <div style={{ marginBottom:8,padding:"6px 10px",background:"#f0fdf4",borderRadius:6,fontSize:11,color:"#047857",border:"1px solid #bbf7d0" }}>{t("buyer.detail.contact_card.notice")}</div>
             {(supplierCo.contacts||[]).map((ct,i)=>(
               <div key={i} style={{ padding:"9px 12px",background:"#f8fafc",borderRadius:8,marginBottom:6,border:"1px solid #e2e8f0" }}>
                 <div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{ct.name}</div>
