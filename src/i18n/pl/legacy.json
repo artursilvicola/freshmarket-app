@@ -287,6 +287,399 @@
       },
       "deleted_flash": "Propozycja „{{title}}\" usunięta.",
       "deleted_fallback_title": "(bez nazwy)"
+    },
+    "offer_form": {
+      "select_empty": "— wybierz —",
+      "select_dash": "—",
+      "yes": "Tak",
+      "no": "Nie",
+      "nav": {
+        "back": "Wróć",
+        "cancel": "Anuluj",
+        "preview_buyer": "Podgląd kupca",
+        "next": "Dalej",
+        "preview": "Podgląd",
+        "save_draft": "Zapisz szkic",
+        "publish": "Opublikuj propozycję"
+      },
+      "steps": {
+        "1": {
+          "title": "Produkt",
+          "sub": "Identyfikacja i specyfikacja",
+          "items": {
+            "a": "A. Identyfikacja produktu",
+            "b": "B. Specyfikacja jakościowa (opcjonalna)",
+            "c": "C. Pola kwiatowe",
+            "d": "D. Zdjęcia"
+          }
+        },
+        "2": {
+          "title": "Szczegóły",
+          "sub": "Wolumen, opak., logistyka, cena orientacyjna",
+          "items": {
+            "a": "A. Dostępność i wolumen",
+            "b": "B. Opakowanie i paletyzacja",
+            "c": "C. Logistyka",
+            "d": "D. Certyfikaty",
+            "e": "E. Cena orientacyjna (opcjonalna)"
+          }
+        },
+        "3": {
+          "title": "Prezentacja",
+          "sub": "Co Cię wyróżnia + nazwa propozycji",
+          "items": {
+            "a": "A. Co Cię wyróżnia?",
+            "b": "B. Ograniczenie ryzyka",
+            "c": "C. Możliwe działania kupca"
+          }
+        }
+      },
+      "validation": {
+        "field_required_msg": "To pole jest wymagane",
+        "error_banner_step1_prefix": "Uzupełnij wymagane pola:",
+        "error_banner_step2_html": "<strong>Uzupełnij wymagane pola</strong> — podświetlone na czerwono powyżej."
+      },
+      "step1": {
+        "identification": {
+          "card_title": "A. Identyfikacja produktu",
+          "product_label": "Nazwa produktu",
+          "product_placeholder": "np. Jabłka, Pomidor malinowy, Róża",
+          "variety_label": "Odmiana",
+          "variety_placeholder": "np. Gala, Red Naomi, Malinowy",
+          "category_label": "Kategoria",
+          "subcategory_label": "Podkategoria",
+          "subcategory_placeholder": "np. jabłka, borówki, sałata, tulipany...",
+          "origin_label": "Kraj pochodzenia",
+          "region_label": "Region / miejscowość",
+          "region_placeholder": "np. Mazowsze, Almería, Naivasha",
+          "offer_type_label": "Typ propozycji",
+          "offer_type_hint": "Program stały = całoroczna dostępność. Sezonowa = wąskie okno. Pod promocję = jednorazowy listing z lepszą ceną. Spot = nadwyżka produkcji.",
+          "offer_type_options": {
+            "program": "Program stały",
+            "seasonal": "Propozycja sezonowa",
+            "promo": "Propozycja pod promocję",
+            "test": "Testowy listing",
+            "spot": "Dostawa spot / uzupełnienie braków"
+          },
+          "positioning_label": "Rola produktu na półce",
+          "positioning_hint": "Codzienna = mainstream. Premium = wyższa cena i jakość. Promocja = niska cena z etykietą. Bio = certyfikat. Lokalne = z kraju sieci. Shelf-ready = w opakowaniu RSP.",
+          "positioning_options": {
+            "daily": "Codzienna półka",
+            "premium": "Premium",
+            "promo": "Promocja",
+            "bio": "Bio / ekologiczne",
+            "local": "Lokalne / regionalne",
+            "seasonal": "Sezonowe",
+            "shelf_ready": "Wygodne opakowanie / gotowe na półkę"
+          }
+        },
+        "quality_spec": {
+          "card_title": "B. Specyfikacja jakościowa",
+          "info_alert_html": "Pola w tej sekcji są opcjonalne — uzupełnij tylko jeśli to ważne dla Twojego produktu i kupca. <strong>Skupiamy się na podstawowej specyfikacji</strong>, szczegóły handlowe ustalisz po kontakcie.",
+          "size_label": "Kaliber / rozmiar",
+          "size_placeholder": "np. jabłka 70-80 mm · borówki 12+ mm · cytrusy 6 (cal.) · róże 50-60 cm",
+          "size_hint": "Standard branżowy lub miara, w której podajesz wielkość produktu.",
+          "quality_class_label": "Klasa jakości",
+          "quality_class_hint": "Klasa I = standard EU (większość obrotu). Extra = top EU. Premium/A = własne klasy sieci. Inna = certyfikaty branżowe (np. GlobalGAP grade).",
+          "quality_class_options": {
+            "class1": "Klasa I",
+            "extra": "Klasa Extra",
+            "premium": "Premium",
+            "a": "A",
+            "other": "Inna"
+          },
+          "quality_spec_label": "Krótka specyfikacja jakościowa",
+          "quality_spec_placeholder": "jednolity kaliber, dobra jędrność, brak uszkodzeń mechanicznych, stabilna partia przez cały program",
+          "brand_label": "Marka / brand",
+          "brand_placeholder": "np. Granny Green, FreshPol",
+          "brand_hint": "opcjonalne — nazwa marki",
+          "sale_mode_label": "Tryb sprzedaży",
+          "sale_mode_options": {
+            "no_brand": "Bez marki",
+            "producer": "Marka producenta",
+            "private_label": "Marka własna sieci (Private label)",
+            "regional": "Marka regionalna"
+          },
+          "bio_toggle_label": "Produkt posiada certyfikat ekologiczny / Bio",
+          "brix_label": "Brix",
+          "brix_placeholder": "np. min. 12°Bx",
+          "color_spec_label": "Kolor / wybarwienie",
+          "color_spec_placeholder": "np. min. 75% czerwonego koloru"
+        },
+        "flowers": {
+          "card_title": "C. Parametry kwiatowe",
+          "stem_length_label": "Długość pędu",
+          "stem_length_placeholder": "np. 50 cm, 60 cm",
+          "opening_phase_label": "Faza otwarcia",
+          "opening_phase_placeholder": "np. pąk zamknięty (stage 1), półotwarty (stage 3), pełny (stage 5)",
+          "opening_phase_hint": "Stadium rozwoju kwiatu w momencie zbioru. Możesz wpisać po polsku.",
+          "bouquet_count_label": "Liczba szt. w pęczku / bukiecie",
+          "bouquet_count_placeholder": "np. 10",
+          "vase_life_label": "Vase life deklarowane",
+          "vase_life_placeholder": "np. 7–10 dni",
+          "flower_color_label": "Kolor / mix kolorów",
+          "flower_color_placeholder": "np. czerwony, mix wiosenny, biały i różowy"
+        },
+        "photos": {
+          "card_title": "D. Zdjęcia produktu (maks. 3)",
+          "info_alert": "Pierwsze zdjęcie (główne) trafia do nagłówka maila kupca. Zdjęcie opakowania handlowego jest wymagane — kupiec i logistyka muszą widzieć dokładnie co dostają.",
+          "uploader_label": "Kliknij lub przeciągnij zdjęcia produktu",
+          "hint": "Pierwsze zdjęcie będzie główne w mailu kupca. Zdjęcia są zapisywane w chmurze i widoczne dla wszystkich userów."
+        }
+      },
+      "step2": {
+        "availability": {
+          "card_title": "A. Dostępność i wolumen",
+          "from_label": "Dostępność od",
+          "to_label": "Dostępność do",
+          "model_label": "Model dostępności",
+          "model_hint": "Całorocznie = stabilna dostawa 12 mies. Sezonowo = produkt w określonym oknie (np. truskawki V-VII). Krótkie okno = kilka tygodni. Spot = jednorazowa partia, bez kontynuacji.",
+          "model_options": {
+            "yearly": "Całorocznie",
+            "seasonal": "Sezonowo",
+            "short_window": "Krótkie okno",
+            "spot": "Tylko promo / spot"
+          },
+          "vol_min_label": "Wolumen min. / tydzień",
+          "vol_min_placeholder": "np. 200",
+          "vol_max_label": "Wolumen maks. / tydzień",
+          "vol_max_placeholder": "np. 500",
+          "unit_label": "Jednostka",
+          "unit_options": {
+            "kg": "kg",
+            "t": "t",
+            "cartons": "kartony",
+            "pallets": "palety",
+            "pieces": "sztuki",
+            "bunches": "pęczki",
+            "bouquets": "bukiety",
+            "buckets": "wiadra"
+          },
+          "moq_label": "Minimalne zamówienie / MOQ",
+          "moq_placeholder": "np. 1 paleta, 200 kartonów",
+          "lead_time_label": "Czas realizacji / lead time",
+          "lead_time_placeholder": "np. 24 h, 48 h, 3 dni",
+          "promo_vol_label": "Możliwość zwiększenia wolumenu pod promo?",
+          "promo_pct_label": "O ile % (przy promo)",
+          "promo_pct_placeholder": "np. 30%",
+          "days_label": "Dni dostaw",
+          "days_optional": "opcjonalne",
+          "days": {
+            "mon": "Pon",
+            "tue": "Wt",
+            "wed": "Śr",
+            "thu": "Czw",
+            "fri": "Pt",
+            "sat": "Sob",
+            "sun": "Nd"
+          }
+        },
+        "packaging": {
+          "card_title": "B. Opakowanie i paletyzacja",
+          "success_alert": "Kupiec i magazyn oceniają czy produkt da się wdrożyć zanim trafi na rozmowę. Wymiary palety, liczba kartonów i SRP to często warunki wejścia.",
+          "format_label": "Format handlowy",
+          "format_items": {
+            "luz": "Luz",
+            "flowpack": "Flowpack",
+            "punnet": "Punnet",
+            "clamshell": "Clamshell",
+            "siatka": "Siatka",
+            "worek": "Worek",
+            "karton": "Karton",
+            "ifco": "IFCO",
+            "srp": "SRP",
+            "peczek": "Pęczek",
+            "bukiet": "Bukiet",
+            "display": "Display"
+          },
+          "custom_packaging_label": "Inne opakowanie",
+          "custom_packaging_hint": "np. Big Bag, Mesh Bag, Tray, Sleeve...",
+          "desc_label": "Opis opakowania handlowego",
+          "desc_placeholder": "np. 12 x 125 g, 10 kg luz, 20 pęczków po 10 szt.",
+          "palletizing_label": "Paletyzacja",
+          "palletizing_optional": "(opcjonalne)",
+          "pallet_type_label": "Typ palety",
+          "pallet_type_options": {
+            "eur": "EUR",
+            "chep": "CHEP",
+            "ifco": "IFCO",
+            "other": "Inna"
+          },
+          "pallet_height_label": "Wysokość palety",
+          "pallet_height_placeholder": "np. 180 cm",
+          "cartons_per_layer_label": "Kartony na warstwę",
+          "cartons_per_layer_placeholder": "np. 6",
+          "layers_per_pallet_label": "Warstwy na palecie",
+          "layers_per_pallet_placeholder": "np. 8",
+          "units_per_pallet_label": "Jedn. handlowych na palecie",
+          "units_per_pallet_placeholder": "np. 576",
+          "srp_label": "Shelf-ready (SRP) dostępne?",
+          "srp_options": {
+            "yes": "Tak",
+            "no": "Nie",
+            "tbd": "Do uzgodnienia"
+          }
+        },
+        "logistics": {
+          "card_title": "C. Logistyka i reklamacje",
+          "delivery_model_label": "Model dostawy",
+          "delivery_model_options": {
+            "cd": "Centrum dystrybucyjne (CD)",
+            "cross_dock": "Cross-dock",
+            "direct": "Bezpośrednio do sklepów",
+            "exw": "EXW",
+            "fca": "FCA",
+            "ddp": "DDP"
+          },
+          "loading_point_label": "Miejsce załadunku",
+          "loading_point_placeholder": "np. Recz, Mazowsze, Almería",
+          "regions_label": "Obsługiwane kraje / regiony dostaw",
+          "regions_placeholder": "np. PL, DE, CZ, NL — cała CEE",
+          "transport_label": "Transport",
+          "transport_hint": "Wskaż, kto organizuje transport. Może to być Twoja firma, firma kurierska lub kupiec.",
+          "transport_options": {
+            "supplier": "Po stronie dostawcy",
+            "buyer": "Po stronie kupca",
+            "both": "Możliwe oba warianty",
+            "tbd": "Do ustalenia",
+            "n_a": "Nie dotyczy"
+          },
+          "temp_label": "Temperatura transportu",
+          "temp_placeholder": "np. 2–6°C, 8–10°C (kwiaty)",
+          "temp_hint": "opcjonalne — często zależy od trasy"
+        },
+        "certs": {
+          "card_title": "D. Certyfikaty i identyfikowalność",
+          "traceability_label": "Pełna identyfikowalność partii",
+          "certs_label": "Certyfikaty",
+          "cert_items": {
+            "globalgap": "GlobalG.A.P.",
+            "grasp": "GRASP",
+            "bio": "EU Organic / Bio",
+            "rainforest": "Rainforest Alliance",
+            "fairtrade": "Fairtrade",
+            "smeta": "SMETA",
+            "haccp": "HACCP",
+            "brc": "IFS / BRCGS",
+            "mps_abc": "MPS-ABC",
+            "mps_gap": "MPS-GAP"
+          },
+          "custom_cert_label": "Inny certyfikat",
+          "custom_cert_hint": "np. USDA Organic, Tesco Nurture...",
+          "cert_number_label": "Numer certyfikatu",
+          "cert_number_placeholder": "np. 4056186695431",
+          "cert_valid_label": "Ważny do",
+          "tests_label": "Aktualne badania?"
+        },
+        "commercial": {
+          "card_title": "E. Warunki handlowe i cena orientacyjna",
+          "info_alert_html": "<strong>Cena jest opcjonalna i ma charakter orientacyjny.</strong> Preconnect to system propozycji asortymentowych, a nie klasyczne ofertowanie cenowe. Możesz podać cenę orientacyjną, zakres, lub zostawić pole puste — kupiec zapyta o cenę po kontakcie. Każda cena wyświetlona kupcowi pojawi się z dopiskiem: <em>„Cena ma charakter orientacyjny i wymaga potwierdzenia z dostawcą\".</em>",
+          "currency_label": "Waluta",
+          "currency_options": {
+            "pln": "PLN",
+            "eur": "EUR",
+            "usd": "USD"
+          },
+          "price_label": "Cena orientacyjna",
+          "price_placeholder": "np. 2.40 — cena min. z poprzedniego tygodnia",
+          "price_hint": "Opcjonalne. Pokazuje kupcowi rząd wielkości — finalna cena zostaje do uzgodnienia bilateralnie. Wpływ INCOTERMS: DAP/DDP zwykle wyżej, EXW niżej.",
+          "price_unit_label": "Jednostka ceny",
+          "price_unit_options": {
+            "kg": "kg",
+            "pcs": "szt.",
+            "carton": "karton",
+            "pallet": "paleta",
+            "peczek": "pęczek",
+            "bukiet": "bukiet"
+          },
+          "incoterm_label": "Baza ceny / Incoterm",
+          "incoterm_options": {
+            "exw": "EXW",
+            "fca": "FCA",
+            "ddp": "DDP",
+            "cpt": "CPT",
+            "other": "Inne"
+          },
+          "price_range_label": "Cena obowiązuje od — do",
+          "promo_price_label": "Cena promocyjna możliwa?",
+          "contract_label": "Program sezonowy / kontraktowy?",
+          "samples_label": "Dostępność próbek",
+          "samples_options": {
+            "yes": "Tak — wyślemy",
+            "tbd": "Po uzgodnieniu",
+            "no": "Nie"
+          }
+        }
+      },
+      "step3": {
+        "warning_alert_html": "<strong>Nie pisz:</strong> wysoka jakość · konkurencyjna cena · indywidualne podejście · wieloletnie doświadczenie.<br/><strong>Pisz konkretnie:</strong> standard partii, wolumen, logistyka, cena, czas reakcji, korzyść dla kupca.",
+        "example": {
+          "summary": "📋 Pokaż przykład dobrej oferty (1 zdanie)",
+          "quote": "„Jabłka Gala 70-80 mm, klasa I, 100 t/mies., dostawa DAP do centrum dystrybucji\"",
+          "explanation_html": "Każde pole konkretne i mierzalne: <strong>produkt + odmiana + kaliber + klasa + wolumen + logistyka</strong>. Kupiec wie od razu czego się spodziewać. Tego samego ducha trzymaj się w 3 pytaniach poniżej — operacyjnie, w liczbach."
+        },
+        "benefits": {
+          "card_title": "A. Co Cię wyróżnia?",
+          "success_alert_html": "<strong>To najważniejsza sekcja — ważniejsza niż cena.</strong> Odpowiedz konkretnie na 3 pytania, dlaczego kupiec ma wybrać właśnie Twoją propozycję. Nie pisz frazesów — pisz operacyjne, mierzalne fakty.",
+          "inspirations_label": "Inspiracje — kliknij żeby dodać",
+          "chips": {
+            "repeatable_quality": "powtarzalna jakość",
+            "stable_supply": "stabilna podaż",
+            "low_shrink": "niski shrink",
+            "fast_claim": "szybka reklamacja",
+            "promo_ready": "gotowość do promocji",
+            "shelf_ready_pkg": "opakowanie shelf-ready",
+            "private_label": "private label",
+            "marketing_support": "wsparcie marketingowe",
+            "sales_support": "wsparcie sprzedaży",
+            "batch_traceability": "identyfikowalność partii",
+            "tests_docs": "badania i dokumentacja",
+            "local_regional": "lokalne / regionalne",
+            "shop_convenience": "wygoda dla sklepu",
+            "shopper_convenience": "wygoda dla shoppera"
+          },
+          "required_label": "wymagane",
+          "optional_label": "opcjonalne",
+          "q1": "Dlaczego kupiec powinien zainteresować się tym produktem?",
+          "q1_placeholder": "np. powtarzalna jakość partii przez cały program — sortownia optyczna, klasa I gwarantowana",
+          "q2": "Co robisz lepiej lub inaczej niż inni dostawcy?",
+          "q2_placeholder": "np. stabilna podaż 200–500 t/mies. z własnej chłodni CA — brak zależności od skupu",
+          "q3": "Jak zmniejszasz ryzyko dla kupca?",
+          "q3_placeholder": "np. reklamacje rozpatrywane tego samego dnia, plan B: 2 packhousy + 5 gospodarstw partnerskich",
+          "shop_benefit_label": "Jak ten produkt pomoże sieci sprzedawać więcej lub lepiej?",
+          "shop_benefit_placeholder": "format wygodny dla półki, niska odpadowość, możliwość akcji sezonowej, wsparcie materiałami POS, gotowy do ekspozycji"
+        },
+        "risk": {
+          "card_title": "B. Bezpieczeństwo współpracy",
+          "optional_label": "opcjonalne",
+          "mitigation_label": "Jak zabezpieczasz jakość i ciągłość dostaw?",
+          "mitigation_placeholder": "monitoring jakości partii, reakcja reklamacyjna tego samego dnia, pełna identyfikowalność od pola do dostawy, dokumentacja online, plan awaryjny: 2 packhousy + 5 gospodarstw partnerskich",
+          "proof_label": "Co potwierdza Twoją wiarygodność?",
+          "proof_placeholder": "obsługiwane rynki: PL/DE/CZ, stałe wolumeny od 2019, referencje retail (na żądanie), zdjęcia procesu, aktualne badania GlobalGAP",
+          "now_label": "Dlaczego warto rozmawiać teraz?",
+          "now_placeholder": "np. start sezonu jesiennego — jabłka klasy Extra dostępne od września, wysoka dostępność z chłodni CA, okno przed promocją świąteczną"
+        },
+        "actions": {
+          "card_title": "C. Możliwe działania kupca",
+          "info_alert_html": "<strong>Uwaga:</strong> akcje są po stronie kupca. To kupiec decyduje, co zrobić po obejrzeniu Twojej propozycji. Może poprosić o próbkę, zapytać o aktualną cenę i wolumen, poprosić o specyfikację, umówić rozmowę, zapytać o program sezonowy albo umówić spotkanie na Fresh Market. Może też skontaktować się z Tobą bezpośrednio, korzystając z danych kontaktowych podanych w profilu."
+        },
+        "title_card": {
+          "card_title": "Nazwa propozycji dla kupca",
+          "info_alert_html": "<strong>To tytuł Twojej propozycji widoczny dla kupca na liście propozycji.</strong> Powinien od razu mówić, co oferujesz i dlaczego warto kliknąć w szczegóły. Wpisz produkt, kraj lub region pochodzenia oraz jeden najmocniejszy wyróżnik, np. sezon, kaliber, dostępność, certyfikat albo format opakowania.",
+          "title_label": "Nazwa propozycji dla kupca",
+          "title_placeholder": "np. Winogrona stołowe Murcja — bezpestkowe, kaliber AA, sezon VII–X",
+          "internal_title_label": "Własna nazwa propozycji",
+          "internal_title_placeholder": "np. Gala premium — wariant dla dużych sieci",
+          "internal_title_hint": "Niewidoczne dla kupca",
+          "internal_title_description": "To nazwa robocza tylko dla Ciebie. Kupiec jej nie zobaczy. Użyj jej, żeby łatwo rozróżniać podobne propozycje w swoim panelu, np. wariant dla dużych sieci, propozycję sezonową albo wariant premium."
+        }
+      },
+      "save_flash": {
+        "published": "Propozycja opublikowana!",
+        "draft_saved": "Szkic zapisany.",
+        "error_prefix": "Błąd zapisu propozycji: {{message}}",
+        "error_fallback": "spróbuj ponownie"
+      }
     }
   },
   "buyer": {
