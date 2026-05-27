@@ -68,6 +68,17 @@ const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"�
 const CEMOJI = { owoce:"🍎", warzywa:"🥕", kwiaty:"🌸", zioła:"🌿", inne:"📦" };
 // Alfabetyczna lista krajów
 const CNAMES = { AT:"Austria",BE:"Belgia",BR:"Brazylia",BG:"Bułgaria",CL:"Chile",CO:"Kolumbia",CR:"Kostaryka",HR:"Chorwacja",CY:"Cypr",CZ:"Czechy",DE:"Niemcy",DK:"Dania",EC:"Ekwador",EG:"Egipt",EE:"Estonia",FI:"Finlandia",FR:"Francja",GR:"Grecja",ES:"Hiszpania",NL:"Holandia",IE:"Irlandia",IT:"Włochy",KE:"Kenia",LV:"Łotwa",LT:"Litwa",LU:"Luksemburg",MD:"Mołdawia",MT:"Malta",MA:"Maroko",PE:"Peru",PL:"Polska",PT:"Portugalia",RO:"Rumunia",SK:"Słowacja",SI:"Słowenia",ZA:"Republika Południowej Afryki",SE:"Szwecja",TR:"Turcja",UA:"Ukraina",HU:"Węgry" };
+// [P2-shared] Locale-aware country labels. ISO-3166 alpha-2 keys ze sklepu PL
+// pozostają — DB trzyma kody, etykietki PL/EN renderujemy display-only.
+const CNAMES_EN = { AT:"Austria",BE:"Belgium",BR:"Brazil",BG:"Bulgaria",CL:"Chile",CO:"Colombia",CR:"Costa Rica",HR:"Croatia",CY:"Cyprus",CZ:"Czechia",DE:"Germany",DK:"Denmark",EC:"Ecuador",EG:"Egypt",EE:"Estonia",FI:"Finland",FR:"France",GR:"Greece",ES:"Spain",NL:"Netherlands",IE:"Ireland",IT:"Italy",KE:"Kenya",LV:"Latvia",LT:"Lithuania",LU:"Luxembourg",MD:"Moldova",MT:"Malta",MA:"Morocco",PE:"Peru",PL:"Poland",PT:"Portugal",RO:"Romania",SK:"Slovakia",SI:"Slovenia",ZA:"South Africa",SE:"Sweden",TR:"Turkey",UA:"Ukraine",HU:"Hungary" };
+const getCountryName = (code) => ((i18n.language || "pl").startsWith("en") ? CNAMES_EN : CNAMES)[code] || code || "";
+const getSortedCountries = () => {
+  const lang = (i18n.language || "pl").startsWith("en") ? "en" : "pl";
+  const dict = lang === "en" ? CNAMES_EN : CNAMES;
+  return Object.entries(dict).sort((a, b) => a[1].localeCompare(b[1], lang));
+};
+// CNAMES_SORTED zostaje na zgodność wstecz — używane przez kod nie-render
+// (np. inicjalizacje stanu). Konsumenci JSX powinni używać getSortedCountries().
 const CNAMES_SORTED = Object.entries(CNAMES).sort((a,b)=>a[1].localeCompare(b[1],"pl"));
 const TYPE_LABELS = { producent:"🌱 Producent", eksporter:"✈ Eksporter", importer:"📥 Importer", firma_handlowa:"🤝 Firma Handlowa", pakowalnia:"📦 Pakowalnia", firma_logistyczna:"🚛 Firma Logistyczna", kooperatywa:"🤲 Kooperatywa", agent:"🔎 Agent/Broker" };
 
@@ -649,7 +660,7 @@ function OfferFilters({ filters, setFilters, showStarred }) {
       {open&&(
         <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10 }}>
           <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Kategoria</label><select value={filters.category} onChange={e=>setFilters(f=>({...f,category:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{Object.entries(CEMOJI).map(([k,v])=><option key={k} value={k}>{v} {k}</option>)}</select></div>
-          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Kraj</label><select value={filters.country} onChange={e=>setFilters(f=>({...f,country:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
+          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Kraj</label><select value={filters.country} onChange={e=>setFilters(f=>({...f,country:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
           <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Certyfikat</label><select value={filters.cert} onChange={e=>setFilters(f=>({...f,cert:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{["GlobalGAP","GRASP","BRC","IFS","Bio","FSSC"].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
           <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Opakowanie</label><select value={filters.packaging} onChange={e=>setFilters(f=>({...f,packaging:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{["Bulk","Cartons","IFCO","Flowpack","Punnet"].map(p=><option key={p} value={p}>{p}</option>)}</select></div>
           <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Wolumen min. (T)</label><input type="number" value={filters.volumeMin} onChange={e=>setFilters(f=>({...f,volumeMin:e.target.value}))} placeholder="np. 50" style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box" }}/></div>
@@ -3993,7 +4004,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
     if(r.active === false) return false;
     if(search === "") return true;
     return r.name.toLowerCase().includes(search.toLowerCase()) ||
-      (CNAMES[r.country]||"").toLowerCase().includes(search.toLowerCase());
+      (getCountryName(r.country)).toLowerCase().includes(search.toLowerCase());
   });
 
   return (
@@ -4053,7 +4064,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                     <RetailerLogo retailer={r} size={40}/>
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:700,fontSize:14 }}>{r.name}</div>
-                      <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[r.country]||"🌐"} {CNAMES[r.country]||r.country}</div>
+                      <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[r.country]||"🌐"} {getCountryName(r.country)}</div>
                     </div>
                     {hasSent && <Badge color="#0d9488" bg="rgba(13,148,136,0.08)">{t("supplier.wysylki.sieci.sent_badge_format", { count: rSends.length })}</Badge>}
                   </div>
@@ -4459,7 +4470,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
       </Card>
       <Card title={t("supplier.company.basics.card_title")} icon={Building2}>
         <Row><Inp label={t("supplier.company.basics.name_label")} required value={c.name} onChange={e=>u("name",e.target.value)}/><Inp label={t("supplier.company.basics.nip_label")} value={c.nip} onChange={e=>u("nip",e.target.value)}/></Row>
-        <Row><Inp label={t("supplier.company.basics.country_label")} value={c.country} onChange={e=>u("country",e.target.value)}><option value="">{t("supplier.company.basics.country_dash")}</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</Inp><Inp label={t("supplier.company.basics.city_label")} value={c.city} onChange={e=>u("city",e.target.value)}/></Row>
+        <Row><Inp label={t("supplier.company.basics.country_label")} value={c.country} onChange={e=>u("country",e.target.value)}><option value="">{t("supplier.company.basics.country_dash")}</option>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</Inp><Inp label={t("supplier.company.basics.city_label")} value={c.city} onChange={e=>u("city",e.target.value)}/></Row>
         <Row><Inp label={t("supplier.company.basics.website_label")} value={c.website||""} onChange={e=>u("website",e.target.value)}/><Inp label={t("supplier.company.basics.phone_label")} value={c.phone||""} onChange={e=>u("phone",e.target.value)}/></Row>
       </Card>
       {/* Opisy AI — dwa warstwy: krótki (podgląd) + standardowy (główny) */}
@@ -4685,7 +4696,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
               <Badge color={o.status==="active"?"#16a34a":"#64748b"}>{o.status==="active"?t("supplier.offers.card.status_published"):t("supplier.offers.card.status_draft")}</Badge>
               {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">{t("supplier.offers.card.premium_badge")}</Badge>}
             </div>
-            <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin} · {o.volume} {o.volumeUnit}</div>
+            <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · {o.volume} {o.volumeUnit}</div>
           </div>
           <div style={{ display:"flex",gap:14,flexShrink:0 }}>{[[t("supplier.offers.card.kpi_retailers"),sc.length,"#3b82f6"],[t("supplier.offers.card.kpi_read"),rc,"#059669"]].map(([l,v,cl])=><div key={l} style={{ textAlign:"center" }}><div style={{ fontSize:15,fontWeight:700,color:cl }}>{v}</div><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div></div>)}</div>
           <div style={{ display:"flex",gap:5,flexShrink:0 }}>
@@ -4923,7 +4934,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           </Row>
           <Row>
             <Inp label={t("supplier.offer_form.step1.identification.origin_label")} required value={f.origin} onChange={e=>u("origin",e.target.value)} style={errStyle("origin")}>
-              <option value="">{t("supplier.offer_form.select_dash")}</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
+              <option value="">{t("supplier.offer_form.select_dash")}</option>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
             </Inp>
             <Inp label={t("supplier.offer_form.step1.identification.region_label")} value={f.region||""} onChange={e=>u("region",e.target.value)} placeholder={t("supplier.offer_form.step1.identification.region_placeholder")}/>
           </Row>
@@ -6115,7 +6126,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                 </div>
                 <div style={{ display:"flex",gap:5,flexWrap:"wrap",alignItems:"center" }}>
                   {coTypes.map(tp=><span key={tp} style={{ fontSize:11,padding:"2px 8px",borderRadius:10,background:"#f1f5f9",color:"#475569",fontWeight:600 }}>{t(`common.type_labels.${tp}`,{defaultValue:TYPE_LABELS[tp]||tp})}</span>)}
-                  <span style={{ fontSize:12,color:"#64748b" }}>{FLAGS[dCo?.country]||"🌐"} {CNAMES[dCo?.country]||dCo?.country||""}{dCo?.city?` · ${dCo.city}`:""}</span>
+                  <span style={{ fontSize:12,color:"#64748b" }}>{FLAGS[dCo?.country]||"🌐"} {getCountryName(dCo?.country)}{dCo?.city?` · ${dCo.city}`:""}</span>
                 </div>
               </div>
               {/* Save + open buttons */}
@@ -6150,7 +6161,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                   {isNew&&<Badge color="#0d9488">{t("buyer.offers.card.new_badge")}</Badge>}
                   {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{o.positioning}</Badge>}
                   {o.isBio&&<Badge color="#059669" bg="#f0fdf4">{t("buyer.offers.card.bio_badge")}</Badge>}
-                  <Badge>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin}</Badge>
+                  <Badge>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}</Badge>
                 </div>
                 {/* Nazwa propozycji = produkt */}
                 <div style={{ fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:3,letterSpacing:-0.1 }}>{o.title||o.product}</div>
@@ -6247,7 +6258,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
         <select value={filterCountry} onChange={e=>setFilterCountry(e.target.value)}
           style={{padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
           <option value="">{t("buyer.catalog.country_filter_all")}</option>
-          {[...new Set(companies.map(c=>c.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {CNAMES[c]||c}</option>)}
+          {[...new Set(companies.map(c=>c.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {getCountryName(c)}</option>)}
         </select>
         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
           style={{padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
@@ -6272,7 +6283,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
                 <div style={{width:44,height:44,borderRadius:10,background:"linear-gradient(135deg,#0d9488,#0891b2)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:14,flexShrink:0}}>{initials}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{co.name}</div>
-                  <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{FLAGS[co.country]||"🌐"} {CNAMES[co.country]||co.country}{co.city?` · ${co.city}`:""}</div>
+                  <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{FLAGS[co.country]||"🌐"} {getCountryName(co.country)}{co.city?` · ${co.city}`:""}</div>
                 </div>
               </div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -6536,7 +6547,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>
             {allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}
-            {o.origin&&<Badge>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin}</Badge>}
+            {o.origin&&<Badge>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}</Badge>}
             {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{o.positioning}</Badge>}
             {o.offerType&&<Badge color="#2563eb" bg="#eff6ff">{o.offerType}</Badge>}
             {o.isBio&&<Badge color="#059669" bg="#ecfdf5">🌿 Bio</Badge>}
@@ -6554,7 +6565,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
           {/* Identyfikacja */}
           <Sec label={t("buyer.detail.sections.identification")} icon="🎯" defaultOpen={true}>
-            <KV items={[[t("buyer.detail.kv.name"),o.product],[t("buyer.detail.kv.variety"),o.variety],[t("buyer.detail.kv.category"),o.category],[t("buyer.detail.kv.subcategory"),o.subcategory],[t("buyer.detail.kv.country"),o.origin?`${FLAGS[o.origin]||"🌐"} ${CNAMES[o.origin]||o.origin}`:null],[t("buyer.detail.kv.region"),o.region],[t("buyer.detail.kv.offer_type"),o.offerType],[t("buyer.detail.kv.positioning"),o.positioning]]}/>
+            <KV items={[[t("buyer.detail.kv.name"),o.product],[t("buyer.detail.kv.variety"),o.variety],[t("buyer.detail.kv.category"),o.category],[t("buyer.detail.kv.subcategory"),o.subcategory],[t("buyer.detail.kv.country"),o.origin?`${FLAGS[o.origin]||"🌐"} ${getCountryName(o.origin)}`:null],[t("buyer.detail.kv.region"),o.region],[t("buyer.detail.kv.offer_type"),o.offerType],[t("buyer.detail.kv.positioning"),o.positioning]]}/>
           </Sec>
 
           {/* Co Cię wyróżnia — przeniesione tuż pod Identyfikację, otwarte domyślnie */}
@@ -6734,7 +6745,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
                   </div>
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontWeight:800,fontSize:14,marginBottom:2,color:"#0f172a" }}>{supplierCo?.name}</div>
-                    <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[supplierCo?.country]||"🌐"} {CNAMES[supplierCo?.country]||supplierCo?.country} · {supplierCo?.city}</div>
+                    <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[supplierCo?.country]||"🌐"} {getCountryName(supplierCo?.country)} · {supplierCo?.city}</div>
                   </div>
                 </div>
                 <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:8 }}>
@@ -7371,7 +7382,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
     setFormError({});setShowForm(false);setExpandedId(newId);
   }
   const filtered=retailers.filter(r=>{
-    if(search&&!r.name.toLowerCase().includes(search.toLowerCase())&&!(CNAMES[r.country]||"").toLowerCase().includes(search.toLowerCase())) return false;
+    if(search&&!r.name.toLowerCase().includes(search.toLowerCase())&&!(getCountryName(r.country)).toLowerCase().includes(search.toLowerCase())) return false;
     if(filterCountry&&r.country!==filterCountry) return false;
     if(filterCat&&!(r.buyers||[]).some(b=>(b.cats||[]).includes(filterCat))) return false;
     if(filterActive==="active"&&r.active===false) return false;
@@ -7393,7 +7404,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Szukaj sieci lub kraju..." style={{flex:1,minWidth:180,padding:"7px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
         <select value={filterCountry} onChange={e=>setFilterCountry(e.target.value)} style={{padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
           <option value="">Wszystkie kraje</option>
-          {[...new Set(retailers.map(r=>r.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {CNAMES[c]||c}</option>)}
+          {[...new Set(retailers.map(r=>r.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {getCountryName(c)}</option>)}
         </select>
         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
           <option value="">Wszystkie kategorie</option>
@@ -7418,7 +7429,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
               <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ *</label>
               <select value={newR.country} onChange={e=>setNewR(p=>({...p,country:e.target.value}))} style={fldStyle("country")}>
                 <option value="">— wybierz —</option>
-                {CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
+                {getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
               </select>
               {formError.country&&<div style={{fontSize:10,color:"#dc2626",marginTop:2}}>{formError.country}</div>}
             </div>
@@ -7508,7 +7519,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                   <span style={{fontWeight:700,fontSize:14}}>{r.name}</span>
-                  <span style={{fontSize:12,color:"#64748b"}}>{FLAGS[r.country]||"🌐"} {CNAMES[r.country]||r.country}</span>
+                  <span style={{fontSize:12,color:"#64748b"}}>{FLAGS[r.country]||"🌐"} {getCountryName(r.country)}</span>
                   {allCats.map(c=><Badge key={c} color="#0d9488">{CEMOJI[c]} {c}</Badge>)}
                 </div>
                 <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{(r.buyers||[]).filter(b=>b.active!==false).length} kupców aktywnych · Wysyłka: {effectiveNextSend(r.nextSend)}</div>
@@ -7560,7 +7571,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,margin:"14px 0"}}>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NAZWA</label><input value={r.name||""} onChange={e=>updateRetailer(r.id,{name:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
-                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
+                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NASTĘPNA WYSYŁKA <span style={{color:"#94a3b8",fontWeight:400,textTransform:"none"}}>(domyślnie pierwszy wtorek miesiąca)</span></label><input type="date" value={effectiveNextSend(r.nextSend)} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                 </div>
                 <div style={{marginBottom:14}}>
@@ -8246,7 +8257,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
                       <div style={{ flex:1 }}>
                         <div style={{ fontSize:11,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:2 }}>{co?.name || "Dostawca Fresh Market"}</div>
                         <div style={{ fontWeight:700,fontSize:16,color:"#0f172a",lineHeight:1.3 }}>{o.title||o.product}</div>
-                        <div style={{ fontSize:12,color:"#64748b",marginTop:3 }}>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin} · pozycja {s.pos||idx+1} · {o.volume} {o.volumeUnit}</div>
+                        <div style={{ fontSize:12,color:"#64748b",marginTop:3 }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · pozycja {s.pos||idx+1} · {o.volume} {o.volumeUnit}</div>
                       </div>
                       {isPrem&&<span style={{ background:"#d97706",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20,whiteSpace:"nowrap",flexShrink:0 }}>⭐ PREMIUM</span>}
                     </div>
@@ -8271,7 +8282,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
                     )}
                     <div style={{ display:"flex",gap:10,alignItems:"center" }}>
                       <div style={{ flex:1,padding:"8px 10px",background:"#f1f5f9",borderRadius:7,fontSize:11 }}>
-                        <div style={{ fontWeight:700,color:"#1e293b",marginBottom:1 }}>{co?.name||"—"}{co?.country?<> · {FLAGS[co.country]} {CNAMES[co.country]||co.country}</>:null}</div>
+                        <div style={{ fontWeight:700,color:"#1e293b",marginBottom:1 }}>{co?.name||"—"}{co?.country?<> · {FLAGS[co.country]} {getCountryName(co.country)}</>:null}</div>
                         {co?.description_short && <div style={{ color:"#475569",fontSize:11,marginTop:2 }}>{co.description_short}</div>}
                       </div>
                       <div style={{ flexShrink:0 }}>
@@ -8393,7 +8404,7 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
         <div style={{ flex:1 }}>
           <h3 style={{ margin:"0 0 3px" }}>{co.name}</h3>
           <div style={{ fontSize:12,color:"#64748b" }}>
-            {FLAGS[co.country]||"🌐"} {CNAMES[co.country]||co.country}
+            {FLAGS[co.country]||"🌐"} {getCountryName(co.country)}
             {co.city && <> · {co.city}</>}
             {co.nip && <> · {co.nip}</>}
             {basics.founded_year && <> · od {basics.founded_year}</>}
@@ -8430,7 +8441,7 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
               {exportCountries.length > 0 && (
                 <div style={{ marginBottom:4 }}>
                   <strong style={{ color:"#0d9488" }}>Eksport: </strong>
-                  {exportCountries.map(cc => `${FLAGS[cc]||"🌐"} ${CNAMES[cc]||cc}`).join(" · ")}
+                  {exportCountries.map(cc => `${FLAGS[cc]||"🌐"} ${getCountryName(cc)}`).join(" · ")}
                 </div>
               )}
               {trade.main_markets && <div><strong style={{ color:"#0d9488" }}>Główne rynki:</strong> {trade.main_markets}</div>}
@@ -8531,7 +8542,7 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
                 <span style={{fontSize:18}}>{CEMOJI[o.category]||"📦"}</span>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:600,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.title||o.product}</div>
-                  <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin}{o.volume?` · ${o.volume} ${o.volumeUnit||""}`:""}
+                  <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}{o.volume?` · ${o.volume} ${o.volumeUnit||""}`:""}
                   </div>
                 </div>
                 {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">Premium</Badge>}
@@ -8555,7 +8566,7 @@ function OfferPreviewModal({ offer, co, onClose }) {
       <div style={{ background:"#f0fdf4",borderRadius:10,padding:14,marginBottom:14,display:"flex",gap:12 }}>
         {offer.photos?.length?<img src={offer.photos[0]} alt="" style={{ width:110,height:80,objectFit:"cover",borderRadius:7,flexShrink:0,border:"2px solid #bbf7d0" }}/>:<div style={{ width:110,height:80,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:34 }}>{CEMOJI[offer.category]||"📦"}</div>}
         <div style={{ flex:1 }}>
-          <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>{allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}{offer.origin&&<Badge>{FLAGS[offer.origin]||"🌐"} {CNAMES[offer.origin]||offer.origin}</Badge>}</div>
+          <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>{allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}{offer.origin&&<Badge>{FLAGS[offer.origin]||"🌐"} {getCountryName(offer.origin)}</Badge>}</div>
           <h3 style={{ margin:"0 0 8px",fontSize:15 }}>{offer.title||offer.product}</h3>
           <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>{[["Wolumen",offer.volume&&offer.volumeUnit?`${offer.volume} ${offer.volumeUnit}`:offer.volume],["Min.",offer.minOrder],["Sezon",offer.from&&offer.to?`${offer.from}–${offer.to}`:null]].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"6px 10px",background:"white",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12 }}>{v}</div></div>)}</div>
         </div>
@@ -8983,7 +8994,7 @@ function RetailerPreviewModal({ retailer, onClose }) {
         <div style={{ width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#0d9488,#0891b2)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:18,flexShrink:0 }}>{initials}</div>
         <div>
           <div style={{ fontWeight:700,fontSize:16,color:"#1e293b" }}>{retailer.name}</div>
-          <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>{FLAGS[retailer.country]||"🌐"} {CNAMES[retailer.country]||retailer.country}</div>
+          <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>{FLAGS[retailer.country]||"🌐"} {getCountryName(retailer.country)}</div>
         </div>
       </div>
       {cats.length > 0 && (
@@ -9137,7 +9148,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
                   <RetailerLogo retailer={c} size={34}/>
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontSize:12,fontWeight:p?"700":"600",color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.name}</div>
-                    <div style={{ fontSize:10,color:"#64748b" }}>{FLAGS[c.country]||"🌐"} {CNAMES[c.country]||c.country}</div>
+                    <div style={{ fontSize:10,color:"#64748b" }}>{FLAGS[c.country]||"🌐"} {getCountryName(c.country)}</div>
                     <div style={{ fontSize:10,color:"#94a3b8",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.cat}</div>
                   </div>
                   {p==="star"&&<span style={{ fontSize:9,color:"#d97706",fontWeight:700,flexShrink:0 }}>GŁÓWNA</span>}
