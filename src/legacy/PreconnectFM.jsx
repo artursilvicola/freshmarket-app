@@ -1218,6 +1218,7 @@ function getAiAnswer(text) {
    FLOATING CHAT — pływający dymek dla dostawców i kupców
 ══════════════════════════════════════════════════════════════════════════ */
 function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
+  const { t } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const bottomRef = useRef(null);
@@ -1252,7 +1253,8 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
     if (open && bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
   }, [open, thread.length]);
 
-  const roleName = account.role === "supplier" ? "Dostawca" : "Sieć";
+  // [P2-extras] roleName const — dead code (assigned, never used in JSX), kept for backward compat.
+  const roleName = account.role === "supplier" ? "Dostawca" : "Sieć"; // eslint-disable-line no-unused-vars
 
   return (
     <div style={{ position:"fixed", bottom:24, right:24, zIndex:3000 }}>
@@ -1264,8 +1266,8 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
               <FreshMarketLogo variant="light" size={20} showText={false} />
             </div>
             <div style={{ flex:1 }}>
-              <div style={{ color:"white", fontWeight:700, fontSize:13 }}>Fresh Market Support</div>
-              <div style={{ color:"rgba(255,255,255,0.75)", fontSize:11 }}>Oksana Kozłowska · Admin</div>
+              <div style={{ color:"white", fontWeight:700, fontSize:13 }}>{t("chat.floating.header_brand")}</div>
+              <div style={{ color:"rgba(255,255,255,0.75)", fontSize:11 }}>{t("chat.floating.header_admin_name")}</div>
             </div>
             <button onClick={()=>setOpen(false)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.7)", padding:2 }}><X size={16}/></button>
           </div>
@@ -1273,7 +1275,7 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
           <div style={{ flex:1, overflowY:"auto", padding:"12px 14px", display:"flex", flexDirection:"column", gap:8, maxHeight:320, minHeight:180, background:"#f8fafc" }}>
             {thread.length === 0 && (
               <div style={{ textAlign:"center", color:"#94a3b8", fontSize:12, padding:"20px 0" }}>
-                Wyślij wiadomość do administratora.<br/>Odpowiemy najszybciej jak to możliwe.
+                <Trans i18nKey="chat.floating.empty_html" ns="legacy" components={{ br: <br /> }}/>
               </div>
             )}
             {thread.map(m => {
@@ -1295,7 +1297,7 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
           <div style={{ padding:"10px 12px", borderTop:"1px solid #e2e8f0", display:"flex", gap:8, background:"white" }}>
             <textarea
               value={text} onChange={e=>setText(e.target.value)} onKeyDown={onKey}
-              placeholder="Napisz wiadomość... (Enter = wyślij)"
+              placeholder={t("chat.floating.input_placeholder")}
               rows={2}
               style={{ flex:1, padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:12, fontFamily:"inherit", resize:"none", outline:"none", background:"#f8fafc" }}
             />
@@ -1322,6 +1324,7 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
    PAGE ADMIN CHAT — widok administratora z listą wątków i oknem rozmowy
 ══════════════════════════════════════════════════════════════════════════ */
 function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRead, onSuggestReply }) {
+  const { t } = useTranslation("legacy");
   const [selectedId, setSelectedId] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -1416,14 +1419,14 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
         <div style={{ padding:"14px 16px", borderBottom:"1px solid #f1f5f9", background:"#f8fafc" }}>
           <div style={{ fontWeight:700, fontSize:14, color:"#1e293b", display:"flex", alignItems:"center", gap:6 }}>
             <MessageSquare size={15} color="#0d9488"/>
-            Wiadomości
+            {t("chat.admin.header_title")}
           </div>
-          <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{participants.length} aktywnych wątków</div>
+          <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{t("chat.admin.threads_count_format", { count: participants.length })}</div>
         </div>
         <div style={{ flex:1, overflowY:"auto" }}>
           {participants.length === 0 && (
             <div style={{ padding:32, textAlign:"center", color:"#94a3b8", fontSize:12 }}>
-              Brak wiadomości.<br/>Uczestnicy mogą pisać przez pływający dymek.
+              <Trans i18nKey="chat.admin.empty_threads_html" ns="legacy" components={{ br: <br /> }}/>
             </div>
           )}
           {participants.map(({ userId, lastTs, unread }) => {
@@ -1444,13 +1447,13 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
                     </div>
                     <div style={{ fontSize:10, color:"#94a3b8", display:"flex", alignItems:"center", gap:4 }}>
                       <span style={{ background:ROLE_COLORS_CHAT[acc.role]+"15", color:ROLE_COLORS_CHAT[acc.role], padding:"1px 5px", borderRadius:6, fontWeight:600 }}>
-                        {acc.role==="supplier"?"Dostawca":acc.role==="buyer"?"Kupiec":"Admin"}
+                        {acc.role==="supplier"?t("chat.admin.role_supplier"):acc.role==="buyer"?t("chat.admin.role_buyer"):t("chat.admin.role_admin")}
                       </span>
                       {lastMsg && <span>{new Date(lastMsg.timestamp).toLocaleDateString("pl-PL",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}
                     </div>
                     {lastMsg && (
                       <div style={{ fontSize:11, color:"#64748b", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginTop:2 }}>
-                        {lastMsg.fromId==="admin"?"Ty: ":""}{lastMsg.text}
+                        {lastMsg.fromId==="admin"?t("chat.admin.prefix_admin_msg"):""}{lastMsg.text}
                       </div>
                     )}
                   </div>
@@ -1466,7 +1469,7 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
         {!selectedId ? (
           <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#94a3b8", flexDirection:"column", gap:12 }}>
             <MessageSquare size={36} style={{ opacity:0.3 }}/>
-            <div style={{ fontSize:13 }}>Wybierz wątek z listy, aby zobaczyć rozmowę</div>
+            <div style={{ fontSize:13 }}>{t("chat.admin.empty_thread_prompt")}</div>
           </div>
         ) : (
           <>
@@ -1483,7 +1486,7 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
             {/* Messages */}
             <div style={{ flex:1, overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:10, background:"#f8fafc" }}>
               {thread.length === 0 && (
-                <div style={{ textAlign:"center", color:"#94a3b8", fontSize:12 }}>Brak wiadomości w tym wątku.</div>
+                <div style={{ textAlign:"center", color:"#94a3b8", fontSize:12 }}>{t("chat.admin.empty_thread_message")}</div>
               )}
               {thread.map(m => {
                 const isAdmin = m.fromId === "admin";
@@ -1511,16 +1514,16 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
                   {aiLoading ? (
                     <div style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#7c3aed", padding:"4px 10px", background:"#f5f3ff", borderRadius:8, border:"1px solid #ddd6fe" }}>
                       <span style={{ animation:"spin 1s linear infinite", display:"inline-block", fontSize:14 }}>⚙️</span>
-                      AI analizuje zapytanie...
+                      {t("chat.admin.ai_loading")}
                     </div>
                   ) : (
                     <button
                       onClick={()=>void suggestReplyWithAI()}
                       style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", borderRadius:8, border:"1px solid #ddd6fe", background:"#f5f3ff", color:"#7c3aed", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
-                      ✨ Sformułuj odpowiedź (AI)
+                      {t("chat.admin.ai_suggest_btn")}
                     </button>
                   )}
-                  <span style={{ fontSize:11, color:"#94a3b8" }}>Szkic zostanie wklejony do pola odpowiedzi — przejrzyj przed wysłaniem.</span>
+                  <span style={{ fontSize:11, color:"#94a3b8" }}>{t("chat.admin.ai_suggest_hint")}</span>
                 </div>
               );
             })()}
@@ -1528,17 +1531,17 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
             <div style={{ padding:"12px 14px", borderTop:"1px solid #e2e8f0", background:"white", display:"flex", gap:8 }}>
               <textarea
                 value={replyText} onChange={e=>setReplyText(e.target.value)} onKeyDown={onKey}
-                placeholder={`Odpowiedz do ${getAccount(selectedId).name}... (Enter = wyślij)`}
+                placeholder={t("chat.admin.reply_placeholder_format", { name: getAccount(selectedId).name })}
                 rows={2}
                 style={{ flex:1, padding:"8px 12px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13, fontFamily:"inherit", resize:"none", outline:"none", background:replyText?"#fffbeb":"white", transition:"background 0.2s" }}
               />
               <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                 <button onClick={()=>void sendReply()} disabled={!replyText.trim()} style={{ padding:"8px 14px", borderRadius:8, background:replyText.trim()?"#0d9488":"#e2e8f0", color:replyText.trim()?"white":"#94a3b8", border:"none", cursor:replyText.trim()?"pointer":"default", display:"flex", alignItems:"center", gap:6, fontSize:13, fontWeight:600 }}>
-                  <SendIcon size={14}/> Wyślij
+                  <SendIcon size={14}/> {t("chat.admin.send_btn")}
                 </button>
                 {replyText && (
                   <button onClick={()=>setReplyText("")} style={{ padding:"4px 8px", borderRadius:7, background:"none", border:"1px solid #e2e8f0", color:"#94a3b8", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
-                    Wyczyść
+                    {t("chat.admin.clear_btn")}
                   </button>
                 )}
               </div>
