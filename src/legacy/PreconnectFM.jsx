@@ -7678,6 +7678,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
 
 /* ── Admin Firmy: pakiety, limity, rozliczenia per firma ─────────────────── */
 // [B2B Round supplier-onboarding-access-and-communication]
+// [P2-admin] Tylko kolory/bg, labelka idzie przez t() z admin.firmy.status_labels.*
 const ACCOUNT_STATUS_LABELS = {
   pending_review: ["Czeka na zatwierdzenie", "#92400e", "#fef3c7"],
   active:         ["✓ Aktywne",                 "#059669", "#d1fae5"],
@@ -7686,6 +7687,7 @@ const ACCOUNT_STATUS_LABELS = {
 };
 
 function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity }) {
+  const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -7718,7 +7720,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
 
   async function regenerateForCompany(firmCo) {
     if (!firmCo?.name) {
-      fl("Firma nie ma jeszcze nazwy — nie da się wygenerować opisu.", "warning");
+      fl(t("admin.firmy.toast_ai_no_name"), "warning");
       return;
     }
     setAiLoadingId(firmCo.id);
@@ -7732,9 +7734,12 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         description_short: result?.description_short || "",
         ai_review_status: "pending",
       });
-      fl(`AI wygenerował opisy dla ${firmCo.name}. ${result?.richness === "rich" ? "(profil rozszerzony)" : result?.richness === "minimal" ? "(profil krótki)" : ""}`.trim());
+      const richKey = result?.richness === "rich" ? "toast_ai_richness_rich"
+                    : result?.richness === "minimal" ? "toast_ai_richness_minimal"
+                    : "toast_ai_richness_default";
+      fl(t("admin.firmy.toast_ai_generated_format", { name: firmCo.name, richness: t(`admin.firmy.${richKey}`) }).trim());
     } catch (e) {
-      fl(e?.message || "Nie udało się wygenerować opisu firmy.", "warning");
+      fl(e?.message || t("admin.firmy.toast_ai_failed"), "warning");
     } finally {
       setAiLoadingId(null);
     }
@@ -7742,7 +7747,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
 
   function approveDescriptions(firmCo) {
     patchCompany(firmCo.id, { ai_review_status: "approved" });
-    fl(`Profil firmy ${firmCo.name} zatwierdzony.`);
+    fl(t("admin.firmy.toast_ai_approved_format", { name: firmCo.name }));
   }
 
   function startEdit(firmCo) {
@@ -7759,7 +7764,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
       ai_review_status: "edited",
     });
     setEditingId(null);
-    fl(`Opisy zapisane dla ${firmCo.name}.`);
+    fl(t("admin.firmy.toast_ai_saved_format", { name: firmCo.name }));
   }
   function cancelEdit() {
     setEditingId(null);
@@ -7801,21 +7806,24 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         },
       });
       if (result.ok) {
-        fl(`Status firmy ${firmCo.name} → ${newStatus}. Mail wysłany.`);
+        fl(t("admin.firmy.toast_status_changed_with_email_format", { name: firmCo.name, status: newStatus }));
       } else {
-        fl(`Status firmy ${firmCo.name} → ${newStatus}. (Mail nie został wysłany — sprawdź konfigurację.)`, "warning");
+        fl(t("admin.firmy.toast_status_changed_without_email_format", { name: firmCo.name, status: newStatus }), "warning");
       }
     } else {
-      fl(`Status firmy ${firmCo.name} → ${newStatus}.`);
+      fl(t("admin.firmy.toast_status_changed_format", { name: firmCo.name, status: newStatus }));
     }
     setSavingStatusId(null);
   }
 
   function toggleAccessFlag(firmCo, key, value) {
     patchCompany(firmCo.id, { [key]: value });
-    fl(`${key === "preconnect_enabled" ? "PreConnect" : "Spotkania B2B"} ${value ? "aktywny" : "wyłączony"} dla ${firmCo.name}.`);
+    const flagLabel = t(key === "preconnect_enabled" ? "admin.firmy.toast_flag_preconnect" : "admin.firmy.toast_flag_fm_b2b");
+    const stateLabel = t(value ? "admin.firmy.toast_flag_state_active" : "admin.firmy.toast_flag_state_inactive");
+    fl(t("admin.firmy.toast_flag_format", { flag: flagLabel, state: stateLabel, name: firmCo.name }));
   }
 
+  // [P2-admin] Color/bg PRESERVE, labelka idzie przez t() z admin.firmy.review_labels.*
   const reviewLabel = {
     pending: ["Czeka na review", "#92400e", "#fef3c7"],
     approved: ["✓ Zatwierdzony", "#059669", "#d1fae5"],
@@ -7849,16 +7857,16 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   return (
     <div>
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap" }}>
-        <div style={{ fontWeight:700,fontSize:15 }}>Firmy, statusy i limity pakietów</div>
+        <div style={{ fontWeight:700,fontSize:15 }}>{t("admin.firmy.header_title")}</div>
         <div style={{ display:"flex",gap:6 }}>
-          <button onClick={()=>setFilter("all")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="all"?"2px solid #0d9488":"1px solid #e2e8f0",background:filter==="all"?"rgba(13,148,136,0.05)":"white",fontSize:12,fontWeight:filter==="all"?600:500,cursor:"pointer",fontFamily:"inherit" }}>Wszystkie ({allLims.length})</button>
+          <button onClick={()=>setFilter("all")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="all"?"2px solid #0d9488":"1px solid #e2e8f0",background:filter==="all"?"rgba(13,148,136,0.05)":"white",fontSize:12,fontWeight:filter==="all"?600:500,cursor:"pointer",fontFamily:"inherit" }}>{t("admin.firmy.filter_all_format", { count: allLims.length })}</button>
           <button onClick={()=>setFilter("pending")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="pending"?"2px solid #d97706":"1px solid #e2e8f0",background:filter==="pending"?"rgba(217,119,6,0.05)":"white",fontSize:12,fontWeight:filter==="pending"?600:500,cursor:"pointer",fontFamily:"inherit" }}>
-            Do zatwierdzenia {pendingCount > 0 && <span style={{ background:"#d97706",color:"white",borderRadius:10,fontSize:10,padding:"1px 6px",marginLeft:4 }}>{pendingCount}</span>}
+            {t("admin.firmy.filter_pending_label")} {pendingCount > 0 && <span style={{ background:"#d97706",color:"white",borderRadius:10,fontSize:10,padding:"1px 6px",marginLeft:4 }}>{pendingCount}</span>}
           </button>
         </div>
       </div>
       {visibleLims.length === 0 && (
-        <Alrt type="info">{filter === "pending" ? "Brak firm oczekujących na zatwierdzenie." : "Brak firm w systemie."}</Alrt>
+        <Alrt type="info">{filter === "pending" ? t("admin.firmy.empty_pending") : t("admin.firmy.empty_all")}</Alrt>
       )}
       {visibleLims.map(lim=>{
         const isExpanded = expandedId===lim.id;
@@ -7879,19 +7887,20 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                   {/* [B2B Round supplier-onboarding-access-and-communication] Status badge */}
                   {(() => {
                     const status = firmCo?.account_status || "active";
-                    const [lbl, color, bg] = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
-                    return <span style={{ fontSize:10,color,background:bg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{lbl}</span>;
+                    const meta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+                    const [, color, bg] = meta;
+                    return <span style={{ fontSize:10,color,background:bg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{t(`admin.firmy.status_labels.${status}`, { defaultValue: meta[0] })}</span>;
                   })()}
                 </div>
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
-                  {lim.country} · Pakiet: {lim.pkg} · Ważny do: {lim.pkgExpiry}
-                  {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>· PreConnect off</span>}
-                  {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>· FM B2B</span>}
+                  {lim.country} · {t("admin.firmy.list_pkg_label")} {lim.pkg} · {t("admin.firmy.list_valid_until_label")} {lim.pkgExpiry}
+                  {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>{t("admin.firmy.list_preconnect_off")}</span>}
+                  {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>{t("admin.firmy.list_fm_b2b")}</span>}
                 </div>
               </div>
               <div style={{ textAlign:"right",flexShrink:0 }}>
                 <div style={{ fontWeight:700,fontSize:16,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{used}/{lim.max}</div>
-                <div style={{ fontSize:10,color:"#94a3b8" }}>wysyłek</div>
+                <div style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.firmy.list_used_unit")}</div>
               </div>
               <span style={{ fontSize:16,color:"#94a3b8",marginLeft:8 }}>{isExpanded?"▲":"▼"}</span>
             </div>
@@ -7903,7 +7912,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     expanded view, przed pakietem i AI opisem. */}
                 {firmCo?.name && setCompanies && (() => {
                   const status = firmCo.account_status || "active";
-                  const [statusLbl, statusColor, statusBg] = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+                  const statusMeta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+                  const [, statusColor, statusBg] = statusMeta;
+                  const statusLbl = t(`admin.firmy.status_labels.${status}`, { defaultValue: statusMeta[0] });
                   const isPending = status === "pending_review";
                   const isSaving = savingStatusId === firmCo.id;
                   const note = statusNoteDraft[firmCo.id] ?? (firmCo.status_note || "");
@@ -7911,9 +7922,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",margin:"14px 0 12px",border:"1px solid #e2e8f0" }}>
                       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
                         <div style={{ fontWeight:700,fontSize:12,color:"#334155",display:"flex",alignItems:"center",gap:8 }}>
-                          Status & dostęp
+                          {t("admin.firmy.status_section_title")}
                           <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{statusLbl}</span>
-                          {firmCo.approved_at && status === "active" && <span style={{ fontSize:10,color:"#94a3b8" }}>· od {String(firmCo.approved_at).slice(0,10)}</span>}
+                          {firmCo.approved_at && status === "active" && <span style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.firmy.status_approved_at_format", { date: String(firmCo.approved_at).slice(0,10) })}</span>}
                         </div>
                       </div>
                       {/* Pole notatki (powód odrzucenia/zawieszenia, lub komentarz aktywacji) */}
@@ -7921,7 +7932,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                         <textarea
                           value={note}
                           onChange={(e) => setStatusNoteDraft((prev) => ({ ...prev, [firmCo.id]: e.target.value }))}
-                          placeholder="Notatka dla supplera (powód odrzucenia/zawieszenia, instrukcja co poprawić). Pojawi się w mailu."
+                          placeholder={t("admin.firmy.status_note_placeholder")}
                           style={{ width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:48,marginBottom:10,boxSizing:"border-box" }}
                         />
                       )}
@@ -7929,15 +7940,15 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:12 }}>
                         {isPending && (
                           <>
-                            <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>✓ Zatwierdź konto</Btn>
-                            <Btn sm onClick={()=>changeAccountStatus(firmCo, "rejected")} disabled={isSaving} style={{ background:"#dc2626",color:"white",border:"none" }}>Odrzuć</Btn>
+                            <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>{t("admin.firmy.status_btn_approve")}</Btn>
+                            <Btn sm onClick={()=>changeAccountStatus(firmCo, "rejected")} disabled={isSaving} style={{ background:"#dc2626",color:"white",border:"none" }}>{t("admin.firmy.status_btn_reject")}</Btn>
                           </>
                         )}
                         {status === "active" && (
-                          <Btn sm outline onClick={()=>changeAccountStatus(firmCo, "suspended")} disabled={isSaving} style={{ color:"#dc2626",borderColor:"#fecaca" }}>Wstrzymaj konto</Btn>
+                          <Btn sm outline onClick={()=>changeAccountStatus(firmCo, "suspended")} disabled={isSaving} style={{ color:"#dc2626",borderColor:"#fecaca" }}>{t("admin.firmy.status_btn_suspend")}</Btn>
                         )}
                         {(status === "rejected" || status === "suspended") && (
-                          <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>Aktywuj ponownie</Btn>
+                          <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>{t("admin.firmy.status_btn_reactivate")}</Btn>
                         )}
                       </div>
                       {/* Dwie niezależne flagi dostępu — admin ustawia osobno */}
@@ -7945,15 +7956,15 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                         <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.preconnect_enabled?"rgba(13,148,136,0.06)":"white",border:`1px solid ${firmCo.preconnect_enabled?"#0d9488":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
                           <input type="checkbox" checked={!!firmCo.preconnect_enabled} onChange={(e) => toggleAccessFlag(firmCo, "preconnect_enabled", e.target.checked)} />
                           <div>
-                            <div style={{ fontWeight:600,color:"#0f172a" }}>PreConnect</div>
-                            <div style={{ color:"#64748b",fontSize:10 }}>Wysyłka ofert do sieci</div>
+                            <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_preconnect_title")}</div>
+                            <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_preconnect_desc")}</div>
                           </div>
                         </label>
                         <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.fm_b2b_enabled?"rgba(124,58,237,0.06)":"white",border:`1px solid ${firmCo.fm_b2b_enabled?"#7c3aed":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
                           <input type="checkbox" checked={!!firmCo.fm_b2b_enabled} onChange={(e) => toggleAccessFlag(firmCo, "fm_b2b_enabled", e.target.checked)} />
                           <div>
-                            <div style={{ fontWeight:600,color:"#0f172a" }}>Spotkania B2B</div>
-                            <div style={{ color:"#64748b",fontSize:10 }}>Fresh Market 2026</div>
+                            <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_fm_b2b_title")}</div>
+                            <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_fm_b2b_desc")}</div>
                           </div>
                         </label>
                       </div>
@@ -7962,8 +7973,8 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 })()}
                 <div style={{ margin:"14px 0 10px",background:"#f8fafc",borderRadius:8,padding:"10px 14px" }}>
                   <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12 }}>
-                    <span style={{ color:"#64748b" }}>Wykorzystanie pakietu</span>
-                    <span style={{ fontWeight:700,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{pct}% ({used}/{lim.max})</span>
+                    <span style={{ color:"#64748b" }}>{t("admin.firmy.pkg_usage_label")}</span>
+                    <span style={{ fontWeight:700,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{t("admin.firmy.pkg_usage_value_format", { pct, used, max: lim.max })}</span>
                   </div>
                   <div style={{ background:"#e2e8f0",borderRadius:4,height:6,overflow:"hidden" }}>
                     <div style={{ height:"100%",borderRadius:4,width:`${Math.min(100,pct)}%`,background:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}/>
@@ -7971,26 +7982,28 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 </div>
                 <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12 }}>
                   <div>
-                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>LIMIT WYSYŁEK</label>
+                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_limit_label")}</label>
                     <input type="number" value={lim.max} onChange={e=>updateLimit(lim.id,{max:+e.target.value})}
                       style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}/>
                   </div>
                   <div>
-                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>PAKIET</label>
+                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_select_label")}</label>
                     <select value={lim.pkg} onChange={e=>updateLimit(lim.id,{pkg:e.target.value})}
                       style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}>
-                      <option value="std_5">Standard 5</option>
-                      <option value="std_10">Standard 10</option>
-                      <option value="std_20">Standard 20</option>
-                      <option value="prem_10">Premium 10</option>
-                      <option value="prem_20">Premium 20</option>
+                      <option value="std_5">{t("admin.firmy.pkg_option_std_5")}</option>
+                      <option value="std_10">{t("admin.firmy.pkg_option_std_10")}</option>
+                      <option value="std_20">{t("admin.firmy.pkg_option_std_20")}</option>
+                      <option value="prem_10">{t("admin.firmy.pkg_option_prem_10")}</option>
+                      <option value="prem_20">{t("admin.firmy.pkg_option_prem_20")}</option>
                     </select>
                   </div>
                 </div>
                 {/* [B2B Round adaptive-company-profile-ai] AI review block ─ */}
                 {firmCo?.name && setCompanies && (() => {
                   const status = firmCo.ai_review_status || "pending";
-                  const [statusLabel, statusColor, statusBg] = reviewLabel[status] || reviewLabel.pending;
+                  const reviewMeta = reviewLabel[status] || reviewLabel.pending;
+                  const [, statusColor, statusBg] = reviewMeta;
+                  const statusLabel = t(`admin.firmy.review_labels.${status}`, { defaultValue: reviewMeta[0] });
                   const isEditing = editingId === firmCo.id;
                   const isLoading = aiLoadingId === firmCo.id;
                   return (
@@ -7998,19 +8011,19 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
                         <div style={{ display:"flex",alignItems:"center",gap:8 }}>
                           <Bot size={14} color="#3b82f6"/>
-                          <strong style={{ fontSize:12 }}>Opis AI</strong>
+                          <strong style={{ fontSize:12 }}>{t("admin.firmy.ai_section_title")}</strong>
                           <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 7px",borderRadius:4,fontWeight:600 }}>{statusLabel}</span>
                         </div>
                         <div style={{ display:"flex",gap:6 }}>
-                          <Btn sm outline onClick={()=>setPreviewCompany(firmCo)}><Eye size={11}/> Podgląd</Btn>
+                          <Btn sm outline onClick={()=>setPreviewCompany(firmCo)}><Eye size={11}/> {t("admin.firmy.ai_btn_preview")}</Btn>
                           {!isEditing && (
                             <>
-                              <Btn sm outline onClick={()=>startEdit(firmCo)}>Edytuj</Btn>
+                              <Btn sm outline onClick={()=>startEdit(firmCo)}>{t("admin.firmy.ai_btn_edit")}</Btn>
                               <Btn sm outline onClick={()=>regenerateForCompany(firmCo)} disabled={isLoading}>
                                 {isLoading ? <RefreshCw size={11} style={{ animation:"spin 1s linear infinite" }}/> : <Sparkles size={11}/>}
-                                {isLoading ? " Generuję…" : " Generuj AI"}
+                                {isLoading ? t("admin.firmy.ai_btn_generating") : t("admin.firmy.ai_btn_generate")}
                               </Btn>
-                              {status !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(firmCo)}>Zatwierdź</Btn>}
+                              {status !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(firmCo)}>{t("admin.firmy.ai_btn_approve")}</Btn>}
                             </>
                           )}
                         </div>
@@ -8018,38 +8031,38 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       {isEditing ? (
                         <>
                           <Inp
-                            label="Opis krótki"
+                            label={t("admin.firmy.ai_edit_short_label")}
                             ta
                             value={editDraft.description_short}
                             onChange={e=>setEditDraft(d=>({ ...d, description_short: e.target.value }))}
                             style={{ minHeight:50,fontSize:12 }}
                           />
                           <Inp
-                            label="Opis standardowy"
+                            label={t("admin.firmy.ai_edit_standard_label")}
                             ta
                             value={editDraft.description}
                             onChange={e=>setEditDraft(d=>({ ...d, description: e.target.value }))}
                             style={{ fontSize:12 }}
                           />
                           <div style={{ display:"flex",gap:6,justifyContent:"flex-end" }}>
-                            <Btn sm outline onClick={cancelEdit}>Anuluj</Btn>
-                            <Btn sm primary onClick={()=>saveEdit(firmCo)}>Zapisz</Btn>
+                            <Btn sm outline onClick={cancelEdit}>{t("admin.firmy.ai_edit_cancel")}</Btn>
+                            <Btn sm primary onClick={()=>saveEdit(firmCo)}>{t("admin.firmy.ai_edit_save")}</Btn>
                           </div>
                         </>
                       ) : (
                         <>
                           {firmCo.description_short ? (
                             <div style={{ fontSize:12,color:"#334155",marginBottom:6 }}>
-                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>Krótki:</span> {firmCo.description_short}
+                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_short_prefix")}</span> {firmCo.description_short}
                             </div>
                           ) : null}
                           {firmCo.description ? (
                             <div style={{ fontSize:12,color:"#334155",lineHeight:1.6 }}>
-                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>Standard:</span> {firmCo.description}
+                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_standard_prefix")}</span> {firmCo.description}
                             </div>
                           ) : null}
                           {!firmCo.description_short && !firmCo.description && (
-                            <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}>Brak opisów. Kliknij „Generuj AI", aby utworzyć.</div>
+                            <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}><Trans i18nKey="admin.firmy.ai_view_empty_html" ns="legacy" components={{ em: <em /> }}/></div>
                           )}
                         </>
                       )}
@@ -8057,14 +8070,14 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                   );
                 })()}
                 <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>
-                  <strong>Wysyłki ({firmSends.length}):</strong> {firmSends.length===0?"Brak wysyłek.":""}
+                  <strong>{t("admin.firmy.sends_section_title_format", { count: firmSends.length })}</strong> {firmSends.length===0?t("admin.firmy.sends_empty"):""}
                 </div>
                 {firmSends.slice(-5).reverse().map(s=>{
                   const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId);
                   return (
                     <div key={s.id} style={{ display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9",fontSize:12 }}>
                       <span style={{ fontSize:14 }}>{CEMOJI[o?.category]||"📦"}</span>
-                      <div style={{ flex:1 }}>{o?.title||o?.product||"Propozycja"} → {r?.name||"—"}</div>
+                      <div style={{ flex:1 }}>{o?.title||o?.product||t("admin.firmy.sends_row_fallback_offer")} → {r?.name||t("admin.firmy.sends_row_fallback_retailer")}</div>
                       <span title={STATUS_TIPS[s.status]||""} style={{ cursor:"help" }}>
                         <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
                       </span>
