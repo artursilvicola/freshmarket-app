@@ -68,6 +68,17 @@ const FLAGS  = { AT:"🇦🇹",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"�
 const CEMOJI = { owoce:"🍎", warzywa:"🥕", kwiaty:"🌸", zioła:"🌿", inne:"📦" };
 // Alfabetyczna lista krajów
 const CNAMES = { AT:"Austria",BE:"Belgia",BR:"Brazylia",BG:"Bułgaria",CL:"Chile",CO:"Kolumbia",CR:"Kostaryka",HR:"Chorwacja",CY:"Cypr",CZ:"Czechy",DE:"Niemcy",DK:"Dania",EC:"Ekwador",EG:"Egipt",EE:"Estonia",FI:"Finlandia",FR:"Francja",GR:"Grecja",ES:"Hiszpania",NL:"Holandia",IE:"Irlandia",IT:"Włochy",KE:"Kenia",LV:"Łotwa",LT:"Litwa",LU:"Luksemburg",MD:"Mołdawia",MT:"Malta",MA:"Maroko",PE:"Peru",PL:"Polska",PT:"Portugalia",RO:"Rumunia",SK:"Słowacja",SI:"Słowenia",ZA:"Republika Południowej Afryki",SE:"Szwecja",TR:"Turcja",UA:"Ukraina",HU:"Węgry" };
+// [P2-shared] Locale-aware country labels. ISO-3166 alpha-2 keys ze sklepu PL
+// pozostają — DB trzyma kody, etykietki PL/EN renderujemy display-only.
+const CNAMES_EN = { AT:"Austria",BE:"Belgium",BR:"Brazil",BG:"Bulgaria",CL:"Chile",CO:"Colombia",CR:"Costa Rica",HR:"Croatia",CY:"Cyprus",CZ:"Czechia",DE:"Germany",DK:"Denmark",EC:"Ecuador",EG:"Egypt",EE:"Estonia",FI:"Finland",FR:"France",GR:"Greece",ES:"Spain",NL:"Netherlands",IE:"Ireland",IT:"Italy",KE:"Kenya",LV:"Latvia",LT:"Lithuania",LU:"Luxembourg",MD:"Moldova",MT:"Malta",MA:"Morocco",PE:"Peru",PL:"Poland",PT:"Portugal",RO:"Romania",SK:"Slovakia",SI:"Slovenia",ZA:"South Africa",SE:"Sweden",TR:"Turkey",UA:"Ukraine",HU:"Hungary" };
+const getCountryName = (code) => ((i18n.language || "pl").startsWith("en") ? CNAMES_EN : CNAMES)[code] || code || "";
+const getSortedCountries = () => {
+  const lang = (i18n.language || "pl").startsWith("en") ? "en" : "pl";
+  const dict = lang === "en" ? CNAMES_EN : CNAMES;
+  return Object.entries(dict).sort((a, b) => a[1].localeCompare(b[1], lang));
+};
+// CNAMES_SORTED zostaje na zgodność wstecz — używane przez kod nie-render
+// (np. inicjalizacje stanu). Konsumenci JSX powinni używać getSortedCountries().
 const CNAMES_SORTED = Object.entries(CNAMES).sort((a,b)=>a[1].localeCompare(b[1],"pl"));
 const TYPE_LABELS = { producent:"🌱 Producent", eksporter:"✈ Eksporter", importer:"📥 Importer", firma_handlowa:"🤝 Firma Handlowa", pakowalnia:"📦 Pakowalnia", firma_logistyczna:"🚛 Firma Logistyczna", kooperatywa:"🤲 Kooperatywa", agent:"🔎 Agent/Broker" };
 
@@ -635,25 +646,29 @@ function RetailerLogo2({ retailer, size=40 }) { return <RetailerLogo retailer={r
 
 /* ─────────────── FILTER COMPONENT ────────────────────────────────────────── */
 function OfferFilters({ filters, setFilters, showStarred }) {
+  const { t } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
   const active = Object.values(filters).some(v=>v&&v!=="");
+  // [P2-shared] Klucze kategorii z CEMOJI mają znaki diakrytyczne (zioła) —
+  // normalizacja do ASCII path w JSON-ie (ziola) dla i18next.
+  const catKeyToPath = (k) => k === "zioła" ? "ziola" : k;
   return (
     <div style={{ marginBottom:16 }}>
       <div style={{ display:"flex",gap:8,alignItems:"center",marginBottom:open?12:0 }}>
         <Btn outline sm onClick={()=>setOpen(!open)} style={{ borderColor:active?"#0d9488":"#dde",color:active?"#0d9488":"#475569" }}>
-          <Filter size={12}/> Filtry {active&&<Badge color="#0d9488" bg="rgba(13,148,136,0.12)">Aktywne</Badge>}
+          <Filter size={12}/> {t("common.offer_filters.filter_btn")} {active&&<Badge color="#0d9488" bg="rgba(13,148,136,0.12)">{t("common.offer_filters.active_badge")}</Badge>}
           {open?<ChevronUp size={12}/>:<ChevronDown size={12}/>}
         </Btn>
-        {active&&<Btn outline sm onClick={()=>setFilters({ category:"",country:"",cert:"",volumeMin:"",packaging:"",starred:false })} style={{ color:"#dc2626",borderColor:"#dc2626" }}><X size={11}/> Wyczyść</Btn>}
+        {active&&<Btn outline sm onClick={()=>setFilters({ category:"",country:"",cert:"",volumeMin:"",packaging:"",starred:false })} style={{ color:"#dc2626",borderColor:"#dc2626" }}><X size={11}/> {t("common.offer_filters.clear_btn")}</Btn>}
       </div>
       {open&&(
         <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:14,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10 }}>
-          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Kategoria</label><select value={filters.category} onChange={e=>setFilters(f=>({...f,category:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{Object.entries(CEMOJI).map(([k,v])=><option key={k} value={k}>{v} {k}</option>)}</select></div>
-          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Kraj</label><select value={filters.country} onChange={e=>setFilters(f=>({...f,country:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
-          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Certyfikat</label><select value={filters.cert} onChange={e=>setFilters(f=>({...f,cert:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{["GlobalGAP","GRASP","BRC","IFS","Bio","FSSC"].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Opakowanie</label><select value={filters.packaging} onChange={e=>setFilters(f=>({...f,packaging:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">Wszystkie</option>{["Bulk","Cartons","IFCO","Flowpack","Punnet"].map(p=><option key={p} value={p}>{p}</option>)}</select></div>
-          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>Wolumen min. (T)</label><input type="number" value={filters.volumeMin} onChange={e=>setFilters(f=>({...f,volumeMin:e.target.value}))} placeholder="np. 50" style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box" }}/></div>
-          {showStarred&&<div style={{ display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:filters.starred?"#fffbeb":"#f8fafc",border:`1px solid ${filters.starred?"#fbbf24":"#e2e8f0"}`,borderRadius:7,cursor:"pointer" }} onClick={()=>setFilters(f=>({...f,starred:!f.starred}))}><Heart size={14} color={filters.starred?"#dc2626":"#94a3b8"} fill={filters.starred?"#dc2626":"none"}/><span style={{ fontSize:12,fontWeight:filters.starred?600:400,color:filters.starred?"#dc2626":"#64748b" }}>Ciekawe</span></div>}
+          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.category_label")}</label><select value={filters.category} onChange={e=>setFilters(f=>({...f,category:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{Object.entries(CEMOJI).map(([k,v])=><option key={k} value={k}>{v} {t(`common.offer_filters.category_options.${catKeyToPath(k)}`)}</option>)}</select></div>
+          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.country_label")}</label><select value={filters.country} onChange={e=>setFilters(f=>({...f,country:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
+          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.cert_label")}</label><select value={filters.cert} onChange={e=>setFilters(f=>({...f,cert:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{["GlobalGAP","GRASP","BRC","IFS","Bio","FSSC"].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.packaging_label")}</label><select value={filters.packaging} onChange={e=>setFilters(f=>({...f,packaging:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{["Bulk","Cartons","IFCO","Flowpack","Punnet"].map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.volume_min_label")}</label><input type="number" value={filters.volumeMin} onChange={e=>setFilters(f=>({...f,volumeMin:e.target.value}))} placeholder={t("common.offer_filters.volume_min_placeholder")} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box" }}/></div>
+          {showStarred&&<div style={{ display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:filters.starred?"#fffbeb":"#f8fafc",border:`1px solid ${filters.starred?"#fbbf24":"#e2e8f0"}`,borderRadius:7,cursor:"pointer" }} onClick={()=>setFilters(f=>({...f,starred:!f.starred}))}><Heart size={14} color={filters.starred?"#dc2626":"#94a3b8"} fill={filters.starred?"#dc2626":"none"}/><span style={{ fontSize:12,fontWeight:filters.starred?600:400,color:filters.starred?"#dc2626":"#64748b" }}>{t("common.offer_filters.starred_label")}</span></div>}
         </div>
       )}
     </div>
@@ -3993,7 +4008,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
     if(r.active === false) return false;
     if(search === "") return true;
     return r.name.toLowerCase().includes(search.toLowerCase()) ||
-      (CNAMES[r.country]||"").toLowerCase().includes(search.toLowerCase());
+      (getCountryName(r.country)).toLowerCase().includes(search.toLowerCase());
   });
 
   return (
@@ -4053,7 +4068,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
                     <RetailerLogo retailer={r} size={40}/>
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:700,fontSize:14 }}>{r.name}</div>
-                      <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[r.country]||"🌐"} {CNAMES[r.country]||r.country}</div>
+                      <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[r.country]||"🌐"} {getCountryName(r.country)}</div>
                     </div>
                     {hasSent && <Badge color="#0d9488" bg="rgba(13,148,136,0.08)">{t("supplier.wysylki.sieci.sent_badge_format", { count: rSends.length })}</Badge>}
                   </div>
@@ -4459,7 +4474,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
       </Card>
       <Card title={t("supplier.company.basics.card_title")} icon={Building2}>
         <Row><Inp label={t("supplier.company.basics.name_label")} required value={c.name} onChange={e=>u("name",e.target.value)}/><Inp label={t("supplier.company.basics.nip_label")} value={c.nip} onChange={e=>u("nip",e.target.value)}/></Row>
-        <Row><Inp label={t("supplier.company.basics.country_label")} value={c.country} onChange={e=>u("country",e.target.value)}><option value="">{t("supplier.company.basics.country_dash")}</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</Inp><Inp label={t("supplier.company.basics.city_label")} value={c.city} onChange={e=>u("city",e.target.value)}/></Row>
+        <Row><Inp label={t("supplier.company.basics.country_label")} value={c.country} onChange={e=>u("country",e.target.value)}><option value="">{t("supplier.company.basics.country_dash")}</option>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</Inp><Inp label={t("supplier.company.basics.city_label")} value={c.city} onChange={e=>u("city",e.target.value)}/></Row>
         <Row><Inp label={t("supplier.company.basics.website_label")} value={c.website||""} onChange={e=>u("website",e.target.value)}/><Inp label={t("supplier.company.basics.phone_label")} value={c.phone||""} onChange={e=>u("phone",e.target.value)}/></Row>
       </Card>
       {/* Opisy AI — dwa warstwy: krótki (podgląd) + standardowy (główny) */}
@@ -4685,7 +4700,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
               <Badge color={o.status==="active"?"#16a34a":"#64748b"}>{o.status==="active"?t("supplier.offers.card.status_published"):t("supplier.offers.card.status_draft")}</Badge>
               {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">{t("supplier.offers.card.premium_badge")}</Badge>}
             </div>
-            <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin} · {o.volume} {o.volumeUnit}</div>
+            <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · {o.volume} {o.volumeUnit}</div>
           </div>
           <div style={{ display:"flex",gap:14,flexShrink:0 }}>{[[t("supplier.offers.card.kpi_retailers"),sc.length,"#3b82f6"],[t("supplier.offers.card.kpi_read"),rc,"#059669"]].map(([l,v,cl])=><div key={l} style={{ textAlign:"center" }}><div style={{ fontSize:15,fontWeight:700,color:cl }}>{v}</div><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div></div>)}</div>
           <div style={{ display:"flex",gap:5,flexShrink:0 }}>
@@ -4923,7 +4938,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           </Row>
           <Row>
             <Inp label={t("supplier.offer_form.step1.identification.origin_label")} required value={f.origin} onChange={e=>u("origin",e.target.value)} style={errStyle("origin")}>
-              <option value="">{t("supplier.offer_form.select_dash")}</option>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
+              <option value="">{t("supplier.offer_form.select_dash")}</option>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
             </Inp>
             <Inp label={t("supplier.offer_form.step1.identification.region_label")} value={f.region||""} onChange={e=>u("region",e.target.value)} placeholder={t("supplier.offer_form.step1.identification.region_placeholder")}/>
           </Row>
@@ -6115,7 +6130,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                 </div>
                 <div style={{ display:"flex",gap:5,flexWrap:"wrap",alignItems:"center" }}>
                   {coTypes.map(tp=><span key={tp} style={{ fontSize:11,padding:"2px 8px",borderRadius:10,background:"#f1f5f9",color:"#475569",fontWeight:600 }}>{t(`common.type_labels.${tp}`,{defaultValue:TYPE_LABELS[tp]||tp})}</span>)}
-                  <span style={{ fontSize:12,color:"#64748b" }}>{FLAGS[dCo?.country]||"🌐"} {CNAMES[dCo?.country]||dCo?.country||""}{dCo?.city?` · ${dCo.city}`:""}</span>
+                  <span style={{ fontSize:12,color:"#64748b" }}>{FLAGS[dCo?.country]||"🌐"} {getCountryName(dCo?.country)}{dCo?.city?` · ${dCo.city}`:""}</span>
                 </div>
               </div>
               {/* Save + open buttons */}
@@ -6150,7 +6165,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                   {isNew&&<Badge color="#0d9488">{t("buyer.offers.card.new_badge")}</Badge>}
                   {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{o.positioning}</Badge>}
                   {o.isBio&&<Badge color="#059669" bg="#f0fdf4">{t("buyer.offers.card.bio_badge")}</Badge>}
-                  <Badge>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin}</Badge>
+                  <Badge>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}</Badge>
                 </div>
                 {/* Nazwa propozycji = produkt */}
                 <div style={{ fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:3,letterSpacing:-0.1 }}>{o.title||o.product}</div>
@@ -6247,7 +6262,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
         <select value={filterCountry} onChange={e=>setFilterCountry(e.target.value)}
           style={{padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
           <option value="">{t("buyer.catalog.country_filter_all")}</option>
-          {[...new Set(companies.map(c=>c.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {CNAMES[c]||c}</option>)}
+          {[...new Set(companies.map(c=>c.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {getCountryName(c)}</option>)}
         </select>
         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
           style={{padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
@@ -6272,7 +6287,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
                 <div style={{width:44,height:44,borderRadius:10,background:"linear-gradient(135deg,#0d9488,#0891b2)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:14,flexShrink:0}}>{initials}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{co.name}</div>
-                  <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{FLAGS[co.country]||"🌐"} {CNAMES[co.country]||co.country}{co.city?` · ${co.city}`:""}</div>
+                  <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{FLAGS[co.country]||"🌐"} {getCountryName(co.country)}{co.city?` · ${co.city}`:""}</div>
                 </div>
               </div>
               <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
@@ -6536,7 +6551,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
         <div style={{ flex:1,minWidth:0 }}>
           <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>
             {allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}
-            {o.origin&&<Badge>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin}</Badge>}
+            {o.origin&&<Badge>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}</Badge>}
             {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{o.positioning}</Badge>}
             {o.offerType&&<Badge color="#2563eb" bg="#eff6ff">{o.offerType}</Badge>}
             {o.isBio&&<Badge color="#059669" bg="#ecfdf5">🌿 Bio</Badge>}
@@ -6554,7 +6569,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
           {/* Identyfikacja */}
           <Sec label={t("buyer.detail.sections.identification")} icon="🎯" defaultOpen={true}>
-            <KV items={[[t("buyer.detail.kv.name"),o.product],[t("buyer.detail.kv.variety"),o.variety],[t("buyer.detail.kv.category"),o.category],[t("buyer.detail.kv.subcategory"),o.subcategory],[t("buyer.detail.kv.country"),o.origin?`${FLAGS[o.origin]||"🌐"} ${CNAMES[o.origin]||o.origin}`:null],[t("buyer.detail.kv.region"),o.region],[t("buyer.detail.kv.offer_type"),o.offerType],[t("buyer.detail.kv.positioning"),o.positioning]]}/>
+            <KV items={[[t("buyer.detail.kv.name"),o.product],[t("buyer.detail.kv.variety"),o.variety],[t("buyer.detail.kv.category"),o.category],[t("buyer.detail.kv.subcategory"),o.subcategory],[t("buyer.detail.kv.country"),o.origin?`${FLAGS[o.origin]||"🌐"} ${getCountryName(o.origin)}`:null],[t("buyer.detail.kv.region"),o.region],[t("buyer.detail.kv.offer_type"),o.offerType],[t("buyer.detail.kv.positioning"),o.positioning]]}/>
           </Sec>
 
           {/* Co Cię wyróżnia — przeniesione tuż pod Identyfikację, otwarte domyślnie */}
@@ -6734,7 +6749,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
                   </div>
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontWeight:800,fontSize:14,marginBottom:2,color:"#0f172a" }}>{supplierCo?.name}</div>
-                    <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[supplierCo?.country]||"🌐"} {CNAMES[supplierCo?.country]||supplierCo?.country} · {supplierCo?.city}</div>
+                    <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[supplierCo?.country]||"🌐"} {getCountryName(supplierCo?.country)} · {supplierCo?.city}</div>
                   </div>
                 </div>
                 <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:8 }}>
@@ -7371,7 +7386,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
     setFormError({});setShowForm(false);setExpandedId(newId);
   }
   const filtered=retailers.filter(r=>{
-    if(search&&!r.name.toLowerCase().includes(search.toLowerCase())&&!(CNAMES[r.country]||"").toLowerCase().includes(search.toLowerCase())) return false;
+    if(search&&!r.name.toLowerCase().includes(search.toLowerCase())&&!(getCountryName(r.country)).toLowerCase().includes(search.toLowerCase())) return false;
     if(filterCountry&&r.country!==filterCountry) return false;
     if(filterCat&&!(r.buyers||[]).some(b=>(b.cats||[]).includes(filterCat))) return false;
     if(filterActive==="active"&&r.active===false) return false;
@@ -7393,7 +7408,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Szukaj sieci lub kraju..." style={{flex:1,minWidth:180,padding:"7px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
         <select value={filterCountry} onChange={e=>setFilterCountry(e.target.value)} style={{padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
           <option value="">Wszystkie kraje</option>
-          {[...new Set(retailers.map(r=>r.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {CNAMES[c]||c}</option>)}
+          {[...new Set(retailers.map(r=>r.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {getCountryName(c)}</option>)}
         </select>
         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
           <option value="">Wszystkie kategorie</option>
@@ -7418,7 +7433,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
               <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ *</label>
               <select value={newR.country} onChange={e=>setNewR(p=>({...p,country:e.target.value}))} style={fldStyle("country")}>
                 <option value="">— wybierz —</option>
-                {CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
+                {getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
               </select>
               {formError.country&&<div style={{fontSize:10,color:"#dc2626",marginTop:2}}>{formError.country}</div>}
             </div>
@@ -7508,7 +7523,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                   <span style={{fontWeight:700,fontSize:14}}>{r.name}</span>
-                  <span style={{fontSize:12,color:"#64748b"}}>{FLAGS[r.country]||"🌐"} {CNAMES[r.country]||r.country}</span>
+                  <span style={{fontSize:12,color:"#64748b"}}>{FLAGS[r.country]||"🌐"} {getCountryName(r.country)}</span>
                   {allCats.map(c=><Badge key={c} color="#0d9488">{CEMOJI[c]} {c}</Badge>)}
                 </div>
                 <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{(r.buyers||[]).filter(b=>b.active!==false).length} kupców aktywnych · Wysyłka: {effectiveNextSend(r.nextSend)}</div>
@@ -7560,7 +7575,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,margin:"14px 0"}}>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NAZWA</label><input value={r.name||""} onChange={e=>updateRetailer(r.id,{name:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
-                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{CNAMES_SORTED.map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
+                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
                   <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NASTĘPNA WYSYŁKA <span style={{color:"#94a3b8",fontWeight:400,textTransform:"none"}}>(domyślnie pierwszy wtorek miesiąca)</span></label><input type="date" value={effectiveNextSend(r.nextSend)} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                 </div>
                 <div style={{marginBottom:14}}>
@@ -8246,7 +8261,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
                       <div style={{ flex:1 }}>
                         <div style={{ fontSize:11,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:2 }}>{co?.name || "Dostawca Fresh Market"}</div>
                         <div style={{ fontWeight:700,fontSize:16,color:"#0f172a",lineHeight:1.3 }}>{o.title||o.product}</div>
-                        <div style={{ fontSize:12,color:"#64748b",marginTop:3 }}>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin} · pozycja {s.pos||idx+1} · {o.volume} {o.volumeUnit}</div>
+                        <div style={{ fontSize:12,color:"#64748b",marginTop:3 }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · pozycja {s.pos||idx+1} · {o.volume} {o.volumeUnit}</div>
                       </div>
                       {isPrem&&<span style={{ background:"#d97706",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20,whiteSpace:"nowrap",flexShrink:0 }}>⭐ PREMIUM</span>}
                     </div>
@@ -8271,7 +8286,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
                     )}
                     <div style={{ display:"flex",gap:10,alignItems:"center" }}>
                       <div style={{ flex:1,padding:"8px 10px",background:"#f1f5f9",borderRadius:7,fontSize:11 }}>
-                        <div style={{ fontWeight:700,color:"#1e293b",marginBottom:1 }}>{co?.name||"—"}{co?.country?<> · {FLAGS[co.country]} {CNAMES[co.country]||co.country}</>:null}</div>
+                        <div style={{ fontWeight:700,color:"#1e293b",marginBottom:1 }}>{co?.name||"—"}{co?.country?<> · {FLAGS[co.country]} {getCountryName(co.country)}</>:null}</div>
                         {co?.description_short && <div style={{ color:"#475569",fontSize:11,marginTop:2 }}>{co.description_short}</div>}
                       </div>
                       <div style={{ flexShrink:0 }}>
@@ -8359,6 +8374,12 @@ function ProfileSection({ title, icon: Ic, children }) {
 }
 
 function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role }) {
+  const { t } = useTranslation("legacy");
+  // [P2-shared] Helpers do labelek z konstant zdefiniowanych poniżej
+  // (CUSTOMER_TYPE_LABELS / PARTNERSHIP_LABELS / CAPABILITY_LABELS) — używamy
+  // istniejących kluczy z supplier.company.ext_* (P2-5) jako primary,
+  // legacy stała jako defaultValue fallback.
+  const catKeyToPath = (k) => k === "zioła" ? "ziola" : k;
   const pd = co.profile_data || {};
   const basics = pd.basics || {};
   const offer = pd.offer || {};
@@ -8386,91 +8407,91 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
   const hasCerts = certs.length > 0;
 
   return (
-    <Modal title="Podgląd profilu firmy – widok kupca" onClose={onClose} wide>
+    <Modal title={t("common.company_preview.modal_title")} onClose={onClose} wide>
       {/* ── TIER 1 ── zawsze widoczny: logo, nazwa, kraj, opis krótki, typy ── */}
       <div style={{ display:"flex",gap:14,marginBottom:14,padding:14,background:"#f8fafc",borderRadius:10 }}>
         {co.logo?<img src={co.logo} alt="" style={{ width:70,height:70,objectFit:"contain",borderRadius:10,flexShrink:0,background:"white",border:"1px solid #e2e8f0",padding:4 }}/>:<div style={{ width:70,height:70,borderRadius:10,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Building2 size={28} color="#94a3b8"/></div>}
         <div style={{ flex:1 }}>
           <h3 style={{ margin:"0 0 3px" }}>{co.name}</h3>
           <div style={{ fontSize:12,color:"#64748b" }}>
-            {FLAGS[co.country]||"🌐"} {CNAMES[co.country]||co.country}
+            {FLAGS[co.country]||"🌐"} {getCountryName(co.country)}
             {co.city && <> · {co.city}</>}
             {co.nip && <> · {co.nip}</>}
-            {basics.founded_year && <> · od {basics.founded_year}</>}
-            {basics.employees && <> · {basics.employees} pracowników</>}
+            {basics.founded_year && <> · {t("common.company_preview.founded_format", { year: basics.founded_year })}</>}
+            {basics.employees && <> · {t("common.company_preview.employees_format", { count: basics.employees })}</>}
           </div>
           {co.website&&<div style={{ fontSize:12,color:"#3b82f6",marginTop:2 }}>{co.website}</div>}
           <div style={{ marginTop:7,display:"flex",gap:4,flexWrap:"wrap" }}>
-            {(co.types||[]).map(t=><Badge key={t} color="#0d9488">{TYPE_LABELS[t]||t}</Badge>)}
-            {(co.categories||[]).map(t=><Badge key={`c-${t}`} color="#65a30d" bg="#f7fee7">{CEMOJI[t]||""} {t}</Badge>)}
+            {(co.types||[]).map(tp=><Badge key={tp} color="#0d9488">{t(`common.type_labels.${tp}`, { defaultValue: TYPE_LABELS[tp]||tp })}</Badge>)}
+            {(co.categories||[]).map(cat=><Badge key={`c-${cat}`} color="#65a30d" bg="#f7fee7">{CEMOJI[cat]||""} {t(`common.offer_filters.category_options.${catKeyToPath(cat)}`, { defaultValue: cat })}</Badge>)}
           </div>
         </div>
       </div>
       {tier1Desc
         ? <p style={{ color:"#1e293b",lineHeight:1.65,marginBottom:14,fontSize:13.5,fontWeight:500 }}>{tier1Desc}</p>
-        : <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic",marginBottom:14 }}>Firma nie dodała jeszcze opisu.</div>
+        : <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic",marginBottom:14 }}>{t("common.company_preview.no_description")}</div>
       }
       {/* ── TIER 2 ── widoczne tylko, jeśli supplier coś podał ─────────────── */}
       {(hasOffer || hasMarkets || hasOps || hasCerts || hasMaterials || tier2Desc || supplierPitch) && (
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14 }}>
           {hasOffer && (
-            <ProfileSection title="Oferta" icon={Tag}>
-              {offer.products_year_round && <div><strong style={{ color:"#0d9488" }}>Całoroczne:</strong> {offer.products_year_round}</div>}
-              {offer.products_seasonal && <div><strong style={{ color:"#0d9488" }}>Sezonowe:</strong> {offer.products_seasonal}</div>}
+            <ProfileSection title={t("common.company_preview.section_offer")} icon={Tag}>
+              {offer.products_year_round && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.offer_year_round_label")}</strong> {offer.products_year_round}</div>}
+              {offer.products_seasonal && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.offer_seasonal_label")}</strong> {offer.products_seasonal}</div>}
               {customerTypes.length > 0 && (
                 <div style={{ marginTop:5,display:"flex",gap:4,flexWrap:"wrap" }}>
-                  {customerTypes.map(t=><Badge key={t} color="#0891b2" bg="#ecfeff">{CUSTOMER_TYPE_LABELS[t]||t}</Badge>)}
+                  {customerTypes.map(ct=><Badge key={ct} color="#0891b2" bg="#ecfeff">{t(`supplier.company.ext_offer.customer_type_options.${ct}`, { defaultValue: CUSTOMER_TYPE_LABELS[ct]||ct })}</Badge>)}
                 </div>
               )}
-              {offer.private_label && <div style={{ marginTop:5,fontSize:12,color:"#059669" }}>✓ Marka własna / private label</div>}
+              {offer.private_label && <div style={{ marginTop:5,fontSize:12,color:"#059669" }}>{t("common.company_preview.offer_private_label")}</div>}
             </ProfileSection>
           )}
           {hasMarkets && (
-            <ProfileSection title="Rynki i handel" icon={Send}>
+            <ProfileSection title={t("common.company_preview.section_markets")} icon={Send}>
               {exportCountries.length > 0 && (
                 <div style={{ marginBottom:4 }}>
-                  <strong style={{ color:"#0d9488" }}>Eksport: </strong>
-                  {exportCountries.map(cc => `${FLAGS[cc]||"🌐"} ${CNAMES[cc]||cc}`).join(" · ")}
+                  <strong style={{ color:"#0d9488" }}>{t("common.company_preview.markets_export_label")} </strong>
+                  {exportCountries.map(cc => `${FLAGS[cc]||"🌐"} ${getCountryName(cc)}`).join(" · ")}
                 </div>
               )}
-              {trade.main_markets && <div><strong style={{ color:"#0d9488" }}>Główne rynki:</strong> {trade.main_markets}</div>}
-              {co.markets && !trade.main_markets && <div><strong style={{ color:"#0d9488" }}>Rynki:</strong> {co.markets}</div>}
-              {trade.typical_volumes && <div><strong style={{ color:"#0d9488" }}>Wolumeny:</strong> {trade.typical_volumes}</div>}
+              {trade.main_markets && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.markets_main_label")}</strong> {trade.main_markets}</div>}
+              {co.markets && !trade.main_markets && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.markets_markets_label")}</strong> {co.markets}</div>}
+              {trade.typical_volumes && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.markets_volumes_label")}</strong> {trade.typical_volumes}</div>}
               {partnershipTypes.length > 0 && (
                 <div style={{ marginTop:5,display:"flex",gap:4,flexWrap:"wrap" }}>
-                  {partnershipTypes.map(t=><Badge key={t} color="#7c3aed" bg="#f3f0ff">{PARTNERSHIP_LABELS[t]||t}</Badge>)}
+                  {partnershipTypes.map(pt=><Badge key={pt} color="#7c3aed" bg="#f3f0ff">{t(`supplier.company.ext_trade.partnership_options.${pt}`, { defaultValue: PARTNERSHIP_LABELS[pt]||pt })}</Badge>)}
                 </div>
               )}
             </ProfileSection>
           )}
           {hasOps && (
-            <ProfileSection title="Zaplecze operacyjne" icon={ShieldCheck}>
+            <ProfileSection title={t("common.company_preview.section_ops")} icon={ShieldCheck}>
               <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
-                {capabilities.map(t=><Badge key={t} color="#0d9488" bg="#ccfbf1">{CAPABILITY_LABELS[t]||t}</Badge>)}
+                {capabilities.map(cap=><Badge key={cap} color="#0d9488" bg="#ccfbf1">{t(`supplier.company.ext_ops.capability_options.${cap}`, { defaultValue: CAPABILITY_LABELS[cap]||cap })}</Badge>)}
               </div>
             </ProfileSection>
           )}
           {hasCerts && (
-            <ProfileSection title="Certyfikaty" icon={ShieldCheck}>
+            <ProfileSection title={t("common.company_preview.section_certs")} icon={ShieldCheck}>
               {certs.map((ct,i)=>(
                 <div key={i} style={{ display:"flex",gap:10,padding:"7px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:5,fontSize:13,border:"1px solid #bbf7d0" }}>
                   <ShieldCheck size={13} color="#059669"/>
                   <strong style={{ color:"#0d9488" }}>{ct.type}</strong>
-                  {ct.number && <span style={{ color:"#64748b" }}>Nr: {ct.number}</span>}
-                  {ct.valid && <span style={{ marginLeft:"auto",color:"#059669" }}>do {ct.valid}</span>}
+                  {ct.number && <span style={{ color:"#64748b" }}>{t("common.company_preview.cert_number_prefix_format", { number: ct.number })}</span>}
+                  {ct.valid && <span style={{ marginLeft:"auto",color:"#059669" }}>{t("common.company_preview.cert_valid_prefix_format", { date: ct.valid })}</span>}
                 </div>
               ))}
             </ProfileSection>
           )}
           {hasMaterials && (
-            <ProfileSection title="Materiały" icon={Award}>
+            <ProfileSection title={t("common.company_preview.section_materials")} icon={Award}>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(120px, 1fr))",gap:8 }}>
                 {materials.map(url => {
                   const isPdf = /\.pdf(\?|$)/i.test(url);
                   return (
                     <a key={url} href={url} target="_blank" rel="noreferrer" style={{ display:"block",aspectRatio:"4/3",borderRadius:8,overflow:"hidden",border:"1px solid #e2e8f0",background:"#f8fafc",position:"relative",textDecoration:"none" }}>
                       {isPdf
-                        ? <div style={{ width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#3b82f6",fontSize:11,fontWeight:600 }}><span style={{ fontSize:28 }}>📄</span><span>PDF</span></div>
+                        ? <div style={{ width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#3b82f6",fontSize:11,fontWeight:600 }}><span style={{ fontSize:28 }}>📄</span><span>{t("common.company_preview.material_pdf_label")}</span></div>
                         : <img src={url} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                       }
                     </a>
@@ -8480,12 +8501,12 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
             </ProfileSection>
           )}
           {tier2Desc && (
-            <ProfileSection title="Pełny opis" icon={Building2}>
+            <ProfileSection title={t("common.company_preview.section_long_desc")} icon={Building2}>
               <p style={{ color:"#475569",lineHeight:1.7,margin:0 }}>{tier2Desc}</p>
             </ProfileSection>
           )}
           {supplierPitch && (
-            <ProfileSection title="Co podkreśla firma" icon={Sparkles}>
+            <ProfileSection title={t("common.company_preview.section_pitch")} icon={Sparkles}>
               <div style={{ padding:"10px 12px",background:"#fef3c7",border:"1px solid #fde68a",borderRadius:8,fontSize:13,color:"#78350f",fontStyle:"italic" }}>
                 {supplierPitch}
               </div>
@@ -8495,14 +8516,14 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
       )}
       {(co.contacts||[]).length > 0 && (
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,marginTop:6 }}>
-          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:"#64748b",marginBottom:6 }}>Kontakty</div>
+          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:"#64748b",marginBottom:6 }}>{t("common.company_preview.contacts_section_title")}</div>
           {(co.contacts||[]).map((ct,i)=><div key={i} style={{ padding:10,background:"#f8fafc",borderRadius:7,marginBottom:7,border:"1px solid #e2e8f0" }}><div style={{ fontWeight:600,fontSize:13 }}>{ct.name}</div><div style={{ fontSize:12,color:"#64748b" }}>{ct.position} · {ct.phone} · {ct.email}</div></div>)}
         </div>
       )}
       {offers!==undefined&&(
         <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid #e2e8f0"}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
-            <Tag size={13} color="#0d9488"/> Aktywne propozycje
+            <Tag size={13} color="#0d9488"/> {t("common.company_preview.active_offers_section_title")}
           </div>
           {(()=>{
             const coOffers = (() => {
@@ -8523,18 +8544,18 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
                 // Supplier or admin: show all active offers of this company
                 return (offers||[]).filter(o=>legacyKeyMatchesCompany(o.supplierId, co)&&o.status==="active");
               })();
-            if(coOffers==="__no_retailer__") return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>Brak przypisanej sieci detalicznej — podgląd propozycji niedostępny.</div>;
-            if(coOffers.length===0) return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>Brak aktywnych propozycji w tej chwili.</div>;
+            if(coOffers==="__no_retailer__") return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>{t("common.company_preview.no_retailer_assigned")}</div>;
+            if(coOffers.length===0) return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>{t("common.company_preview.no_active_offers")}</div>;
             const safeOffers = Array.isArray(coOffers) ? coOffers : [];
             return <div style={{display:"flex",flexDirection:"column",gap:8}}>{safeOffers.map(o=>(
               <div key={o.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0"}}>
                 <span style={{fontSize:18}}>{CEMOJI[o.category]||"📦"}</span>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:600,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.title||o.product}</div>
-                  <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{FLAGS[o.origin]||"🌐"} {CNAMES[o.origin]||o.origin}{o.volume?` · ${o.volume} ${o.volumeUnit||""}`:""}
+                  <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}{o.volume?` · ${o.volume} ${o.volumeUnit||""}`:""}
                   </div>
                 </div>
-                {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">Premium</Badge>}
+                {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">{t("common.company_preview.premium_badge")}</Badge>}
               </div>
             ))}</div>;
           })()}
@@ -8545,23 +8566,28 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
 }
 
 function OfferPreviewModal({ offer, co, onClose }) {
+  const { t } = useTranslation("legacy");
   if(!offer) return null;
   const allCerts=[...(offer.certs||[]),offer.customCert].filter(Boolean);
   const allPack=[...(offer.packaging||[]),offer.customPackaging].filter(Boolean);
   const ct=co?.contacts?.[0];
   return (
-    <Modal title="Podgląd propozycji – widok kupca" onClose={onClose} wide>
-      {offer.tier==="premium"&&<div style={{ background:"#fffbeb",border:"1px solid #fbbf24",borderRadius:7,padding:"6px 12px",marginBottom:10,fontSize:12,fontWeight:600,color:"#92400e",display:"flex",gap:5,alignItems:"center" }}><Star size={12} fill="#d97706" color="#d97706"/> Premium</div>}
+    <Modal title={t("common.offer_preview.modal_title")} onClose={onClose} wide>
+      {offer.tier==="premium"&&<div style={{ background:"#fffbeb",border:"1px solid #fbbf24",borderRadius:7,padding:"6px 12px",marginBottom:10,fontSize:12,fontWeight:600,color:"#92400e",display:"flex",gap:5,alignItems:"center" }}><Star size={12} fill="#d97706" color="#d97706"/> {t("common.offer_preview.premium_badge")}</div>}
       <div style={{ background:"#f0fdf4",borderRadius:10,padding:14,marginBottom:14,display:"flex",gap:12 }}>
         {offer.photos?.length?<img src={offer.photos[0]} alt="" style={{ width:110,height:80,objectFit:"cover",borderRadius:7,flexShrink:0,border:"2px solid #bbf7d0" }}/>:<div style={{ width:110,height:80,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:34 }}>{CEMOJI[offer.category]||"📦"}</div>}
         <div style={{ flex:1 }}>
-          <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>{allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}{offer.origin&&<Badge>{FLAGS[offer.origin]||"🌐"} {CNAMES[offer.origin]||offer.origin}</Badge>}</div>
+          <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>{allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}{offer.origin&&<Badge>{FLAGS[offer.origin]||"🌐"} {getCountryName(offer.origin)}</Badge>}</div>
           <h3 style={{ margin:"0 0 8px",fontSize:15 }}>{offer.title||offer.product}</h3>
-          <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>{[["Wolumen",offer.volume&&offer.volumeUnit?`${offer.volume} ${offer.volumeUnit}`:offer.volume],["Min.",offer.minOrder],["Sezon",offer.from&&offer.to?`${offer.from}–${offer.to}`:null]].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"6px 10px",background:"white",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12 }}>{v}</div></div>)}</div>
+          <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>{[
+            [t("common.offer_preview.kv_volume"), offer.volume&&offer.volumeUnit?`${offer.volume} ${offer.volumeUnit}`:offer.volume],
+            [t("common.offer_preview.kv_min"), offer.minOrder],
+            [t("common.offer_preview.kv_season"), offer.from&&offer.to?`${offer.from}–${offer.to}`:null],
+          ].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"6px 10px",background:"white",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12 }}>{v}</div></div>)}</div>
         </div>
       </div>
       <p style={{ color:"#475569",lineHeight:1.7,marginBottom:12,fontSize:13,whiteSpace:"pre-line" }}>{renderDesc(offer.description)}</p>
-      {allPack.length>0&&<div style={{ marginBottom:10 }}><strong style={{ fontSize:11,color:"#64748b" }}>OPAKOWANIE:</strong><div style={{ display:"flex",gap:4,marginTop:3,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p}>{p}</Badge>)}</div></div>}
+      {allPack.length>0&&<div style={{ marginBottom:10 }}><strong style={{ fontSize:11,color:"#64748b" }}>{t("common.offer_preview.packaging_label")}</strong><div style={{ display:"flex",gap:4,marginTop:3,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p}>{p}</Badge>)}</div></div>}
       {co&&<div style={{ padding:12,background:"#f8fafc",borderRadius:8,display:"flex",gap:10,fontSize:12 }}>{co.logo?<img src={co.logo} alt="" style={{ width:38,height:38,objectFit:"cover",borderRadius:7 }}/>:<div style={{ width:38,height:38,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center" }}><Building2 size={16} color="#94a3b8"/></div>}<div style={{ flex:1 }}><div style={{ fontWeight:700 }}>{co.name}</div><div style={{ color:"#64748b" }}>{FLAGS[co.country]||"🌐"} {co.city}</div></div>{ct&&<div><div><Phone size={11} style={{ verticalAlign:"middle" }}/> {ct.phone}</div><div><Mail size={11} style={{ verticalAlign:"middle" }}/> {ct.email}</div></div>}</div>}
     </Modal>
   );
@@ -8983,7 +9009,7 @@ function RetailerPreviewModal({ retailer, onClose }) {
         <div style={{ width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#0d9488,#0891b2)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:18,flexShrink:0 }}>{initials}</div>
         <div>
           <div style={{ fontWeight:700,fontSize:16,color:"#1e293b" }}>{retailer.name}</div>
-          <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>{FLAGS[retailer.country]||"🌐"} {CNAMES[retailer.country]||retailer.country}</div>
+          <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>{FLAGS[retailer.country]||"🌐"} {getCountryName(retailer.country)}</div>
         </div>
       </div>
       {cats.length > 0 && (
@@ -9137,7 +9163,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
                   <RetailerLogo retailer={c} size={34}/>
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontSize:12,fontWeight:p?"700":"600",color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.name}</div>
-                    <div style={{ fontSize:10,color:"#64748b" }}>{FLAGS[c.country]||"🌐"} {CNAMES[c.country]||c.country}</div>
+                    <div style={{ fontSize:10,color:"#64748b" }}>{FLAGS[c.country]||"🌐"} {getCountryName(c.country)}</div>
                     <div style={{ fontSize:10,color:"#94a3b8",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.cat}</div>
                   </div>
                   {p==="star"&&<span style={{ fontSize:9,color:"#d97706",fontWeight:700,flexShrink:0 }}>GŁÓWNA</span>}

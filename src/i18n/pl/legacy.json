@@ -44,6 +44,62 @@
       "firma_logistyczna": "🚛 Firma Logistyczna",
       "kooperatywa": "🤲 Kooperatywa",
       "agent": "🔎 Agent/Broker"
+    },
+    "offer_filters": {
+      "filter_btn": "Filtry",
+      "active_badge": "Aktywne",
+      "clear_btn": "Wyczyść",
+      "all_option": "Wszystkie",
+      "category_label": "Kategoria",
+      "category_options": {
+        "owoce": "Owoce",
+        "warzywa": "Warzywa",
+        "kwiaty": "Kwiaty",
+        "ziola": "Zioła",
+        "inne": "Inne"
+      },
+      "country_label": "Kraj",
+      "cert_label": "Certyfikat",
+      "packaging_label": "Opakowanie",
+      "volume_min_label": "Wolumen min. (T)",
+      "volume_min_placeholder": "np. 50",
+      "starred_label": "Ciekawe"
+    },
+    "company_preview": {
+      "modal_title": "Podgląd profilu firmy – widok kupca",
+      "founded_format": "od {{year}}",
+      "employees_format": "{{count}} pracowników",
+      "no_description": "Firma nie dodała jeszcze opisu.",
+      "section_offer": "Oferta",
+      "section_markets": "Rynki i handel",
+      "section_ops": "Zaplecze operacyjne",
+      "section_certs": "Certyfikaty",
+      "section_materials": "Materiały",
+      "section_long_desc": "Pełny opis",
+      "section_pitch": "Co podkreśla firma",
+      "offer_year_round_label": "Całoroczne:",
+      "offer_seasonal_label": "Sezonowe:",
+      "offer_private_label": "✓ Marka własna / private label",
+      "markets_export_label": "Eksport:",
+      "markets_main_label": "Główne rynki:",
+      "markets_markets_label": "Rynki:",
+      "markets_volumes_label": "Wolumeny:",
+      "cert_number_prefix_format": "Nr: {{number}}",
+      "cert_valid_prefix_format": "do {{date}}",
+      "material_pdf_label": "PDF",
+      "contacts_section_title": "Kontakty",
+      "active_offers_section_title": "Aktywne propozycje",
+      "no_retailer_assigned": "Brak przypisanej sieci detalicznej — podgląd propozycji niedostępny.",
+      "no_active_offers": "Brak aktywnych propozycji w tej chwili.",
+      "premium_badge": "Premium"
+    },
+    "offer_preview": {
+      "modal_title": "Podgląd propozycji – widok kupca",
+      "premium_badge": "Premium",
+      "kv_volume": "Wolumen",
+      "kv_min": "Min.",
+      "kv_season": "Sezon",
+      "packaging_label": "OPAKOWANIE:"
     }
   },
   "supplier": {
