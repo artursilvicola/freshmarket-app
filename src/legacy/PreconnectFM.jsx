@@ -9397,6 +9397,9 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
    FM PAGE — BUYER
 ═══════════════════════════════════════════════════════════════ */
 function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, fmChains, fmSuppliers, companies, offers, sends, fmWishlists, setFmWishlists, fmLateResps, setFmLateResps, previewFor, retailers }) {
+  const { t } = useTranslation("legacy");
+  // [P2-fm C3] Plural suffix helper PL: 1→one, 2-4→few, reszta→many.
+  const pluralSuffix = (n) => n === 1 ? "_one" : (n >= 2 && n <= 4) ? "_few" : "_many";
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const phase = fmSettings.currentPhase;
@@ -9495,11 +9498,14 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
     setPreviewFirm(realCo || { name:s.name, country:s.country, description:`${s.name} — ${s.products}`, types:["producent"], contacts:[], certs:[] });
   }
 
+  // [P2-fm C3] FM_PHASES label/sub idą przez t() z fm.phases.N.*
+  const _phLabel = t(`fm.phases.${ph.id}.label`, { defaultValue: ph.label });
+  const _phSub = t(`fm.phases.${ph.id}.sub`, { defaultValue: ph.sub });
   const phBanner = (
     <div style={{ padding:"10px 14px",borderRadius:9,border:`1px solid ${ph.color}44`,background:ph.color+"0a",marginBottom:16,display:"flex",alignItems:"center",gap:8 }}>
       <div style={{ width:8,height:8,borderRadius:"50%",background:ph.color,flexShrink:0 }}/>
-      <span style={{ fontSize:12,fontWeight:600,color:ph.color }}>{ph.label} — {ph.sub}</span>
-      <span style={{ fontSize:11,color:"#64748b" }}>· Panel kupca: <strong>{chain?.name}</strong></span>
+      <span style={{ fontSize:12,fontWeight:600,color:ph.color }}>{_phLabel} — {_phSub}</span>
+      <span style={{ fontSize:11,color:"#64748b" }}>{t("fm.buyer.phase_banner_label_format")}<strong>{chain?.name}</strong></span>
     </div>
   );
 
@@ -9516,39 +9522,39 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
             <div style={{ background:"white",borderRadius:14,padding:24,maxWidth:420,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
               {removeConfirm !== removeDialog ? (
                 <>
-                  <div style={{ fontWeight:700,fontSize:15,marginBottom:8 }}>Rezygnujesz ze spotkania z <span style={{color:"#0d9488"}}>{sup?.name}</span>?</div>
+                  <div style={{ fontWeight:700,fontSize:15,marginBottom:8 }}><Trans i18nKey="fm.buyer.remove_dialog_title_html" ns="legacy" values={{ name: sup?.name }} components={{ strong: <span style={{color:"#0d9488"}} /> }}/></div>
                   <div style={{ fontSize:13,color:"#64748b",marginBottom:20,lineHeight:1.6 }}>
-                    Możemy przenieść tę firmę na koniec kolejki — jeśli będzie czas, spotkanie się odbędzie.
+                    {t("fm.buyer.remove_dialog_desc")}
                   </div>
                   <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
                     <button onClick={()=>{ setResp(removeDialog,"chance"); setRemoveDialog(null); setRemoveConfirm(null); }}
                       style={{ padding:"11px 16px",borderRadius:9,border:"2px solid #d97706",background:"#fffbeb",color:"#92400e",fontWeight:700,fontSize:13,cursor:"pointer",textAlign:"left" }}>
-                      🔁 Przenieś na koniec kolejki <span style={{fontWeight:400,fontSize:12}}>(zalecane)</span>
+                      <Trans i18nKey="fm.buyer.remove_dialog_btn_chance_html" ns="legacy" components={{ span: <span style={{fontWeight:400,fontSize:12}} /> }}/>
                     </button>
                     <button onClick={()=>setRemoveConfirm(removeDialog)}
                       style={{ padding:"11px 16px",borderRadius:9,border:"1px solid #fca5a5",background:"white",color:"#dc2626",fontWeight:600,fontSize:12,cursor:"pointer",textAlign:"left" }}>
-                      Nie chcę spotkania z tą firmą
+                      {t("fm.buyer.remove_dialog_btn_remove")}
                     </button>
                     <button onClick={()=>{ setRemoveDialog(null); setRemoveConfirm(null); }}
                       style={{ padding:"8px 16px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:12,cursor:"pointer" }}>
-                      Anuluj
+                      {t("fm.buyer.remove_dialog_btn_cancel")}
                     </button>
                   </div>
                 </>
               ) : (
                 <>
-                  <div style={{ fontWeight:700,fontSize:15,marginBottom:8,color:"#dc2626" }}>⚠️ Potwierdzenie odrzucenia</div>
+                  <div style={{ fontWeight:700,fontSize:15,marginBottom:8,color:"#dc2626" }}>{t("fm.buyer.remove_confirm_title")}</div>
                   <div style={{ fontSize:13,color:"#334155",marginBottom:20,lineHeight:1.6 }}>
-                    Oznaczysz firmę <strong>{sup?.name}</strong> jako <strong>NIE CHCĘ SPOTKANIA</strong>. Algorytm nie doda tej pary do Twojego planu. Administrator może wciąż dodać spotkanie ręcznie po wyraźnym ostrzeżeniu.
+                    <Trans i18nKey="fm.buyer.remove_confirm_desc_html" ns="legacy" values={{ name: sup?.name }} components={{ strong: <strong /> }}/>
                   </div>
                   <div style={{ display:"flex",gap:8 }}>
                     <button onClick={()=>{ setResp(removeDialog,"remove"); setRemoveDialog(null); setRemoveConfirm(null); }}
                       style={{ flex:1,padding:"11px 16px",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer" }}>
-                      Tak, nie chcę spotkania
+                      {t("fm.buyer.remove_confirm_btn_yes")}
                     </button>
                     <button onClick={()=>{ setRemoveDialog(null); setRemoveConfirm(null); }}
                       style={{ padding:"11px 16px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:12,cursor:"pointer" }}>
-                      Anuluj
+                      {t("fm.buyer.remove_confirm_btn_cancel")}
                     </button>
                   </div>
                 </>
@@ -9560,21 +9566,25 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
 
       {phBanner}
       <div style={{ display:"flex",gap:10,marginBottom:16,flexWrap:"wrap" }}>
-        {[[interestedSuppliers.length,"Wybrali Twoją sieć","#0d9488"],[Object.values(myResps).filter(v=>v==="want").length,"✅ Chcę się spotkać","#059669"],[Object.values(myResps).filter(v=>v==="chance").length,"🤝 Daj szansę","#d97706"]].map(([v,l,c])=>(
+        {[
+          [interestedSuppliers.length, t("fm.buyer.stats_picked_label"), "#0d9488"],
+          [Object.values(myResps).filter(v=>v==="want").length, t("fm.buyer.stats_want_label"), "#059669"],
+          [Object.values(myResps).filter(v=>v==="chance").length, t("fm.buyer.stats_chance_label"), "#d97706"],
+        ].map(([v,l,c])=>(
           <div key={l} style={{ flex:1,minWidth:90,padding:"14px 16px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
             <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
             <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{l}</div>
           </div>
         ))}
       </div>
-      <Card title={`Dostawcy, którzy wybrali Twoją sieć`} icon={Users}>
-        <div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>Tylko firmy, które zaznaczyły Twoją sieć w "Wybór sieci". Algorytm dopasowuje wyłącznie pary, w których obie strony chcą spotkania.</div>
+      <Card title={t("fm.buyer.card_interested_title")} icon={Users}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>{t("fm.buyer.card_interested_desc")}</div>
         {interestedSuppliers.length===0
-          ? <div style={{ padding:30,textAlign:"center",color:"#94a3b8",fontSize:13,lineHeight:1.6 }}>Brak dostawców oczekujących na decyzję.<br/><span style={{fontSize:11}}>Gdy dostawcy zaznaczą Twoją sieć w "Wybór sieci", pojawią się tutaj.</span></div>
+          ? <div style={{ padding:30,textAlign:"center",color:"#94a3b8",fontSize:13,lineHeight:1.6 }}><Trans i18nKey="fm.buyer.card_interested_empty_html" ns="legacy" components={{ br: <br />, span: <span style={{fontSize:11}} /> }}/></div>
           : interestedSuppliers.map(s=>{
               const resp = myResps[s.id];
               const supPref = fmPrefs[s.id]?.[chainId];
-              const prefLbl = supPref==="star" ? "⭐ Główna" : "👍 Rezerwowa";
+              const prefLbl = supPref==="star" ? t("fm.buyer.pref_main") : t("fm.buyer.pref_backup");
               const prefCol = supPref==="star" ? "#d97706" : "#0d9488";
               return (
                 <div key={s.id} style={{ padding:"12px 6px",borderBottom:"1px solid #f1f5f9",background:resp==="want"?"rgba(240,253,244,0.7)":resp==="chance"?"rgba(255,251,235,0.7)":"transparent" }}>
@@ -9586,9 +9596,12 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
                       </div>
                       <div style={{ fontSize:11,color:"#64748b" }}>{s.country} · {s.products}</div>
                     </div>
-                    <Btn sm outline onClick={()=>openFirmPreview(s)} style={{ fontSize:10 }}><Eye size={10}/> Podgląd</Btn>
+                    <Btn sm outline onClick={()=>openFirmPreview(s)} style={{ fontSize:10 }}><Eye size={10}/> {t("fm.buyer.preview_btn")}</Btn>
                     <div style={{ display:"flex",gap:5 }}>
-                      {[["want","✅ Chcę","#059669"],["chance","🤝 Daj szansę","#d97706"]].map(([val,lbl,col])=>(
+                      {[
+                        ["want", t("fm.buyer.btn_want"), "#059669"],
+                        ["chance", t("fm.buyer.btn_chance"), "#d97706"],
+                      ].map(([val,lbl,col])=>(
                         <button key={val} onClick={()=>setResp(s.id,val)}
                           style={{ padding:"6px 12px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",border:`${resp===val?"2":"1"}px solid ${resp===val?col:"#e2e8f0"}`,background:resp===val?col+"15":"white",color:resp===val?col:"#64748b" }}>
                           {lbl}
@@ -9598,7 +9611,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
                         style={{ padding:"6px 12px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",
                           border:`${resp==="remove"?"2":"1"}px solid ${resp==="remove"?"#dc2626":"#e2e8f0"}`,
                           background:resp==="remove"?"#fef2f2":"white",color:resp==="remove"?"#dc2626":"#94a3b8" }}>
-                        ❌ Nie chcę
+                        {t("fm.buyer.btn_remove")}
                       </button>
                     </div>
                   </div>
@@ -9625,11 +9638,9 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
         <div style={{ padding:"14px 18px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,marginBottom:16,display:"flex",gap:12,alignItems:"flex-start" }}>
           <div style={{ width:36,height:36,borderRadius:"50%",background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:18 }}>⚙️</div>
           <div style={{ flex:1 }}>
-            <div style={{ fontWeight:700,fontSize:14,color:"#334155",marginBottom:4 }}>Wybory zamknięte — plan w przygotowaniu</div>
+            <div style={{ fontWeight:700,fontSize:14,color:"#334155",marginBottom:4 }}>{t("fm.buyer.phase3_status_title")}</div>
             <div style={{ fontSize:13,color:"#64748b",lineHeight:1.65 }}>
-              Wybory zostały zamknięte <strong>16 września</strong>. Administrator układa i koryguje plan spotkań.<br/>
-              Finalne numery i harmonogram spotkań zostaną opublikowane <strong>22 września 2026</strong>.<br/>
-              W sprawie zmian lub pytań napisz do administratora przez <strong>Chat ↘</strong>.
+              <Trans i18nKey="fm.buyer.phase3_status_desc_html" ns="legacy" components={{ strong: <strong />, br: <br /> }}/>
             </div>
           </div>
         </div>
@@ -9640,13 +9651,13 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
             <div style={{ padding:"10px 14px",background:"#fef3c7",border:"2px solid #f59e0b",borderRadius:10,marginBottom:12,display:"flex",gap:8,alignItems:"flex-start" }}>
               <span style={{ fontSize:16,flexShrink:0 }}>⚠️</span>
               <div>
-                <div style={{ fontWeight:700,fontSize:12,color:"#92400e" }}>Podgląd roboczy — plan może jeszcze ulec zmianie</div>
-                <div style={{ fontSize:11,color:"#92400e",marginTop:1 }}>Administrator udostępnił Ci wstępny podgląd planowanych spotkań. <strong>Nie jest to jeszcze finalny plan.</strong> Oficjalna publikacja nastąpi <strong>22 września 2026</strong>.</div>
+                <div style={{ fontWeight:700,fontSize:12,color:"#92400e" }}>{t("fm.buyer.phase3_preview_warning_title")}</div>
+                <div style={{ fontSize:11,color:"#92400e",marginTop:1 }}><Trans i18nKey="fm.buyer.phase3_preview_warning_desc_html" ns="legacy" components={{ strong: <strong /> }}/></div>
               </div>
             </div>
-            <Card title="Wstępny podgląd — planowane spotkania z Twoją siecią" icon={Eye}>
+            <Card title={t("fm.buyer.phase3_preview_card_title")} icon={Eye}>
               {previewMatches.length===0
-                ? <div style={{ padding:24,textAlign:"center",color:"#94a3b8",fontSize:12 }}>Brak planowanych spotkań dla tej sieci w planie roboczym.</div>
+                ? <div style={{ padding:24,textAlign:"center",color:"#94a3b8",fontSize:12 }}>{t("fm.buyer.phase3_preview_empty")}</div>
                 : previewMatches.map(s=>{
                     const n=planData3?.nums?.[s.id]?.[chainId];
                     const zk=fmNZ(n);
@@ -9654,7 +9665,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
                     return(
                       <div key={s.id} style={{ display:"flex",alignItems:"center",gap:12,padding:"10px 8px",borderBottom:"1px solid #f1f5f9" }}>
                         <div style={{ flex:1 }}><div style={{ fontWeight:700,fontSize:13 }}>{s.name}</div><div style={{ fontSize:11,color:"#64748b" }}>{s.country} · {s.products}</div></div>
-                        {zc&&<span style={{fontSize:11,fontWeight:600,color:zc.c,padding:"2px 8px",borderRadius:6,background:zc.bg,border:`1px solid ${zc.b}`}}>{n?`#${n} · `:""}{zk==="green"?"🟢 Dobra":zk==="orange"?"🟠 Średnia":"🔴 Późna"}</span>}
+                        {zc&&<span style={{fontSize:11,fontWeight:600,color:zc.c,padding:"2px 8px",borderRadius:6,background:zc.bg,border:`1px solid ${zc.b}`}}>{n?`#${n} · `:""}{zk==="green"?t("fm.supplier.zone_green"):zk==="orange"?t("fm.supplier.zone_orange"):t("fm.supplier.zone_red")}</span>}
                       </div>
                     );
                   })
@@ -9664,17 +9675,17 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
         )}
 
         {/* ── Twoje wybory z Fazy 2 (read-only, zawsze widoczne) ── */}
-        <Card title="Twoje odpowiedzi z Fazy Preferencji — tylko do wglądu" icon={CheckCircle}>
+        <Card title={t("fm.buyer.phase3_responses_card_title")} icon={CheckCircle}>
           <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>
-            Poniżej widzisz odpowiedzi, które udzieliłaś/udzieliłeś podczas Fazy Preferencji. Są zablokowane — edycja możliwa tylko przez administratora.
+            {t("fm.buyer.phase3_responses_card_desc")}
           </div>
           {allParticipants.length === 0
-            ? <div style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>Brak danych o dostawcach.</div>
+            ? <div style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>{t("fm.buyer.phase3_responses_empty_no_data")}</div>
             : allParticipants.map(s => {
                 const resp = myResps[s.id];
                 if (!resp) return null; // show only suppliers with a response
                 const col = resp==="want"?"#059669":resp==="chance"?"#d97706":"#dc2626";
-                const lbl = resp==="want"?"✅ Chcę się spotkać":resp==="chance"?"🤝 Daj szansę":"❌ Nie chcę";
+                const lbl = resp==="want"?t("fm.buyer.resp_want_full"):resp==="chance"?t("fm.buyer.resp_chance_full"):t("fm.buyer.resp_remove_full");
                 return (
                   <div key={s.id} style={{ display:"flex",alignItems:"center",gap:10,padding:"8px 6px",borderBottom:"1px solid #f1f5f9" }}>
                     <div style={{ flex:1 }}><div style={{ fontWeight:600,fontSize:13,color:"#1e293b" }}>{s.name}</div><div style={{ fontSize:11,color:"#94a3b8" }}>{s.country} · {s.products}</div></div>
@@ -9684,7 +9695,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
               }).filter(Boolean)
           }
           {allParticipants.every(s=>!myResps[s.id])&&(
-            <div style={{ padding:24,textAlign:"center",color:"#94a3b8",fontSize:12 }}>Brak zaznaczonych odpowiedzi w Fazie Preferencji.</div>
+            <div style={{ padding:24,textAlign:"center",color:"#94a3b8",fontSize:12 }}>{t("fm.buyer.phase3_responses_empty_no_marks")}</div>
           )}
         </Card>
 
@@ -9694,21 +9705,24 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
             <div style={{ padding:"10px 14px",background:"#fef3c7",border:"2px solid #f59e0b",borderRadius:10,marginBottom:12,display:"flex",gap:8,alignItems:"flex-start" }}>
               <span style={{ fontSize:16,flexShrink:0 }}>⏰</span>
               <div>
-                <div style={{ fontWeight:700,fontSize:12,color:"#92400e" }}>Wybory po terminie — tylko informacja dla administratora</div>
+                <div style={{ fontWeight:700,fontSize:12,color:"#92400e" }}>{t("fm.buyer.phase3_late_warning_title")}</div>
                 <div style={{ fontSize:11,color:"#92400e",marginTop:1 }}>
-                  Twoje odpowiedzi <strong>nie biorą już udziału w algorytmie</strong> i nie zmieniają automatycznie planu spotkań. Służą wyłącznie jako materiał pomocniczy dla administratora.
+                  <Trans i18nKey="fm.buyer.phase3_late_warning_desc_html" ns="legacy" components={{ strong: <strong /> }}/>
                 </div>
               </div>
             </div>
-            <Card title="Wybór dostawców — po terminie (informacja dla admina)" icon={Users}>
-              <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>Zaznacz dostawców, z którymi chciałbyś się spotkać. Administrator zdecyduje, czy będzie to możliwe.</div>
+            <Card title={t("fm.buyer.phase3_late_card_title")} icon={Users}>
+              <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>{t("fm.buyer.phase3_late_card_desc")}</div>
               {_suppliers.map(s => {
                 const resp = myLateResps[s.id];
                 return (
                   <div key={s.id} style={{ padding:"10px 6px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",gap:10 }}>
                     <div style={{ flex:1 }}><div style={{ fontWeight:700,fontSize:13 }}>{s.name}</div><div style={{ fontSize:11,color:"#64748b" }}>{s.country} · {s.products}</div></div>
                     <div style={{ display:"flex",gap:5 }}>
-                      {[["want","✅ Chcę","#059669"],["chance","🤝 Daj szansę","#d97706"]].map(([val,lbl,col])=>(
+                      {[
+                        ["want", t("fm.buyer.btn_want"), "#059669"],
+                        ["chance", t("fm.buyer.btn_chance"), "#d97706"],
+                      ].map(([val,lbl,col])=>(
                         <button key={val}
                           onClick={()=>setLateResp(s.id, val)}
                           style={{ padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",border:`${resp===val?"2":"1"}px solid ${resp===val?col:"#e2e8f0"}`,background:resp===val?col+"15":"white",color:resp===val?col:"#64748b" }}>
@@ -9743,10 +9757,10 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
       {phBanner}
 
       {/* Firmy z którymi się spotykasz */}
-      <Card title={pub?"1. Firmy z którymi się spotykasz — plan finalny":"1. Firmy z którymi się spotykasz — plan roboczy"} icon={CheckCircle}>
-        {!pub&&<Alrt type="info">Plan jest w trakcie finalizacji przez administratora. Finalna lista zostanie opublikowana 22 września.</Alrt>}
+      <Card title={pub?t("fm.buyer.final_card_title_published"):t("fm.buyer.final_card_title_working")} icon={CheckCircle}>
+        {!pub&&<Alrt type="info">{t("fm.buyer.final_pending_info")}</Alrt>}
         {finalMatches.length===0
-          ? <div style={{ padding:20,textAlign:"center",color:"#94a3b8" }}>Brak przypisanych firm.</div>
+          ? <div style={{ padding:20,textAlign:"center",color:"#94a3b8" }}>{t("fm.buyer.final_empty")}</div>
           : finalMatches.map((s,i)=>{
               const slotNum = pub ? (planData?.nums?.[s.id]?.[chainId]) : null;
               const zone = slotNum ? (slotNum<=25?"green":slotNum<=35?"orange":"red") : null;
@@ -9758,8 +9772,8 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
                     <div style={{ fontWeight:700,fontSize:13 }}>{s.name}</div>
                     <div style={{ fontSize:11,color:"#64748b" }}>{s.country} · {s.products}</div>
                   </div>
-                  {pub&&<Badge color="#059669">✓ Finalne</Badge>}
-                  <Btn sm outline onClick={()=>openFirmPreview(s)} style={{ fontSize:10 }}><Eye size={10}/> Podgląd</Btn>
+                  {pub&&<Badge color="#059669">{t("fm.buyer.final_badge_final")}</Badge>}
+                  <Btn sm outline onClick={()=>openFirmPreview(s)} style={{ fontSize:10 }}><Eye size={10}/> {t("fm.buyer.preview_btn")}</Btn>
                 </div>
               );
             })
@@ -9767,10 +9781,10 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
       </Card>
 
       {/* Firmy z którymi chciałbyś się jeszcze spotkać */}
-      <Card title="2. Firmy z którymi chciałbyś się jeszcze spotkać" icon={Heart}>
+      <Card title={t("fm.buyer.wish_card_title")} icon={Heart}>
         <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>
-          Zaznacz dodatkowe firmy — to informacja dla administratora. Nie zmienia automatycznie planu.
-          {pub&&<span style={{ color:"#d97706" }}> Administrator może uwzględnić te życzenia.</span>}
+          {t("fm.buyer.wish_card_desc")}
+          {pub&&<span style={{ color:"#d97706" }}>{t("fm.buyer.wish_card_desc_admin_note")}</span>}
         </div>
         {_suppliers.filter(s=>!finalMatches.find(m=>m.id===s.id)).map(s=>{
           const inWish = wishList.includes(s.id);
@@ -9782,20 +9796,20 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
               </div>
               <Btn sm outline onClick={()=>openFirmPreview(s)} style={{ fontSize:10 }}><Eye size={10}/></Btn>
               <button onClick={()=>toggleWish(s.id)} style={{ padding:"5px 12px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",border:`${inWish?"2":"1"}px solid ${inWish?"#059669":"#e2e8f0"}`,background:inWish?"#f0fdf4":"white",color:inWish?"#059669":"#64748b" }}>
-                {inWish?"✅ Zgłoszono":"+ Chcę"}
+                {inWish?t("fm.buyer.wish_btn_added"):t("fm.buyer.wish_btn_add")}
               </button>
             </div>
           );
         })}
         {wishList.length>0&&<div style={{ marginTop:10,padding:"8px 12px",background:"#eff6ff",borderRadius:7,fontSize:12,color:"#1e40af",border:"1px solid #bfdbfe" }}>
-          Zgłoszono {wishList.length} dodatkow{wishList.length===1?"ą firmę":"e firmy"} administratorowi. Oksana Kozłowska wprowadzi korekty ręcznie jeśli będzie to możliwe.
+          {t("fm.buyer.wish_summary" + pluralSuffix(wishList.length), { count: wishList.length })}
         </div>}
         {pub&&<div style={{ marginTop:10,fontSize:12,color:"#64748b",paddingTop:8,borderTop:"1px solid #e2e8f0" }}>
-          W sprawie zmian skontaktuj się: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818
+          <Trans i18nKey="fm.buyer.pub_contact_html" ns="legacy" components={{ strong: <strong /> }}/>
         </div>}
       </Card>
 
-      {pub&&<FMVenueFooter extra={"Twoje stoisko — dowiesz się w recepcji eventu.\nStart rejestracji: 8:00–9:00."}/>}
+      {pub&&<FMVenueFooter extra={t("fm.buyer.footer_extra")}/>}
 
     </div>
   );
