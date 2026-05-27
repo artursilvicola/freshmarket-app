@@ -6790,6 +6790,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
 /* ── Admin Dashboard ──────────────────────────────────────────────────── */
 function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, resetToSeed, retailers, fmSuppliers, companies }) {
+  const { t } = useTranslation("legacy");
   const pm=sends.filter(s=>s.status==="pending_moderation").length;
   const ap=sends.filter(s=>s.status==="approved").length;
   const nc=sends.filter(s=>s.status==="sent").length;
@@ -6811,38 +6812,41 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           <div style={{ width:42, height:42, borderRadius:"50%", background:"#d97706", color:"white", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:22 }}>🔔</div>
           <div style={{ flex:1 }}>
             <div style={{ fontWeight:700, fontSize:14, color:"#92400e", marginBottom:3 }}>
-              Wymaga Twojej akcji
+              {t("admin.dash.urgent_title")}
             </div>
             <div style={{ fontSize:13, color:"#78350f", lineHeight:1.55 }}>
               {pm > 0 && (
                 <>
-                  <strong>{pm}</strong> {pm===1?"propozycja czeka":pm<5?"propozycje czekają":"propozycji czeka"} na moderację
-                  {pendingFirms > 0 && " · "}
+                  <Trans i18nKey="admin.dash.urgent_proposals_html" ns="legacy" count={pm} values={{ count: pm }} components={{ strong: <strong /> }}/>
+                  {pendingFirms > 0 && t("admin.dash.urgent_separator")}
                 </>
               )}
               {pendingFirms > 0 && (
-                <>
-                  <strong>{pendingFirms}</strong> {pendingFirms===1?"firma czeka":pendingFirms<5?"firmy czekają":"firm czeka"} na aktywację konta
-                </>
+                <Trans i18nKey="admin.dash.urgent_firms_html" ns="legacy" count={pendingFirms} values={{ count: pendingFirms }} components={{ strong: <strong /> }}/>
               )}
             </div>
           </div>
           <div style={{ display:"flex", gap:8, flexShrink:0 }}>
             {pm > 0 && (
               <button onClick={()=>nav("a-pipeline")} style={{ padding:"8px 14px", background:"#d97706", color:"white", border:"none", borderRadius:8, fontSize:12.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
-                Otwórz Pipeline →
+                {t("admin.dash.urgent_btn_pipeline")}
               </button>
             )}
             {pendingFirms > 0 && (
               <button onClick={()=>nav("a-firmy")} style={{ padding:"8px 14px", background:"white", color:"#92400e", border:"1px solid #d97706", borderRadius:8, fontSize:12.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
-                Otwórz Firmy →
+                {t("admin.dash.urgent_btn_firmy")}
               </button>
             )}
           </div>
         </div>
       )}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12,marginBottom:20 }}>
-        {[["Przychód (potwier.)",`${revenue} EUR`,revenue>0?"#059669":"#94a3b8",TrendingUp],[`Do moderacji (${pm})`,pm>0?"Wymaga akcji":"OK",pm>0?"#d97706":"#059669",Layers],[`Zatwierdzone (${ap})`,ap>0?"Gotowe do wysyłki":"—",ap>0?"#2563eb":"#94a3b8",Send],[`Do potwierdzenia (${nc})`,nc>0?"Tracking aktywny":"—",nc>0?"#ea580c":"#94a3b8",Phone]].map(([l,v,c,Ic])=>(
+        {[
+          [t("admin.dash.kpi_revenue_label"), t("admin.dash.kpi_revenue_value_format", { amount: revenue }), revenue>0?"#059669":"#94a3b8", TrendingUp],
+          [t("admin.dash.kpi_moderation_label_format", { count: pm }), pm>0?t("admin.dash.kpi_moderation_value_action"):t("admin.dash.kpi_moderation_value_ok"), pm>0?"#d97706":"#059669", Layers],
+          [t("admin.dash.kpi_approved_label_format", { count: ap }), ap>0?t("admin.dash.kpi_approved_value_ready"):t("admin.dash.kpi_approved_value_dash"), ap>0?"#2563eb":"#94a3b8", Send],
+          [t("admin.dash.kpi_pending_confirm_label_format", { count: nc }), nc>0?t("admin.dash.kpi_pending_confirm_value_tracking"):t("admin.dash.kpi_pending_confirm_value_dash"), nc>0?"#ea580c":"#94a3b8", Phone],
+        ].map(([l,v,c,Ic])=>(
           <div key={l} style={{ padding:"14px 16px",background:"white",border:"1px solid #e2e8f0",borderRadius:12,borderTop:`3px solid ${c}` }}>
             <div style={{ display:"flex",gap:6,alignItems:"center",marginBottom:6,color:"#64748b",fontSize:11 }}><Ic size={12} color={c}/>{l}</div>
             <div style={{ fontSize:14,fontWeight:700,color:c }}>{v}</div>
@@ -6860,18 +6864,22 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         return (
           <div onClick={()=>nav("a-fm")} style={{ cursor:"pointer",background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap" }}>
             <div style={{ flex:1,minWidth:180 }}>
-              <div style={{ fontSize:10,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4 }}>Fresh Market 2026 — Status</div>
+              <div style={{ fontSize:10,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4 }}>{t("admin.dash.fm_status_label")}</div>
               <div style={{ display:"flex",alignItems:"center",gap:7,marginBottom:3 }}>
                 <div style={{ width:7,height:7,borderRadius:"50%",background:_ph.color }}/>
                 <span style={{ color:"white",fontWeight:700,fontSize:13 }}>{_ph.label}</span>
                 <span style={{ color:"rgba(255,255,255,0.45)",fontSize:11 }}>— {_ph.sub}</span>
-                {!fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(220,38,38,0.2)",color:"#fca5a5" }}>🔴 Zamknięta</span>}
-                {fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(5,150,105,0.2)",color:"#6ee7b7" }}>🟢 Otwarta</span>}
+                {!fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(220,38,38,0.2)",color:"#fca5a5" }}>{t("admin.dash.fm_status_closed_badge")}</span>}
+                {fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(5,150,105,0.2)",color:"#6ee7b7" }}>{t("admin.dash.fm_status_open_badge")}</span>}
               </div>
-              <div style={{ fontSize:10,color:"rgba(255,255,255,0.25)" }}>{_ph.dates} · kliknij aby zarządzać →</div>
+              <div style={{ fontSize:10,color:"rgba(255,255,255,0.25)" }}>{_ph.dates} · {t("admin.dash.fm_status_cta_hint")}</div>
             </div>
             <div style={{ display:"flex",gap:8 }}>
-              {[[_sr+"/"+_suppliers.length,"Dostawców","rgba(255,255,255,0.07)","#6ee7b7"],[_cr+"/"+_fmRetailers.length,"Sieci","rgba(255,255,255,0.07)","#93c5fd"],[_mt,"Spotkań","rgba(5,150,105,0.18)","#6ee7b7"]].map(([v,l,bg,c])=>(
+              {[
+                [_sr+"/"+_suppliers.length, t("admin.dash.fm_status_stat_suppliers"), "rgba(255,255,255,0.07)", "#6ee7b7"],
+                [_cr+"/"+_fmRetailers.length, t("admin.dash.fm_status_stat_retailers"), "rgba(255,255,255,0.07)", "#93c5fd"],
+                [_mt, t("admin.dash.fm_status_stat_meetings"), "rgba(5,150,105,0.18)", "#6ee7b7"],
+              ].map(([v,l,bg,c])=>(
                 <div key={l} style={{ padding:"8px 12px",background:bg,borderRadius:8,textAlign:"center",minWidth:60 }}>
                   <div style={{ fontSize:15,fontWeight:800,color:c }}>{v}</div>
                   <div style={{ fontSize:9,color:"rgba(255,255,255,0.35)",marginTop:1 }}>{l}</div>
@@ -6882,9 +6890,13 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         );
       })()}
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16 }}>
-        {[["a-pipeline",Layers,"Pipeline","Moderacja, wysyłka, potwierdzenia 14 dni"],["a-retailers",Store,"Sieci","Kontakty kupców i harmonogram wysyłek"],["a-firmy",Building2,"Firmy","Pakiety, limity, rozliczenia per firma"]].map(([p,Ic,t,d])=>(
+        {[
+          ["a-pipeline", Layers, t("admin.dash.nav_pipeline_title"), t("admin.dash.nav_pipeline_desc")],
+          ["a-retailers", Store, t("admin.dash.nav_retailers_title"), t("admin.dash.nav_retailers_desc")],
+          ["a-firmy", Building2, t("admin.dash.nav_firmy_title"), t("admin.dash.nav_firmy_desc")],
+        ].map(([p,Ic,navTitle,d])=>(
           <div key={p} onClick={()=>nav(p)} style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:16,cursor:"pointer" }}>
-            <div style={{ display:"flex",gap:7,alignItems:"center",marginBottom:5 }}><Ic size={14} color="#0d9488"/><strong style={{ fontSize:13 }}>{t}</strong></div>
+            <div style={{ display:"flex",gap:7,alignItems:"center",marginBottom:5 }}><Ic size={14} color="#0d9488"/><strong style={{ fontSize:13 }}>{navTitle}</strong></div>
             <div style={{ fontSize:12,color:"#64748b" }}>{d}</div>
           </div>
         ))}
@@ -6892,9 +6904,9 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
       {resetToSeed&&(
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",alignItems:"center",gap:10 }}>
           <Btn outline sm onClick={resetToSeed} style={{ color:"#dc2626",borderColor:"#fca5a5",display:"flex",alignItems:"center",gap:5 }}>
-            <RotateCcw size={12}/> Reset danych testowych
+            <RotateCcw size={12}/> {t("admin.dash.reset_btn")}
           </Btn>
-          <span style={{ fontSize:11,color:"#94a3b8" }}>Przywraca domyślne propozycje, wysyłki i dane FM. Czyści localStorage.</span>
+          <span style={{ fontSize:11,color:"#94a3b8" }}>{t("admin.dash.reset_desc")}</span>
         </div>
       )}
     </div>
