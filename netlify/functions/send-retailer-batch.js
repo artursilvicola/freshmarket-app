@@ -88,10 +88,13 @@ export const handler = async (event) => {
   if (!sendIds.length) return json(400, { error: "send_ids jest puste — nie ma czego wysłać." });
 
   // ── Retailer + active buyers ─────────────────────────────────────────
+  // [P2-backend-mails C2] Buyer rows include `locale` so each buyer can get
+  // the mailing rendered in their preferred language. Mixed locale batches
+  // result in two render passes (PL + EN) — niżej grupujemy.
   const { data: retailer, error: retErr } = await supaSvc
     .from("retailers")
     .select(`id, name, country, color, bg, logo_url,
-             buyers:profiles!fk_profiles_retailer(id, role, name, email, active, fm26_active)`)
+             buyers:profiles!fk_profiles_retailer(id, role, name, email, active, fm26_active, locale)`)
     .eq("id", retailerId)
     .maybeSingle();
   if (retErr || !retailer) return json(404, { error: "Sieć handlowa nie znaleziona." });
@@ -167,33 +170,51 @@ export const handler = async (event) => {
     }
   }
 
-  // ── Render HTML ──────────────────────────────────────────────────────
-  const month = monthLabel();
-  const { html, subject } = renderRetailerEmail({
-    retailer,
-    sends: eligible,
-    offers: offersMap,
-    companies: companiesMap,
-    buyerCount: activeBuyers.length,
-    month,
-    appUrl: env.b2bAppUrl,
-  });
+  // ── Render HTML — per-locale ─────────────────────────────────────────
+  // [P2-backend-mails C2] Mailing renderujemy raz na język. Buyerzy z `locale='en'`
+  // dostają EN render, reszta PL. monthLabel() jest zależny od locale (np. "May 2026"
+  // vs "Maj 2026"). dry_run pokazuje preview pierwszego renderu (PL preferowany
+  // jeśli wszyscy PL, inaczej EN).
+  const renderedByLocale = new Map(); // locale -> { html, subject, month }
+  const pickRender = (lng) => {
+    if (renderedByLocale.has(lng)) return renderedByLocale.get(lng);
+    const month = monthLabel(lng);
+    const r = renderRetailerEmail({
+      retailer,
+      sends: eligible,
+      offers: offersMap,
+      companies: companiesMap,
+      buyerCount: activeBuyers.length,
+      month,
+      appUrl: env.b2bAppUrl,
+      locale: lng,
+    });
+    renderedByLocale.set(lng, { ...r, month });
+    return renderedByLocale.get(lng);
+  };
 
   if (dryRun) {
+    // [P2-backend-mails C2] dry_run zwraca preview w języku admina (jeśli możliwe)
+    // lub PL jako domyślne. UI admin może później rozszerzyć żeby pokazać oba.
+    const previewLocale = activeBuyers.some(b => (b.locale || "pl").toLowerCase().startsWith("en")) ? "en" : "pl";
+    const { html, subject } = pickRender(previewLocale);
     return json(200, {
       ok: true,
       dry_run: true,
       subject,
+      preview_locale: previewLocale,
       offer_count: eligible.length,
       buyer_count: activeBuyers.length,
-      buyers: activeBuyers.map((b) => ({ name: b.name, email: b.email })),
+      buyers: activeBuyers.map((b) => ({ name: b.name, email: b.email, locale: b.locale || "pl" })),
       html_preview: html.slice(0, 3000),
     });
   }
 
-  // ── Wysyłka przez Resend (po jednej wiadomości na buyera) ────────────
+  // ── Wysyłka przez Resend (po jednej wiadomości na buyera, w jego locale) ─
   const resendResults = [];
   for (const buyer of activeBuyers) {
+    const buyerLocale = (buyer.locale || "pl").toLowerCase().startsWith("en") ? "en" : "pl";
+    const { html, subject } = pickRender(buyerLocale);
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -210,13 +231,13 @@ export const handler = async (event) => {
       });
       if (!res.ok) {
         const detail = await res.text();
-        resendResults.push({ buyer: buyer.email, ok: false, status: res.status, detail });
+        resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: res.status, detail });
       } else {
         const r = await res.json().catch(() => ({}));
-        resendResults.push({ buyer: buyer.email, ok: true, message_id: r.id || null });
+        resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: true, message_id: r.id || null });
       }
     } catch (e) {
-      resendResults.push({ buyer: buyer.email, ok: false, status: 0, detail: e?.message || String(e) });
+      resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: 0, detail: e?.message || String(e) });
     }
   }
 
@@ -273,9 +294,11 @@ export const handler = async (event) => {
     }
     if (supplierEmailsByCompanyId.size) {
       const companyIds = [...supplierEmailsByCompanyId.keys()];
+      // [P2-backend-mails C2] Pull supplier `locale` so notification mail
+      // (offers_sent_to_retailer) renders in supplier's language.
       const { data: ownerProfiles } = await supaSvc
         .from("profiles")
-        .select("name, email, role, active, company_id")
+        .select("name, email, role, active, company_id, locale")
         .in("company_id", companyIds)
         .eq("role", "supplier");
       for (const p of ownerProfiles || []) {
@@ -312,6 +335,8 @@ export const handler = async (event) => {
           retailerName: retailer.name || "",
           sentAt: sentAtDate,
           appUrl: env.b2bAppUrl,
+          // [P2-backend-mails C2] Supplier sees notification in their language.
+          locale: group.owner.locale || "pl",
         });
         try {
           await fetch("https://api.resend.com/emails", {
@@ -345,8 +370,11 @@ export const handler = async (event) => {
   });
 };
 
-function monthLabel() {
-  const months = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+// [P2-backend-mails C2] Locale-aware month label dla nagłówka maila retailera.
+function monthLabel(locale = "pl") {
+  const monthsPL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+  const monthsEN = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const months = locale === "en" ? monthsEN : monthsPL;
   const d = new Date();
   return `${months[d.getMonth()]} ${d.getFullYear()}`;
 }

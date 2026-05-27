@@ -76,6 +76,8 @@ export const handler = async (event) => {
   let companyName = payload.companyName || null;
   let contactName = payload.contactName || null;
   let country = payload.country || null;
+  // [P2-backend-mails C2] Resolve recipient locale: payload first, then DB.
+  let recipientLocale = payload.locale || null;
 
   // Dla większości templateów chcemy wyciągnąć email z profiles + nazwę z companies.
   if (company_id) {
@@ -90,18 +92,21 @@ export const handler = async (event) => {
       country = country || co.country;
       if (!payload.statusNote && co.status_note) payload.statusNote = co.status_note;
     }
-    if (!recipientEmail) {
+    if (!recipientEmail || !recipientLocale) {
+      // [P2-backend-mails C2] Pull supplier `locale` so tpl is rendered in
+      // supplier language when payload.locale missing (admin trigger path).
       const { data: ownerProfiles } = await supaSvc
         .from("profiles")
-        .select("name, email, role, active")
+        .select("name, email, role, active, locale")
         .eq("company_id", company_id)
         .eq("role", "supplier")
         .order("created_at", { ascending: true })
         .limit(1);
       const owner = ownerProfiles?.[0];
       if (owner) {
-        recipientEmail = owner.email;
-        contactName = contactName || owner.name;
+        if (!recipientEmail) recipientEmail = owner.email;
+        if (!contactName) contactName = contactName || owner.name;
+        if (!recipientLocale && owner.locale) recipientLocale = owner.locale;
       }
     }
   }
@@ -119,6 +124,9 @@ export const handler = async (event) => {
     contactName: contactName || payload.contactName,
     country: country || payload.country,
     appUrl: env.b2bAppUrl,
+    // [P2-backend-mails C2] Pass resolved locale to template dispatcher.
+    // admin_new_registration ignoruje locale (zostaje PL — internal admin notification).
+    locale: recipientLocale || payload.locale || "pl",
   });
   if (!tpl) return json(400, { error: `Nieznany template: ${template}` });
 

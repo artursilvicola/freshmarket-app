@@ -127,7 +127,16 @@ function tplRegistrationAcceptedEN({ companyName, contactName, appUrl }) {
 }
 
 // ── B. Account activated ──────────────────────────────────────────────────
-export function tplAccountActivated({ companyName, contactName, preconnectEnabled, fmB2bEnabled, appUrl }) {
+// [B2B Round backend-mails / i18n] Locale-aware dispatcher po payload.locale
+// (z send-supplier-notification.js, który czyta profiles.locale po company_id).
+// Fallback do 'pl'. Terminologia EN v1.1: Retailer (nie Network), Admin review.
+export function tplAccountActivated({ companyName, contactName, preconnectEnabled, fmB2bEnabled, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplAccountActivatedEN({ companyName, contactName, preconnectEnabled, fmB2bEnabled, appUrl });
+  return tplAccountActivatedPL({ companyName, contactName, preconnectEnabled, fmB2bEnabled, appUrl });
+}
+
+function tplAccountActivatedPL({ companyName, contactName, preconnectEnabled, fmB2bEnabled, appUrl }) {
   const subject = "Fresh Market – Twoje konto zostało aktywowane";
   const greet = contactName ? `Dzień dobry ${esc(contactName)},` : "Dzień dobry,";
   const enabledLines = [
@@ -149,11 +158,42 @@ export function tplAccountActivated({ companyName, contactName, preconnectEnable
   ${pBlock("Zaloguj się do panelu, sprawdź profil firmy i ustaw preferencje. Jeśli któryś moduł nie jest jeszcze aktywny, zostanie odblokowany przez administratora po stronie Fresh Market.")}
   ${ctaButton("Otwórz panel dostawcy", `${appUrl}/dostawca`, "#059669")}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl }) };
+  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "pl" }) };
+}
+
+function tplAccountActivatedEN({ companyName, contactName, preconnectEnabled, fmB2bEnabled, appUrl }) {
+  const subject = "Fresh Market – your account has been activated";
+  const greet = contactName ? `Hello ${esc(contactName)},` : "Hello,";
+  const enabledLines = [
+    preconnectEnabled ? "✓ <strong>PreConnect</strong> — you can send submissions to retailers" : null,
+    fmB2bEnabled ? "✓ <strong>Fresh Market 2026 B2B Meetings</strong> — admitted to the meeting schedule" : null,
+  ].filter(Boolean);
+  const enabledBlock = enabledLines.length
+    ? `<ul style="color:#0d9488;font-size:14px;line-height:1.8;padding-left:18px;margin:6px 0 10px;list-style:none;">${enabledLines.map(l => `<li>${l}</li>`).join("")}</ul>`
+    : "";
+  const disabledNote = !preconnectEnabled && !fmB2bEnabled
+    ? pBlock("Active modules for your company will be added by the administrator in the next step.")
+    : "";
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock(greet)}
+  ${pBlock(`the account for <strong>${esc(companyName)}</strong> has been <strong style="color:#059669;">approved</strong> by the Fresh Market administrator.`)}
+  ${enabledBlock}
+  ${disabledNote}
+  ${pBlock("Sign in to the panel, review the company profile and set preferences. If a module isn't active yet, the administrator will unlock it on the Fresh Market side.")}
+  ${ctaButton("Open supplier panel", `${appUrl}/dostawca`, "#059669")}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "en" }) };
 }
 
 // ── C1. Account rejected (przy rejestracji) ───────────────────────────────
-export function tplAccountRejected({ companyName, contactName, statusNote, appUrl }) {
+export function tplAccountRejected({ companyName, contactName, statusNote, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplAccountRejectedEN({ companyName, contactName, statusNote, appUrl });
+  return tplAccountRejectedPL({ companyName, contactName, statusNote, appUrl });
+}
+
+function tplAccountRejectedPL({ companyName, contactName, statusNote, appUrl }) {
   const subject = "Fresh Market – rejestracja wymaga uzupełnienia";
   const greet = contactName ? `Dzień dobry ${esc(contactName)},` : "Dzień dobry,";
   const noteBlock = statusNote
@@ -166,11 +206,33 @@ export function tplAccountRejected({ companyName, contactName, statusNote, appUr
   ${noteBlock || pBlock("Powód: prosimy o kontakt w celu uzupełnienia danych firmy lub sprawdzenia statusu rejestracji.")}
   ${pBlock("Skontaktuj się z nami pod adresem <a href='mailto:newsletter@freshmarket.eu' style='color:#0d9488;'>newsletter@freshmarket.eu</a> — pomożemy doprowadzić rejestrację do końca.")}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl }) };
+  return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl, locale: "pl" }) };
+}
+
+function tplAccountRejectedEN({ companyName, contactName, statusNote, appUrl }) {
+  const subject = "Fresh Market – registration needs to be completed";
+  const greet = contactName ? `Hello ${esc(contactName)},` : "Hello,";
+  const noteBlock = statusNote
+    ? `<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:12px 16px;margin:12px 0;color:#78350f;font-size:13px;line-height:1.65;">${esc(statusNote)}</div>`
+    : "";
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock(greet)}
+  ${pBlock(`unfortunately we are not able to activate the account for <strong>${esc(companyName)}</strong> on the Fresh Market PreConnect platform at this moment.`)}
+  ${noteBlock || pBlock("Reason: please contact us to complete the company details or check the registration status.")}
+  ${pBlock("Contact us at <a href='mailto:newsletter@freshmarket.eu' style='color:#0d9488;'>newsletter@freshmarket.eu</a> — we will help you finalise the registration.")}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl, locale: "en" }) };
 }
 
 // ── C2. Account suspended (aktywne konto wstrzymane) ──────────────────────
-export function tplAccountSuspended({ companyName, contactName, statusNote, appUrl }) {
+export function tplAccountSuspended({ companyName, contactName, statusNote, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplAccountSuspendedEN({ companyName, contactName, statusNote, appUrl });
+  return tplAccountSuspendedPL({ companyName, contactName, statusNote, appUrl });
+}
+
+function tplAccountSuspendedPL({ companyName, contactName, statusNote, appUrl }) {
   const subject = "Fresh Market – konto zostało wstrzymane";
   const greet = contactName ? `Dzień dobry ${esc(contactName)},` : "Dzień dobry,";
   const noteBlock = statusNote
@@ -183,11 +245,33 @@ export function tplAccountSuspended({ companyName, contactName, statusNote, appU
   ${noteBlock}
   ${pBlock("Wstrzymane konto nadal pozwala zalogować się do panelu i uzupełnić profil, ale wstrzymujemy wysyłkę ofert i Spotkania B2B do czasu wyjaśnienia. Skontaktuj się z <a href='mailto:newsletter@freshmarket.eu' style='color:#0d9488;'>newsletter@freshmarket.eu</a>.")}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl }) };
+  return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl, locale: "pl" }) };
+}
+
+function tplAccountSuspendedEN({ companyName, contactName, statusNote, appUrl }) {
+  const subject = "Fresh Market – account suspended";
+  const greet = contactName ? `Hello ${esc(contactName)},` : "Hello,";
+  const noteBlock = statusNote
+    ? `<div style="background:#fee2e2;border-left:4px solid #dc2626;padding:12px 16px;margin:12px 0;color:#991b1b;font-size:13px;line-height:1.65;">${esc(statusNote)}</div>`
+    : "";
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock(greet)}
+  ${pBlock(`the account for <strong>${esc(companyName)}</strong> has been temporarily suspended by the administrator.`)}
+  ${noteBlock}
+  ${pBlock("A suspended account still lets you sign in to the panel and update the profile, but submissions and B2B Meetings are paused until further notice. Contact <a href='mailto:newsletter@freshmarket.eu' style='color:#0d9488;'>newsletter@freshmarket.eu</a>.")}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl, locale: "en" }) };
 }
 
 // ── D. Offer to moderation ────────────────────────────────────────────────
-export function tplOfferToModeration({ companyName, offerTitle, retailerName, appUrl }) {
+export function tplOfferToModeration({ companyName, offerTitle, retailerName, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplOfferToModerationEN({ companyName, offerTitle, retailerName, appUrl });
+  return tplOfferToModerationPL({ companyName, offerTitle, retailerName, appUrl });
+}
+
+function tplOfferToModerationPL({ companyName, offerTitle, retailerName, appUrl }) {
   const subject = "Fresh Market – oferta została przyjęta do moderacji";
   const body = `
 <tr><td style="padding:24px 32px 8px;">
@@ -196,11 +280,29 @@ export function tplOfferToModeration({ companyName, offerTitle, retailerName, ap
   ${pBlock("Zespół Fresh Market sprawdza dopasowanie oferty do kategorii zakupowej tej sieci. O decyzji poinformujemy mailem.")}
   ${ctaButton("Zobacz w panelu", `${appUrl}/dostawca`)}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, body, appUrl }) };
+  return { subject, html: shell({ title: subject, body, appUrl, locale: "pl" }) };
+}
+
+function tplOfferToModerationEN({ companyName, offerTitle, retailerName, appUrl }) {
+  const subject = "Fresh Market – submission accepted for review";
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock("Hello,")}
+  ${pBlock(`your submission <strong>${esc(offerTitle)}</strong>${retailerName ? ` addressed to <strong>${esc(retailerName)}</strong>` : ""} has been accepted for review.`)}
+  ${pBlock("The Fresh Market team is checking whether the submission fits the retailer's buying category. We'll let you know the decision by email.")}
+  ${ctaButton("View in panel", `${appUrl}/dostawca`)}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, body, appUrl, locale: "en" }) };
 }
 
 // ── E. Offer approved by admin ────────────────────────────────────────────
-export function tplOfferApproved({ companyName, offerTitle, retailerName, appUrl }) {
+export function tplOfferApproved({ companyName, offerTitle, retailerName, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplOfferApprovedEN({ companyName, offerTitle, retailerName, appUrl });
+  return tplOfferApprovedPL({ companyName, offerTitle, retailerName, appUrl });
+}
+
+function tplOfferApprovedPL({ companyName, offerTitle, retailerName, appUrl }) {
   const subject = "Fresh Market – oferta została zatwierdzona";
   const body = `
 <tr><td style="padding:24px 32px 8px;">
@@ -209,22 +311,36 @@ export function tplOfferApproved({ companyName, offerTitle, retailerName, appUrl
   ${pBlock("Oferta jest gotowa do wysyłki w najbliższym mailu zbiorczym do tej sieci. Otrzymasz potwierdzenie, gdy wiadomość zostanie wysłana.")}
   ${ctaButton("Otwórz panel dostawcy", `${appUrl}/dostawca`, "#059669")}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl }) };
+  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "pl" }) };
+}
+
+function tplOfferApprovedEN({ companyName, offerTitle, retailerName, appUrl }) {
+  const subject = "Fresh Market – submission approved";
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock("Hello,")}
+  ${pBlock(`your submission <strong>${esc(offerTitle)}</strong>${retailerName ? ` for <strong>${esc(retailerName)}</strong>` : ""} has been approved by the administrator.`)}
+  ${pBlock("The submission is ready to be sent in the next batch email to that retailer. You'll get a confirmation once the message goes out.")}
+  ${ctaButton("Open supplier panel", `${appUrl}/dostawca`, "#059669")}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "en" }) };
 }
 
 // ── F. Offer sent to retailer ────────────────────────────────────────────
-function offerItemsList(offers = []) {
+function offerItemsList(offers = [], locale = "pl") {
   const items = (offers || []).filter(Boolean);
   if (!items.length) return "";
   const visible = items.slice(0, 8);
   const extra = items.length - visible.length;
+  const moreLabel = locale === "en" ? `+ ${extra} more` : `+ ${extra} kolejne`;
+  const fallbackTitle = locale === "en" ? "Submission" : "Oferta";
   return `<ul style="color:#334155;font-size:14px;line-height:1.7;padding-left:18px;margin:8px 0 12px;">
-    ${visible.map((o) => `<li><strong>${esc(o.title || o.offerTitle || o.product || "Oferta")}</strong></li>`).join("")}
-    ${extra > 0 ? `<li>+ ${extra} kolejne</li>` : ""}
+    ${visible.map((o) => `<li><strong>${esc(o.title || o.offerTitle || o.product || fallbackTitle)}</strong></li>`).join("")}
+    ${extra > 0 ? `<li>${moreLabel}</li>` : ""}
   </ul>`;
 }
 
-function pluralOffers(count) {
+function pluralOffersPL(count) {
   const n = Math.abs(Number(count || 0));
   if (n === 1) return "ofertę";
   const last = n % 10;
@@ -233,15 +349,25 @@ function pluralOffers(count) {
   return "ofert";
 }
 
-export function tplOffersSentToRetailer({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl }) {
+function pluralOffersEN(count) {
+  return Number(count) === 1 ? "submission" : "submissions";
+}
+
+export function tplOffersSentToRetailer({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplOffersSentToRetailerEN({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl });
+  return tplOffersSentToRetailerPL({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl });
+}
+
+function tplOffersSentToRetailerPL({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl }) {
   const count = Number(offerCount || (offers || []).length || 1);
   const subject = count === 1
     ? `Fresh Market – oferta została wysłana do ${retailerName || "sieci"}`
-    : `Fresh Market – wysłaliśmy ${count} ${pluralOffers(count)} do ${retailerName || "sieci"}`;
-  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }]);
+    : `Fresh Market – wysłaliśmy ${count} ${pluralOffersPL(count)} do ${retailerName || "sieci"}`;
+  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }], "pl");
   const intro = count === 1
     ? `Twoja oferta została wysłana do sieci <strong>${esc(retailerName || "")}</strong>${sentAt ? ` w dniu ${esc(sentAt)}` : ""}.`
-    : `Wysłaliśmy do sieci <strong>${esc(retailerName || "")}</strong> <strong>${count} ${pluralOffers(count)}</strong>${sentAt ? ` w dniu ${esc(sentAt)}` : ""}.`;
+    : `Wysłaliśmy do sieci <strong>${esc(retailerName || "")}</strong> <strong>${count} ${pluralOffersPL(count)}</strong>${sentAt ? ` w dniu ${esc(sentAt)}` : ""}.`;
   const body = `
 <tr><td style="padding:24px 32px 8px;">
   ${pBlock("Dzień dobry,")}
@@ -250,7 +376,27 @@ export function tplOffersSentToRetailer({ companyName, offerTitle, offers, offer
   ${pBlock("Kupiec otrzymał zbiorczy mail Fresh Market PreConnect. Gdy otworzy mail albo wejdzie na listę ofert w panelu, oznaczymy wysyłkę jako dostarczoną i pokażemy rozliczenie w panelu.")}
   ${ctaButton("Zobacz w panelu", `${appUrl}/dostawca`, "#059669")}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl }) };
+  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "pl" }) };
+}
+
+function tplOffersSentToRetailerEN({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl }) {
+  const count = Number(offerCount || (offers || []).length || 1);
+  const subject = count === 1
+    ? `Fresh Market – submission sent to ${retailerName || "retailer"}`
+    : `Fresh Market – ${count} ${pluralOffersEN(count)} sent to ${retailerName || "retailer"}`;
+  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }], "en");
+  const intro = count === 1
+    ? `Your submission has been sent to <strong>${esc(retailerName || "")}</strong>${sentAt ? ` on ${esc(sentAt)}` : ""}.`
+    : `We sent <strong>${count} ${pluralOffersEN(count)}</strong> to <strong>${esc(retailerName || "")}</strong>${sentAt ? ` on ${esc(sentAt)}` : ""}.`;
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock("Hello,")}
+  ${pBlock(intro)}
+  ${list}
+  ${pBlock("The buyer received the Fresh Market PreConnect batch email. When they open the email or visit the offer list in the panel, we'll mark the submission as delivered and show the billing in your panel.")}
+  ${ctaButton("View in panel", `${appUrl}/dostawca`, "#059669")}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "en" }) };
 }
 
 export function tplOfferSentToRetailer(payload) {
@@ -266,7 +412,13 @@ export function tplOfferSentToRetailer(payload) {
 // Wysyłane gdy kupiec zobaczy ofertę: otworzy mail, wejdzie na listę
 // PreConnect albo otworzy szczegóły w panelu. To jest zdarzenie dostarczenia
 // i rozliczenia, więc nie obiecujemy późniejszego zwrotu kredytu.
-export function tplOffersReadByBuyer({ companyName, offerTitle, offers, offerCount, retailerName, openedVia, openedAt, appUrl }) {
+export function tplOffersReadByBuyer({ companyName, offerTitle, offers, offerCount, retailerName, openedVia, openedAt, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplOffersReadByBuyerEN({ companyName, offerTitle, offers, offerCount, retailerName, openedVia, openedAt, appUrl });
+  return tplOffersReadByBuyerPL({ companyName, offerTitle, offers, offerCount, retailerName, openedVia, openedAt, appUrl });
+}
+
+function tplOffersReadByBuyerPL({ companyName, offerTitle, offers, offerCount, retailerName, openedVia, openedAt, appUrl }) {
   const count = Number(offerCount || (offers || []).length || 1);
   const channel = openedVia === "email"
     ? "otworzył mail Fresh Market PreConnect z Twoimi propozycjami"
@@ -276,7 +428,7 @@ export function tplOffersReadByBuyer({ companyName, offerTitle, offers, offerCou
   const subject = count === 1
     ? `Fresh Market – ${retailerName || "sieć"} zobaczyła Twoją ofertę`
     : `Fresh Market – ${retailerName || "sieć"} zobaczyła Twoje oferty`;
-  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }]);
+  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }], "pl");
   const intro = count === 1
     ? `Kupiec sieci <strong>${esc(retailerName || "")}</strong> ${channel}${openedAt ? ` (${esc(openedAt)})` : ""}.`
     : `Kupiec sieci <strong>${esc(retailerName || "")}</strong> ${channel}${openedAt ? ` (${esc(openedAt)})` : ""}. Zobaczone oferty:`;
@@ -289,7 +441,33 @@ export function tplOffersReadByBuyer({ companyName, offerTitle, offers, offerCou
   ${pBlock("Nie musisz nic robić od razu — miej tylko pod ręką aktualne ceny, wolumeny, certyfikaty i kalendarz dostaw, jeśli kupiec poprosi o szczegóły.")}
   ${ctaButton("Zobacz w panelu", `${appUrl}/dostawca`, "#7c3aed")}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#7c3aed", body, appUrl }) };
+  return { subject, html: shell({ title: subject, accent: "#7c3aed", body, appUrl, locale: "pl" }) };
+}
+
+function tplOffersReadByBuyerEN({ companyName, offerTitle, offers, offerCount, retailerName, openedVia, openedAt, appUrl }) {
+  const count = Number(offerCount || (offers || []).length || 1);
+  const channel = openedVia === "email"
+    ? "opened the Fresh Market PreConnect email with your submissions"
+    : openedVia === "app_list"
+      ? "visited the PreConnect submissions list and saw your submissions"
+      : "opened your submission in the PreConnect panel";
+  const subject = count === 1
+    ? `Fresh Market – ${retailerName || "retailer"} saw your submission`
+    : `Fresh Market – ${retailerName || "retailer"} saw your submissions`;
+  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }], "en");
+  const intro = count === 1
+    ? `The buyer at <strong>${esc(retailerName || "")}</strong> ${channel}${openedAt ? ` (${esc(openedAt)})` : ""}.`
+    : `The buyer at <strong>${esc(retailerName || "")}</strong> ${channel}${openedAt ? ` (${esc(openedAt)})` : ""}. Submissions seen:`;
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock("Hello,")}
+  ${pBlock(intro)}
+  ${list}
+  ${pBlock("This means the submission was delivered. The package billing is visible in the Fresh Market PreConnect panel.")}
+  ${pBlock("You don't have to act right away — just keep current prices, volumes, certificates and delivery calendar ready in case the buyer asks for details.")}
+  ${ctaButton("View in panel", `${appUrl}/dostawca`, "#7c3aed")}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, accent: "#7c3aed", body, appUrl, locale: "en" }) };
 }
 
 export function tplOfferReadByBuyer(payload) {
@@ -301,7 +479,13 @@ export function tplOfferReadByBuyer(payload) {
 }
 
 // ── G. Offer expired ──────────────────────────────────────────────────────
-export function tplOfferExpired({ companyName, offerTitle, retailerName, refunded, appUrl }) {
+export function tplOfferExpired({ companyName, offerTitle, retailerName, refunded, appUrl, locale }) {
+  const lng = pickLocale(locale);
+  if (lng === "en") return tplOfferExpiredEN({ companyName, offerTitle, retailerName, refunded, appUrl });
+  return tplOfferExpiredPL({ companyName, offerTitle, retailerName, refunded, appUrl });
+}
+
+function tplOfferExpiredPL({ companyName, offerTitle, retailerName, refunded, appUrl }) {
   const subject = "Fresh Market – oferta wygasła";
   const refundLine = refunded
     ? pBlock("✓ Środki za niewykorzystaną wysyłkę zostały zwrócone na Twój portfel kredytów.")
@@ -314,7 +498,23 @@ export function tplOfferExpired({ companyName, offerTitle, retailerName, refunde
   ${pBlock("Możesz przygotować zaktualizowaną ofertę i zlecić ponowną wysyłkę z poziomu panelu.")}
   ${ctaButton("Otwórz panel dostawcy", `${appUrl}/dostawca`)}
 </td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#d97706", body, appUrl }) };
+  return { subject, html: shell({ title: subject, accent: "#d97706", body, appUrl, locale: "pl" }) };
+}
+
+function tplOfferExpiredEN({ companyName, offerTitle, retailerName, refunded, appUrl }) {
+  const subject = "Fresh Market – submission expired";
+  const refundLine = refunded
+    ? pBlock("✓ The credits for the unused submission have been returned to your credit wallet.")
+    : "";
+  const body = `
+<tr><td style="padding:24px 32px 8px;">
+  ${pBlock("Hello,")}
+  ${pBlock(`your submission <strong>${esc(offerTitle)}</strong>${retailerName ? ` sent to <strong>${esc(retailerName)}</strong>` : ""} has expired — the buyer didn't open the message within 14 days.`)}
+  ${refundLine}
+  ${pBlock("You can prepare an updated submission and trigger a new send from the panel.")}
+  ${ctaButton("Open supplier panel", `${appUrl}/dostawca`)}
+</td></tr>`;
+  return { subject, html: shell({ title: subject, accent: "#d97706", body, appUrl, locale: "en" }) };
 }
 
 // ── Admin notification: new self-registration ─────────────────────────────

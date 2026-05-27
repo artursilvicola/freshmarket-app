@@ -136,9 +136,11 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
 
   const notifications = [...errors];
   for (const group of groups.values()) {
+    // [P2-backend-mails C2] Pull supplier `locale` so notification mail
+    // renders in supplier language (offers_read_by_buyer dispatches PL/EN).
     const { data: owner } = await supaSvc
       .from("profiles")
-      .select("name, email, active")
+      .select("name, email, active, locale")
       .eq("company_id", group.company.id)
       .eq("role", "supplier")
       .eq("active", true)
@@ -168,6 +170,8 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       openedVia,
       openedAt,
       appUrl: env.b2bAppUrl,
+      // [P2-backend-mails C2] locale → tplOffersReadByBuyer dispatcher.
+      locale: owner.locale || "pl",
     });
     if (!tpl) {
       notifications.push({ ok: false, status: "error", reason: "no_template" });
