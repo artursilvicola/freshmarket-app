@@ -1497,7 +1497,20 @@
       }
     }
   },
-  "admin": {},
+  "admin": {
+    "common": {
+      "save_changes_btn": "💾 Save changes",
+      "saving": "Saving...",
+      "saved_indicator": "✓ Saved",
+      "save_error_prefix": "Save error: ",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "add": "Add",
+      "edit": "Edit",
+      "active_badge": "Active",
+      "inactive_badge": "Inactive"
+    }
+  },
   "fm": {},
   "chat": {},
   "errors": {
