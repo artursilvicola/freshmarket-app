@@ -6860,7 +6860,8 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         ))}
       </div>
       {fmSettings && (()=>{
-        const _ph = FM_PHASES[(fmSettings.currentPhase||1)-1];
+        // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej.
+        const _ph = FM_PHASES[(fmSettings.currentPhase||1)-1] || FM_PHASES[FM_PHASES.length-1];
         // [P2-fm C1] FM_PHASES label/sub/dates teraz przez t() z fm.phases.N.*
         const _phLabel = t(`fm.phases.${_ph.id}.label`, { defaultValue: _ph.label });
         const _phSub = t(`fm.phases.${_ph.id}.sub`, { defaultValue: _ph.sub });
@@ -8667,7 +8668,8 @@ const ROLE_LABELS  = { admin:"Admin", supplier:"Dostawca", buyer:"Kupiec" };
 function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, retailers }) {
   const [open, setOpen] = useState(false);
   const [filterRole, setFilterRole] = useState("all");
-  const ph = FM_PHASES[fmSettings.currentPhase-1];
+  // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej fazy.
+  const ph = FM_PHASES[fmSettings.currentPhase-1] || FM_PHASES[FM_PHASES.length-1];
 
   const groups = {
     admin:    accounts.filter(a=>a.role==="admin"),
@@ -8993,7 +8995,12 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
 
 function FMPhaseBanner({ phase, extra }) {
   const { t } = useTranslation("legacy");
-  const ph = FM_PHASES[phase-1];
+  // [P2-fm C1b] Safety guard: FM_PHASES ma 4 fazy (id 1..4) ale niektóre
+  // call sites przekazują phase=5 (np. PageSupplierFM po publikacji planu
+  // używa fazy 5 jako "Event"). Zamiast wywalać ekran (FM_PHASES[4]=undefined
+  // → ph.id/ph.color crash), clamp do ostatniej dostępnej fazy. id/color
+  // zostają w const dla styli; labelka idzie przez t() z fallbackiem.
+  const ph = FM_PHASES[phase-1] || FM_PHASES[FM_PHASES.length-1];
   // [P2-fm C1] Labelki idą przez t() z fm.phases.N.{label/sub/dates};
   // color/id zostają w const dla styli + indeksowania.
   const phLabel = t(`fm.phases.${ph.id}.label`, { defaultValue: ph.label });
@@ -9414,7 +9421,8 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
     });
   const currentPlan = pickFMPlan(fmSchedule, fmAlgo); // approved schedule wins; fall back to algo if schedule malformed
   const myMatches  = _suppliers.filter(s => currentPlan?.res?.[s.id]?.m?.includes(chainId));
-  const ph = FM_PHASES[phase-1];
+  // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej fazy.
+  const ph = FM_PHASES[phase-1] || FM_PHASES[FM_PHASES.length-1];
 
   function setResp(sid, val) {
     setFmResps(r => ({ ...r, [chainId]: { ...(r[chainId]||{}), [sid]: val } }));
