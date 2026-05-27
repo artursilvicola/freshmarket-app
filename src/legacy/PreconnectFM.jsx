@@ -6861,6 +6861,10 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
       </div>
       {fmSettings && (()=>{
         const _ph = FM_PHASES[(fmSettings.currentPhase||1)-1];
+        // [P2-fm C1] FM_PHASES label/sub/dates teraz przez t() z fm.phases.N.*
+        const _phLabel = t(`fm.phases.${_ph.id}.label`, { defaultValue: _ph.label });
+        const _phSub = t(`fm.phases.${_ph.id}.sub`, { defaultValue: _ph.sub });
+        const _phDates = t(`fm.phases.${_ph.id}.dates`, { defaultValue: _ph.dates });
         const _suppliers = fmSuppliers || FM_SUPPLIERS;
         const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=5).length;
         // FM chains: use fm26ChainId for fmResps lookup (keys are chX, not numeric retailer IDs)
@@ -6873,12 +6877,12 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
               <div style={{ fontSize:10,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4 }}>{t("admin.dash.fm_status_label")}</div>
               <div style={{ display:"flex",alignItems:"center",gap:7,marginBottom:3 }}>
                 <div style={{ width:7,height:7,borderRadius:"50%",background:_ph.color }}/>
-                <span style={{ color:"white",fontWeight:700,fontSize:13 }}>{_ph.label}</span>
-                <span style={{ color:"rgba(255,255,255,0.45)",fontSize:11 }}>— {_ph.sub}</span>
+                <span style={{ color:"white",fontWeight:700,fontSize:13 }}>{_phLabel}</span>
+                <span style={{ color:"rgba(255,255,255,0.45)",fontSize:11 }}>— {_phSub}</span>
                 {!fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(220,38,38,0.2)",color:"#fca5a5" }}>{t("admin.dash.fm_status_closed_badge")}</span>}
                 {fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(5,150,105,0.2)",color:"#6ee7b7" }}>{t("admin.dash.fm_status_open_badge")}</span>}
               </div>
-              <div style={{ fontSize:10,color:"rgba(255,255,255,0.25)" }}>{_ph.dates} · {t("admin.dash.fm_status_cta_hint")}</div>
+              <div style={{ fontSize:10,color:"rgba(255,255,255,0.25)" }}>{_phDates} · {t("admin.dash.fm_status_cta_hint")}</div>
             </div>
             <div style={{ display:"flex",gap:8 }}>
               {[
@@ -8988,21 +8992,28 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
 }
 
 function FMPhaseBanner({ phase, extra }) {
+  const { t } = useTranslation("legacy");
   const ph = FM_PHASES[phase-1];
+  // [P2-fm C1] Labelki idą przez t() z fm.phases.N.{label/sub/dates};
+  // color/id zostają w const dla styli + indeksowania.
+  const phLabel = t(`fm.phases.${ph.id}.label`, { defaultValue: ph.label });
+  const phSub = t(`fm.phases.${ph.id}.sub`, { defaultValue: ph.sub });
+  const phDates = t(`fm.phases.${ph.id}.dates`, { defaultValue: ph.dates });
   return (
     <div style={{ padding:"10px 14px",borderRadius:9,border:`1px solid ${ph.color}44`,background:ph.color+"0a",marginBottom:16,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
       <div style={{ width:8,height:8,borderRadius:"50%",background:ph.color,flexShrink:0 }}/>
-      <span style={{ fontSize:12,fontWeight:600,color:ph.color }}>{ph.label} — {ph.sub}</span>
-      <span style={{ fontSize:11,color:"#64748b" }}>· {ph.dates}</span>
+      <span style={{ fontSize:12,fontWeight:600,color:ph.color }}>{phLabel} — {phSub}</span>
+      <span style={{ fontSize:11,color:"#64748b" }}>· {phDates}</span>
       {extra && <span style={{ fontSize:11,color:"#64748b",marginLeft:"auto" }}>{extra}</span>}
     </div>
   );
 }
 
 function FMVenueFooter({ extra }) {
+  const { t } = useTranslation("legacy");
   return (
     <div style={{ marginTop:20,padding:"16px 20px",background:"#0f172a",borderRadius:10,color:"rgba(255,255,255,0.65)",fontSize:12,lineHeight:1.9 }}>
-      <div style={{ color:"white",fontWeight:700,fontSize:14,marginBottom:4 }}>Fresh Market 2026</div>
+      <div style={{ color:"white",fontWeight:700,fontSize:14,marginBottom:4 }}>{t("fm.venue_footer_brand")}</div>
       {FM_DATE}<br/>
       {FM_VENUE}
       {extra && <><br/>{extra}</>}
@@ -9011,6 +9022,7 @@ function FMVenueFooter({ extra }) {
 }
 
 function FMLockScreen({ openDate, message }) {
+  const { t } = useTranslation("legacy");
   // When a custom message is passed, show a simpler "processing" lock screen
   if (message) return (
     <div style={{ maxWidth:680 }}>
@@ -9018,12 +9030,12 @@ function FMLockScreen({ openDate, message }) {
         <div style={{ width:68,height:68,borderRadius:"50%",background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px" }}>
           <span style={{ fontSize:32 }}>⚙️</span>
         </div>
-        <div style={{ fontSize:20,fontWeight:700,color:"#1e293b",marginBottom:10 }}>Trwa generowanie planu spotkań</div>
+        <div style={{ fontSize:20,fontWeight:700,color:"#1e293b",marginBottom:10 }}>{t("fm.lock_screen.processing_title")}</div>
         <div style={{ fontSize:14,color:"#64748b",lineHeight:1.75,maxWidth:480,margin:"0 auto 24px" }}>
           {message}
         </div>
         <div style={{ fontSize:11,color:"#94a3b8" }}>
-          Pytania? Kontakt: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818
+          <Trans i18nKey="fm.lock_screen.contact_html" ns="legacy" components={{ strong: <strong /> }}/>
         </div>
       </div>
     </div>
@@ -9034,19 +9046,23 @@ function FMLockScreen({ openDate, message }) {
         <div style={{ width:68,height:68,borderRadius:"50%",background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px" }}>
           <Lock size={30} color="#64748b"/>
         </div>
-        <div style={{ fontSize:20,fontWeight:700,color:"#1e293b",marginBottom:10 }}>Spotkania B2B — Fresh Market 2026</div>
+        <div style={{ fontSize:20,fontWeight:700,color:"#1e293b",marginBottom:10 }}>{t("fm.lock_screen.default_title")}</div>
         <div style={{ fontSize:14,color:"#64748b",marginBottom:28,lineHeight:1.7,maxWidth:480,margin:"0 auto 28px" }}>
-          Planowanie spotkań B2B z kupcami sieci handlowych na targach <strong>Fresh Market 2026</strong>.<br/>Wybory partnerów: <strong>do 16 września</strong>. Publikacja planu: <strong>22 września</strong>. Event: <strong>24 września</strong>.
+          <Trans i18nKey="fm.lock_screen.default_desc_html" ns="legacy" components={{ strong: <strong />, br: <br /> }}/>
         </div>
         <div style={{ display:"inline-flex",alignItems:"center",gap:12,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"14px 24px",marginBottom:28 }}>
           <Calendar size={20} color="#d97706"/>
           <div style={{ textAlign:"left" }}>
-            <div style={{ fontSize:13,fontWeight:700,color:"#92400e" }}>Planowane otwarcie: {openDate||"1 września 2026"}</div>
-            <div style={{ fontSize:11,color:"#64748b",marginTop:1 }}>Wybory do 16 września · Publikacja 22 września · Event 24 września</div>
+            <div style={{ fontSize:13,fontWeight:700,color:"#92400e" }}>{t("fm.lock_screen.open_date_format", { date: openDate || t("fm.lock_screen.open_date_fallback") })}</div>
+            <div style={{ fontSize:11,color:"#64748b",marginTop:1 }}>{t("fm.lock_screen.schedule_hint")}</div>
           </div>
         </div>
         <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,maxWidth:480,margin:"0 auto 28px" }}>
-          {[["⭐","Wybierz sieci","Zaznacz preferowane sieci i rezerwy"],["🤖","Algorytm","Inteligentne przypisanie spotkań"],["📋","Plan spotkań","Twoje numery spotkań na dzień eventu"]].map(f=>(
+          {[
+            [t("fm.lock_screen.feature_select_emoji"), t("fm.lock_screen.feature_select_title"), t("fm.lock_screen.feature_select_desc")],
+            [t("fm.lock_screen.feature_algo_emoji"), t("fm.lock_screen.feature_algo_title"), t("fm.lock_screen.feature_algo_desc")],
+            [t("fm.lock_screen.feature_plan_emoji"), t("fm.lock_screen.feature_plan_title"), t("fm.lock_screen.feature_plan_desc")],
+          ].map(f=>(
             <div key={f[0]} style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 10px",textAlign:"center" }}>
               <div style={{ fontSize:22,marginBottom:6 }}>{f[0]}</div>
               <div style={{ fontSize:11,fontWeight:700,color:"#334155",marginBottom:2 }}>{f[1]}</div>
@@ -9055,7 +9071,7 @@ function FMLockScreen({ openDate, message }) {
           ))}
         </div>
         <div style={{ fontSize:11,color:"#94a3b8" }}>
-          Pytania? Kontakt: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818
+          <Trans i18nKey="fm.lock_screen.contact_html" ns="legacy" components={{ strong: <strong /> }}/>
         </div>
       </div>
     </div>
@@ -9064,11 +9080,12 @@ function FMLockScreen({ openDate, message }) {
 
 /* ── RetailerPreviewModal — shows chain info for supplier (no buyer personal data) ── */
 function RetailerPreviewModal({ retailer, onClose }) {
+  const { t } = useTranslation("legacy");
   if (!retailer) return null;
-  const initials = retailer.name ? retailer.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase() : "??";
+  const initials = retailer.name ? retailer.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase() : t("fm.retailer_preview.initials_fallback");
   const cats = (retailer.buyers||[]).flatMap(b=>b.cats||[]).filter((v,i,a)=>a.indexOf(v)===i);
   return (
-    <Modal title="Podgląd sieci handlowej" onClose={onClose}>
+    <Modal title={t("fm.retailer_preview.modal_title")} onClose={onClose}>
       <div style={{ display:"flex",gap:14,alignItems:"center",marginBottom:16,padding:"14px 16px",background:"#f8fafc",borderRadius:10 }}>
         <div style={{ width:52,height:52,borderRadius:12,background:"linear-gradient(135deg,#0d9488,#0891b2)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:18,flexShrink:0 }}>{initials}</div>
         <div>
@@ -9078,14 +9095,14 @@ function RetailerPreviewModal({ retailer, onClose }) {
       </div>
       {cats.length > 0 && (
         <div style={{ marginBottom:12 }}>
-          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",color:"#64748b",letterSpacing:"0.06em",marginBottom:6 }}>Kategorie</div>
+          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",color:"#64748b",letterSpacing:"0.06em",marginBottom:6 }}>{t("fm.retailer_preview.categories_label")}</div>
           <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
             {cats.map(cat=><span key={cat} style={{ padding:"4px 12px",borderRadius:20,background:"rgba(13,148,136,0.08)",color:"#0d9488",fontSize:12,fontWeight:600 }}>{CEMOJI[cat]||"📦"} {cat}</span>)}
           </div>
         </div>
       )}
       <div style={{ fontSize:11,color:"#94a3b8",marginTop:8,padding:"8px 12px",background:"#f8fafc",borderRadius:7 }}>
-        Dane kontaktowe kupca są niedostępne w tym widoku.
+        {t("fm.retailer_preview.no_contact_data")}
       </div>
     </Modal>
   );

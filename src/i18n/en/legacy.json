@@ -1893,7 +1893,55 @@
       "toast_removed_success_format": "✓ {{email}} lost administrator privileges."
     }
   },
-  "fm": {},
+  "fm": {
+    "phases": {
+      "1": {
+        "label": "Registration",
+        "sub": "Retailers confirm participation in FM 2026",
+        "dates": "September 2026"
+      },
+      "2": {
+        "label": "Preferences",
+        "sub": "Suppliers and buyers choose partners (until September 16)",
+        "dates": "September 1–16"
+      },
+      "3": {
+        "label": "Algorithm + Corrections",
+        "sub": "Admin runs the algorithm and adjusts the plan (September 17–21)",
+        "dates": "September 17–21"
+      },
+      "4": {
+        "label": "Publication and event",
+        "sub": "Final list September 22 · Event September 24",
+        "dates": "September 22–24"
+      }
+    },
+    "venue_footer_brand": "Fresh Market 2026",
+    "lock_screen": {
+      "processing_title": "Generating the meeting plan",
+      "contact_html": "Questions? Contact: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818",
+      "default_title": "B2B Meetings — Fresh Market 2026",
+      "default_desc_html": "Planning B2B meetings with retailer buyers at the <strong>Fresh Market 2026</strong> trade show.<br/>Partner selection: <strong>until September 16</strong>. Plan publication: <strong>September 22</strong>. Event: <strong>September 24</strong>.",
+      "open_date_format": "Planned opening: {{date}}",
+      "open_date_fallback": "September 1, 2026",
+      "schedule_hint": "Selection until September 16 · Publication September 22 · Event September 24",
+      "feature_select_emoji": "⭐",
+      "feature_select_title": "Choose retailers",
+      "feature_select_desc": "Mark preferred retailers and backups",
+      "feature_algo_emoji": "🤖",
+      "feature_algo_title": "Algorithm",
+      "feature_algo_desc": "Intelligent meeting assignment",
+      "feature_plan_emoji": "📋",
+      "feature_plan_title": "Meeting plan",
+      "feature_plan_desc": "Your meeting numbers for event day"
+    },
+    "retailer_preview": {
+      "modal_title": "Retailer preview",
+      "initials_fallback": "??",
+      "categories_label": "Categories",
+      "no_contact_data": "Buyer contact data is not available in this view."
+    }
+  },
   "chat": {
     "floating": {
       "header_brand": "Fresh Market Support",

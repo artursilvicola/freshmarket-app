@@ -1893,7 +1893,55 @@
       "toast_removed_success_format": "✓ {{email}} stracił uprawnienia administratora."
     }
   },
-  "fm": {},
+  "fm": {
+    "phases": {
+      "1": {
+        "label": "Rejestracja",
+        "sub": "Sieci potwierdzają udział w FM 2026",
+        "dates": "wrzesień 2026"
+      },
+      "2": {
+        "label": "Preferencje",
+        "sub": "Dostawcy i kupcy wybierają partnerów (do 16 września)",
+        "dates": "1–16 września"
+      },
+      "3": {
+        "label": "Algorytm + Korekty",
+        "sub": "Admin uruchamia algorytm i koryguje plan (17–21 września)",
+        "dates": "17–21 września"
+      },
+      "4": {
+        "label": "Publikacja i event",
+        "sub": "Finalna lista 22 wrz. · Event 24 wrz.",
+        "dates": "22–24 września"
+      }
+    },
+    "venue_footer_brand": "Fresh Market 2026",
+    "lock_screen": {
+      "processing_title": "Trwa generowanie planu spotkań",
+      "contact_html": "Pytania? Kontakt: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818",
+      "default_title": "Spotkania B2B — Fresh Market 2026",
+      "default_desc_html": "Planowanie spotkań B2B z kupcami sieci handlowych na targach <strong>Fresh Market 2026</strong>.<br/>Wybory partnerów: <strong>do 16 września</strong>. Publikacja planu: <strong>22 września</strong>. Event: <strong>24 września</strong>.",
+      "open_date_format": "Planowane otwarcie: {{date}}",
+      "open_date_fallback": "1 września 2026",
+      "schedule_hint": "Wybory do 16 września · Publikacja 22 września · Event 24 września",
+      "feature_select_emoji": "⭐",
+      "feature_select_title": "Wybierz sieci",
+      "feature_select_desc": "Zaznacz preferowane sieci i rezerwy",
+      "feature_algo_emoji": "🤖",
+      "feature_algo_title": "Algorytm",
+      "feature_algo_desc": "Inteligentne przypisanie spotkań",
+      "feature_plan_emoji": "📋",
+      "feature_plan_title": "Plan spotkań",
+      "feature_plan_desc": "Twoje numery spotkań na dzień eventu"
+    },
+    "retailer_preview": {
+      "modal_title": "Podgląd sieci handlowej",
+      "initials_fallback": "??",
+      "categories_label": "Kategorie",
+      "no_contact_data": "Dane kontaktowe kupca są niedostępne w tym widoku."
+    }
+  },
   "chat": {
     "floating": {
       "header_brand": "Fresh Market Support",
