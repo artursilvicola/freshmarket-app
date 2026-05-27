@@ -92,6 +92,14 @@
       "no_retailer_assigned": "Brak przypisanej sieci detalicznej — podgląd propozycji niedostępny.",
       "no_active_offers": "Brak aktywnych propozycji w tej chwili.",
       "premium_badge": "Premium"
+    },
+    "offer_preview": {
+      "modal_title": "Podgląd propozycji – widok kupca",
+      "premium_badge": "Premium",
+      "kv_volume": "Wolumen",
+      "kv_min": "Min.",
+      "kv_season": "Sezon",
+      "packaging_label": "OPAKOWANIE:"
     }
   },
   "supplier": {

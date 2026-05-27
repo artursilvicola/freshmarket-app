@@ -92,6 +92,14 @@
       "no_retailer_assigned": "No retailer assigned — proposal preview unavailable.",
       "no_active_offers": "No active proposals at the moment.",
       "premium_badge": "Premium"
+    },
+    "offer_preview": {
+      "modal_title": "Proposal preview – buyer view",
+      "premium_badge": "Premium",
+      "kv_volume": "Volume",
+      "kv_min": "Min.",
+      "kv_season": "Season",
+      "packaging_label": "PACKAGING:"
     }
   },
   "supplier": {
