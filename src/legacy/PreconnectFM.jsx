@@ -1218,6 +1218,7 @@ function getAiAnswer(text) {
    FLOATING CHAT — pływający dymek dla dostawców i kupców
 ══════════════════════════════════════════════════════════════════════════ */
 function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
+  const { t } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const bottomRef = useRef(null);
@@ -1252,8 +1253,6 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
     if (open && bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
   }, [open, thread.length]);
 
-  const roleName = account.role === "supplier" ? "Dostawca" : "Sieć";
-
   return (
     <div style={{ position:"fixed", bottom:24, right:24, zIndex:3000 }}>
       {open && (
@@ -1264,8 +1263,8 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
               <FreshMarketLogo variant="light" size={20} showText={false} />
             </div>
             <div style={{ flex:1 }}>
-              <div style={{ color:"white", fontWeight:700, fontSize:13 }}>Fresh Market Support</div>
-              <div style={{ color:"rgba(255,255,255,0.75)", fontSize:11 }}>Oksana Kozłowska · Admin</div>
+              <div style={{ color:"white", fontWeight:700, fontSize:13 }}>{t("chat.floating.header_brand")}</div>
+              <div style={{ color:"rgba(255,255,255,0.75)", fontSize:11 }}>{t("chat.floating.header_admin_name")}</div>
             </div>
             <button onClick={()=>setOpen(false)} style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,0.7)", padding:2 }}><X size={16}/></button>
           </div>
@@ -1273,7 +1272,7 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
           <div style={{ flex:1, overflowY:"auto", padding:"12px 14px", display:"flex", flexDirection:"column", gap:8, maxHeight:320, minHeight:180, background:"#f8fafc" }}>
             {thread.length === 0 && (
               <div style={{ textAlign:"center", color:"#94a3b8", fontSize:12, padding:"20px 0" }}>
-                Wyślij wiadomość do administratora.<br/>Odpowiemy najszybciej jak to możliwe.
+                <Trans i18nKey="chat.floating.empty_html" ns="legacy" components={{ br: <br /> }}/>
               </div>
             )}
             {thread.map(m => {
@@ -1295,7 +1294,7 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
           <div style={{ padding:"10px 12px", borderTop:"1px solid #e2e8f0", display:"flex", gap:8, background:"white" }}>
             <textarea
               value={text} onChange={e=>setText(e.target.value)} onKeyDown={onKey}
-              placeholder="Napisz wiadomość... (Enter = wyślij)"
+              placeholder={t("chat.floating.input_placeholder")}
               rows={2}
               style={{ flex:1, padding:"8px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:12, fontFamily:"inherit", resize:"none", outline:"none", background:"#f8fafc" }}
             />
@@ -1322,6 +1321,13 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
    PAGE ADMIN CHAT — widok administratora z listą wątków i oknem rozmowy
 ══════════════════════════════════════════════════════════════════════════ */
 function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRead, onSuggestReply }) {
+  const { t, i18n } = useTranslation("legacy");
+  // [P2-extras review] AI fallback: getAiAnswer() zwraca PL z KNOWLEDGE_BASE.
+  // W EN locale używamy generic fallback z legacy.chat.admin.ai_fallback_reply,
+  // żeby admin w EN nie dostawał PL gotowca do wklejenia.
+  const aiFallback = (text) => i18n.language?.startsWith("en")
+    ? t("chat.admin.ai_fallback_reply")
+    : getAiAnswer(text);
   const [selectedId, setSelectedId] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -1398,10 +1404,10 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
         },
         thread: threadPayload,
       });
-      setReplyText(suggestion || getAiAnswer(lastMsg.text));
+      setReplyText(suggestion || aiFallback(lastMsg.text));
     } catch (e) {
       console.warn("[suggestAdminReplyAI]", e);
-      setReplyText(getAiAnswer(lastMsg.text));
+      setReplyText(aiFallback(lastMsg.text));
     } finally {
       setAiLoading(false);
     }
@@ -1416,14 +1422,14 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
         <div style={{ padding:"14px 16px", borderBottom:"1px solid #f1f5f9", background:"#f8fafc" }}>
           <div style={{ fontWeight:700, fontSize:14, color:"#1e293b", display:"flex", alignItems:"center", gap:6 }}>
             <MessageSquare size={15} color="#0d9488"/>
-            Wiadomości
+            {t("chat.admin.header_title")}
           </div>
-          <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{participants.length} aktywnych wątków</div>
+          <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{t("chat.admin.threads_count_format", { count: participants.length })}</div>
         </div>
         <div style={{ flex:1, overflowY:"auto" }}>
           {participants.length === 0 && (
             <div style={{ padding:32, textAlign:"center", color:"#94a3b8", fontSize:12 }}>
-              Brak wiadomości.<br/>Uczestnicy mogą pisać przez pływający dymek.
+              <Trans i18nKey="chat.admin.empty_threads_html" ns="legacy" components={{ br: <br /> }}/>
             </div>
           )}
           {participants.map(({ userId, lastTs, unread }) => {
@@ -1444,13 +1450,13 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
                     </div>
                     <div style={{ fontSize:10, color:"#94a3b8", display:"flex", alignItems:"center", gap:4 }}>
                       <span style={{ background:ROLE_COLORS_CHAT[acc.role]+"15", color:ROLE_COLORS_CHAT[acc.role], padding:"1px 5px", borderRadius:6, fontWeight:600 }}>
-                        {acc.role==="supplier"?"Dostawca":acc.role==="buyer"?"Kupiec":"Admin"}
+                        {acc.role==="supplier"?t("chat.admin.role_supplier"):acc.role==="buyer"?t("chat.admin.role_buyer"):t("chat.admin.role_admin")}
                       </span>
                       {lastMsg && <span>{new Date(lastMsg.timestamp).toLocaleDateString("pl-PL",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}
                     </div>
                     {lastMsg && (
                       <div style={{ fontSize:11, color:"#64748b", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", marginTop:2 }}>
-                        {lastMsg.fromId==="admin"?"Ty: ":""}{lastMsg.text}
+                        {lastMsg.fromId==="admin"?t("chat.admin.prefix_admin_msg"):""}{lastMsg.text}
                       </div>
                     )}
                   </div>
@@ -1466,7 +1472,7 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
         {!selectedId ? (
           <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#94a3b8", flexDirection:"column", gap:12 }}>
             <MessageSquare size={36} style={{ opacity:0.3 }}/>
-            <div style={{ fontSize:13 }}>Wybierz wątek z listy, aby zobaczyć rozmowę</div>
+            <div style={{ fontSize:13 }}>{t("chat.admin.empty_thread_prompt")}</div>
           </div>
         ) : (
           <>
@@ -1483,7 +1489,7 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
             {/* Messages */}
             <div style={{ flex:1, overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:10, background:"#f8fafc" }}>
               {thread.length === 0 && (
-                <div style={{ textAlign:"center", color:"#94a3b8", fontSize:12 }}>Brak wiadomości w tym wątku.</div>
+                <div style={{ textAlign:"center", color:"#94a3b8", fontSize:12 }}>{t("chat.admin.empty_thread_message")}</div>
               )}
               {thread.map(m => {
                 const isAdmin = m.fromId === "admin";
@@ -1511,16 +1517,16 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
                   {aiLoading ? (
                     <div style={{ display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#7c3aed", padding:"4px 10px", background:"#f5f3ff", borderRadius:8, border:"1px solid #ddd6fe" }}>
                       <span style={{ animation:"spin 1s linear infinite", display:"inline-block", fontSize:14 }}>⚙️</span>
-                      AI analizuje zapytanie...
+                      {t("chat.admin.ai_loading")}
                     </div>
                   ) : (
                     <button
                       onClick={()=>void suggestReplyWithAI()}
                       style={{ display:"flex", alignItems:"center", gap:6, padding:"5px 12px", borderRadius:8, border:"1px solid #ddd6fe", background:"#f5f3ff", color:"#7c3aed", fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
-                      ✨ Sformułuj odpowiedź (AI)
+                      {t("chat.admin.ai_suggest_btn")}
                     </button>
                   )}
-                  <span style={{ fontSize:11, color:"#94a3b8" }}>Szkic zostanie wklejony do pola odpowiedzi — przejrzyj przed wysłaniem.</span>
+                  <span style={{ fontSize:11, color:"#94a3b8" }}>{t("chat.admin.ai_suggest_hint")}</span>
                 </div>
               );
             })()}
@@ -1528,17 +1534,17 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
             <div style={{ padding:"12px 14px", borderTop:"1px solid #e2e8f0", background:"white", display:"flex", gap:8 }}>
               <textarea
                 value={replyText} onChange={e=>setReplyText(e.target.value)} onKeyDown={onKey}
-                placeholder={`Odpowiedz do ${getAccount(selectedId).name}... (Enter = wyślij)`}
+                placeholder={t("chat.admin.reply_placeholder_format", { name: getAccount(selectedId).name })}
                 rows={2}
                 style={{ flex:1, padding:"8px 12px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:13, fontFamily:"inherit", resize:"none", outline:"none", background:replyText?"#fffbeb":"white", transition:"background 0.2s" }}
               />
               <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
                 <button onClick={()=>void sendReply()} disabled={!replyText.trim()} style={{ padding:"8px 14px", borderRadius:8, background:replyText.trim()?"#0d9488":"#e2e8f0", color:replyText.trim()?"white":"#94a3b8", border:"none", cursor:replyText.trim()?"pointer":"default", display:"flex", alignItems:"center", gap:6, fontSize:13, fontWeight:600 }}>
-                  <SendIcon size={14}/> Wyślij
+                  <SendIcon size={14}/> {t("chat.admin.send_btn")}
                 </button>
                 {replyText && (
                   <button onClick={()=>setReplyText("")} style={{ padding:"4px 8px", borderRadius:7, background:"none", border:"1px solid #e2e8f0", color:"#94a3b8", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
-                    Wyczyść
+                    {t("chat.admin.clear_btn")}
                   </button>
                 )}
               </div>
@@ -10838,6 +10844,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
 // sidebarze" (rozwiązanie 80/20 — pełny live-update wymaga liftingu state w górę).
 // =============================================================================
 function PageAdminBranding({ fl }) {
+  const { t } = useTranslation("legacy");
   const [currentUrl, setCurrentUrl] = useState(null);
   const [loading, setLoading]       = useState(true);
   const [file, setFile]             = useState(null);
@@ -10873,12 +10880,12 @@ function PageAdminBranding({ fl }) {
     // Walidacja — UI side. Server również walidoje przez storage bucket.
     const allowed = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
     if (!allowed.includes(f.type)) {
-      fl?.("Niedozwolony format. Użyj PNG, JPG, SVG lub WEBP.", "error");
+      fl?.(t("admin.branding.toast_invalid_format"), "error");
       e.target.value = "";
       return;
     }
     if (f.size > 1024 * 1024) {
-      fl?.("Plik za duży. Maks. 1 MB.", "error");
+      fl?.(t("admin.branding.toast_too_large"), "error");
       e.target.value = "";
       return;
     }
@@ -10891,15 +10898,15 @@ function PageAdminBranding({ fl }) {
     try {
       const res = await dbUploadBrandLogo(file);
       if (!res.ok) {
-        fl?.("❌ Błąd uploadu: " + (res.error || "nieznany"), "error");
+        fl?.(t("admin.branding.toast_upload_error_format", { error: res.error || t("admin.branding.toast_upload_error_unknown") }), "error");
         return;
       }
       setCurrentUrl(res.url);
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      fl?.("✓ Logo zapisane. Odśwież stronę (F5), żeby zobaczyć w sidebarze i nagłówkach.", "success");
+      fl?.(t("admin.branding.toast_upload_success"), "success");
     } catch (e) {
-      fl?.("❌ Wyjątek: " + (e?.message || String(e)), "error");
+      fl?.(t("admin.branding.toast_upload_exception_format", { message: e?.message || String(e) }), "error");
     } finally {
       setUploading(false);
     }
@@ -10908,36 +10915,35 @@ function PageAdminBranding({ fl }) {
   return (
     <div style={{ maxWidth: 720 }}>
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#0f172a" }}>Branding</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#0f172a" }}>{t("admin.branding.page_title")}</h1>
         <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-          Logo Fresh Market wyświetlane w sidebarach, nagłówkach paneli oraz na stronach logowania i rejestracji.
+          {t("admin.branding.page_desc")}
         </div>
       </div>
 
       {/* Aktualne logo */}
       <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18, marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-          Aktualne logo
+          {t("admin.branding.current_label")}
         </div>
         {loading ? (
-          <div style={{ fontSize: 13, color: "#94a3b8" }}>Ładuję...</div>
+          <div style={{ fontSize: 13, color: "#94a3b8" }}>{t("admin.branding.loading")}</div>
         ) : currentUrl ? (
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
             <div style={{ background: "#0f172a", borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center" }}>
-              <img src={currentUrl} alt="Aktualne logo" style={{ height: 32, width: "auto", display: "block" }} />
+              <img src={currentUrl} alt={t("admin.branding.current_dark_alt")} style={{ height: 32, width: "auto", display: "block" }} />
             </div>
             <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center" }}>
-              <img src={currentUrl} alt="Aktualne logo (jasne tło)" style={{ height: 32, width: "auto", display: "block" }} />
+              <img src={currentUrl} alt={t("admin.branding.current_light_alt")} style={{ height: 32, width: "auto", display: "block" }} />
             </div>
             <div style={{ fontSize: 11, color: "#64748b", flex: 1 }}>
-              Renderujemy logo zarówno na ciemnym (sidebar admina/supplier/buyer) jak i jasnym tle (panel topbar, /login).
-              Jeśli widzisz tylko jedno z dwóch dobrze — może warto użyć wersji z przezroczystym tłem (PNG/SVG).
+              {t("admin.branding.current_hint")}
             </div>
           </div>
         ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "10px 14px", fontSize: 12, color: "#92400e", flex: 1 }}>
-              ⚠ Brak loga w bazie. Aktualnie używamy fallback SVG (zielone jabłko) — wgraj logo poniżej, żeby je zastąpić.
+              {t("admin.branding.no_logo_warning")}
             </div>
           </div>
         )}
@@ -10946,14 +10952,10 @@ function PageAdminBranding({ fl }) {
       {/* Upload */}
       <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-          Wgraj nowe logo
+          {t("admin.branding.upload_section_label")}
         </div>
         <div style={{ fontSize: 12, color: "#475569", marginBottom: 12, lineHeight: 1.55 }}>
-          <strong>Format:</strong> PNG, JPG, SVG, WEBP — maks. 1 MB.
-          <br/>
-          <strong>Zalecane:</strong> przezroczyste tło (PNG/SVG), wysokość ≥ 64 px, format poziomy lub kwadratowy.
-          <br/>
-          <strong>Nazwa pliku:</strong> jeśli zawiera słowo <code>wordmark</code>, nie będziemy dodawać tekstu "Fresh Market" obok logo (logo już zawiera nazwę).
+          <Trans i18nKey="admin.branding.upload_desc_format_html" ns="legacy" components={{ strong: <strong />, br: <br />, code: <code /> }}/>
         </div>
 
         <input
@@ -10967,18 +10969,18 @@ function PageAdminBranding({ fl }) {
         {previewUrl && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-              Podgląd
+              {t("admin.branding.preview_label")}
             </div>
             <div style={{ display: "flex", gap: 12 }}>
               <div style={{ background: "#0f172a", borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center" }}>
-                <img src={previewUrl} alt="Podgląd na ciemnym tle" style={{ height: 32, width: "auto", display: "block" }} />
+                <img src={previewUrl} alt={t("admin.branding.preview_dark_alt")} style={{ height: 32, width: "auto", display: "block" }} />
               </div>
               <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center" }}>
-                <img src={previewUrl} alt="Podgląd na jasnym tle" style={{ height: 32, width: "auto", display: "block" }} />
+                <img src={previewUrl} alt={t("admin.branding.preview_light_alt")} style={{ height: 32, width: "auto", display: "block" }} />
               </div>
             </div>
             <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>
-              {file?.name} — {Math.round((file?.size || 0) / 1024)} KB
+              {t("admin.branding.file_meta_format", { name: file?.name, kb: Math.round((file?.size || 0) / 1024) })}
             </div>
           </div>
         )}
@@ -10998,27 +11000,21 @@ function PageAdminBranding({ fl }) {
               cursor: !file || uploading ? "not-allowed" : "pointer",
             }}
           >
-            {uploading ? "Zapisuję..." : "Zapisz logo"}
+            {uploading ? t("admin.branding.saving") : t("admin.branding.save_btn")}
           </button>
           {file && !uploading && (
             <button
               onClick={() => { setFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
               style={{ padding: "9px 16px", background: "white", color: "#64748b", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
             >
-              Anuluj
+              {t("admin.branding.cancel_btn")}
             </button>
           )}
         </div>
       </div>
 
       <div style={{ marginTop: 18, padding: "12px 14px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
-        <strong style={{ color: "#475569" }}>💡 Gdzie zobaczę zmiany?</strong>
-        <br/>• Sidebar (lewy panel) — sekcja branding na górze
-        <br/>• Nagłówek panelu (PanelTopBar) — admin, dostawca, kupiec
-        <br/>• Strony /login, /rejestracja-dostawcy, /zakup-ok
-        <br/>• Czat (prawy dolny róg)
-        <br/><br/>
-        Po uploadzie odśwież stronę (F5) — nowy URL podpinamy raz na load.
+        <Trans i18nKey="admin.branding.info_box_html" ns="legacy" components={{ strong: <strong style={{ color: "#475569" }} />, br: <br /> }}/>
       </div>
     </div>
   );
@@ -11042,6 +11038,7 @@ function PageAdminBranding({ fl }) {
 //   - Funkcje db.js (demoteFromAdmin, setSuperAdmin) blokują self-degradation
 // =============================================================================
 function PageAdminTeam({ fl, currentUser }) {
+  const { t } = useTranslation("legacy");
   const [admins, setAdmins] = useState([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -11064,25 +11061,23 @@ function PageAdminTeam({ fl, currentUser }) {
   if (!currentUser?.is_super_admin) {
     return (
       <div style={{ maxWidth: 600, margin: "40px auto", padding: 24, background: "white", border: "1px solid #fecaca", borderRadius: 12 }}>
-        <h2 style={{ color: "#991b1b", fontSize: 18, margin: "0 0 8px" }}>⛔ Brak dostępu</h2>
+        <h2 style={{ color: "#991b1b", fontSize: 18, margin: "0 0 8px" }}>{t("admin.team.gating_title")}</h2>
         <p style={{ color: "#7f1d1d", fontSize: 13, margin: 0 }}>
-          Sekcja „Administratorzy" jest dostępna tylko dla super administratora.
-          Jesteś zalogowany jako zwykły administrator — masz dostęp do wszystkich
-          innych funkcji, ale zarządzanie zespołem wymaga uprawnień super-admin.
+          {t("admin.team.gating_desc")}
         </p>
       </div>
     );
   }
 
   async function handlePromote() {
-    if (!inviteEmail.trim()) { fl?.("Wpisz email użytkownika.", "error"); return; }
+    if (!inviteEmail.trim()) { fl?.(t("admin.team.toast_email_required"), "error"); return; }
     setBusy(true);
     try {
       const res = await dbPromoteToAdmin(inviteEmail.trim());
       if (!res.ok) {
-        fl?.("❌ " + res.error, "error");
+        fl?.(t("admin.team.toast_error_prefix") + res.error, "error");
       } else {
-        fl?.(`✓ ${inviteEmail.trim()} otrzymał uprawnienia administratora.`, "success");
+        fl?.(t("admin.team.toast_promoted_success_format", { email: inviteEmail.trim() }), "success");
         setInviteEmail("");
         await reload();
       }
@@ -11097,12 +11092,12 @@ function PageAdminTeam({ fl, currentUser }) {
     try {
       const res = await dbSetSuperAdmin(admin.id, !wasSuper);
       if (!res.ok) {
-        fl?.("❌ " + res.error, "error");
+        fl?.(t("admin.team.toast_error_prefix") + res.error, "error");
       } else {
         fl?.(
           wasSuper
-            ? `✓ ${admin.email} jest teraz zwykłym administratorem.`
-            : `✓ ${admin.email} jest teraz super administratorem.`,
+            ? t("admin.team.toast_super_demoted_format", { email: admin.email })
+            : t("admin.team.toast_super_promoted_format", { email: admin.email }),
           "success"
         );
         await reload();
@@ -11117,9 +11112,9 @@ function PageAdminTeam({ fl, currentUser }) {
     try {
       const res = await dbDemoteFromAdmin(admin.id);
       if (!res.ok) {
-        fl?.("❌ " + res.error, "error");
+        fl?.(t("admin.team.toast_error_prefix") + res.error, "error");
       } else {
-        fl?.(`✓ ${admin.email} stracił uprawnienia administratora.`, "success");
+        fl?.(t("admin.team.toast_removed_success_format", { email: admin.email }), "success");
         await reload();
       }
     } finally {
@@ -11131,26 +11126,26 @@ function PageAdminTeam({ fl, currentUser }) {
   return (
     <div style={{ maxWidth: 920 }}>
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#0f172a" }}>Administratorzy</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: "#0f172a" }}>{t("admin.team.page_title")}</h1>
         <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
-          Zarządzaj zespołem administratorów Fresh Market B2B. Tylko Ty (super admin) możesz zmieniać uprawnienia.
+          {t("admin.team.page_desc")}
         </div>
       </div>
 
       {/* Promocja nowego admina */}
       <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18, marginBottom: 16 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-          Promuj użytkownika do administratora
+          {t("admin.team.promote_section_title")}
         </div>
         <div style={{ fontSize: 12, color: "#475569", marginBottom: 12, lineHeight: 1.55 }}>
-          Wpisz email użytkownika, który <strong>już istnieje w systemie</strong> (zarejestrowany przez stronę rejestracji dostawcy albo dodany jako kupiec). Po promocji dostanie dostęp do wszystkich funkcji administratora — moderacja propozycji, zarządzanie sieciami i firmami, panel FM 2026, branding.
+          <Trans i18nKey="admin.team.promote_section_desc_html" ns="legacy" components={{ strong: <strong /> }}/>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <input
             type="email"
             value={inviteEmail}
             onChange={(e) => setInviteEmail(e.target.value)}
-            placeholder="email@firma.pl"
+            placeholder={t("admin.team.email_placeholder")}
             disabled={busy}
             style={{ flex: 1, padding: "10px 12px", border: "1px solid #cbd5e1", borderRadius: 7, fontSize: 13, fontFamily: "inherit" }}
             onKeyDown={(e) => { if (e.key === "Enter" && !busy) handlePromote(); }}
@@ -11171,7 +11166,7 @@ function PageAdminTeam({ fl, currentUser }) {
               flexShrink: 0,
             }}
           >
-            {busy ? "Promuję..." : "Promuj na administratora"}
+            {busy ? t("admin.team.promoting") : t("admin.team.promote_btn")}
           </button>
         </div>
       </div>
@@ -11179,12 +11174,12 @@ function PageAdminTeam({ fl, currentUser }) {
       {/* Lista administratorów */}
       <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 18 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-          Lista administratorów ({admins.length})
+          {t("admin.team.list_section_title_format", { count: admins.length })}
         </div>
         {loading ? (
-          <div style={{ fontSize: 13, color: "#94a3b8", padding: "10px 0" }}>Ładuję...</div>
+          <div style={{ fontSize: 13, color: "#94a3b8", padding: "10px 0" }}>{t("admin.team.loading")}</div>
         ) : admins.length === 0 ? (
-          <div style={{ fontSize: 13, color: "#94a3b8", padding: "10px 0" }}>Brak administratorów. To dziwne — Ty powinieneś być na tej liście.</div>
+          <div style={{ fontSize: 13, color: "#94a3b8", padding: "10px 0" }}>{t("admin.team.list_empty")}</div>
         ) : (
           admins.map((admin) => {
             const isSuper = admin.admin_level === "super";
@@ -11210,7 +11205,7 @@ function PageAdminTeam({ fl, currentUser }) {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", display: "flex", alignItems: "center", gap: 6 }}>
                     {admin.name || admin.email}
-                    {isMe && <span style={{ fontSize: 10, color: "#64748b", fontWeight: 500 }}>(to Ty)</span>}
+                    {isMe && <span style={{ fontSize: 10, color: "#64748b", fontWeight: 500 }}>{t("admin.team.me_label")}</span>}
                   </div>
                   <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>
                     {admin.email}
@@ -11218,19 +11213,19 @@ function PageAdminTeam({ fl, currentUser }) {
                 </div>
                 <div>
                   {isSuper ? (
-                    <span title="Super admin może zarządzać zespołem" style={{
+                    <span title={t("admin.team.super_admin_title")} style={{
                       display: "inline-flex", alignItems: "center", gap: 4,
                       padding: "3px 10px", borderRadius: 99,
                       background: "#7c3aed", color: "white",
                       fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
-                    }}>⭐ SUPER ADMIN</span>
+                    }}>{t("admin.team.super_admin_badge")}</span>
                   ) : (
                     <span style={{
                       display: "inline-flex", alignItems: "center", gap: 4,
                       padding: "3px 10px", borderRadius: 99,
                       background: "rgba(13,148,136,0.12)", color: "#0d9488",
                       fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em",
-                    }}>ADMIN</span>
+                    }}>{t("admin.team.admin_badge")}</span>
                   )}
                 </div>
                 {!isMe && (
@@ -11238,7 +11233,7 @@ function PageAdminTeam({ fl, currentUser }) {
                     <button
                       onClick={() => handleToggleSuper(admin)}
                       disabled={busy}
-                      title={isSuper ? "Cofnij uprawnienia super admina (zostaje zwykłym admin'em)" : "Promuj do super admina"}
+                      title={isSuper ? t("admin.team.toggle_super_title_demote") : t("admin.team.toggle_super_title_promote")}
                       style={{
                         padding: "6px 12px", fontSize: 11.5, fontWeight: 600,
                         background: "white",
@@ -11247,12 +11242,12 @@ function PageAdminTeam({ fl, currentUser }) {
                         borderRadius: 6, cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit",
                       }}
                     >
-                      {isSuper ? "Zdjmij super" : "Promuj super"}
+                      {isSuper ? t("admin.team.toggle_super_btn_demote") : t("admin.team.toggle_super_btn_promote")}
                     </button>
                     <button
                       onClick={() => setConfirmRemove(admin)}
                       disabled={busy}
-                      title="Cofnij uprawnienia administratora całkowicie"
+                      title={t("admin.team.remove_btn_title")}
                       style={{
                         padding: "6px 12px", fontSize: 11.5, fontWeight: 600,
                         background: "white",
@@ -11260,7 +11255,7 @@ function PageAdminTeam({ fl, currentUser }) {
                         borderRadius: 6, cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit",
                       }}
                     >
-                      <X size={11} style={{ verticalAlign: "middle" }}/> Usuń
+                      <X size={11} style={{ verticalAlign: "middle" }}/> {t("admin.team.remove_btn")}
                     </button>
                   </div>
                 )}
@@ -11272,12 +11267,12 @@ function PageAdminTeam({ fl, currentUser }) {
 
       {/* Info box */}
       <div style={{ marginTop: 14, padding: "11px 14px", background: "#f0fdfa", border: "1px solid #99f6e4", borderRadius: 8, fontSize: 11, color: "#0f766e", lineHeight: 1.6 }}>
-        <strong>💡 Wskazówki:</strong>
+        <strong>{t("admin.team.info_box_title")}</strong>
         <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-          <li><strong>Super admin</strong> — pełen dostęp + może zarządzać zespołem (Ty)</li>
-          <li><strong>Zwykły admin</strong> — pełen dostęp do moderacji, sieci, firm, FM, branding, ale NIE widzi tej zakładki</li>
-          <li>Żeby promować nowego admina, użytkownik musi <strong>najpierw założyć konto</strong> (np. przez rejestrację dostawcy)</li>
-          <li>Nie możesz odebrać uprawnień samemu sobie (zabezpieczenie przed zamknięciem dostępu do systemu)</li>
+          <li><Trans i18nKey="admin.team.info_box_item1_html" ns="legacy" components={{ strong: <strong /> }}/></li>
+          <li><Trans i18nKey="admin.team.info_box_item2_html" ns="legacy" components={{ strong: <strong /> }}/></li>
+          <li><Trans i18nKey="admin.team.info_box_item3_html" ns="legacy" components={{ strong: <strong /> }}/></li>
+          <li>{t("admin.team.info_box_item4")}</li>
         </ul>
       </div>
 
@@ -11289,19 +11284,15 @@ function PageAdminTeam({ fl, currentUser }) {
               <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#fef2f2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <AlertTriangle size={18} color="#dc2626"/>
               </div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>Usuń uprawnienia administratora?</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>{t("admin.team.confirm_modal_title")}</div>
             </div>
             <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, marginBottom: 18 }}>
-              Czy na pewno chcesz odebrać uprawnienia administratora użytkownikowi <strong style={{ color: "#0f172a" }}>{confirmRemove.name || confirmRemove.email}</strong>?
-              <br/><br/>
-              Konto pozostaje aktywne, ale traci dostęp do panelu administratora (moderacja, sieci, firmy, FM, branding).
-              <br/><br/>
-              Można później ponownie promować tego użytkownika do administratora.
+              <Trans i18nKey="admin.team.confirm_modal_desc_html" ns="legacy" values={{ name: confirmRemove.name || confirmRemove.email }} components={{ strong: <strong style={{ color: "#0f172a" }} />, br: <br /> }}/>
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <Btn outline onClick={() => setConfirmRemove(null)}>Anuluj</Btn>
+              <Btn outline onClick={() => setConfirmRemove(null)}>{t("admin.team.confirm_btn_cancel")}</Btn>
               <Btn onClick={() => handleRemove(confirmRemove)} disabled={busy} style={{ background: "#dc2626", color: "white", border: "none" }}>
-                <X size={12}/> {busy ? "Usuwam..." : "Tak, usuń"}
+                <X size={12}/> {busy ? t("admin.team.removing") : t("admin.team.confirm_btn_delete")}
               </Btn>
             </div>
           </div>
