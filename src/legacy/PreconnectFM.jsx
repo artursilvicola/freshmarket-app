@@ -81,6 +81,17 @@ const getSortedCountries = () => {
 // (np. inicjalizacje stanu). Konsumenci JSX powinni używać getSortedCountries().
 const CNAMES_SORTED = Object.entries(CNAMES).sort((a,b)=>a[1].localeCompare(b[1],"pl"));
 const TYPE_LABELS = { producent:"🌱 Producent", eksporter:"✈ Eksporter", importer:"📥 Importer", firma_handlowa:"🤝 Firma Handlowa", pakowalnia:"📦 Pakowalnia", firma_logistyczna:"🚛 Firma Logistyczna", kooperatywa:"🤲 Kooperatywa", agent:"🔎 Agent/Broker" };
+// [P2-fm C5] PL CLDR plurals via Intl.PluralRules (handles 22/23/24 jako "few"
+// poprawnie, czego nie robi naiwne n>=2&&n<=4). Returns "_one"/"_few"/"_many"/"_other".
+// Konwencja sufiksów zgodna z istniejącymi kluczami w fm.admin.* / admin.pipeline.*
+// (np. data_warning_unconfirmed_few_format). i18next polega wciąż na manualnym
+// dopisaniu sufiksu — pluralSuffixPL daje poprawny CLDR bez przepisywania kluczy.
+const _FM_PL_PR = (typeof Intl !== "undefined" && Intl.PluralRules) ? new Intl.PluralRules("pl") : null;
+const pluralSuffixPL = (n) => {
+  if (_FM_PL_PR) return "_" + _FM_PL_PR.select(n);
+  // Fallback dla starszych runtime — semantyka identyczna jak poprzednio.
+  return n === 1 ? "_one" : (n >= 2 && n <= 4) ? "_few" : "_many";
+};
 
 const STATUS_TIPS = {
   pending_moderation: "Propozycja oczekuje na weryfikację przez administratora przed wysyłką do kupca.",
@@ -8127,10 +8138,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
 //     nie wysłało dwa razy)
 function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose, onSent }) {
   const { t } = useTranslation("legacy");
-  // [P2-pipeline] Helper plural PL: 1 → one, 2-4 → few, reszta → many.
-  // Używamy CLDR-compatible suffix dla i18next plural lookup. EN ma _other
-  // = _few = _many więc działa też w EN.
-  const pluralSuffix = (n) => n === 1 ? "_one" : (n >= 2 && n <= 4) ? "_few" : "_many";
+  // [P2-pipeline] Helper plural PL → moduł-level pluralSuffixPL (Intl.PluralRules)
+  // — poprawnie obsługuje 22/23/24 jako "few", nie tylko 2-4.
+  const pluralSuffix = pluralSuffixPL;
   const monthName = (() => {
     // [P2-pipeline] Month name nie tłumaczę — preview maila jest faithful
     // do PL maila wysyłanego do kupców. Email content stays PL (P2-11).
@@ -8787,6 +8797,9 @@ function ZoneLegend() {
    ADMIN PREFERENCES VIEW (Faza 2 podgląd dla admina)
 ═══════════════════════════════════════════════════════════════ */
 function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppliers, companies }) {
+  const { t, i18n } = useTranslation("legacy");
+  const pluralSuffix = pluralSuffixPL;
+  const _localeForDate = i18n.language?.startsWith("en") ? "en-GB" : "pl-PL";
   // [B2B Round supplier-FM-UX] Resolve a supplier list-row to its company row.
   const findCo = (s) => (companies || []).find(c =>
     c.fmId === s.id || c.legacy_fm_id === s.id ||
@@ -8813,7 +8826,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
     <div>
       {/* Global stats */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:16 }}>
-        {[[totalStars,"⭐ Główne wybory","#d97706"],[totalThumbs,"👍 Rezerwowe","#0d9488"],[totalWant,"✅ Chcę","#059669"],[totalChance,"🤝 Daj szansę","#d97706"],[totalRemove,"❌ Nie","#dc2626"]].map(([v,l,c])=>(
+        {[[totalStars,t("fm.admin.prefs_view.stat_total_stars"),"#d97706"],[totalThumbs,t("fm.admin.prefs_view.stat_total_thumbs"),"#0d9488"],[totalWant,t("fm.admin.prefs_view.stat_total_want"),"#059669"],[totalChance,t("fm.admin.prefs_view.stat_total_chance"),"#d97706"],[totalRemove,t("fm.admin.prefs_view.stat_total_remove"),"#dc2626"]].map(([v,l,c])=>(
           <div key={l} style={{ padding:"10px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
             <div style={{ fontSize:20,fontWeight:800,color:c }}>{v}</div>
             <div style={{ fontSize:10,color:"#64748b",marginTop:2 }}>{l}</div>
@@ -8823,12 +8836,12 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
 
       {/* Sub-view switcher */}
       <div style={{ display:"flex",gap:0,marginBottom:14,background:"#f1f5f9",borderRadius:10,padding:4,width:"fit-content" }}>
-        {[["suppliers","🏭 Preferencje dostawców"],["chains","🏪 Odpowiedzi sieci"]].map(([k,l])=>(
+        {[["suppliers",t("fm.admin.prefs_view.subview_suppliers")],["chains",t("fm.admin.prefs_view.subview_chains")]].map(([k,l])=>(
           <button key={k} onClick={()=>setSubView(k)} style={{ padding:"7px 16px",borderRadius:8,border:"none",background:subView===k?"white":"transparent",fontWeight:subView===k?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:subView===k?"#1e293b":"#64748b",boxShadow:subView===k?"0 1px 3px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
 
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={subView==="suppliers"?"Szukaj firmy...":"Szukaj sieci..."}
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={subView==="suppliers"?t("fm.admin.prefs_view.search_placeholder_suppliers"):t("fm.admin.prefs_view.search_placeholder_chains")}
         style={{ width:"100%",padding:"8px 14px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",boxSizing:"border-box",marginBottom:10,maxWidth:320 }}/>
 
       {/* ── DOSTAWCY ── */}
@@ -8849,7 +8862,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                     <span style={{ width:6,height:6,borderRadius:3,background:s.pkg==="Premium"?"#d97706":"#3b82f6",flexShrink:0 }}/>
                     <div style={{ flex:1,minWidth:0 }}>
                       <div style={{ fontSize:12,fontWeight:selSup===s.id?700:500,color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{s.name}</div>
-                      <div style={{ fontSize:10,color:"#94a3b8" }}>{s.country}{confirmedAt && <span style={{color:"#059669",marginLeft:6,fontWeight:700}}>✓ POTWIERDZONO</span>}</div>
+                      <div style={{ fontSize:10,color:"#94a3b8" }}>{s.country}{confirmedAt && <span style={{color:"#059669",marginLeft:6,fontWeight:700}}>{t("fm.admin.prefs_view.supplier_confirmed_inline")}</span>}</div>
                     </div>
                     <div style={{ fontSize:10,display:"flex",gap:4 }}>
                       <span style={{ color:"#d97706",fontWeight:700 }}>⭐{stars}</span>
@@ -8880,18 +8893,18 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                     <div style={{ fontSize:12,color:"#64748b" }}>{s.country} · {s.products}</div>
                   </div>
                   <Badge color={s.pkg==="Premium"?"#d97706":"#2563eb"} bg={s.pkg==="Premium"?"#fef3c7":"#eff6ff"}>{s.pkg}</Badge>
-                  {confirmedAt && <Badge color="#059669" bg="#f0fdf4">✓ Potwierdzono {new Date(confirmedAt).toLocaleDateString("pl-PL")}</Badge>}
+                  {confirmedAt && <Badge color="#059669" bg="#f0fdf4">{t("fm.admin.prefs_view.supplier_confirmed_badge_format", { date: new Date(confirmedAt).toLocaleDateString(_localeForDate) })}</Badge>}
                 </div>
                 {stars.length>0&&<>
-                  <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>⭐ Główne sieci ({stars.length}/5)</div>
+                  <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>{t("fm.admin.prefs_view.supplier_stars_section_format", { count: stars.length })}</div>
                   <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:14 }}>
                     {stars.map(c=>{
                       const resp = fmResps[c.id]?.[s.id];
                       const rc = resp==="want"?"#059669":resp==="chance"?"#d97706":resp==="remove"?"#dc2626":"#94a3b8";
                       // [B2B Round FM-buyer-rejection-logic] Semantic labels for
                       // admin clarity. "remove" maps to NIE CHCE SPOTKANIA per spec.
-                      const rl = resp==="want"?"✅ CHCE":resp==="chance"?"🤝 NA KONIEC":resp==="remove"?"❌ NIE CHCE":"⏳ brak";
-                      const rTitle = resp==="want"?"Kupiec: CHCE SPOTKANIE":resp==="chance"?"Kupiec: NA KONIEC KOLEJKI (deprioritized_by_buyer)":resp==="remove"?"Kupiec: NIE CHCE SPOTKANIA (rejected_by_buyer)":"Kupiec jeszcze nie odpowiedział";
+                      const rl = resp==="want"?t("fm.admin.prefs_view.resp_badge_want"):resp==="chance"?t("fm.admin.prefs_view.resp_badge_chance"):resp==="remove"?t("fm.admin.prefs_view.resp_badge_remove"):t("fm.admin.prefs_view.resp_badge_none");
+                      const rTitle = resp==="want"?t("fm.admin.prefs_view.resp_title_want"):resp==="chance"?t("fm.admin.prefs_view.resp_title_chance_full"):resp==="remove"?t("fm.admin.prefs_view.resp_title_remove_full"):t("fm.admin.prefs_view.resp_title_none");
                       return(
                         <div key={c.id} title={rTitle} style={{ padding:"8px 10px",borderRadius:8,background:"#fffbeb",border:"1px solid #fde68a",display:"flex",alignItems:"center",gap:6 }}>
                           <span style={{ fontSize:11,fontWeight:700,color:"#1e293b",flex:1 }}>{c.name}</span>
@@ -8902,13 +8915,13 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                   </div>
                 </>}
                 {thumbs.length>0&&<>
-                  <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>👍 Rezerwowe ({thumbs.length})</div>
+                  <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>{t("fm.admin.prefs_view.supplier_thumbs_section_format", { count: thumbs.length })}</div>
                   <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:5 }}>
                     {thumbs.map(c=>{
                       const resp = fmResps[c.id]?.[s.id];
                       const rc = resp==="want"?"#059669":resp==="chance"?"#d97706":resp==="remove"?"#dc2626":"#94a3b8";
-                      const rl = resp==="want"?"✅ CHCE":resp==="chance"?"🤝 NA KONIEC":resp==="remove"?"❌ NIE CHCE":"⏳ brak";
-                      const rTitle = resp==="want"?"Kupiec: CHCE SPOTKANIE":resp==="chance"?"Kupiec: NA KONIEC KOLEJKI":resp==="remove"?"Kupiec: NIE CHCE SPOTKANIA":"Kupiec jeszcze nie odpowiedział";
+                      const rl = resp==="want"?t("fm.admin.prefs_view.resp_badge_want"):resp==="chance"?t("fm.admin.prefs_view.resp_badge_chance"):resp==="remove"?t("fm.admin.prefs_view.resp_badge_remove"):t("fm.admin.prefs_view.resp_badge_none");
+                      const rTitle = resp==="want"?t("fm.admin.prefs_view.resp_title_want"):resp==="chance"?t("fm.admin.prefs_view.resp_title_chance_short"):resp==="remove"?t("fm.admin.prefs_view.resp_title_remove_short"):t("fm.admin.prefs_view.resp_title_none");
                       return(
                         <div key={c.id} title={rTitle} style={{ padding:"7px 10px",borderRadius:8,background:"#f0fdfa",border:"1px solid #a7f3d0",display:"flex",alignItems:"center",gap:6 }}>
                           <span style={{ fontSize:11,color:"#1e293b",flex:1 }}>{c.name}</span>
@@ -8918,7 +8931,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                     })}
                   </div>
                 </>}
-                {stars.length===0&&thumbs.length===0&&<div style={{ padding:30,textAlign:"center",color:"#94a3b8" }}>Ta firma nie wybrała jeszcze sieci.</div>}
+                {stars.length===0&&thumbs.length===0&&<div style={{ padding:30,textAlign:"center",color:"#94a3b8" }}>{t("fm.admin.prefs_view.supplier_empty")}</div>}
               </div>
             );
           })()}
@@ -8944,7 +8957,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                       <div style={{ fontSize:10,color:"#94a3b8" }}>{c.country}</div>
                     </div>
                     <div style={{ fontSize:10,display:"flex",gap:4 }}>
-                      <span style={{ color:"#94a3b8" }}>{nInterested}zgł.</span>
+                      <span style={{ color:"#94a3b8" }}>{t("fm.admin.prefs_view.chain_signups_short_format", { count: nInterested })}</span>
                       <span style={{ color:"#059669",fontWeight:700 }}>✅{nWant}</span>
                       <span style={{ color:"#d97706",fontWeight:700 }}>🤝{nChance}</span>
                     </div>
@@ -8967,11 +8980,11 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
             return(
               <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:12,padding:18,maxHeight:520,overflowY:"auto" }}>
                 <div style={{ fontSize:16,fontWeight:800,marginBottom:4 }}>{ch.name}</div>
-                <div style={{ fontSize:12,color:"#64748b",marginBottom:14 }}>{ch.country} · {ch.cat} · {interested.length} zgłoszeń</div>
-                {[["want","✅ Chcę","#059669","#f0fdf4","#bbf7d0"],["chance","🤝 Daj szansę","#d97706","#fffbeb","#fde68a"],["remove","❌ Nie / brak","#dc2626","#fef2f2","#fca5a5"]].map(([key,lbl,c,bg,b])=>(
+                <div style={{ fontSize:12,color:"#64748b",marginBottom:14 }}>{t("fm.admin.prefs_view.chain_detail_meta_format" + pluralSuffix(interested.length), { country: ch.country, cat: ch.cat, count: interested.length })}</div>
+                {[["want",t("fm.admin.prefs_view.chain_group_want"),"#059669","#f0fdf4","#bbf7d0"],["chance",t("fm.admin.prefs_view.chain_group_chance"),"#d97706","#fffbeb","#fde68a"],["remove",t("fm.admin.prefs_view.chain_group_remove"),"#dc2626","#fef2f2","#fca5a5"]].map(([key,lbl,c,bg,b])=>(
                   groups[key].length>0&&(
                     <div key={key} style={{ marginBottom:12 }}>
-                      <div style={{ fontSize:11,fontWeight:700,color:c,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em" }}>{lbl} ({groups[key].length})</div>
+                      <div style={{ fontSize:11,fontWeight:700,color:c,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em" }}>{t("fm.admin.prefs_view.chain_group_label_format", { label: lbl, count: groups[key].length })}</div>
                       {groups[key].map(s=>(
                         <div key={s.id} style={{ padding:"7px 10px",borderRadius:8,background:bg,border:`1px solid ${b}`,marginBottom:4,display:"flex",gap:8,alignItems:"center" }}>
                           <span style={{ fontSize:11,fontWeight:600,flex:1 }}>{s.name}</span>
@@ -8983,7 +8996,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                     </div>
                   )
                 ))}
-                {interested.length===0&&<div style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>Brak zgłoszeń dla tej sieci.</div>}
+                {interested.length===0&&<div style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>{t("fm.admin.prefs_view.chain_empty")}</div>}
               </div>
             );
           })()}
@@ -9021,7 +9034,7 @@ function FMVenueFooter({ extra }) {
   return (
     <div style={{ marginTop:20,padding:"16px 20px",background:"#0f172a",borderRadius:10,color:"rgba(255,255,255,0.65)",fontSize:12,lineHeight:1.9 }}>
       <div style={{ color:"white",fontWeight:700,fontSize:14,marginBottom:4 }}>{t("fm.venue_footer_brand")}</div>
-      {FM_DATE}<br/>
+      {t("fm.event_date", { defaultValue: FM_DATE })}<br/>
       {FM_VENUE}
       {extra && <><br/>{extra}</>}
     </div>
@@ -9344,7 +9357,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
         <div style={{ background:"linear-gradient(135deg,#064e3b,#0f172a)",borderRadius:14,padding:"28px 24px",marginBottom:16,textAlign:"center" }}>
           <div style={{ fontSize:40,marginBottom:10 }}>🎪</div>
           <div style={{ fontSize:22,fontWeight:800,color:"white",marginBottom:4 }}>{t("fm.supplier.wyniki_hero_event_title")}</div>
-          <div style={{ fontSize:13,color:"rgba(255,255,255,0.55)" }}>{t("fm.supplier.wyniki_hero_meta_format", { date: FM_DATE, venue: FM_VENUE })}</div>
+          <div style={{ fontSize:13,color:"rgba(255,255,255,0.55)" }}>{t("fm.supplier.wyniki_hero_meta_format", { date: t("fm.event_date", { defaultValue: FM_DATE }), venue: FM_VENUE })}</div>
           <div style={{ marginTop:12 }}><Badge color="#6ee7b7" bg="rgba(5,150,105,0.2)">{t("fm.supplier.wyniki_hero_badge")}</Badge></div>
         </div>
         <Card title={t("fm.supplier.wyniki_card_title")} icon={Calendar}>
@@ -9398,8 +9411,8 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
 ═══════════════════════════════════════════════════════════════ */
 function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, fmChains, fmSuppliers, companies, offers, sends, fmWishlists, setFmWishlists, fmLateResps, setFmLateResps, previewFor, retailers }) {
   const { t } = useTranslation("legacy");
-  // [P2-fm C3] Plural suffix helper PL: 1→one, 2-4→few, reszta→many.
-  const pluralSuffix = (n) => n === 1 ? "_one" : (n >= 2 && n <= 4) ? "_few" : "_many";
+  // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
+  const pluralSuffix = pluralSuffixPL;
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const phase = fmSettings.currentPhase;
@@ -10046,6 +10059,7 @@ function buildFMData(prefs, resps, chains, suppliers) {
    FM ADMIN CORRECTION PANEL — interaktywny grid
 ═══════════════════════════════════════════════════════════════ */
 function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains, fmSuppliers, fmWishlists, fmResps }) {
+  const { t } = useTranslation("legacy");
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const _resps     = fmResps || {};
@@ -10061,7 +10075,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
   if (!data || !data.cq) return (
     <div style={{ padding:40,textAlign:"center",color:"#94a3b8" }}>
       <RefreshCw size={28} style={{ marginBottom:10,display:"block",margin:"0 auto 10px",opacity:0.3 }}/>
-      Dane nie są jeszcze wygenerowane
+      {t("fm.corrections.empty_data")}
     </div>
   );
 
@@ -10098,13 +10112,13 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
       const nB = (_suppliers.find(x => x.id === sid) || {}).name || "?";
       const chA = (_chains.find(x => x.id === a.cid) || {}).name;
       const chB = (_chains.find(x => x.id === cid) || {}).name;
-      logMsg = `🔄 Zamiana: ${nA} (${chA} #${a.pos+1}) ↔ ${nB} (${chB} #${pos+1})`;
+      logMsg = t("fm.corrections.log_swap_format", { nameA: nA, chainA: chA, posA: a.pos+1, nameB: nB, chainB: chB, posB: pos+1 });
     } else {
       newCq[a.cid][a.pos] = null;
       newCq[cid][pos] = a.sid;
       const nA = (_suppliers.find(x => x.id === a.sid) || {}).name || "?";
       const chName = (_chains.find(x => x.id === cid) || {}).name || "?";
-      logMsg = `➡️ Przesunięcie: ${nA} → ${chName} #${pos+1}`;
+      logMsg = t("fm.corrections.log_move_format", { name: nA, chain: chName, pos: pos+1 });
     }
 
     // [B2B Round FM-buyer-rejection-logic] Detect rejected pairings created by
@@ -10160,7 +10174,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
       });
       setData(prev => ({ ...prev, cq: newCq, nums: newNums, res: newRes, overrides: newOverrides }));
       setSwapLog(prev => [
-        ...rejections.map(r => `⚠️ Dodano mimo odrzucenia: ${r.supplierName} → ${r.chainName}`),
+        ...rejections.map(r => t("fm.corrections.log_override_format", { supplier: r.supplierName, chain: r.chainName })),
         logMsg,
         ...prev,
       ].slice(0, 20));
@@ -10187,38 +10201,34 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
         <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20 }}>
           <div style={{ background:"white",borderRadius:14,padding:24,maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ fontWeight:800,fontSize:16,marginBottom:10,color:"#dc2626",display:"flex",alignItems:"center",gap:8 }}>
-              <AlertTriangle size={18}/> Uwaga — odrzucenie przez kupca
+              <AlertTriangle size={18}/> {t("fm.corrections.modal_title")}
             </div>
             <div style={{ fontSize:13,color:"#334155",marginBottom:14,lineHeight:1.65 }}>
               {pendingOverride.rejections.length === 1 ? (
-                <>
-                  Sieć <strong>{pendingOverride.rejections[0].chainName}</strong> oznaczyła dostawcę{" "}
-                  <strong>{pendingOverride.rejections[0].supplierName}</strong> jako <strong>NIE CHCĘ SPOTKANIA</strong>.
-                  Czy mimo to chcesz ręcznie dodać spotkanie?
-                </>
+                <Trans i18nKey="fm.corrections.modal_text_single_html" ns="legacy" components={{ strong: <strong /> }} values={{ chain: pendingOverride.rejections[0].chainName, supplier: pendingOverride.rejections[0].supplierName }}/>
               ) : (
                 <>
-                  Następujące pary zostały oznaczone przez kupców jako <strong>NIE CHCĘ SPOTKANIA</strong>:
+                  <Trans i18nKey="fm.corrections.modal_text_multi_intro_html" ns="legacy" components={{ strong: <strong /> }}/>
                   <ul style={{ margin:"8px 0 0 18px",padding:0 }}>
                     {pendingOverride.rejections.map((r,i)=>(
-                      <li key={i} style={{ marginTop:4 }}><strong>{r.supplierName}</strong> → <strong>{r.chainName}</strong></li>
+                      <li key={i} style={{ marginTop:4 }}><Trans i18nKey="fm.corrections.modal_text_multi_pair_html" ns="legacy" components={{ strong: <strong /> }} values={{ supplier: r.supplierName, chain: r.chainName }}/></li>
                     ))}
                   </ul>
-                  Czy mimo to chcesz ręcznie dodać te spotkania?
+                  {t("fm.corrections.modal_text_multi_close")}
                 </>
               )}
             </div>
             <div style={{ fontSize:11,color:"#64748b",marginBottom:18,padding:"8px 12px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8 }}>
-              ℹ️ Po zatwierdzeniu pary zostaną oznaczone w systemie jako <strong>DODANE RĘCZNIE MIMO ODRZUCENIA</strong> i będą widoczne z ikoną ⚠️ w pipelinie i podglądzie planu.
+              <Trans i18nKey="fm.corrections.modal_info_html" ns="legacy" components={{ strong: <strong /> }}/>
             </div>
             <div style={{ display:"flex",gap:8,justifyContent:"flex-end" }}>
               <button onClick={()=>setPendingOverride(null)}
                 style={{ padding:"10px 18px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit" }}>
-                Anuluj
+                {t("fm.corrections.modal_btn_cancel")}
               </button>
               <button onClick={()=>{ pendingOverride.commit(); setPendingOverride(null); }}
                 style={{ padding:"10px 18px",borderRadius:8,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit" }}>
-                Dodaj mimo odrzucenia
+                {t("fm.corrections.modal_btn_confirm")}
               </button>
             </div>
           </div>
@@ -10229,28 +10239,28 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
       {!approved ? (
         <div style={{ background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10 }}>
           <div>
-            <div style={{ fontSize:13,fontWeight:700,color:"#92400e" }}>⚠️ Harmonogram niezatwierdzony</div>
-            <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>Skoryguj numerację, a następnie zatwierdź plan. Po zatwierdzeniu edycja zostaje zablokowana.</div>
+            <div style={{ fontSize:13,fontWeight:700,color:"#92400e" }}>{t("fm.corrections.status_unapproved_title")}</div>
+            <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{t("fm.corrections.status_unapproved_desc")}</div>
           </div>
           <button onClick={()=>{ setApproved(true); if(typeof onApprove==="function") onApprove(data); }}
             style={{ padding:"10px 24px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#059669,#047857)",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap" }}>
-            ✅ Zatwierdź plan
+            {t("fm.corrections.status_btn_approve")}
           </button>
         </div>
       ) : (
         <div style={{ background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-          <div style={{ fontSize:13,fontWeight:700,color:"#059669" }}>✅ ZATWIERDZONY — gotowy do wysyłki do uczestników</div>
-          <Btn outline sm onClick={()=>setApproved(false)} style={{ color:"#dc2626",borderColor:"#fca5a5",fontSize:11 }}>Odblokuj edycję</Btn>
+          <div style={{ fontSize:13,fontWeight:700,color:"#059669" }}>{t("fm.corrections.status_approved_title")}</div>
+          <Btn outline sm onClick={()=>setApproved(false)} style={{ color:"#dc2626",borderColor:"#fca5a5",fontSize:11 }}>{t("fm.corrections.status_btn_unlock")}</Btn>
         </div>
       )}
 
       {/* KPIs */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14 }}>
         {[
-          [_suppliers.length,"Dostawców","#0d9488"],
-          [_chains.length,"Sieci","#2563eb"],
-          [totalMeetings,"Spotkań","#059669"],
-          [swapLog.length,"Zmian admina","#d97706"],
+          [_suppliers.length,t("fm.corrections.kpi_suppliers"),"#0d9488"],
+          [_chains.length,t("fm.corrections.kpi_chains"),"#2563eb"],
+          [totalMeetings,t("fm.corrections.kpi_meetings"),"#059669"],
+          [swapLog.length,t("fm.corrections.kpi_admin_changes"),"#d97706"],
         ].map(([v,l,c])=>(
           <div key={l} style={{ padding:"10px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
             <div style={{ fontSize:20,fontWeight:800,color:c }}>{v}</div>
@@ -10266,10 +10276,10 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
         return (
           <div style={{ marginBottom:16,padding:"14px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10 }}>
             <div style={{ fontWeight:700,fontSize:13,color:"#1e40af",marginBottom:10,display:"flex",alignItems:"center",gap:6 }}>
-              <span>📝</span> Zgłoszenia dodatkowe od Sieci (Wishlista)
+              {t("fm.corrections.wishlist_header")}
             </div>
             <div style={{ fontSize:12,color:"#1e40af",marginBottom:10 }}>
-              Poniższe sieci handlowe zgłosiły prośby o dodanie firm do ich planu. Możesz uwzględnić je ręcznie w gridzie.
+              {t("fm.corrections.wishlist_desc")}
             </div>
             <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
               {wEntries.map(ch => {
@@ -10278,7 +10288,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
                 return (
                   <div key={ch.id} style={{ padding:"8px 12px",background:"white",borderRadius:8,border:"1px solid #bfdbfe" }}>
                     <span style={{ fontWeight:700,fontSize:12,color:"#1e40af" }}>{ch.name}</span>
-                    <span style={{ fontSize:12,color:"#334155" }}> prosi o dodanie: </span>
+                    <span style={{ fontSize:12,color:"#334155" }}>{t("fm.corrections.wishlist_requests_label")}</span>
                     {names.map((n, i) => (
                       <span key={i} style={{ fontSize:12,fontWeight:600,color:"#059669",background:"#f0fdf4",padding:"1px 7px",borderRadius:10,margin:"0 2px",border:"1px solid #bbf7d0" }}>{n}</span>
                     ))}
@@ -10293,19 +10303,19 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
       {/* Controls */}
       <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap" }}>
         <div style={{ fontWeight:700,fontSize:13,color:"#1e293b",display:"flex",alignItems:"center",gap:6 }}>
-          <Sliders size={14} color="#0d9488"/> Panel korekty numerów
+          <Sliders size={14} color="#0d9488"/> {t("fm.corrections.panel_title")}
         </div>
         <select value={filterChain} onChange={e=>setFilterChain(e.target.value)}
           style={{ padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",background:"white" }}>
-          <option value="all">Wszystkie sieci ({_chains.length})</option>
+          <option value="all">{t("fm.corrections.filter_all_format", { count: _chains.length })}</option>
           {_chains.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         {selA && !approved && (
           <div style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8 }}>
             <span style={{ fontSize:12,color:"#92400e",fontWeight:600 }}>
-              ✋ Zaznaczono: <strong>{(_suppliers.find(x=>x.id===selA.sid)||{}).name}</strong>
+              <Trans i18nKey="fm.corrections.selected_hint_prefix_html" ns="legacy" components={{ strong: <strong /> }} values={{ name: (_suppliers.find(x=>x.id===selA.sid)||{}).name }}/>
             </span>
-            <span style={{ fontSize:11,color:"#64748b" }}>— kliknij drugą komórkę aby zamienić / przesunąć</span>
+            <span style={{ fontSize:11,color:"#64748b" }}>{t("fm.corrections.selected_hint_suffix")}</span>
             <button onClick={()=>setSelA(null)} style={{ background:"none",border:"none",cursor:"pointer",color:"#dc2626",padding:"0 4px" }}><X size={12}/></button>
           </div>
         )}
@@ -10344,7 +10354,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
                     return (
                       <td key={c.id}
                         onClick={()=>!approved && handleClick(c.id, row)}
-                        title={isOverride ? "Dodane ręcznie mimo odrzucenia przez kupca" : undefined}
+                        title={isOverride ? t("fm.corrections.cell_override_tooltip") : undefined}
                         style={{ padding:"4px 6px",cursor:approved?"default":(sid||selA)?"pointer":"default",background:isSel?"#fef9c3":isSameSup?"#fef3c7":isOverride?"#fee2e2":isTarget&&!sid?"#f0fdfa":"transparent",outline:isSel?"2px solid #fbbf24":isSameSup?"2px solid #f59e0b":isOverride?"1px dashed #dc2626":"none",borderRight:"1px solid #f1f5f9",transition:"background 0.1s" }}>
                         {sup ? (
                           <div style={{ display:"flex",alignItems:"center",gap:3 }}>
@@ -10371,18 +10381,18 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
       <div style={{ display:"flex",gap:8,marginBottom:12,flexWrap:"wrap" }}>
         {Object.entries(FM_NZS).map(([k,v])=>(
           <span key={k} style={{ padding:"3px 10px",borderRadius:6,background:v.bg,border:`1px solid ${v.b}`,fontSize:11,fontWeight:600,color:v.c }}>
-            {k==="green"?"🟢 1–25 dobra pozycja":k==="orange"?"🟠 26–35 średnia":"🔴 36+ późna"}
+            {k==="green"?t("fm.corrections.legend_green"):k==="orange"?t("fm.corrections.legend_orange"):t("fm.corrections.legend_red")}
           </span>
         ))}
-        <span style={{ fontSize:11,color:"#94a3b8",marginLeft:4 }}>· Żółta kropka = Premium · Niebieska = Business</span>
+        <span style={{ fontSize:11,color:"#94a3b8",marginLeft:4 }}>{t("fm.corrections.legend_pkg")}</span>
       </div>
       <div style={{ padding:"10px 14px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,color:"#64748b",marginBottom:14 }}>
-        <strong style={{ color:"#1e293b" }}>Jak używać:</strong> Kliknij firmę (podświetli się na żółto) → kliknij inną firmę = <strong>zamiana numerów</strong>. Kliknij firmę → kliknij puste pole (↓) = <strong>przesunięcie na wcześniejsze miejsce</strong>.
+        <Trans i18nKey="fm.corrections.instructions_html" ns="legacy" components={{ strong: <strong style={{ color:"#1e293b" }} /> }}/>
       </div>
 
       {/* Swap log */}
       {swapLog.length > 0 && (
-        <Card title="📋 Log zmian admina" icon={FileText}>
+        <Card title={t("fm.corrections.log_card_title")} icon={FileText}>
           {swapLog.map((l,i)=>(
             <div key={i} style={{ fontSize:12,color:"#64748b",padding:"4px 0",borderBottom:"1px solid #f1f5f9" }}>{l}</div>
           ))}
@@ -10513,8 +10523,8 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
 
 function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, onRegenerate, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies }) {
   const { t } = useTranslation("legacy");
-  // [P2-fm C4] Plural suffix helper (PL: 1→one, 2-4→few, reszta→many).
-  const pluralSuffix = (n) => n === 1 ? "_one" : (n >= 2 && n <= 4) ? "_few" : "_many";
+  // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
+  const pluralSuffix = pluralSuffixPL;
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const [tab, setTab] = useState("zarzadzanie");
