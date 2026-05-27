@@ -750,6 +750,381 @@
         "send_error_fallback": "spróbuj ponownie",
         "queued_success": "Propozycja dodana do kolejki moderacji."
       }
+    },
+    "profile": {
+      "page_title": "Mój profil",
+      "card_data_title": "Dane konta",
+      "labels": {
+        "name": "Imię i nazwisko",
+        "position": "Stanowisko",
+        "company": "Firma",
+        "email_admin_change": "Email (zmiana przez administratora)",
+        "phone": "Telefon"
+      },
+      "admin_notice": "Email i dane firmy są zarządzane przez administratora Fresh Market. Możesz samodzielnie zmienić imię/nazwisko, stanowisko, telefon i hasło.",
+      "save_button": "Zapisz",
+      "saving": "Zapisywanie...",
+      "toasts": {
+        "missing_id": "Brak ID użytkownika — zaloguj się ponownie.",
+        "name_required": "Imię i nazwisko są wymagane.",
+        "saved": "Profil zapisany.",
+        "save_error_format": "Błąd zapisu: {{message}}",
+        "save_error_fallback": "nieznany"
+      }
+    },
+    "finance": {
+      "tabs": {
+        "saldo": "Saldo i pakiet",
+        "historia": "Historia wysyłek",
+        "pakiety": "Cennik i pakiety"
+      },
+      "wallet": {
+        "balance_label": "Saldo portfela",
+        "funds_info_format": "Środki na kolejne wysyłki — {{perSend}} EUR/szt.",
+        "send_button": "Wyślij propozycję",
+        "stats": {
+          "total_sent_label": "Wysłano łącznie",
+          "total_sent_unit": "mailingów",
+          "seen_label": "Potwierdzone odczyty",
+          "seen_unit": "propozycji",
+          "refunds_label": "Zwroty",
+          "refunds_unit": "propozycji"
+        }
+      },
+      "kpi": {
+        "effective_cost_label": "Efektywny koszt",
+        "effective_cost_value_format": "{{amount}} EUR",
+        "effective_cost_sub": "po zwrotach",
+        "refunds_label": "Zwroty",
+        "refunds_value_format": "+{{amount}} EUR",
+        "refunds_sub_pending": "zaksięgowane / w toku",
+        "refunds_sub_done": "na portfel",
+        "open_rate_label": "Open rate",
+        "open_rate_sub": "potwierdzonych"
+      },
+      "active_pkg": {
+        "card_title": "Aktywny pakiet",
+        "pkg_badge": "PAKIET",
+        "per_send_format": "{{perSend}} EUR/szt.",
+        "used_format": "Użyto: {{used}}/{{max}} wysyłek",
+        "price_label": "Cena pakietu",
+        "price_value_format": "{{price}} EUR",
+        "valid_until_label": "Ważny do",
+        "change_btn": "Zmień pakiet"
+      },
+      "refunds_done": {
+        "card_title": "Zwroty za brak odczytu",
+        "alert_html": "<strong>{{count}} zwroty = +{{total}} EUR</strong> wróciły na portfel. Możesz je wykorzystać na wysyłki do innych sieci.",
+        "row_amount_format": "+{{amount}} EUR"
+      },
+      "refunds_pending": {
+        "card_title": "Zwroty w toku",
+        "alert_html_one": "<strong>1 zwrot jest w toku.</strong> Status propozycji jest już wygaszony, ale zapis zwrotu jeszcze dojeżdża do portfela.",
+        "alert_html_other": "<strong>{{count}} zwroty są w toku.</strong> Status propozycji jest już wygaszony, ale zapis zwrotu jeszcze dojeżdża do portfela.",
+        "row_label": "zwrot w toku"
+      },
+      "recent_tx": {
+        "card_title": "Ostatnie transakcje",
+        "amount_format": "{{sign}}{{amount}} EUR"
+      },
+      "history": {
+        "card_title": "Historia wysyłek",
+        "headers": {
+          "offer": "Propozycja",
+          "retailer": "Sieć",
+          "tier": "Tier",
+          "date": "Data",
+          "status": "Status",
+          "amount": "Kwota"
+        },
+        "tier_premium": "Premium",
+        "tier_standard": "Standard",
+        "amount_eur_format": "{{amount}} EUR",
+        "refund_done_format": "+{{amount}} EUR",
+        "refund_pending": "zwrot w toku",
+        "awaiting": "oczekuje",
+        "empty": "Brak wysyłek."
+      },
+      "pakiety": {
+        "payment_modal": {
+          "success_title": "Płatność potwierdzona!",
+          "success_body_html": "Pakiet <strong>{{pkgLabel}}</strong> został aktywowany.<br/>Dodano <strong>+{{qty}} wysyłek</strong> do Twojego konta.",
+          "success_state_html": "Aktualny stan: <strong>{{total}} wysyłek łącznie</strong>",
+          "pkg_label_premium_one": "Premium {{qty}} wysyłka",
+          "pkg_label_premium_other": "Premium {{qty}} wysyłek",
+          "pkg_label_standard_one": "Standard {{qty}} wysyłka",
+          "pkg_label_standard_other": "Standard {{qty}} wysyłek",
+          "title": "Potwierdź zamówienie",
+          "subtitle": "Faktura VAT zostanie wysłana na e-mail",
+          "summary_pkg_label": "Pakiet",
+          "summary_pkg_premium_one": "⭐ Premium · {{qty}} wysyłka",
+          "summary_pkg_premium_other": "⭐ Premium · {{qty}} wysyłek",
+          "summary_pkg_standard_one": "Standard · {{qty}} wysyłka",
+          "summary_pkg_standard_other": "Standard · {{qty}} wysyłek",
+          "summary_per_send_label": "Cena/szt.",
+          "summary_per_send_format": "{{perSend}} EUR",
+          "summary_discount_label": "Zniżka",
+          "summary_discount_value_format": "−{{percent}}% vs cena bazowa",
+          "summary_net_label": "Netto",
+          "summary_net_format": "{{price}} EUR",
+          "summary_vat_label": "VAT 23%",
+          "summary_vat_format": "+{{amount}} EUR",
+          "summary_gross_label": "Brutto",
+          "summary_gross_format": "{{amount}} EUR",
+          "pay_method_label": "Metoda płatności",
+          "pay_card_label": "Karta płatnicza",
+          "pay_bank_label": "Przelew bankowy",
+          "pay_wallet_label_format": "Z portfela ({{balance}} EUR)",
+          "pay_insufficient_funds_short": "Za mało środków",
+          "wallet_insufficient_warn_format": "Brakuje {{missing}} EUR — doładuj portfel lub wybierz inną metodę.",
+          "card_form_title": "Dane karty (demo – wpisz cokolwiek)",
+          "card_form_number_placeholder": "1234 5678 9012 3456",
+          "card_form_expiry_placeholder": "MM/YY",
+          "card_form_cvv_placeholder": "CVV",
+          "card_form_name_placeholder": "Imię i nazwisko na karcie",
+          "bank_form_title": "Dane do przelewu:",
+          "bank_form_beneficiary": "KJOW Sp. z o.o. · PKO BP",
+          "bank_form_iban": "PL 12 1440 1101 0000 0000 1234 5678",
+          "bank_form_title_label": "Tytuł:",
+          "bank_form_title_value_format": "FM-{{plan}}-{{year}}",
+          "bank_form_info": "Po zaksięgowaniu (1–2 dni robocze) wysyłki zostaną dodane automatycznie.",
+          "cancel": "Anuluj",
+          "processing": "Przetwarzanie…",
+          "pay_button_format": "Zapłać {{gross}} EUR (z VAT)",
+          "payment_init_error_format": "Błąd inicjalizacji płatności: {{message}}",
+          "payment_init_error_fallback": "spróbuj ponownie",
+          "no_redirect_error": "PayU nie zwrócił adresu przekierowania"
+        },
+        "pkg_stats": {
+          "total_label": "Łącznie w pakietach",
+          "used_label": "Wykorzystano",
+          "remaining_label": "Pozostało",
+          "unit": "wysyłek"
+        },
+        "guarantee": "Gwarancja 14 dni — brak odczytu przez kupca = automatyczny zwrot kredytu na portfel. Kupujesz wysyłki, nie ryzyko.",
+        "compare": {
+          "standard_badge": "STANDARD",
+          "standard_price_range": "40-30 EUR / wysyłka",
+          "standard_b1_html": "<strong>Pozycja środkowa</strong> w newsletterze do kupca",
+          "standard_b2": "Pełna treść propozycji + Twoje zdjęcia i logo",
+          "standard_b3": "Moderacja przed wysyłką (24h SLA)",
+          "standard_b4": "Gwarancja 14 dni — zwrot przy braku odczytu",
+          "standard_when_html": "<strong>Kiedy wybrać:</strong> chcesz dużo wysyłek po niższej cenie/szt. — najlepsze dla wolumenowych dostawców.",
+          "premium_top": "⭐ TOP POZYCJA",
+          "premium_badge": "PREMIUM",
+          "premium_price_range": "80-45 EUR / wysyłka",
+          "premium_b1_html": "<strong>Twoja propozycja jako pierwsza</strong> w newsletterze",
+          "premium_b2_html": "Oznaczenie <em>Premium</em> w mailu — wyróżnienie wizualne",
+          "premium_b3": "Pełna treść + zdjęcia + logo (jak Standard)",
+          "premium_b4": "Gwarancja 14 dni — zwrot przy braku odczytu",
+          "premium_when_html": "<strong>Kiedy wybrać:</strong> stawiasz na widoczność i chcesz żeby kupiec zobaczył Cię od razu — najlepsze dla premium produktów, kategorii nowych dla sieci, kluczowych okien sezonu."
+        },
+        "table": {
+          "std_subtitle": "Pozycja środkowa w newsletterze",
+          "prem_subtitle": "TOP pozycja — Twoja propozycja jako pierwsza w newsletterze",
+          "header_package": "Pakiet",
+          "header_price": "Cena",
+          "header_per_send": "Cena/szt.",
+          "header_discount": "Zniżka",
+          "popular_badge": "Popularny",
+          "qty_one": "{{count}} wysyłka",
+          "qty_other": "{{count}} wysyłek",
+          "price_eur_format": "{{amount}} EUR",
+          "discount_value_format": "−{{percent}}%",
+          "base_label": "bazowa",
+          "selected_badge": "Wybrany"
+        },
+        "cta": {
+          "pkg_premium_one_format": "⭐ Premium · {{qty}} wysyłka",
+          "pkg_premium_other_format": "⭐ Premium · {{qty}} wysyłek",
+          "pkg_standard_one_format": "Standard · {{qty}} wysyłka",
+          "pkg_standard_other_format": "Standard · {{qty}} wysyłek",
+          "sub_format": "{{price}} EUR netto · {{perSend}} EUR/szt.",
+          "sub_with_discount_format": "{{price}} EUR netto · {{perSend}} EUR/szt. · –{{discount}}% zniżka",
+          "order_button": "Zamów pakiet"
+        },
+        "order_history": {
+          "card_title": "Historia zamówień",
+          "method_card": "💳 Karta",
+          "method_bank": "🏦 Przelew",
+          "method_wallet": "💰 Portfel",
+          "qty_added_format": "+{{qty}} wysyłek",
+          "price_format": "−{{price}} EUR",
+          "paid_badge": "Opłacone"
+        }
+      }
+    },
+    "company": {
+      "ai_banner": {
+        "strong": "AI Auto-fill",
+        "body": " — AI wygeneruje krótki i standardowy opis firmy na podstawie Twoich danych, materiałów i strony WWW. Im więcej uzupełnisz pól poniżej (zaplecze, rynki, certyfikaty), tym bogatszy będzie profil.",
+        "generate_btn": "Generuj AI",
+        "preview_btn": "Podgląd"
+      },
+      "ai_modal": {
+        "title": "AI Auto-fill",
+        "description": "AI wykorzysta dane firmy z profilu, profil rozszerzony i treść Twojej strony, aby zaproponować dwa opisy: krótki (do podglądu) i standardowy (główny opis profilu).",
+        "website_label": "Strona WWW",
+        "analyzing": "Analizuję stronę i przygotowuję opisy...",
+        "generate_btn": "Generuj",
+        "cancel": "Anuluj"
+      },
+      "completeness_label": "Kompletność profilu",
+      "logo": {
+        "card_title": "Logo",
+        "upload_change": "Kliknij aby zmienić logo",
+        "upload_new": "Kliknij aby wgrać logo firmy",
+        "required_for_publish": "Wymagane do publikacji"
+      },
+      "basics": {
+        "card_title": "Dane podstawowe",
+        "name_label": "Nazwa firmy",
+        "nip_label": "NIP/VAT",
+        "country_label": "Kraj",
+        "country_dash": "—",
+        "city_label": "Miasto",
+        "website_label": "Strona WWW",
+        "phone_label": "Telefon"
+      },
+      "desc": {
+        "card_title": "Opis firmy",
+        "ready_badge": "Gotowy do wyświetlenia",
+        "edited_badge": "Edytowany",
+        "review_badge": "Czeka na review",
+        "short_label": "Opis krótki (2–3 zdania, ~200–300 znaków)",
+        "short_hint": "Pokazywany w karcie firmy u kupca i w podglądzie. Nie powtarzaj nazwy firmy — kupiec już ją widzi.",
+        "standard_label": "Opis standardowy (4–6 zdań, ~450–700 znaków)",
+        "standard_hint": "Główny opis profilu. Generowany przez AI z Twoich danych — możesz go ręcznie poprawić."
+      },
+      "types": {
+        "card_title": "Typ firmy i kategorie",
+        "types_label": "Typ firmy",
+        "types_label_note": "(widoczne dla kupców)",
+        "categories_label": "Kategorie produktowe",
+        "products_label": "Produkty",
+        "markets_label": "Rynki sprzedaży",
+        "company_type_options": {
+          "producent": "Producent",
+          "eksporter": "Eksporter",
+          "importer": "Importer",
+          "firma_handlowa": "Firma Handlowa",
+          "pakowalnia": "Pakowalnia",
+          "firma_logistyczna": "Firma Logistyczna",
+          "kooperatywa": "Kooperatywa",
+          "agent": "Agent/Broker"
+        },
+        "category_options": {
+          "owoce": "Owoce",
+          "warzywa": "Warzywa",
+          "kwiaty": "Kwiaty",
+          "ziola": "Zioła",
+          "inne": "Inne"
+        }
+      },
+      "ext_basics": {
+        "card_title": "Profil rozszerzony — podstawy",
+        "info": "Pola opcjonalne. Im więcej wypełnisz, tym bogatszy profil dla kupca.",
+        "founded_year_label": "Rok założenia",
+        "employees_label": "Liczba pracowników",
+        "employees_options": {
+          "empty": "—",
+          "1_10": "1–10",
+          "11_50": "11–50",
+          "51_200": "51–200",
+          "201_500": "201–500",
+          "500_plus": "500+"
+        }
+      },
+      "ext_offer": {
+        "card_title": "Profil rozszerzony — oferta",
+        "year_round_label": "Produkty całoroczne",
+        "year_round_hint": "np. jabłka, gruszki, kapusta",
+        "seasonal_label": "Produkty sezonowe",
+        "seasonal_hint": "np. truskawki (V–VII), wiśnie (VI–VII)",
+        "customer_types_label": "Typ obsługiwanych klientów",
+        "customer_type_options": {
+          "retail": "Retail",
+          "wholesale": "Hurt",
+          "horeca": "HoReCa",
+          "processing": "Przetwórstwo",
+          "export": "Eksport"
+        },
+        "private_label_toggle": "Oferujemy markę własną / private label"
+      },
+      "ext_trade": {
+        "card_title": "Profil rozszerzony — handel i rynki",
+        "export_countries_label": "Kraje eksportu (kody ISO oddzielone przecinkami)",
+        "export_countries_hint": "np. DE, CZ, SK, FR, NL",
+        "main_markets_label": "Główne rynki (opisowo)",
+        "main_markets_hint": "np. EU Środkowa, kraje DACH, rynek krajowy",
+        "partnership_label": "Typ współpracy",
+        "partnership_options": {
+          "programy_stale": "Programy stałe",
+          "spot": "Spot",
+          "promocje": "Promocje",
+          "sezonowe_akcje": "Sezonowe akcje"
+        },
+        "typical_volumes_label": "Typowe wolumeny",
+        "typical_volumes_hint": "np. 10–50 ton tygodniowo, 1–2 TIR-y dziennie"
+      },
+      "ext_ops": {
+        "card_title": "Profil rozszerzony — zaplecze operacyjne",
+        "info": "Zaznacz, czym dysponujesz lub co jesteś w stanie zaoferować.",
+        "capability_options": {
+          "sortownia": "Sortownia",
+          "pakowalnia": "Pakowalnia",
+          "chlodnia": "Chłodnia",
+          "linia_optyczna": "Linia optyczna",
+          "etykietowanie": "Etykietowanie",
+          "konfekcjonowanie": "Konfekcjonowanie",
+          "retail_ready": "Przygotowanie pod retail",
+          "wlasna_logistyka": "Własna logistyka",
+          "partner_logistyczny": "Partner logistyczny"
+        }
+      },
+      "materials": {
+        "card_title": "Materiały (PDF, katalogi, zdjęcia)",
+        "info": "Wgraj katalog handlowy, broszurę, zdjęcia zakładu / pakowania / produktów. Kupiec zobaczy je w podglądzie profilu.",
+        "uploader_label": "Kliknij lub przeciągnij PDF / zdjęcie"
+      },
+      "pitch": {
+        "card_title": "Co chcesz podkreślić kupcowi?",
+        "hint": "Wolny tekst — AI uwzględni jako sygnał Twoich priorytetów handlowych. Nie skopiuje dosłownie."
+      },
+      "certs": {
+        "card_title": "Certyfikaty",
+        "number_prefix_format": "Nr: {{number}}",
+        "valid_prefix_format": "do {{date}}"
+      },
+      "contacts": {
+        "card_title": "Kontakty",
+        "add_btn": "Dodaj kontakt",
+        "empty_info": "Dodaj osobę kontaktową widoczną dla kupców.",
+        "add_first_btn": "Dodaj pierwszy kontakt",
+        "remove_title": "Usuń kontakt",
+        "role_label": "Rola",
+        "name_label": "Imię i nazwisko",
+        "position_label": "Stanowisko",
+        "phone_label": "Telefon",
+        "email_label": "Email",
+        "role_options": {
+          "sales": "Handlowy",
+          "quality": "Jakościowy",
+          "logistics": "Logistyka",
+          "management": "Zarząd",
+          "other": "Inny"
+        }
+      },
+      "actions": {
+        "preview_buyer": "Podgląd kupca",
+        "save_btn": "Zapisz profil",
+        "saving": "Zapisywanie..."
+      },
+      "toasts": {
+        "logo_required": "Wgraj logo firmy.",
+        "saved": "Profil zapisany.",
+        "contacts_error_format": "Nie udało się zapisać kontaktów: {{message}}"
+      }
     }
   },
   "buyer": {
@@ -1077,7 +1452,11 @@
       "password_length": "Nowe hasło musi mieć minimum 8 znaków.",
       "password_no_session": "Brak aktywnej sesji.",
       "password_current_invalid": "Nieprawidłowe aktualne hasło.",
-      "password_change_failed": "Nie udało się zmienić hasła."
+      "password_change_failed": "Nie udało się zmienić hasła.",
+      "payu_must_be_logged_in": "Musisz być zalogowany żeby kupić pakiet.",
+      "payu_status_format": "PayU: błąd {{status}}",
+      "payu_no_redirect_uri": "PayU: brak redirectUri w odpowiedzi",
+      "company_id_required": "Brak identyfikatora firmy."
     }
   }
 }

@@ -750,6 +750,381 @@
         "send_error_fallback": "please try again",
         "queued_success": "Proposal added to the moderation queue."
       }
+    },
+    "profile": {
+      "page_title": "My profile",
+      "card_data_title": "Account data",
+      "labels": {
+        "name": "Full name",
+        "position": "Position",
+        "company": "Company",
+        "email_admin_change": "Email (changed by admin)",
+        "phone": "Phone"
+      },
+      "admin_notice": "Email and company data are managed by the Fresh Market admin. You can change your name, position, phone, and password yourself.",
+      "save_button": "Save",
+      "saving": "Saving...",
+      "toasts": {
+        "missing_id": "Missing user ID — please sign in again.",
+        "name_required": "Full name is required.",
+        "saved": "Profile saved.",
+        "save_error_format": "Save error: {{message}}",
+        "save_error_fallback": "unknown"
+      }
+    },
+    "finance": {
+      "tabs": {
+        "saldo": "Balance and package",
+        "historia": "Submission history",
+        "pakiety": "Pricing and packages"
+      },
+      "wallet": {
+        "balance_label": "Wallet balance",
+        "funds_info_format": "Funds for further submissions — {{perSend}} EUR each",
+        "send_button": "Submit proposal",
+        "stats": {
+          "total_sent_label": "Total submitted",
+          "total_sent_unit": "mailings",
+          "seen_label": "Confirmed reads",
+          "seen_unit": "proposals",
+          "refunds_label": "Refunds",
+          "refunds_unit": "proposals"
+        }
+      },
+      "kpi": {
+        "effective_cost_label": "Effective cost",
+        "effective_cost_value_format": "{{amount}} EUR",
+        "effective_cost_sub": "after refunds",
+        "refunds_label": "Refunds",
+        "refunds_value_format": "+{{amount}} EUR",
+        "refunds_sub_pending": "booked / pending",
+        "refunds_sub_done": "to wallet",
+        "open_rate_label": "Open rate",
+        "open_rate_sub": "confirmed"
+      },
+      "active_pkg": {
+        "card_title": "Active package",
+        "pkg_badge": "PACKAGE",
+        "per_send_format": "{{perSend}} EUR each",
+        "used_format": "Used: {{used}}/{{max}} submissions",
+        "price_label": "Package price",
+        "price_value_format": "{{price}} EUR",
+        "valid_until_label": "Valid until",
+        "change_btn": "Change package"
+      },
+      "refunds_done": {
+        "card_title": "Refunds for unread submissions",
+        "alert_html": "<strong>{{count}} refunds = +{{total}} EUR</strong> returned to your wallet. You can use them for submissions to other retailers.",
+        "row_amount_format": "+{{amount}} EUR"
+      },
+      "refunds_pending": {
+        "card_title": "Refunds in progress",
+        "alert_html_one": "<strong>1 refund is in progress.</strong> The proposal status has already expired, but the refund record is still posting to the wallet.",
+        "alert_html_other": "<strong>{{count}} refunds are in progress.</strong> The proposal status has already expired, but the refund record is still posting to the wallet.",
+        "row_label": "refund in progress"
+      },
+      "recent_tx": {
+        "card_title": "Recent transactions",
+        "amount_format": "{{sign}}{{amount}} EUR"
+      },
+      "history": {
+        "card_title": "Submission history",
+        "headers": {
+          "offer": "Proposal",
+          "retailer": "Retailer",
+          "tier": "Tier",
+          "date": "Date",
+          "status": "Status",
+          "amount": "Amount"
+        },
+        "tier_premium": "Premium",
+        "tier_standard": "Standard",
+        "amount_eur_format": "{{amount}} EUR",
+        "refund_done_format": "+{{amount}} EUR",
+        "refund_pending": "refund in progress",
+        "awaiting": "pending",
+        "empty": "No submissions."
+      },
+      "pakiety": {
+        "payment_modal": {
+          "success_title": "Payment confirmed!",
+          "success_body_html": "Package <strong>{{pkgLabel}}</strong> has been activated.<br/>Added <strong>+{{qty}} submissions</strong> to your account.",
+          "success_state_html": "Current balance: <strong>{{total}} submissions total</strong>",
+          "pkg_label_premium_one": "Premium {{qty}} submission",
+          "pkg_label_premium_other": "Premium {{qty}} submissions",
+          "pkg_label_standard_one": "Standard {{qty}} submission",
+          "pkg_label_standard_other": "Standard {{qty}} submissions",
+          "title": "Confirm order",
+          "subtitle": "VAT invoice will be sent to your email",
+          "summary_pkg_label": "Package",
+          "summary_pkg_premium_one": "⭐ Premium · {{qty}} submission",
+          "summary_pkg_premium_other": "⭐ Premium · {{qty}} submissions",
+          "summary_pkg_standard_one": "Standard · {{qty}} submission",
+          "summary_pkg_standard_other": "Standard · {{qty}} submissions",
+          "summary_per_send_label": "Price each",
+          "summary_per_send_format": "{{perSend}} EUR",
+          "summary_discount_label": "Discount",
+          "summary_discount_value_format": "−{{percent}}% vs base price",
+          "summary_net_label": "Net",
+          "summary_net_format": "{{price}} EUR",
+          "summary_vat_label": "VAT 23%",
+          "summary_vat_format": "+{{amount}} EUR",
+          "summary_gross_label": "Gross",
+          "summary_gross_format": "{{amount}} EUR",
+          "pay_method_label": "Payment method",
+          "pay_card_label": "Credit card",
+          "pay_bank_label": "Bank transfer",
+          "pay_wallet_label_format": "From wallet ({{balance}} EUR)",
+          "pay_insufficient_funds_short": "Insufficient funds",
+          "wallet_insufficient_warn_format": "Missing {{missing}} EUR — top up the wallet or choose another method.",
+          "card_form_title": "Card data (demo – enter anything)",
+          "card_form_number_placeholder": "1234 5678 9012 3456",
+          "card_form_expiry_placeholder": "MM/YY",
+          "card_form_cvv_placeholder": "CVV",
+          "card_form_name_placeholder": "Cardholder name",
+          "bank_form_title": "Transfer details:",
+          "bank_form_beneficiary": "KJOW Sp. z o.o. · PKO BP",
+          "bank_form_iban": "PL 12 1440 1101 0000 0000 1234 5678",
+          "bank_form_title_label": "Title:",
+          "bank_form_title_value_format": "FM-{{plan}}-{{year}}",
+          "bank_form_info": "Once posted (1–2 business days) submissions will be added automatically.",
+          "cancel": "Cancel",
+          "processing": "Processing…",
+          "pay_button_format": "Pay {{gross}} EUR (incl. VAT)",
+          "payment_init_error_format": "Payment initialization error: {{message}}",
+          "payment_init_error_fallback": "please try again",
+          "no_redirect_error": "PayU did not return a redirect URL"
+        },
+        "pkg_stats": {
+          "total_label": "Total in packages",
+          "used_label": "Used",
+          "remaining_label": "Remaining",
+          "unit": "submissions"
+        },
+        "guarantee": "14-day guarantee — no buyer read = automatic credit refund to wallet. You buy submissions, not risk.",
+        "compare": {
+          "standard_badge": "STANDARD",
+          "standard_price_range": "40-30 EUR / submission",
+          "standard_b1_html": "<strong>Middle position</strong> in the buyer newsletter",
+          "standard_b2": "Full proposal content + your photos and logo",
+          "standard_b3": "Moderation before delivery (24h SLA)",
+          "standard_b4": "14-day guarantee — refund on no read",
+          "standard_when_html": "<strong>When to choose:</strong> you want many submissions at a lower price each — best for volume suppliers.",
+          "premium_top": "⭐ TOP POSITION",
+          "premium_badge": "PREMIUM",
+          "premium_price_range": "80-45 EUR / submission",
+          "premium_b1_html": "<strong>Your proposal first</strong> in the newsletter",
+          "premium_b2_html": "<em>Premium</em> mark in the email — visual distinction",
+          "premium_b3": "Full content + photos + logo (same as Standard)",
+          "premium_b4": "14-day guarantee — refund on no read",
+          "premium_when_html": "<strong>When to choose:</strong> you prioritize visibility and want the buyer to see you first — best for premium products, categories new to the retailer, key seasonal windows."
+        },
+        "table": {
+          "std_subtitle": "Middle position in the newsletter",
+          "prem_subtitle": "TOP position — your proposal first in the newsletter",
+          "header_package": "Package",
+          "header_price": "Price",
+          "header_per_send": "Price each",
+          "header_discount": "Discount",
+          "popular_badge": "Popular",
+          "qty_one": "{{count}} submission",
+          "qty_other": "{{count}} submissions",
+          "price_eur_format": "{{amount}} EUR",
+          "discount_value_format": "−{{percent}}%",
+          "base_label": "base",
+          "selected_badge": "Selected"
+        },
+        "cta": {
+          "pkg_premium_one_format": "⭐ Premium · {{qty}} submission",
+          "pkg_premium_other_format": "⭐ Premium · {{qty}} submissions",
+          "pkg_standard_one_format": "Standard · {{qty}} submission",
+          "pkg_standard_other_format": "Standard · {{qty}} submissions",
+          "sub_format": "{{price}} EUR net · {{perSend}} EUR each",
+          "sub_with_discount_format": "{{price}} EUR net · {{perSend}} EUR each · –{{discount}}% discount",
+          "order_button": "Order package"
+        },
+        "order_history": {
+          "card_title": "Order history",
+          "method_card": "💳 Card",
+          "method_bank": "🏦 Transfer",
+          "method_wallet": "💰 Wallet",
+          "qty_added_format": "+{{qty}} submissions",
+          "price_format": "−{{price}} EUR",
+          "paid_badge": "Paid"
+        }
+      }
+    },
+    "company": {
+      "ai_banner": {
+        "strong": "AI Auto-fill",
+        "body": " — AI will generate a short and standard company description based on your data, materials, and website. The more fields you fill in below (operations, markets, certifications), the richer the profile.",
+        "generate_btn": "Generate AI",
+        "preview_btn": "Preview"
+      },
+      "ai_modal": {
+        "title": "AI Auto-fill",
+        "description": "AI uses your profile data, extended profile, and the content of your website to propose two descriptions: short (for preview) and standard (main profile description).",
+        "website_label": "Website",
+        "analyzing": "Analyzing the website and preparing descriptions...",
+        "generate_btn": "Generate",
+        "cancel": "Cancel"
+      },
+      "completeness_label": "Profile completeness",
+      "logo": {
+        "card_title": "Logo",
+        "upload_change": "Click to change logo",
+        "upload_new": "Click to upload company logo",
+        "required_for_publish": "Required for publishing"
+      },
+      "basics": {
+        "card_title": "Basic data",
+        "name_label": "Company name",
+        "nip_label": "VAT ID",
+        "country_label": "Country",
+        "country_dash": "—",
+        "city_label": "City",
+        "website_label": "Website",
+        "phone_label": "Phone"
+      },
+      "desc": {
+        "card_title": "Company description",
+        "ready_badge": "Ready to display",
+        "edited_badge": "Edited",
+        "review_badge": "Awaiting review",
+        "short_label": "Short description (2–3 sentences, ~200–300 chars)",
+        "short_hint": "Shown on the company card to the buyer and in the preview. Don't repeat the company name — the buyer already sees it.",
+        "standard_label": "Standard description (4–6 sentences, ~450–700 chars)",
+        "standard_hint": "Main profile description. Generated by AI from your data — you can edit it manually."
+      },
+      "types": {
+        "card_title": "Company type and categories",
+        "types_label": "Company type",
+        "types_label_note": "(visible to buyers)",
+        "categories_label": "Product categories",
+        "products_label": "Products",
+        "markets_label": "Sales markets",
+        "company_type_options": {
+          "producent": "Producer",
+          "eksporter": "Exporter",
+          "importer": "Importer",
+          "firma_handlowa": "Trading company",
+          "pakowalnia": "Packing house",
+          "firma_logistyczna": "Logistics company",
+          "kooperatywa": "Cooperative",
+          "agent": "Agent / Broker"
+        },
+        "category_options": {
+          "owoce": "Fruits",
+          "warzywa": "Vegetables",
+          "kwiaty": "Flowers",
+          "ziola": "Herbs",
+          "inne": "Other"
+        }
+      },
+      "ext_basics": {
+        "card_title": "Extended profile — basics",
+        "info": "Optional fields. The more you fill in, the richer the profile for the buyer.",
+        "founded_year_label": "Year founded",
+        "employees_label": "Number of employees",
+        "employees_options": {
+          "empty": "—",
+          "1_10": "1–10",
+          "11_50": "11–50",
+          "51_200": "51–200",
+          "201_500": "201–500",
+          "500_plus": "500+"
+        }
+      },
+      "ext_offer": {
+        "card_title": "Extended profile — offer",
+        "year_round_label": "Year-round products",
+        "year_round_hint": "e.g. apples, pears, cabbage",
+        "seasonal_label": "Seasonal products",
+        "seasonal_hint": "e.g. strawberries (V–VII), cherries (VI–VII)",
+        "customer_types_label": "Types of customers served",
+        "customer_type_options": {
+          "retail": "Retail",
+          "wholesale": "Wholesale",
+          "horeca": "HoReCa",
+          "processing": "Processing",
+          "export": "Export"
+        },
+        "private_label_toggle": "We offer private label"
+      },
+      "ext_trade": {
+        "card_title": "Extended profile — trade and markets",
+        "export_countries_label": "Export countries (ISO codes separated by commas)",
+        "export_countries_hint": "e.g. DE, CZ, SK, FR, NL",
+        "main_markets_label": "Main markets (descriptive)",
+        "main_markets_hint": "e.g. Central EU, DACH countries, domestic market",
+        "partnership_label": "Partnership types",
+        "partnership_options": {
+          "programy_stale": "Year-round programs",
+          "spot": "Spot",
+          "promocje": "Promotions",
+          "sezonowe_akcje": "Seasonal campaigns"
+        },
+        "typical_volumes_label": "Typical volumes",
+        "typical_volumes_hint": "e.g. 10–50 tons per week, 1–2 trucks per day"
+      },
+      "ext_ops": {
+        "card_title": "Extended profile — operational backbone",
+        "info": "Check what you have available or what you can offer.",
+        "capability_options": {
+          "sortownia": "Sorting line",
+          "pakowalnia": "Packing house",
+          "chlodnia": "Cold storage",
+          "linia_optyczna": "Optical line",
+          "etykietowanie": "Labeling",
+          "konfekcjonowanie": "Packaging",
+          "retail_ready": "Retail-ready preparation",
+          "wlasna_logistyka": "Own logistics",
+          "partner_logistyczny": "Logistics partner"
+        }
+      },
+      "materials": {
+        "card_title": "Materials (PDF, catalogs, photos)",
+        "info": "Upload a trade catalog, brochure, photos of the facility / packing / products. The buyer will see them in the profile preview.",
+        "uploader_label": "Click or drag a PDF / photo"
+      },
+      "pitch": {
+        "card_title": "What do you want to highlight to the buyer?",
+        "hint": "Free text — AI will use it as a signal for your trade priorities. It won't copy it verbatim."
+      },
+      "certs": {
+        "card_title": "Certifications",
+        "number_prefix_format": "No.: {{number}}",
+        "valid_prefix_format": "until {{date}}"
+      },
+      "contacts": {
+        "card_title": "Contacts",
+        "add_btn": "Add contact",
+        "empty_info": "Add a contact person visible to buyers.",
+        "add_first_btn": "Add first contact",
+        "remove_title": "Remove contact",
+        "role_label": "Role",
+        "name_label": "Full name",
+        "position_label": "Position",
+        "phone_label": "Phone",
+        "email_label": "Email",
+        "role_options": {
+          "sales": "Sales",
+          "quality": "Quality",
+          "logistics": "Logistics",
+          "management": "Management",
+          "other": "Other"
+        }
+      },
+      "actions": {
+        "preview_buyer": "Buyer preview",
+        "save_btn": "Save profile",
+        "saving": "Saving..."
+      },
+      "toasts": {
+        "logo_required": "Upload the company logo.",
+        "saved": "Profile saved.",
+        "contacts_error_format": "Failed to save contacts: {{message}}"
+      }
     }
   },
   "buyer": {
@@ -1077,7 +1452,11 @@
       "password_length": "New password must be at least 8 characters.",
       "password_no_session": "No active session.",
       "password_current_invalid": "Current password is invalid.",
-      "password_change_failed": "Failed to change password."
+      "password_change_failed": "Failed to change password.",
+      "payu_must_be_logged_in": "You must be logged in to buy a package.",
+      "payu_status_format": "PayU: error {{status}}",
+      "payu_no_redirect_uri": "PayU: no redirectUri in response",
+      "company_id_required": "Missing company identifier."
     }
   }
 }
