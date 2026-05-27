@@ -10396,6 +10396,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
    ALGORITHM TRIGGER CARD — admin button to run matching + schedule
 ═══════════════════════════════════════════════════════════════ */
 function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmAlgo, retailers, fmChains, fmSuppliers }) {
+  const { t } = useTranslation("legacy");
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const [running, setRunning] = useState(false);
@@ -10437,13 +10438,13 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
           {alreadyRan?"✅":readyToRun?"⚡":"🔒"}
         </div>
         <div>
-          <div style={{ fontSize:15,fontWeight:800,color:"#1e293b" }}>Algorytm matchingu — Faza 3</div>
+          <div style={{ fontSize:15,fontWeight:800,color:"#1e293b" }}>{t("fm.admin.algo_header_title")}</div>
           <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>
             {alreadyRan
-              ? `Algorytm uruchomiony · ${totalMeetings} spotkań wygenerowanych`
+              ? t("fm.admin.algo_header_status_done_format", { count: totalMeetings })
               : readyToRun
-                ? "Wystarczająca liczba preferencji — możesz uruchomić algorytm"
-                : "Oczekiwanie na preferencje dostawców i odpowiedzi sieci"
+                ? t("fm.admin.algo_header_status_ready")
+                : t("fm.admin.algo_header_status_waiting")
             }
           </div>
         </div>
@@ -10451,7 +10452,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
 
       {/* Progress stats */}
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16 }}>
-        {[[suppliersDone+"/"+_suppliers.length,"Dostawców gotowych","#0d9488"],[chainsDone+"/"+_chains.length,"Sieci odpowiedziało","#2563eb"],[totalMeetings,"Spotkań w planie","#7c3aed"]].map(([v,l,c])=>(
+        {[[suppliersDone+"/"+_suppliers.length,t("fm.admin.algo_stat_suppliers_ready"),"#0d9488"],[chainsDone+"/"+_chains.length,t("fm.admin.algo_stat_chains_resp"),"#2563eb"],[totalMeetings,t("fm.admin.algo_stat_meetings_planned"),"#7c3aed"]].map(([v,l,c])=>(
           <div key={l} style={{ padding:"10px 12px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
             <div style={{ fontSize:20,fontWeight:800,color:c }}>{v}</div>
             <div style={{ fontSize:10,color:"#64748b",marginTop:2 }}>{l}</div>
@@ -10461,12 +10462,16 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
 
       {/* Phase status */}
       <div style={{ display:"flex",gap:6,marginBottom:16,flexWrap:"wrap" }}>
-        {FM_PHASES.map(ph=>(
-          <div key={ph.id} style={{ display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:8,background:phase>=ph.id?ph.color+"15":"#f1f5f9",border:`1px solid ${phase>=ph.id?ph.color+"55":"#e2e8f0"}` }}>
-            <div style={{ width:6,height:6,borderRadius:"50%",background:phase>=ph.id?ph.color:"#e2e8f0" }}/>
-            <span style={{ fontSize:10,fontWeight:phase===ph.id?700:500,color:phase>=ph.id?ph.color:"#94a3b8" }}>{ph.label}</span>
-          </div>
-        ))}
+        {FM_PHASES.map(ph=>{
+          // [P2-fm C4] FM_PHASES label idzie przez t() z fm.phases.N.label
+          const _phLabel = t(`fm.phases.${ph.id}.label`, { defaultValue: ph.label });
+          return (
+            <div key={ph.id} style={{ display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:8,background:phase>=ph.id?ph.color+"15":"#f1f5f9",border:`1px solid ${phase>=ph.id?ph.color+"55":"#e2e8f0"}` }}>
+              <div style={{ width:6,height:6,borderRadius:"50%",background:phase>=ph.id?ph.color:"#e2e8f0" }}/>
+              <span style={{ fontSize:10,fontWeight:phase===ph.id?700:500,color:phase>=ph.id?ph.color:"#94a3b8" }}>{_phLabel}</span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Action */}
@@ -10474,33 +10479,32 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
         <div style={{ padding:"14px 18px",background:"#f0fdf4",border:"2px solid #bbf7d0",borderRadius:10,display:"flex",alignItems:"center",gap:10 }}>
           <span style={{ fontSize:20 }}>🎉</span>
           <div>
-            <div style={{ fontWeight:700,fontSize:14,color:"#059669" }}>Algorytm zakończony!</div>
-            <div style={{ fontSize:12,color:"#64748b" }}>Plan spotkań gotowy. Widok przełączony na Fazę 3. Dostawcy i kupcy widzą wyniki.</div>
+            <div style={{ fontWeight:700,fontSize:14,color:"#059669" }}>{t("fm.admin.algo_done_title")}</div>
+            <div style={{ fontSize:12,color:"#64748b" }}>{t("fm.admin.algo_done_desc")}</div>
           </div>
         </div>
       ) : alreadyRan ? (
         <div style={{ display:"flex",gap:8,alignItems:"center" }}>
           <div style={{ padding:"10px 18px",background:"#059669",color:"white",borderRadius:10,fontWeight:700,fontSize:13,display:"flex",gap:6,alignItems:"center" }}>
-            <CheckCircle size={14}/> Plan spotkań aktywny — Faza {phase}
+            <CheckCircle size={14}/> {t("fm.admin.algo_active_badge_format", { phase })}
           </div>
           <button onClick={runAlgorithm}
             style={{ padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:600,fontSize:12,cursor:"pointer",display:"flex",gap:6,alignItems:"center" }}>
-            <RefreshCw size={13}/> Przebuduj plan
+            <RefreshCw size={13}/> {t("fm.admin.algo_rerun_btn")}
           </button>
         </div>
       ) : readyToRun ? (
         <button onClick={runAlgorithm} disabled={running}
           style={{ padding:"14px 28px",borderRadius:10,border:"none",background:running?"#94a3b8":"linear-gradient(135deg,#7c3aed,#059669)",color:"white",fontWeight:800,fontSize:15,cursor:running?"wait":"pointer",display:"flex",gap:10,alignItems:"center",width:"100%",justifyContent:"center",boxShadow:running?"none":"0 4px 20px rgba(124,58,237,0.4)" }}>
           {running
-            ? <><RefreshCw size={16} style={{ animation:"spin 0.8s linear infinite" }}/> Uruchamiam algorytm…</>
-            : <><span style={{ fontSize:18 }}>⚡</span> Uruchom algorytm matchingu — Faza 3</>
+            ? <><RefreshCw size={16} style={{ animation:"spin 0.8s linear infinite" }}/> {t("fm.admin.algo_running_btn")}</>
+            : <>{t("fm.admin.algo_run_btn")}</>
           }
         </button>
       ) : (
         <div style={{ padding:"12px 16px",background:"#f1f5f9",borderRadius:10,fontSize:12,color:"#94a3b8",display:"flex",gap:8,alignItems:"center" }}>
           <Lock size={14}/>
-          Algorytm dostępny gdy co najmniej {Math.floor(_suppliers.length*0.5)} dostawców wypełni preferencje i sieci wyślą odpowiedzi.
-          Aktualnie gotowych: <strong style={{ color:suppliersDone>0?"#0d9488":"#dc2626" }}>{suppliersDone} dostawców</strong>, <strong style={{ color:chainsDone>0?"#0d9488":"#dc2626" }}>{chainsDone} sieci</strong>.
+          <span><Trans i18nKey="fm.admin.algo_locked_html" ns="legacy" components={{ strong: <strong /> }} values={{ min: Math.floor(_suppliers.length*0.5), ready: suppliersDone, chains: chainsDone }}/></span>
         </div>
       )}
     </div>
@@ -10508,6 +10512,9 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
 }
 
 function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, onRegenerate, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies }) {
+  const { t } = useTranslation("legacy");
+  // [P2-fm C4] Plural suffix helper (PL: 1→one, 2-4→few, reszta→many).
+  const pluralSuffix = (n) => n === 1 ? "_one" : (n >= 2 && n <= 4) ? "_few" : "_many";
   const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
   const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
   const [tab, setTab] = useState("zarzadzanie");
@@ -10522,67 +10529,76 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
   return (
     <div style={{ maxWidth:980 }}>
       <div style={{ display:"flex",gap:0,marginBottom:20,background:"#f1f5f9",borderRadius:10,padding:4,width:"fit-content" }}>
-        {[["zarzadzanie","⚙️ Zarządzanie"],["dane","📋 Dane wejściowe"],["plan","⚡ Plan spotkań"],["korekty","✏️ Korekty"]].map(([t,l])=>(
-          <button key={t} onClick={()=>setTab(t)} style={{ padding:"8px 18px",borderRadius:8,border:"none",background:tab===t?"white":"transparent",fontWeight:tab===t?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:tab===t?"#1e293b":"#64748b",boxShadow:tab===t?"0 1px 4px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
+        {[
+          ["zarzadzanie", t("fm.admin.tab_management")],
+          ["dane", t("fm.admin.tab_data")],
+          ["plan", t("fm.admin.tab_plan")],
+          ["korekty", t("fm.admin.tab_corrections")],
+        ].map(([tabKey,l])=>(
+          <button key={tabKey} onClick={()=>setTab(tabKey)} style={{ padding:"8px 18px",borderRadius:8,border:"none",background:tab===tabKey?"white":"transparent",fontWeight:tab===tabKey?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:tab===tabKey?"#1e293b":"#64748b",boxShadow:tab===tabKey?"0 1px 4px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
 
       {/* ══ TAB: ZARZĄDZANIE ══ */}
       {tab==="zarzadzanie" && (
         <div>
-          <Card title="Dostęp uczestników" icon={fmSettings.schedulingOpen?Unlock:Lock}>
+          <Card title={t("fm.admin.access_card_title")} icon={fmSettings.schedulingOpen?Unlock:Lock}>
             <div style={{ display:"flex",gap:12,marginBottom:12 }}>
               <div style={{ padding:"12px 16px",background:fmSettings.schedulingOpen?"#f0fdf4":"#fef2f2",border:`1px solid ${fmSettings.schedulingOpen?"#bbf7d0":"#fca5a5"}`,borderRadius:10,textAlign:"center",flexShrink:0 }}>
                 <div style={{ fontSize:22 }}>{fmSettings.schedulingOpen?"🟢":"🔴"}</div>
-                <div style={{ fontSize:11,fontWeight:700,color:fmSettings.schedulingOpen?"#059669":"#dc2626",marginTop:2 }}>{fmSettings.schedulingOpen?"OTWARTA":"ZAMKNIĘTA"}</div>
+                <div style={{ fontSize:11,fontWeight:700,color:fmSettings.schedulingOpen?"#059669":"#dc2626",marginTop:2 }}>{fmSettings.schedulingOpen?t("fm.admin.access_badge_open"):t("fm.admin.access_badge_closed")}</div>
               </div>
               <div style={{ flex:1 }}>
                 <div style={{ marginBottom:8 }}>
-                  <label style={{ fontSize:11,color:"#64748b",display:"block",marginBottom:4 }}>Data planowanego otwarcia</label>
+                  <label style={{ fontSize:11,color:"#64748b",display:"block",marginBottom:4 }}>{t("fm.admin.access_open_date_label")}</label>
                   <input type="date" value={fmSettings.openDate} onChange={e=>setFmSettings(s=>({...s,openDate:e.target.value}))} style={{ padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}/>
                 </div>
                 <div style={{ display:"flex",gap:8 }}>
-                  <Btn primary onClick={()=>setFmSettings(s=>({...s,schedulingOpen:true}))} disabled={fmSettings.schedulingOpen} style={{ background:"#059669" }}><Unlock size={13}/> Otwórz dostęp</Btn>
-                  <Btn outline onClick={()=>setFmSettings(s=>({...s,schedulingOpen:false}))} disabled={!fmSettings.schedulingOpen} style={{ color:"#dc2626",borderColor:"#fca5a5" }}><Lock size={13}/> Zamknij</Btn>
+                  <Btn primary onClick={()=>setFmSettings(s=>({...s,schedulingOpen:true}))} disabled={fmSettings.schedulingOpen} style={{ background:"#059669" }}><Unlock size={13}/> {t("fm.admin.access_btn_open")}</Btn>
+                  <Btn outline onClick={()=>setFmSettings(s=>({...s,schedulingOpen:false}))} disabled={!fmSettings.schedulingOpen} style={{ color:"#dc2626",borderColor:"#fca5a5" }}><Lock size={13}/> {t("fm.admin.access_btn_close")}</Btn>
                 </div>
               </div>
             </div>
-            <Alrt type="info">Zakładka „Spotkania FM 2026" widoczna w sidebarze <strong>cały czas</strong>. Gdy zamknięta — uczestnicy widzą ekran blokady z datą otwarcia.</Alrt>
+            <Alrt type="info"><Trans i18nKey="fm.admin.access_info_html" ns="legacy" components={{ strong: <strong /> }}/></Alrt>
           </Card>
-          <Card title="Publikacja planu finalnego" icon={Send}>
+          <Card title={t("fm.admin.publish_card_title")} icon={Send}>
             <div style={{ display:"flex",gap:12,marginBottom:12 }}>
               <div style={{ padding:"12px 16px",background:fmSettings.planPublished?"#f0fdf4":"#fef2f2",border:`1px solid ${fmSettings.planPublished?"#bbf7d0":"#fca5a5"}`,borderRadius:10,textAlign:"center",flexShrink:0 }}>
                 <div style={{ fontSize:22 }}>{fmSettings.planPublished?"✅":"📋"}</div>
-                <div style={{ fontSize:11,fontWeight:700,color:fmSettings.planPublished?"#059669":"#dc2626",marginTop:2 }}>{fmSettings.planPublished?"OPUBLIKOWANY":"NIEOPUBLIKOWANY"}</div>
+                <div style={{ fontSize:11,fontWeight:700,color:fmSettings.planPublished?"#059669":"#dc2626",marginTop:2 }}>{fmSettings.planPublished?t("fm.admin.publish_badge_published"):t("fm.admin.publish_badge_unpublished")}</div>
               </div>
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:13,color:"#334155",marginBottom:8,lineHeight:1.65 }}>
                   {fmSettings.planPublished
-                    ? "Plan finalny opublikowany. Dostawcy i kupcy widzą swoje spotkania z numerami kolejkowymi."
-                    : "Po opublikowaniu planu dostawcy i kupcy zobaczy zakladke Twoje spotkania z finalnymi numerami. Ta operacja jest nieodwracalna."
+                    ? t("fm.admin.publish_desc_published")
+                    : t("fm.admin.publish_desc_unpublished")
                   }
                 </div>
                 <div style={{ display:"flex",gap:8 }}>
-                  <Btn primary onClick={()=>setFmSettings(s=>({...s,planPublished:true}))} disabled={fmSettings.planPublished} style={{ background:"#059669" }}><Send size={13}/> Opublikuj plan finalny</Btn>
-                  {fmSettings.planPublished&&<Btn outline onClick={()=>setFmSettings(s=>({...s,planPublished:false}))} style={{ color:"#dc2626",borderColor:"#fca5a5" }}>Cofnij publikację (demo)</Btn>}
+                  <Btn primary onClick={()=>setFmSettings(s=>({...s,planPublished:true}))} disabled={fmSettings.planPublished} style={{ background:"#059669" }}><Send size={13}/> {t("fm.admin.publish_btn_publish")}</Btn>
+                  {fmSettings.planPublished&&<Btn outline onClick={()=>setFmSettings(s=>({...s,planPublished:false}))} style={{ color:"#dc2626",borderColor:"#fca5a5" }}>{t("fm.admin.publish_btn_revert")}</Btn>}
                 </div>
               </div>
             </div>
-            {!fmSettings.planPublished&&<Alrt type="warning">Przed publikacją upewnij się, że plan spotkań jest zatwierdzony. Po opublikowaniu dostawcy i kupcy natychmiast zobaczą finalne numery spotkań.</Alrt>}
+            {!fmSettings.planPublished&&<Alrt type="warning">{t("fm.admin.publish_warning")}</Alrt>}
           </Card>
-          <Card title="Dane testowe" icon={RefreshCw}>
-            <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>Regeneruj syntetyczne preferencje i odpowiedzi sieci</div>
+          <Card title={t("fm.admin.test_data_card_title")} icon={RefreshCw}>
+            <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>{t("fm.admin.test_data_desc")}</div>
             <div style={{ display:"flex",gap:8,alignItems:"center" }}>
-              <Btn outline sm onClick={onRegenerate}><RefreshCw size={12}/> Nowy zestaw danych</Btn>
-              <span style={{ fontSize:11,color:"#94a3b8" }}>{_suppliers.length} dostawców · {_chains.length} sieci</span>
+              <Btn outline sm onClick={onRegenerate}><RefreshCw size={12}/> {t("fm.admin.test_data_btn")}</Btn>
+              <span style={{ fontSize:11,color:"#94a3b8" }}>{t("fm.admin.test_data_meta_format", { suppliers: _suppliers.length, chains: _chains.length })}</span>
             </div>
           </Card>
-          <Card title="Fazy organizacyjne Fresh Market 2026" icon={Calendar}>
-            <div style={{ fontSize:12,color:"#64748b",marginBottom:14 }}>Kliknij fazę żeby ją aktywować. Aktywna faza odblokowuje odpowiednie funkcje dla dostawców i sieci.</div>
+          <Card title={t("fm.admin.phases_card_title")} icon={Calendar}>
+            <div style={{ fontSize:12,color:"#64748b",marginBottom:14 }}>{t("fm.admin.phases_card_desc")}</div>
             <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
               {FM_PHASES.map(ph=>{
                 const isActive = fmSettings.currentPhase === ph.id;
                 const isDone   = fmSettings.currentPhase > ph.id;
+                // [P2-fm C4] FM_PHASES label/sub/dates idą przez t() z fm.phases.N.*
+                const phLabel = t(`fm.phases.${ph.id}.label`, { defaultValue: ph.label });
+                const phSub = t(`fm.phases.${ph.id}.sub`, { defaultValue: ph.sub });
+                const phDates = t(`fm.phases.${ph.id}.dates`, { defaultValue: ph.dates });
                 return (
                   <div key={ph.id} onClick={()=>setFmSettings(s=>({...s,currentPhase:ph.id,schedulingOpen:ph.id>=2?true:s.schedulingOpen}))}
                     style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:10,cursor:"pointer",
@@ -10595,11 +10611,11 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                       {isDone?"✓":ph.id}
                     </div>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontWeight:700,fontSize:13,color:isActive?ph.color:isDone?"#059669":"#334155" }}>{ph.label}</div>
-                      <div style={{ fontSize:11,color:"#64748b",marginTop:1 }}>{ph.sub} · <span style={{ color:"#94a3b8" }}>{ph.dates}</span></div>
+                      <div style={{ fontWeight:700,fontSize:13,color:isActive?ph.color:isDone?"#059669":"#334155" }}>{phLabel}</div>
+                      <div style={{ fontSize:11,color:"#64748b",marginTop:1 }}>{phSub} · <span style={{ color:"#94a3b8" }}>{phDates}</span></div>
                     </div>
-                    {isActive&&<span style={{ fontSize:11,fontWeight:700,color:ph.color,background:ph.color+"18",padding:"3px 10px",borderRadius:20 }}>● AKTYWNA</span>}
-                    {isDone&&<span style={{ fontSize:11,color:"#059669" }}>Zakończona</span>}
+                    {isActive&&<span style={{ fontSize:11,fontWeight:700,color:ph.color,background:ph.color+"18",padding:"3px 10px",borderRadius:20 }}>{t("fm.admin.phase_active_badge")}</span>}
+                    {isDone&&<span style={{ fontSize:11,color:"#059669" }}>{t("fm.admin.phase_done_badge")}</span>}
                   </div>
                 );
               })}
@@ -10629,17 +10645,17 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
           return isReady && !findCo(s)?.fm_selection_confirmed_at;
         });
         if (_suppliers.length === 0 && _chains.length === 0) {
-          return <div style={{padding:30,textAlign:"center",color:"#94a3b8",background:"white",borderRadius:12,border:"1px solid #e2e8f0"}}>Dane wejściowe nie są jeszcze kompletne — brak dostawców i sieci.</div>;
+          return <div style={{padding:30,textAlign:"center",color:"#94a3b8",background:"white",borderRadius:12,border:"1px solid #e2e8f0"}}>{t("fm.admin.data_empty_no_input")}</div>;
         }
         return (
           <div>
             <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14 }}>
               {[
-                [_sr+"/"+_suppliers.length,"Dostawców gotowych","#d97706"],
-                [confirmedSuppliers.length+"/"+_suppliers.length,"✓ Potwierdzonych","#059669"],
-                [_suppliers.length-_sr,"Nie wybrało","#dc2626"],
-                [_cr+"/"+_chains.length,"Sieci odpow.","#2563eb"],
-                [_rp+"%","Gotowość",_rp>=50?"#059669":"#d97706"]
+                [_sr+"/"+_suppliers.length, t("fm.admin.data_stat_suppliers_ready_label"), "#d97706"],
+                [confirmedSuppliers.length+"/"+_suppliers.length, t("fm.admin.data_stat_confirmed_label"), "#059669"],
+                [_suppliers.length-_sr, t("fm.admin.data_stat_not_picked_label"), "#dc2626"],
+                [_cr+"/"+_chains.length, t("fm.admin.data_stat_chains_resp_label"), "#2563eb"],
+                [_rp+"%", t("fm.admin.data_stat_readiness_label"), _rp>=50?"#059669":"#d97706"],
               ].map(([v,l,c])=>(
                 <div key={l} style={{ padding:"12px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center",borderTop:`3px solid ${c}` }}>
                   <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
@@ -10647,25 +10663,25 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                 </div>
               ))}
             </div>
-            {_rp < 50 && <Alrt type="warning">Tylko {_sr}/{_suppliers.length} dostawców wypełniło preferencje ({_rp}%). Rozważ poczekanie z uruchomieniem algorytmu.</Alrt>}
-            {unconfirmedReady.length > 0 && <Alrt type="info">{unconfirmedReady.length} {unconfirmedReady.length===1?"dostawca ma":"dostawców ma"} 5 głównych sieci ale nie kliknął/-li jeszcze przycisku "Potwierdź wybór" — wybór nie jest finalny.</Alrt>}
+            {_rp < 50 && <Alrt type="warning">{t("fm.admin.data_warning_low_readiness_format", { ready: _sr, total: _suppliers.length, pct: _rp })}</Alrt>}
+            {unconfirmedReady.length > 0 && <Alrt type="info">{t("fm.admin.data_warning_unconfirmed" + pluralSuffix(unconfirmedReady.length) + "_format", { count: unconfirmedReady.length })}</Alrt>}
             {(noPickSuppliers.length > 0 || noRespChains.length > 0 || unconfirmedReady.length > 0) && (
               <div style={{display:"grid",gridTemplateColumns:`repeat(${[noPickSuppliers,noRespChains,unconfirmedReady].filter(a=>a.length>0).length},1fr)`,gap:10,marginBottom:14}}>
                 {noPickSuppliers.length > 0 && (
                   <div style={{padding:"12px 14px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#991b1b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Dostawcy bez żadnych wyborów ({noPickSuppliers.length})</div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#991b1b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>{t("fm.admin.data_box_no_picks_title_format", { count: noPickSuppliers.length })}</div>
                     <div style={{fontSize:11,color:"#7f1d1d",lineHeight:1.6,maxHeight:120,overflowY:"auto"}}>{noPickSuppliers.map(s=>s.name).join(" · ")}</div>
                   </div>
                 )}
                 {unconfirmedReady.length > 0 && (
                   <div style={{padding:"12px 14px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#1e40af",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Gotowi, ale nie potwierdzili ({unconfirmedReady.length})</div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#1e40af",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>{t("fm.admin.data_box_unconfirmed_title_format", { count: unconfirmedReady.length })}</div>
                     <div style={{fontSize:11,color:"#1e3a8a",lineHeight:1.6,maxHeight:120,overflowY:"auto"}}>{unconfirmedReady.map(s=>s.name).join(" · ")}</div>
                   </div>
                 )}
                 {noRespChains.length > 0 && (
                   <div style={{padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
-                    <div style={{fontSize:11,fontWeight:700,color:"#92400e",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>Sieci bez odpowiedzi ({noRespChains.length})</div>
+                    <div style={{fontSize:11,fontWeight:700,color:"#92400e",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>{t("fm.admin.data_box_no_resp_title_format", { count: noRespChains.length })}</div>
                     <div style={{fontSize:11,color:"#78350f",lineHeight:1.6,maxHeight:120,overflowY:"auto"}}>{noRespChains.map(c=>c.name).join(" · ")}</div>
                   </div>
                 )}
@@ -10694,10 +10710,10 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                   <div style={{ background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"12px 14px",marginBottom:8 }}>
                     <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6 }}>
                       <AlertTriangle size={14} color="#dc2626"/>
-                      <strong style={{ fontSize:13,color:"#991b1b" }}>{noMeetings.length} {noMeetings.length===1?"firma bez spotkań":"firm bez spotkań"}</strong>
+                      <strong style={{ fontSize:13,color:"#991b1b" }}>{t("fm.admin.plan_warn_no_meetings_title" + pluralSuffix(noMeetings.length) + "_format", { count: noMeetings.length })}</strong>
                     </div>
                     <div style={{ fontSize:11.5,color:"#7f1d1d",lineHeight:1.55 }}>
-                      {noMeetings.map(w => w.supplierName).join(", ")} — sprawdź czy sieci je odrzuciły lub dodaj alternatywy w Korektach.
+                      {t("fm.admin.plan_warn_no_meetings_desc_format", { names: noMeetings.map(w => w.supplierName).join(", ") })}
                     </div>
                   </div>
                 )}
@@ -10705,13 +10721,22 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                   <div style={{ background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"12px 14px" }}>
                     <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:8 }}>
                       <AlertTriangle size={14} color="#d97706"/>
-                      <strong style={{ fontSize:13,color:"#92400e" }}>{swaps.length} {swaps.length===1?"sugestia zamiany ⭐/👍":"sugestii zamian ⭐/👍"}</strong>
+                      <strong style={{ fontSize:13,color:"#92400e" }}>{t("fm.admin.plan_warn_swaps_title" + pluralSuffix(swaps.length) + "_format", { count: swaps.length })}</strong>
                     </div>
                     <ul style={{ margin:0,paddingLeft:18,fontSize:11.5,color:"#78350f",lineHeight:1.6 }}>
-                      {swaps.slice(0, 8).map((w, i) => (
-                        <li key={i} style={{ marginBottom:3 }}>{w.message}</li>
-                      ))}
-                      {swaps.length > 8 && <li style={{ color:"#92400e",fontStyle:"italic" }}>...i {swaps.length - 8} więcej</li>}
+                      {swaps.slice(0, 8).map((w, i) => {
+                        // [P2-fm C4] Build swap item display from structured warning fields
+                        // (no algo touch — message field stays in struct but is not rendered).
+                        const _plan2 = pickFMPlan(fmSchedule, fmAlgo);
+                        const _starName = _chains.find(c => c.id === w.starChainId)?.name || w.starChainId;
+                        const _thumbName = _chains.find(c => c.id === w.thumbChainId)?.name || w.thumbChainId;
+                        const _starNum = _plan2?.nums?.[w.supplierId]?.[w.starChainId] ?? "?";
+                        const _thumbNum = _plan2?.nums?.[w.supplierId]?.[w.thumbChainId] ?? "?";
+                        return (
+                          <li key={i} style={{ marginBottom:3 }}>{t("fm.admin.plan_warn_swap_item_format", { supplier: w.supplierName, starName: _starName, starNum: _starNum, thumbName: _thumbName, thumbNum: _thumbNum })}</li>
+                        );
+                      })}
+                      {swaps.length > 8 && <li style={{ color:"#92400e",fontStyle:"italic" }}>{t("fm.admin.plan_warn_swaps_more_format", { count: swaps.length - 8 })}</li>}
                     </ul>
                   </div>
                 )}
@@ -10721,17 +10746,17 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
           {(fmFullData||fmSchedule) && (
             <div style={{ marginTop:16 }}>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:14 }}>
-                {(()=>{const _plan=pickFMPlan(fmSchedule,fmAlgo);const _resVals=Object.values(_plan?.res||{});return [[_suppliers.length,"Dostawców","#0d9488"],[_chains.length,"Sieci","#2563eb"],[_resVals.reduce((a,r)=>a+(r?.m?.length||0),0),"Spotkań","#059669"],[_resVals.filter(r=>(r?.m?.length||0)>=5).length,"Pełnych planów","#7c3aed"]];})().map(([v,l,c])=>(
+                {(()=>{const _plan=pickFMPlan(fmSchedule,fmAlgo);const _resVals=Object.values(_plan?.res||{});return [[_suppliers.length,t("fm.admin.plan_stat_suppliers"),"#0d9488"],[_chains.length,t("fm.admin.plan_stat_chains"),"#2563eb"],[_resVals.reduce((a,r)=>a+(r?.m?.length||0),0),t("fm.admin.plan_stat_meetings"),"#059669"],[_resVals.filter(r=>(r?.m?.length||0)>=5).length,t("fm.admin.plan_stat_full_plans"),"#7c3aed"]];})().map(([v,l,c])=>(
                   <div key={l} style={{ padding:"12px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center",borderTop:`3px solid ${c}` }}>
                     <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
                     <div style={{ fontSize:10,color:"#64748b",marginTop:2 }}>{l}</div>
                   </div>
                 ))}
               </div>
-              <Card title="Dostawcy — plan spotkań" noPad>
+              <Card title={t("fm.admin.plan_table_card_title")} noPad>
                 <div style={{ overflowX:"auto" }}>
                   <table style={{ width:"100%",borderCollapse:"collapse",fontSize:12 }}>
-                    <thead><tr style={{ background:"#f8fafc" }}>{["Firma","Pakiet","Spotkań","Sieci"].map(h=><th key={h} style={{ padding:"8px 12px",textAlign:"left",color:"#64748b",borderBottom:"1px solid #e2e8f0",fontWeight:600,fontSize:10,textTransform:"uppercase" }}>{h}</th>)}</tr></thead>
+                    <thead><tr style={{ background:"#f8fafc" }}>{[t("fm.admin.plan_table_header_company"),t("fm.admin.plan_table_header_pkg"),t("fm.admin.plan_table_header_meetings"),t("fm.admin.plan_table_header_chains")].map(h=><th key={h} style={{ padding:"8px 12px",textAlign:"left",color:"#64748b",borderBottom:"1px solid #e2e8f0",fontWeight:600,fontSize:10,textTransform:"uppercase" }}>{h}</th>)}</tr></thead>
                     <tbody>{_suppliers.map(s=>{
                       const _plan=pickFMPlan(fmSchedule,fmAlgo);
                       const mRaw=_plan?.res?.[s.id]?.m||[];
@@ -10744,10 +10769,10 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                         const ch = _chains.find(c=>c.id===cid);
                         const name = ch?.name || cid;
                         return overrides[cid] ? `⚠️ ${name}` : name;
-                      }).join(", ") || "—";
+                      }).join(", ") || t("fm.admin.plan_table_chains_empty");
                       const overrideCount = Object.keys(overrides).filter(cid => mRaw.includes(cid)).length;
                       return(
-                        <tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9", background: overrideCount > 0 ? "#fef2f2" : "transparent" }} title={overrideCount > 0 ? `${overrideCount} ${overrideCount===1?"spotkanie dodane":"spotkania dodane"} mimo odrzucenia przez kupca` : undefined}>
+                        <tr key={s.id} style={{ borderBottom:"1px solid #f1f5f9", background: overrideCount > 0 ? "#fef2f2" : "transparent" }} title={overrideCount > 0 ? t("fm.admin.plan_table_override_tooltip" + pluralSuffix(overrideCount) + "_format", { count: overrideCount }) : undefined}>
                           <td style={{ padding:"8px 12px",fontWeight:600 }}>{s.name}{overrideCount>0 && <span style={{ marginLeft:6,fontSize:10,fontWeight:700,color:"#dc2626" }}>⚠️ {overrideCount}</span>}</td>
                           <td style={{ padding:"8px 12px" }}><Badge color={s.pkg==="Premium"?"#d97706":"#2563eb"}>{s.pkg}</Badge></td>
                           <td style={{ padding:"8px 12px",fontWeight:700,color:m.length>=5?"#059669":m.length>=3?"#d97706":"#dc2626" }}>{m.length}/{FM_MAX_M}</td>
@@ -10761,35 +10786,42 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
             </div>
           )}
           <div style={{marginTop:12,textAlign:"right"}}>
-            <Btn outline onClick={()=>setTab("korekty")}>✏️ Przejdź do korekt numerów →</Btn>
+            <Btn outline onClick={()=>setTab("korekty")}>{t("fm.admin.plan_goto_corrections_btn")}</Btn>
           </div>
         </div>
       )}
 
       {tab==="korekty" && (
         <div>
-          {phase < 3 && (
-            <div style={{padding:"14px 18px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,marginBottom:16,display:"flex",gap:10,alignItems:"flex-start"}}>
-              <div style={{fontSize:18,flexShrink:0}}>⚠️</div>
-              <div>
-                <div style={{fontWeight:600,fontSize:13,color:"#92400e",marginBottom:3}}>Korekty dostępne od Fazy 3 (Algorytm Matchingu)</div>
-                <div style={{fontSize:12,color:"#b45309",lineHeight:1.6}}>Aktualnie aktywna: <strong>{FM_PHASES[(phase||1)-1]?.label}</strong>. Przejdź do zakładki <strong>Zarządzanie</strong> i aktywuj fazę 3 — Algorytm + Korekty.</div>
+          {phase < 3 && (() => {
+            // [P2-fm C4] FM_PHASES label idzie przez t() z fm.phases.N.label
+            const _phRaw = FM_PHASES[(phase||1)-1] || FM_PHASES[FM_PHASES.length-1];
+            const _phLabel = t(`fm.phases.${_phRaw.id}.label`, { defaultValue: _phRaw.label });
+            return (
+              <div style={{padding:"14px 18px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,marginBottom:16,display:"flex",gap:10,alignItems:"flex-start"}}>
+                <div style={{fontSize:18,flexShrink:0}}>⚠️</div>
+                <div>
+                  <div style={{fontWeight:600,fontSize:13,color:"#92400e",marginBottom:3}}>{t("fm.admin.corr_phase_warning_title")}</div>
+                  <div style={{fontSize:12,color:"#b45309",lineHeight:1.6}}>
+                    <Trans i18nKey="fm.admin.corr_phase_warning_desc_html" ns="legacy" components={{ strong: <strong /> }} values={{ phase: _phLabel }}/>
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
           {phase === 3 && (
             <div style={{padding:"12px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,marginBottom:16,fontSize:12,color:"#1e40af"}}>
-              ℹ️ <strong>Faza 3 — Praca Administratora (17–21 września).</strong> Ręcznie koryguj plan i zatwierdź go przed 22 września. Uczestnicy nie mają już własnych korekt — mogą zgłaszać uwagi wyłącznie przez chat.
+              <Trans i18nKey="fm.admin.corr_phase3_info_html" ns="legacy" components={{ strong: <strong /> }}/>
             </div>
           )}
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
             <div style={{flex:1}}>
-              <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>Korekty numerów kolejkowych</div>
-              <div style={{fontSize:12,color:"#64748b"}}>Ręczna zmiana kolejności spotkań. Dostępna od uruchomienia algorytmu do publikacji finalnego harmonogramu (22 września).</div>
+              <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>{t("fm.admin.corr_header_title")}</div>
+              <div style={{fontSize:12,color:"#64748b"}}>{t("fm.admin.corr_header_desc")}</div>
             </div>
             <div style={{display:"flex",gap:6}}>
-              {fmSchedule&&<Btn outline sm onClick={syncFromSchedule} style={{color:"#059669",borderColor:"#bbf7d0"}}><CheckCircle size={12}/> Wczytaj zatwierdzony</Btn>}
-              <Btn outline sm onClick={rebuildFull}><RefreshCw size={12}/> Przebuduj z preferencji</Btn>
+              {fmSchedule&&<Btn outline sm onClick={syncFromSchedule} style={{color:"#059669",borderColor:"#bbf7d0"}}><CheckCircle size={12}/> {t("fm.admin.corr_btn_load_approved")}</Btn>}
+              <Btn outline sm onClick={rebuildFull}><RefreshCw size={12}/> {t("fm.admin.corr_btn_rebuild")}</Btn>
             </div>
           </div>
           <div style={{opacity:phase>=3?1:0.4,pointerEvents:phase>=3?"auto":"none",transition:"opacity 0.2s"}}>
@@ -10797,11 +10829,11 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
           </div>
           {/* Preview For + Late Selection controls — UNDER correction panel */}
           <div style={{marginBottom:16,padding:"14px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10}}>
-            <div style={{fontWeight:700,fontSize:13,color:"#1e40af",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><Eye size={14}/> Podgląd planowanych spotkań (roboczy)</div>
-            <div style={{fontSize:11,color:"#3b82f6",marginBottom:12}}>Włącz podgląd dla wybranego uczestnika — zobaczy wstępny plan z dopiskiem "Wersja robocza — może ulec zmianie przed 22 września".</div>
+            <div style={{fontWeight:700,fontSize:13,color:"#1e40af",marginBottom:8,display:"flex",alignItems:"center",gap:6}}><Eye size={14}/> {t("fm.admin.preview_card_title")}</div>
+            <div style={{fontSize:11,color:"#3b82f6",marginBottom:12}}>{t("fm.admin.preview_card_desc")}</div>
             <div style={{display:"flex",gap:20,flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:180}}>
-                <div style={{fontWeight:600,fontSize:11,color:"#334155",marginBottom:6,textTransform:"uppercase"}}>Dostawcy</div>
+                <div style={{fontWeight:600,fontSize:11,color:"#334155",marginBottom:6,textTransform:"uppercase"}}>{t("fm.admin.preview_section_suppliers")}</div>
                 <div style={{maxHeight:160,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
                   {_suppliers.map(s=>{const enabled=(previewFor?.suppliers||[]).includes(s.id);return(
                     <label key={s.id} style={{display:"flex",alignItems:"center",gap:7,padding:"4px 6px",borderRadius:6,cursor:"pointer",fontSize:12,background:enabled?"rgba(37,99,235,0.06)":"transparent"}}>
@@ -10812,7 +10844,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                 </div>
               </div>
               <div style={{flex:1,minWidth:180}}>
-                <div style={{fontWeight:600,fontSize:11,color:"#334155",marginBottom:6,textTransform:"uppercase"}}>Sieci handlowe</div>
+                <div style={{fontWeight:600,fontSize:11,color:"#334155",marginBottom:6,textTransform:"uppercase"}}>{t("fm.admin.preview_section_chains")}</div>
                 <div style={{maxHeight:160,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
                   {_chains.map(ch=>{
                     const enabled=(previewFor?.chains||[]).includes(ch.id);
@@ -10823,9 +10855,9 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                           <input type="checkbox" checked={enabled} onChange={()=>setPreviewFor&&setPreviewFor(p=>({...p,chains:enabled?p.chains.filter(x=>x!==ch.id):[...(p.chains||[]),ch.id]}))} style={{width:13,height:13,accentColor:"#2563eb"}}/>
                           {ch.name}
                         </label>
-                        <label title="Odblokuj wybór po terminie dla tej sieci" style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:10,color:lateEnabled?"#d97706":"#94a3b8",whiteSpace:"nowrap"}}>
+                        <label title={t("fm.admin.preview_late_toggle_title")} style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:10,color:lateEnabled?"#d97706":"#94a3b8",whiteSpace:"nowrap"}}>
                           <input type="checkbox" checked={!!lateEnabled} onChange={()=>setRetailers&&setRetailers(prev=>prev.map(r=>r.fm26ChainId!==ch.id?r:{...r,lateSelectionEnabled:!lateEnabled}))} style={{width:12,height:12,accentColor:"#d97706"}}/>
-                          ⏰ Po terminie
+                          {t("fm.admin.preview_late_toggle_label")}
                         </label>
                       </div>
                     );
@@ -10841,8 +10873,8 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
             if(!lateEntries.length) return null;
             return(
               <div style={{marginBottom:16,padding:"14px 16px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
-                <div style={{fontWeight:700,fontSize:13,color:"#92400e",marginBottom:8}}>⏰ Odpowiedzi po terminie — tylko do ręcznych korekt</div>
-                <div style={{fontSize:11,color:"#92400e",marginBottom:10}}>Poniższe sieci zgłosiły wybory PO terminie 16 września. Nie biorą udziału w algorytmie.</div>
+                <div style={{fontWeight:700,fontSize:13,color:"#92400e",marginBottom:8}}>{t("fm.admin.late_card_title")}</div>
+                <div style={{fontSize:11,color:"#92400e",marginBottom:10}}>{t("fm.admin.late_card_desc")}</div>
                 {lateEntries.map(ch=>{
                   const resps=(fmLateResps||{})[ch.id]||{};
                   const wantIds=Object.entries(resps).filter(([,v])=>v==="want").map(([k])=>k);
@@ -10851,9 +10883,9 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                   return(
                     <div key={ch.id} style={{padding:"8px 12px",background:"white",borderRadius:8,border:"1px solid #fde68a",marginBottom:6}}>
                       <div style={{fontWeight:700,fontSize:12,color:"#92400e",marginBottom:4}}>{ch.name}</div>
-                      {wantIds.length>0&&<div style={{fontSize:11,color:"#059669"}}>✅ Chcę: {wantIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
-                      {chanceIds.length>0&&<div style={{fontSize:11,color:"#d97706",marginTop:2}}>🤝 Daj szansę: {chanceIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
-                      {removeIds.length>0&&<div style={{fontSize:11,color:"#dc2626",marginTop:2}}>❌ Nie chcę: {removeIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
+                      {wantIds.length>0&&<div style={{fontSize:11,color:"#059669"}}>{t("fm.admin.late_row_want_label")}{wantIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
+                      {chanceIds.length>0&&<div style={{fontSize:11,color:"#d97706",marginTop:2}}>{t("fm.admin.late_row_chance_label")}{chanceIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
+                      {removeIds.length>0&&<div style={{fontSize:11,color:"#dc2626",marginTop:2}}>{t("fm.admin.late_row_remove_label")}{removeIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
                     </div>
                   );
                 })}
