@@ -6915,6 +6915,7 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
 
 /* ── Admin Pipeline: tabs Moderacja / Wysłane+Tracking ──────────────────── */
 function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies }) {
+  const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -7003,35 +7004,38 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
           ));
         }}
       />}
-      {histSend&&<Modal title={`Historia: ${getOffer(histSend.offerId,offers)?.product}`} onClose={()=>setHistoryId(null)}>
-        {(histSend.confirmHistory||[]).length===0?<div style={{ color:"#94a3b8",textAlign:"center",padding:16 }}>Brak historii.</div>:(histSend.confirmHistory||[]).map((h,i)=>(
+      {histSend&&<Modal title={t("admin.pipeline.history_modal_title_format", { product: getOffer(histSend.offerId,offers)?.product })} onClose={()=>setHistoryId(null)}>
+        {(histSend.confirmHistory||[]).length===0?<div style={{ color:"#94a3b8",textAlign:"center",padding:16 }}>{t("admin.pipeline.history_empty")}</div>:(histSend.confirmHistory||[]).map((h,i)=>(
           <div key={i} style={{ display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #f1f5f9" }}>
             <div style={{ width:26,height:26,borderRadius:"50%",background:h.action==="confirm"?"#d1fae5":"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>{h.action==="confirm"?<CheckCircle size={12} color="#059669"/>:<RotateCcw size={12} color="#dc2626"/>}</div>
-            <div style={{ flex:1 }}><div style={{ fontWeight:600,fontSize:12 }}>{h.action==="confirm"?"Potwierdzono":"Cofnięto"}</div>{h.type&&<div style={{ fontSize:11,color:"#64748b" }}>{h.type}</div>}{h.note&&<div style={{ fontSize:11,color:"#64748b" }}>{h.note}</div>}<div style={{ fontSize:10,color:"#94a3b8" }}>{h.at}</div></div>
+            <div style={{ flex:1 }}><div style={{ fontWeight:600,fontSize:12 }}>{h.action==="confirm"?t("admin.pipeline.history_action_confirm"):t("admin.pipeline.history_action_revert")}</div>{h.type&&<div style={{ fontSize:11,color:"#64748b" }}>{h.type}</div>}{h.note&&<div style={{ fontSize:11,color:"#64748b" }}>{h.note}</div>}<div style={{ fontSize:10,color:"#94a3b8" }}>{h.at}</div></div>
           </div>
         ))}
       </Modal>}
 
       {/* Tab bar */}
       <div style={{ display:"flex",gap:4,marginBottom:16,background:"#f1f5f9",borderRadius:10,padding:4,width:"fit-content" }}>
-        {[["mod",`Moderacja (${modSends.length})`],["track",`Wysłane & Tracking (${sentSends.length})`]].map(([t,l])=>(
-          <button key={t} onClick={()=>setTab(t)} style={{ padding:"7px 16px",borderRadius:8,border:"none",background:tab===t?"white":"transparent",fontWeight:tab===t?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:tab===t?"#1e293b":"#64748b",boxShadow:tab===t?"0 1px 3px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
+        {[
+          ["mod", t("admin.pipeline.tab_mod_format", { count: modSends.length })],
+          ["track", t("admin.pipeline.tab_track_format", { count: sentSends.length })],
+        ].map(([tabKey,l])=>(
+          <button key={tabKey} onClick={()=>setTab(tabKey)} style={{ padding:"7px 16px",borderRadius:8,border:"none",background:tab===tabKey?"white":"transparent",fontWeight:tab===tabKey?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:tab===tabKey?"#1e293b":"#64748b",boxShadow:tab===tabKey?"0 1px 3px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
 
       {/* MODERACJA TAB */}
       {tab==="mod"&&<>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-          <div style={{ fontSize:12,color:"#64748b" }}>Edytuj pozycję (nr 1 = na górze u kupca). Wysyłka: <strong>{formatPolishDate(effectiveNextSend(null))}</strong></div>
+          <div style={{ fontSize:12,color:"#64748b" }}>{t("admin.pipeline.hint_pos_label")}<strong>{formatPolishDate(effectiveNextSend(null))}</strong></div>
           {/* [B2B Round prod-rollout / UX] Bug fix: poprzednio inline style ustawiał
               background na #94a3b8 (szary) gdy ap===0, a Btn w disabled state ma color
               też #94a3b8 — tekst zlewał się z tłem, widać było pusty szary prostokąt.
               Teraz inline style tylko gdy są zatwierdzone, w disabled state Btn
               używa swoich defaults (bg #e2e8f0, color #94a3b8 — kontrast OK). */}
-          <Btn primary onClick={sendApproved} disabled={ap===0} style={{ background:ap>0?"#059669":"#e2e8f0",color:ap>0?"white":"#475569",border:ap>0?"none":"1px solid #cbd5e1" }}><Send size={13}/> Wyślij zatwierdzone ({ap})</Btn>
+          <Btn primary onClick={sendApproved} disabled={ap===0} style={{ background:ap>0?"#059669":"#e2e8f0",color:ap>0?"white":"#475569",border:ap>0?"none":"1px solid #cbd5e1" }}><Send size={13}/> {t("admin.pipeline.send_approved_btn_format", { count: ap })}</Btn>
         </div>
-        {sends.some(s=>s.status==="pending_moderation")&&<Alrt type="warning"><strong>{sends.filter(s=>s.status==="pending_moderation").length}</strong> propozycji czeka na moderację.</Alrt>}
-        {Object.keys(byR).length===0&&<Alrt>Brak propozycji w kolejkach. {sentSends.length>0&&<button onClick={()=>setTab("track")} style={{ marginLeft:8,padding:"4px 10px",borderRadius:6,border:"1px solid #bfdbfe",background:"white",color:"#1e40af",fontWeight:700,cursor:"pointer",fontFamily:"inherit" }}>Pokaż Wysłane & Tracking ({sentSends.length})</button>}</Alrt>}
+        {sends.some(s=>s.status==="pending_moderation")&&<Alrt type="warning"><Trans i18nKey="admin.pipeline.alert_pending_html" ns="legacy" count={sends.filter(s=>s.status==="pending_moderation").length} values={{ count: sends.filter(s=>s.status==="pending_moderation").length }} components={{ strong: <strong /> }}/></Alrt>}
+        {Object.keys(byR).length===0&&<Alrt>{t("admin.pipeline.alert_empty_queues")} {sentSends.length>0&&<button onClick={()=>setTab("track")} style={{ marginLeft:8,padding:"4px 10px",borderRadius:6,border:"1px solid #bfdbfe",background:"white",color:"#1e40af",fontWeight:700,cursor:"pointer",fontFamily:"inherit" }}>{t("admin.pipeline.btn_show_tracking_format", { count: sentSends.length })}</button>}</Alrt>}
         {Object.entries(byR).map(([rid,ss])=>{
           const r=getRetailerLive(+rid);
           const isOpen=expandedRetailers.has(+rid);
@@ -7041,12 +7045,12 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
             <div onClick={()=>toggleExpand(+rid)} style={{ display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:isOpen?"10px 10px 0 0":"10px",cursor:"pointer" }}>
               <RetailerLogo retailer={r} size={28}/>
               <div style={{ flex:1 }}>
-                <strong>{r?.name}</strong>{r?.active===false&&<Badge color="#94a3b8" style={{marginLeft:6}}>Nieaktywna</Badge>}
-                <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[r?.country]||"🌐"} · {ss.length} propozycji{pendingCount>0&&<span style={{color:"#d97706",fontWeight:700,marginLeft:6}}>· {pendingCount} wymaga moderacji</span>}</div>
+                <strong>{r?.name}</strong>{r?.active===false&&<Badge color="#94a3b8" style={{marginLeft:6}}>{t("admin.pipeline.retailer_inactive_badge")}</Badge>}
+                <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[r?.country]||"🌐"} · {t("admin.pipeline.retailer_proposals_count_format", { count: ss.length })}{pendingCount>0&&<span style={{color:"#d97706",fontWeight:700,marginLeft:6}}>{t("admin.pipeline.retailer_pending_count_format", { count: pendingCount })}</span>}</div>
               </div>
-              <Badge color={ss.length>=8?"#dc2626":"#059669"}>{ss.length}/10 slotów</Badge>
+              <Badge color={ss.length>=8?"#dc2626":"#059669"}>{t("admin.pipeline.retailer_slots_format", { count: ss.length })}</Badge>
               <Btn sm onClick={(e)=>{e.stopPropagation();setEmailPreview({retailer:r,sends:ss,supplierCo:(companies||[]).find(c=>c.id===ss[0]?.supplierId)||COMPANY_INIT})}} style={{ background:"rgba(37,99,235,0.08)",color:"#2563eb",border:"1px solid rgba(37,99,235,0.25)",gap:5 }}>
-                <Mail size={11}/> E-mail
+                <Mail size={11}/> {t("admin.pipeline.retailer_email_btn")}
               </Btn>
               <span style={{color:"#94a3b8",fontSize:13}}>{isOpen?"▲":"▼"}</span>
             </div>
@@ -7056,18 +7060,18 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
                   <div style={{ display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:6 }}>
                     <div style={{ display:"flex",alignItems:"center",gap:3 }}>
                       <input type="number" min={1} max={20} value={s.pos||1} onChange={e=>updateSendPos(s.id,e.target.value)} style={{ width:44,textAlign:"center",padding:"3px 6px",border:"2px solid #e2e8f0",borderRadius:6,fontSize:13,fontWeight:700,fontFamily:"inherit" }}/>
-                      <span style={{ fontSize:10,color:"#94a3b8" }}>poz.</span>
+                      <span style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.pipeline.send_pos_label")}</span>
                     </div>
-                    {isPrem&&<Badge color="#d97706" bg="#fef3c7"><Star size={9} fill="#d97706" color="#d97706"/> Prem.</Badge>}
+                    {isPrem&&<Badge color="#d97706" bg="#fef3c7"><Star size={9} fill="#d97706" color="#d97706"/> {t("admin.pipeline.send_prem_badge")}</Badge>}
                     <div style={{ flex:1 }}><strong style={{ fontSize:12 }}>{CEMOJI[o?.category]} {o?.title||o?.product}</strong><div style={{ fontSize:11,color:"#64748b" }}>{o?.volume} {o?.volumeUnit}</div></div>
-                    <Badge color={ip?"#d97706":ia?"#2563eb":"#059669"}>{ip?"Do moderacji":ia?"Zatwierdzona":"W kolejce"}</Badge>
+                    <Badge color={ip?"#d97706":ia?"#2563eb":"#059669"}>{ip?t("admin.pipeline.send_status_pending"):ia?t("admin.pipeline.send_status_approved"):t("admin.pipeline.send_status_queued")}</Badge>
                     <Btn sm outline onClick={()=>setPreviewOffer(o)}><Eye size={10}/></Btn>
-                    {ip&&<><Btn sm onClick={()=>moderate(s.id,"approve")} style={{ background:"#059669",color:"white",border:"none",padding:"6px 14px" }}><CheckCircle size={13}/> Zatwierdź</Btn><Btn sm onClick={()=>moderate(s.id,"reject")} style={{ background:"#dc2626",color:"white",border:"none",padding:"6px 14px" }}><X size={13}/> Odrzuć</Btn></>}
+                    {ip&&<><Btn sm onClick={()=>moderate(s.id,"approve")} style={{ background:"#059669",color:"white",border:"none",padding:"6px 14px" }}><CheckCircle size={13}/> {t("admin.pipeline.send_btn_approve")}</Btn><Btn sm onClick={()=>moderate(s.id,"reject")} style={{ background:"#dc2626",color:"white",border:"none",padding:"6px 14px" }}><X size={13}/> {t("admin.pipeline.send_btn_reject")}</Btn></>}
                   </div>
                   <div style={{ display:"flex",alignItems:"center",gap:7,fontSize:11,color:"#64748b" }}>
-                    <Clock size={10}/> Data wysyłki:
+                    <Clock size={10}/> {t("admin.pipeline.send_date_label")}
                     <input type="date" value={s.sendDate||"2026-05-06"} onChange={e=>updateSendDate(s.id,e.target.value)} style={{ padding:"2px 7px",border:"1px solid #e2e8f0",borderRadius:5,fontSize:11,fontFamily:"inherit" }}/>
-                    <span style={{ color:"#94a3b8" }}>domyślnie: 1. wtorek miesiąca</span>
+                    <span style={{ color:"#94a3b8" }}>{t("admin.pipeline.send_date_default_hint")}</span>
                   </div>
                 </div>
               );})}
@@ -7079,45 +7083,47 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
       {/* TRACKING TAB */}
       {tab==="track"&&<>
         <Alrt type={sentSends.filter(s=>s.status==="sent").length>0?"warning":"success"}>
-          {sentSends.filter(s=>s.status==="sent").length>0?<><strong>{sentSends.filter(s=>s.status==="sent").length}</strong> propozycji czeka na potwierdzenie odczytu (14 dni).</>:"Wszystkie dostarczone propozycje mają potwierdzenie."}
+          {sentSends.filter(s=>s.status==="sent").length>0
+            ? <Trans i18nKey="admin.pipeline.track_alert_pending_html" ns="legacy" count={sentSends.filter(s=>s.status==="sent").length} values={{ count: sentSends.filter(s=>s.status==="sent").length }} components={{ strong: <strong /> }}/>
+            : t("admin.pipeline.track_alert_done")}
         </Alrt>
-        <Card title="Rozliczenia dostawców" icon={CreditCard}>
+        <Card title={t("admin.pipeline.settle_card_title")} icon={CreditCard}>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:12 }}>
             <div style={{ padding:"10px 12px",background:"#ecfdf5",border:"1px solid #bbf7d0",borderRadius:8 }}>
-              <div style={{ fontSize:10,color:"#047857",textTransform:"uppercase",fontWeight:800 }}>Rozliczone</div>
+              <div style={{ fontSize:10,color:"#047857",textTransform:"uppercase",fontWeight:800 }}>{t("admin.pipeline.settle_settled_label")}</div>
               <div style={{ fontSize:22,fontWeight:900,color:"#059669" }}>{settlementRows.filter(r=>r.charged).length}</div>
-              <div style={{ fontSize:11,color:"#047857" }}>{settlementRows.filter(r=>r.charged).reduce((sum,r)=>sum+r.amount,0)} EUR w pakietach</div>
+              <div style={{ fontSize:11,color:"#047857" }}>{t("admin.pipeline.settle_settled_amount_format", { amount: settlementRows.filter(r=>r.charged).reduce((sum,r)=>sum+r.amount,0) })}</div>
             </div>
             <div style={{ padding:"10px 12px",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:8 }}>
-              <div style={{ fontSize:10,color:"#c2410c",textTransform:"uppercase",fontWeight:800 }}>Czeka</div>
+              <div style={{ fontSize:10,color:"#c2410c",textTransform:"uppercase",fontWeight:800 }}>{t("admin.pipeline.settle_waiting_label")}</div>
               <div style={{ fontSize:22,fontWeight:900,color:"#ea580c" }}>{settlementRows.filter(r=>!r.charged).length}</div>
-              <div style={{ fontSize:11,color:"#c2410c" }}>wysłane, ale jeszcze nie zobaczone / brak pakietu</div>
+              <div style={{ fontSize:11,color:"#c2410c" }}>{t("admin.pipeline.settle_waiting_desc")}</div>
             </div>
           </div>
           {Object.values(settlementsBySupplier).length===0 ? (
-            <div style={{ color:"#94a3b8",fontSize:13 }}>Brak wysłanych propozycji do rozliczenia.</div>
+            <div style={{ color:"#94a3b8",fontSize:13 }}>{t("admin.pipeline.settle_empty")}</div>
           ) : (
             <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
               {Object.values(settlementsBySupplier).map(group => (
                 <div key={group.supplier?.id || group.rows[0]?.send?.supplierId || "unknown"} style={{ border:"1px solid #e2e8f0",borderRadius:8,overflow:"hidden" }}>
                   <div style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0" }}>
                     <CompanyLogo company={group.supplier} size={26}/>
-                    <div style={{ flex:1,fontWeight:800,fontSize:12 }}>{group.supplier?.name || "Dostawca"}</div>
-                    <Badge color="#059669" bg="#ecfdf5">{group.charged} rozliczone</Badge>
-                    {group.waiting>0&&<Badge color="#d97706" bg="#fffbeb">{group.waiting} czeka</Badge>}
+                    <div style={{ flex:1,fontWeight:800,fontSize:12 }}>{group.supplier?.name || t("admin.pipeline.settle_supplier_fallback")}</div>
+                    <Badge color="#059669" bg="#ecfdf5">{t("admin.pipeline.settle_badge_settled_count_format", { count: group.charged })}</Badge>
+                    {group.waiting>0&&<Badge color="#d97706" bg="#fffbeb">{t("admin.pipeline.settle_badge_waiting_count_format", { count: group.waiting })}</Badge>}
                     <strong style={{ fontSize:12,color:"#0f172a" }}>{group.amount} EUR</strong>
                   </div>
                   {group.rows.slice(0,4).map(row => (
                     <div key={row.send.id} style={{ display:"grid",gridTemplateColumns:"1.4fr 1fr auto",gap:8,alignItems:"center",padding:"7px 10px",fontSize:12,borderTop:"1px solid #f1f5f9" }}>
-                      <span>{CEMOJI[row.offer?.category]} <strong>{row.offer?.title || row.offer?.product || "Oferta"}</strong></span>
-                      <span style={{ color:"#64748b" }}>{row.retailer?.name || "Sieć"}</span>
+                      <span>{CEMOJI[row.offer?.category]} <strong>{row.offer?.title || row.offer?.product || t("admin.pipeline.settle_offer_fallback")}</strong></span>
+                      <span style={{ color:"#64748b" }}>{row.retailer?.name || t("admin.pipeline.settle_retailer_fallback")}</span>
                       {row.charged
-                        ? <Badge color="#059669" bg="#ecfdf5">Rozliczona {row.amount} EUR</Badge>
-                        : <Badge color={row.billingStatus==="no_package_available"?"#dc2626":"#d97706"} bg={row.billingStatus==="no_package_available"?"#fef2f2":"#fffbeb"}>{row.billingStatus==="no_package_available"?"Brak pakietu":"Czeka"}</Badge>
+                        ? <Badge color="#059669" bg="#ecfdf5">{t("admin.pipeline.settle_row_charged_badge_format", { amount: row.amount })}</Badge>
+                        : <Badge color={row.billingStatus==="no_package_available"?"#dc2626":"#d97706"} bg={row.billingStatus==="no_package_available"?"#fef2f2":"#fffbeb"}>{row.billingStatus==="no_package_available"?t("admin.pipeline.settle_row_no_package"):t("admin.pipeline.settle_row_waiting")}</Badge>
                       }
                     </div>
                   ))}
-                  {group.rows.length>4&&<div style={{ padding:"6px 10px",fontSize:11,color:"#94a3b8" }}>+{group.rows.length-4} więcej</div>}
+                  {group.rows.length>4&&<div style={{ padding:"6px 10px",fontSize:11,color:"#94a3b8" }}>{t("admin.pipeline.settle_more_format", { count: group.rows.length-4 })}</div>}
                 </div>
               ))}
             </div>
@@ -7132,22 +7138,22 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
                 <div style={{ fontSize:12,color:"#64748b" }}>→ {r?.name} · {r?.buyer} · {s.sentAt}</div>
                 {/* TrackingBar only here in detail – not on list */}
                 {s.status==="sent"&&<div style={{ marginTop:5 }}>
-                  <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>Tracking 14 dni</span><span style={{ color:s.daysLeft<=3?"#dc2626":"#f59e0b" }}>{s.daysLeft} dni pozostało</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>{t("admin.pipeline.track_tracking_label")}</span><span style={{ color:s.daysLeft<=3?"#dc2626":"#f59e0b" }}>{t("admin.pipeline.track_days_left_format", { count: s.daysLeft })}</span></div>
                   <div style={{ background:"#e2e8f0",borderRadius:3,height:4,overflow:"hidden" }}><div style={{ height:"100%",background:s.daysLeft<=3?"#dc2626":"#f59e0b",width:`${((14-s.daysLeft)/14)*100}%` }}/></div>
                 </div>}
               </div>
               <div style={{ display:"flex",gap:5,flexShrink:0 }}>
-                {isConf?<Badge color={isEmail?"#7c3aed":isAuto?"#059669":"#047857"}>{isEmail?"Mail otwarty":isAuto?"Lista/app":"Manual"}</Badge>:<Badge color="#ea580c">Nieprzeczytana</Badge>}
-                {hasChargeMarker(s)&&<Badge color="#059669" bg="#ecfdf5">Rozliczona</Badge>}
+                {isConf?<Badge color={isEmail?"#7c3aed":isAuto?"#059669":"#047857"}>{isEmail?t("admin.pipeline.track_badge_email_opened"):isAuto?t("admin.pipeline.track_badge_auto_app"):t("admin.pipeline.track_badge_manual")}</Badge>:<Badge color="#ea580c">{t("admin.pipeline.track_badge_unread")}</Badge>}
+                {hasChargeMarker(s)&&<Badge color="#059669" bg="#ecfdf5">{t("admin.pipeline.track_badge_settled")}</Badge>}
                 <Btn sm outline onClick={()=>setPreviewOffer(o)}><Eye size={10}/></Btn>
                 <Btn sm outline onClick={()=>setHistoryId(s.id)} style={{ position:"relative" }}><Clock size={10}/>{histLen>0&&<span style={{ position:"absolute",top:-4,right:-4,background:"#2563eb",color:"white",borderRadius:"50%",fontSize:9,width:14,height:14,display:"flex",alignItems:"center",justifyContent:"center" }}>{histLen}</span>}</Btn>
-                {isConf&&<Btn sm danger onClick={()=>undoConfirm(s.id)} style={{ fontSize:11 }}><RotateCcw size={10}/> Cofnij</Btn>}
+                {isConf&&<Btn sm danger onClick={()=>undoConfirm(s.id)} style={{ fontSize:11 }}><RotateCcw size={10}/> {t("admin.pipeline.track_confirm_undo_btn")}</Btn>}
               </div>
             </div>
-            {!isConf&&s.status==="sent"&&<ConfirmForm send={s} onConfirm={(id,rt,note)=>{ confirmManual(id,rt,note); fl("Potwierdzenie zapisane."); }}/>}
+            {!isConf&&s.status==="sent"&&<ConfirmForm send={s} onConfirm={(id,rt,note)=>{ confirmManual(id,rt,note); fl(t("admin.pipeline.confirm_form_toast_saved")); }}/>}
             {isConf&&<div style={{ padding:"8px 10px",background:"#f8fafc",borderRadius:7,fontSize:12,marginTop:4 }}>
-              {isEmail?<span style={{ color:"#7c3aed" }}>Kupiec otworzył mail zbiorczy z ofertami</span>:isAuto?<span style={{ color:"#059669" }}>Kupiec zobaczył ofertę w PreConnect</span>:<><strong>{s.readType==="manual_phone"?"Telefon":s.readType==="manual_email"?"E-mail":"Spotkanie"}</strong>{s.manualNote&&<span style={{ color:"#64748b" }}> · {s.manualNote}</span>}</>}
-              {hasChargeMarker(s)&&<span style={{ marginLeft:10,color:"#059669" }}>Rozliczenie: {getChargeAmount(s, Number(s.price||0))} EUR</span>}
+              {isEmail?<span style={{ color:"#7c3aed" }}>{t("admin.pipeline.track_confirmed_email")}</span>:isAuto?<span style={{ color:"#059669" }}>{t("admin.pipeline.track_confirmed_auto")}</span>:<><strong>{s.readType==="manual_phone"?t("admin.pipeline.track_manual_phone"):s.readType==="manual_email"?t("admin.pipeline.track_manual_email"):t("admin.pipeline.track_manual_meeting")}</strong>{s.manualNote&&<span style={{ color:"#64748b" }}> · {s.manualNote}</span>}</>}
+              {hasChargeMarker(s)&&<span style={{ marginLeft:10,color:"#059669" }}>{t("admin.pipeline.track_settlement_inline_format", { amount: getChargeAmount(s, Number(s.price||0)) })}</span>}
               {(s.readAt||s.seenAt||s.emailOpenedAt)&&<span style={{ marginLeft:10,color:"#047857" }}>✓ {s.readAt||s.seenAt||s.emailOpenedAt}</span>}
             </div>}
           </Card>
@@ -8109,7 +8115,14 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
 //     ponownie waliduje status (żeby kliknięcie 2x na zafrozzonej karcie
 //     nie wysłało dwa razy)
 function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose, onSent }) {
+  const { t } = useTranslation("legacy");
+  // [P2-pipeline] Helper plural PL: 1 → one, 2-4 → few, reszta → many.
+  // Używamy CLDR-compatible suffix dla i18next plural lookup. EN ma _other
+  // = _few = _many więc działa też w EN.
+  const pluralSuffix = (n) => n === 1 ? "_one" : (n >= 2 && n <= 4) ? "_few" : "_many";
   const monthName = (() => {
+    // [P2-pipeline] Month name nie tłumaczę — preview maila jest faithful
+    // do PL maila wysyłanego do kupców. Email content stays PL (P2-11).
     const months = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
     const d = new Date();
     return `${months[d.getMonth()]} ${d.getFullYear()}`;
@@ -8142,35 +8155,38 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
 
   const offerCount = allSorted.length;
   const buyerCount = activeBuyers.length;
-  const subjectLine = `Fresh Market PreConnect – ${offerCount} ${offerCount === 1 ? "oferta" : offerCount < 5 ? "oferty" : "ofert"} dla ${retailer?.name || ""}`;
+  const subjectOffersLabel = t("admin.pipeline.email_subject_offers" + pluralSuffix(offerCount) + "_format", { count: offerCount });
+  const subjectLine = t("admin.pipeline.email_subject_format", { summary: subjectOffersLabel, retailer: retailer?.name || "" });
+  const offersLabel = t("admin.pipeline.email_offers" + pluralSuffix(offerCount) + "_format", { count: offerCount });
   const buyerLine = buyerCount === 1
-    ? `Ta wiadomość trafi do 1 kupca z sieci ${retailer?.name || ""} i zawiera ${offerCount} ${offerCount===1?"ofertę":offerCount<5?"oferty":"ofert"}.`
-    : `Ta wiadomość trafi do ${buyerCount} kupców sieci ${retailer?.name || ""} i zawiera ${offerCount} ${offerCount===1?"ofertę":offerCount<5?"oferty":"ofert"}.`;
+    ? t("admin.pipeline.email_buyer_line_one_format", { name: retailer?.name || "", offers: offersLabel })
+    : t("admin.pipeline.email_buyer_line_many_format", { buyers: buyerCount, name: retailer?.name || "", offers: offersLabel });
+  const modalTitle = t("admin.pipeline.email_modal_title_format", { name: retailer?.name || t("admin.pipeline.email_modal_title_fallback") });
 
   // Pusta sieć / brak ofert / brak kupców — pokaż komunikat zamiast pustego maila
   if (offerCount === 0) {
     return (
-      <Modal title={`E-mail dla ${retailer?.name || "sieci"}`} onClose={onClose}>
+      <Modal title={modalTitle} onClose={onClose}>
         <Alrt type="warning">
           {skippedCount > 0
-            ? <>Brak ofert <strong>zatwierdzonych</strong> dla tej sieci. {skippedCount} pozycji jest w innym statusie (do moderacji / odrzucona / wysłana). Najpierw zatwierdź propozycje w Pipeline.</>
-            : <>Ta sieć nie ma żadnych propozycji w kolejce.</>
+            ? <Trans i18nKey="admin.pipeline.email_no_offers_skipped_html" ns="legacy" values={{ skipped: skippedCount }} components={{ strong: <strong /> }}/>
+            : t("admin.pipeline.email_no_offers_empty")
           }
         </Alrt>
         <div style={{ display:"flex",justifyContent:"flex-end",marginTop:12 }}>
-          <Btn outline onClick={onClose}>Zamknij</Btn>
+          <Btn outline onClick={onClose}>{t("admin.pipeline.email_btn_close")}</Btn>
         </div>
       </Modal>
     );
   }
   if (buyerCount === 0) {
     return (
-      <Modal title={`E-mail dla ${retailer?.name || "sieci"}`} onClose={onClose}>
+      <Modal title={modalTitle} onClose={onClose}>
         <Alrt type="warning">
-          Sieć <strong>{retailer?.name}</strong> nie ma aktywnego kupca z e-mailem. Najpierw dodaj kupca w „Sieci" → wybierz tę sieć → „Kupcy".
+          <Trans i18nKey="admin.pipeline.email_no_buyers_html" ns="legacy" values={{ name: retailer?.name }} components={{ strong: <strong /> }}/>
         </Alrt>
         <div style={{ display:"flex",justifyContent:"flex-end",marginTop:12 }}>
-          <Btn outline onClick={onClose}>Zamknij</Btn>
+          <Btn outline onClick={onClose}>{t("admin.pipeline.email_btn_close")}</Btn>
         </div>
       </Modal>
     );
@@ -8191,21 +8207,21 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
         onSent?.(result.send_ids_marked || [], sentAt);
         const failedCount = (result.buyers_failed || []).length;
         if (failedCount > 0) {
-          fl?.(`Wysłano do ${result.buyer_count - failedCount}/${result.buyer_count} kupców · ${result.send_ids_marked?.length || 0} ofert oznaczonych jako wysłane. ${failedCount} buyer(ów) nie udało się.`, "warning");
+          fl?.(t("admin.pipeline.toast_send_partial_format", { succeeded: result.buyer_count - failedCount, total: result.buyer_count, count: result.send_ids_marked?.length || 0, failed: failedCount }), "warning");
         } else {
-          fl?.(`Wysłano! ${result.buyer_count} kupiec(ów) · ${result.send_ids_marked?.length || 0} ofert oznaczonych jako wysłane.`);
+          fl?.(t("admin.pipeline.toast_send_success_format", { buyers: result.buyer_count, count: result.send_ids_marked?.length || 0 }));
         }
         // Auto-close po 1.5s
         setTimeout(() => onClose?.(), 1500);
       } else {
         setSendingState("error");
-        fl?.(result.error || "Wysyłka nie powiodła się.", "warning");
+        fl?.(result.error || t("admin.pipeline.toast_send_failed_default"), "warning");
       }
     } catch (e) {
       console.warn("[sendRetailerBatch]", e);
       setSendResult(e?.payload || { error: e?.message });
       setSendingState("error");
-      fl?.(e?.message || "Nie udało się wysłać maila.", "warning");
+      fl?.(e?.message || t("admin.pipeline.toast_send_unknown_error"), "warning");
     }
   }
 
@@ -8214,17 +8230,17 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
       <div style={{ background:"#f1f5f9",borderRadius:16,width:"100%",maxWidth:660,boxShadow:"0 24px 80px rgba(0,0,0,0.4)" }}>
         <div style={{ display:"flex",alignItems:"center",gap:12,padding:"14px 18px",background:"#1e3a5f",borderRadius:"16px 16px 0 0" }}>
           <div style={{ flex:1 }}>
-            <div style={{ color:"white",fontWeight:700,fontSize:14 }}>E-mail dla {retailer?.name}</div>
+            <div style={{ color:"white",fontWeight:700,fontSize:14 }}>{modalTitle}</div>
             <div style={{ fontSize:11,color:"rgba(255,255,255,0.55)",marginTop:2 }}>{buyerLine}</div>
           </div>
           {sendingState === "success"
-            ? <span style={{ background:"#10b981",color:"white",fontSize:12,fontWeight:700,padding:"6px 12px",borderRadius:7 }}>✓ Wysłano</span>
+            ? <span style={{ background:"#10b981",color:"white",fontSize:12,fontWeight:700,padding:"6px 12px",borderRadius:7 }}>{t("admin.pipeline.email_btn_sent")}</span>
             : <>
-                <Btn sm onClick={onClose} disabled={sendingState === "sending"} style={{ background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)" }}>Anuluj</Btn>
+                <Btn sm onClick={onClose} disabled={sendingState === "sending"} style={{ background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)" }}>{t("admin.pipeline.email_btn_cancel")}</Btn>
                 <Btn sm onClick={doSend} disabled={sendingState === "sending"} style={{ background:"#10b981",color:"white",border:"none",fontWeight:700 }}>
                   {sendingState === "sending"
-                    ? <><RefreshCw size={12} style={{ animation:"spin 1s linear infinite" }}/> Wysyłam…</>
-                    : <><Send size={12}/> Wyślij ({offerCount})</>
+                    ? <><RefreshCw size={12} style={{ animation:"spin 1s linear infinite" }}/> {t("admin.pipeline.email_btn_sending")}</>
+                    : <><Send size={12}/> {t("admin.pipeline.email_btn_send_format", { count: offerCount })}</>
                   }
                 </Btn>
               </>
@@ -8232,9 +8248,9 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
         </div>
         <div style={{ background:"#dde3ea",padding:"8px 14px",borderBottom:"1px solid #b8c4ce" }}>
           {[
-            ["Od", "Fresh Market <newsletter@freshmarket.eu>"],
-            ["Do", activeBuyers.map(b => `${b.name || b.email} <${b.email}>`).join(", ")],
-            ["Temat", subjectLine],
+            [t("admin.pipeline.email_hdr_from"), "Fresh Market <newsletter@freshmarket.eu>"],
+            [t("admin.pipeline.email_hdr_to"), activeBuyers.map(b => `${b.name || b.email} <${b.email}>`).join(", ")],
+            [t("admin.pipeline.email_hdr_subject"), subjectLine],
           ].map(([k,v])=>(
             <div key={k} style={{ display:"flex",gap:8,padding:"3px 0",fontSize:12 }}>
               <span style={{ color:"#64748b",minWidth:40,fontWeight:600 }}>{k}:</span>
@@ -8243,7 +8259,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
           ))}
           {skippedCount > 0 && (
             <div style={{ marginTop:6,fontSize:11,color:"#92400e",background:"#fef3c7",border:"1px solid #fde68a",padding:"5px 10px",borderRadius:6 }}>
-              Pominięto {skippedCount} {skippedCount===1?"propozycję":skippedCount<5?"propozycje":"propozycji"} (nie są zatwierdzone — odrzucone, w moderacji lub już wysłane).
+              {t("admin.pipeline.email_skipped_format" + pluralSuffix(skippedCount), { count: skippedCount })}
             </div>
           )}
         </div>
@@ -8355,15 +8371,20 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
 }
 
 function ConfirmForm({ send, onConfirm }) {
+  const { t } = useTranslation("legacy");
   const [note,setNote]=useState(""); const [rt,setRt]=useState("manual_phone");
   return (
     <div style={{ marginTop:10,padding:"12px 14px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}>
-      <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>Kontakt ręczny z kupcem:</div>
-      <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:8 }}>{[["manual_phone","Telefon"],["manual_email","E-mail"],["manual_meeting","Spotkanie"]].map(([v,l])=>(
+      <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>{t("admin.pipeline.confirm_form_label")}</div>
+      <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:8 }}>{[
+        ["manual_phone", t("admin.pipeline.confirm_form_type_phone")],
+        ["manual_email", t("admin.pipeline.confirm_form_type_email")],
+        ["manual_meeting", t("admin.pipeline.confirm_form_type_meeting")],
+      ].map(([v,l])=>(
         <span key={v} onClick={()=>setRt(v)} style={{ padding:"4px 10px",border:`2px solid ${rt===v?"#0891b2":"#e2e8f0"}`,borderRadius:7,fontSize:12,cursor:"pointer",background:rt===v?"rgba(8,145,178,0.05)":"white",fontWeight:rt===v?600:400,userSelect:"none" }}>{l}</span>
       ))}</div>
-      <Inp label="Notatka" ta value={note} onChange={e=>setNote(e.target.value)} style={{ minHeight:48 }}/>
-      <Btn primary sm onClick={()=>{ onConfirm(send.id,rt,note); setNote(""); setRt("manual_phone"); }}>Zapisz potwierdzenie</Btn>
+      <Inp label={t("admin.pipeline.confirm_form_note_label")} ta value={note} onChange={e=>setNote(e.target.value)} style={{ minHeight:48 }}/>
+      <Btn primary sm onClick={()=>{ onConfirm(send.id,rt,note); setNote(""); setRt("manual_phone"); }}>{t("admin.pipeline.confirm_form_save_btn")}</Btn>
     </div>
   );
 }
