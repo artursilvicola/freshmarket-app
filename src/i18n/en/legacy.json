@@ -44,6 +44,26 @@
       "firma_logistyczna": "🚛 Logistics company",
       "kooperatywa": "🤲 Cooperative",
       "agent": "🔎 Agent / Broker"
+    },
+    "offer_filters": {
+      "filter_btn": "Filters",
+      "active_badge": "Active",
+      "clear_btn": "Clear",
+      "all_option": "All",
+      "category_label": "Category",
+      "category_options": {
+        "owoce": "Fruits",
+        "warzywa": "Vegetables",
+        "kwiaty": "Flowers",
+        "ziola": "Herbs",
+        "inne": "Other"
+      },
+      "country_label": "Country",
+      "cert_label": "Certificate",
+      "packaging_label": "Packaging",
+      "volume_min_label": "Min. volume (T)",
+      "volume_min_placeholder": "e.g. 50",
+      "starred_label": "Saved"
     }
   },
   "supplier": {

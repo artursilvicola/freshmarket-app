@@ -44,6 +44,26 @@
       "firma_logistyczna": "🚛 Firma Logistyczna",
       "kooperatywa": "🤲 Kooperatywa",
       "agent": "🔎 Agent/Broker"
+    },
+    "offer_filters": {
+      "filter_btn": "Filtry",
+      "active_badge": "Aktywne",
+      "clear_btn": "Wyczyść",
+      "all_option": "Wszystkie",
+      "category_label": "Kategoria",
+      "category_options": {
+        "owoce": "Owoce",
+        "warzywa": "Warzywa",
+        "kwiaty": "Kwiaty",
+        "ziola": "Zioła",
+        "inne": "Inne"
+      },
+      "country_label": "Kraj",
+      "cert_label": "Certyfikat",
+      "packaging_label": "Opakowanie",
+      "volume_min_label": "Wolumen min. (T)",
+      "volume_min_placeholder": "np. 50",
+      "starred_label": "Ciekawe"
     }
   },
   "supplier": {
