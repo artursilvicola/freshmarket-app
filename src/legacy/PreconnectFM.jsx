@@ -6790,6 +6790,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
 /* ── Admin Dashboard ──────────────────────────────────────────────────── */
 function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, resetToSeed, retailers, fmSuppliers, companies }) {
+  const { t } = useTranslation("legacy");
   const pm=sends.filter(s=>s.status==="pending_moderation").length;
   const ap=sends.filter(s=>s.status==="approved").length;
   const nc=sends.filter(s=>s.status==="sent").length;
@@ -6811,38 +6812,41 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           <div style={{ width:42, height:42, borderRadius:"50%", background:"#d97706", color:"white", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, fontSize:22 }}>🔔</div>
           <div style={{ flex:1 }}>
             <div style={{ fontWeight:700, fontSize:14, color:"#92400e", marginBottom:3 }}>
-              Wymaga Twojej akcji
+              {t("admin.dash.urgent_title")}
             </div>
             <div style={{ fontSize:13, color:"#78350f", lineHeight:1.55 }}>
               {pm > 0 && (
                 <>
-                  <strong>{pm}</strong> {pm===1?"propozycja czeka":pm<5?"propozycje czekają":"propozycji czeka"} na moderację
-                  {pendingFirms > 0 && " · "}
+                  <Trans i18nKey="admin.dash.urgent_proposals_html" ns="legacy" count={pm} values={{ count: pm }} components={{ strong: <strong /> }}/>
+                  {pendingFirms > 0 && t("admin.dash.urgent_separator")}
                 </>
               )}
               {pendingFirms > 0 && (
-                <>
-                  <strong>{pendingFirms}</strong> {pendingFirms===1?"firma czeka":pendingFirms<5?"firmy czekają":"firm czeka"} na aktywację konta
-                </>
+                <Trans i18nKey="admin.dash.urgent_firms_html" ns="legacy" count={pendingFirms} values={{ count: pendingFirms }} components={{ strong: <strong /> }}/>
               )}
             </div>
           </div>
           <div style={{ display:"flex", gap:8, flexShrink:0 }}>
             {pm > 0 && (
               <button onClick={()=>nav("a-pipeline")} style={{ padding:"8px 14px", background:"#d97706", color:"white", border:"none", borderRadius:8, fontSize:12.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
-                Otwórz Pipeline →
+                {t("admin.dash.urgent_btn_pipeline")}
               </button>
             )}
             {pendingFirms > 0 && (
               <button onClick={()=>nav("a-firmy")} style={{ padding:"8px 14px", background:"white", color:"#92400e", border:"1px solid #d97706", borderRadius:8, fontSize:12.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
-                Otwórz Firmy →
+                {t("admin.dash.urgent_btn_firmy")}
               </button>
             )}
           </div>
         </div>
       )}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12,marginBottom:20 }}>
-        {[["Przychód (potwier.)",`${revenue} EUR`,revenue>0?"#059669":"#94a3b8",TrendingUp],[`Do moderacji (${pm})`,pm>0?"Wymaga akcji":"OK",pm>0?"#d97706":"#059669",Layers],[`Zatwierdzone (${ap})`,ap>0?"Gotowe do wysyłki":"—",ap>0?"#2563eb":"#94a3b8",Send],[`Do potwierdzenia (${nc})`,nc>0?"Tracking aktywny":"—",nc>0?"#ea580c":"#94a3b8",Phone]].map(([l,v,c,Ic])=>(
+        {[
+          [t("admin.dash.kpi_revenue_label"), t("admin.dash.kpi_revenue_value_format", { amount: revenue }), revenue>0?"#059669":"#94a3b8", TrendingUp],
+          [t("admin.dash.kpi_moderation_label_format", { count: pm }), pm>0?t("admin.dash.kpi_moderation_value_action"):t("admin.dash.kpi_moderation_value_ok"), pm>0?"#d97706":"#059669", Layers],
+          [t("admin.dash.kpi_approved_label_format", { count: ap }), ap>0?t("admin.dash.kpi_approved_value_ready"):t("admin.dash.kpi_approved_value_dash"), ap>0?"#2563eb":"#94a3b8", Send],
+          [t("admin.dash.kpi_pending_confirm_label_format", { count: nc }), nc>0?t("admin.dash.kpi_pending_confirm_value_tracking"):t("admin.dash.kpi_pending_confirm_value_dash"), nc>0?"#ea580c":"#94a3b8", Phone],
+        ].map(([l,v,c,Ic])=>(
           <div key={l} style={{ padding:"14px 16px",background:"white",border:"1px solid #e2e8f0",borderRadius:12,borderTop:`3px solid ${c}` }}>
             <div style={{ display:"flex",gap:6,alignItems:"center",marginBottom:6,color:"#64748b",fontSize:11 }}><Ic size={12} color={c}/>{l}</div>
             <div style={{ fontSize:14,fontWeight:700,color:c }}>{v}</div>
@@ -6860,18 +6864,22 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         return (
           <div onClick={()=>nav("a-fm")} style={{ cursor:"pointer",background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap" }}>
             <div style={{ flex:1,minWidth:180 }}>
-              <div style={{ fontSize:10,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4 }}>Fresh Market 2026 — Status</div>
+              <div style={{ fontSize:10,color:"rgba(255,255,255,0.35)",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4 }}>{t("admin.dash.fm_status_label")}</div>
               <div style={{ display:"flex",alignItems:"center",gap:7,marginBottom:3 }}>
                 <div style={{ width:7,height:7,borderRadius:"50%",background:_ph.color }}/>
                 <span style={{ color:"white",fontWeight:700,fontSize:13 }}>{_ph.label}</span>
                 <span style={{ color:"rgba(255,255,255,0.45)",fontSize:11 }}>— {_ph.sub}</span>
-                {!fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(220,38,38,0.2)",color:"#fca5a5" }}>🔴 Zamknięta</span>}
-                {fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(5,150,105,0.2)",color:"#6ee7b7" }}>🟢 Otwarta</span>}
+                {!fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(220,38,38,0.2)",color:"#fca5a5" }}>{t("admin.dash.fm_status_closed_badge")}</span>}
+                {fmSettings.schedulingOpen&&<span style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"rgba(5,150,105,0.2)",color:"#6ee7b7" }}>{t("admin.dash.fm_status_open_badge")}</span>}
               </div>
-              <div style={{ fontSize:10,color:"rgba(255,255,255,0.25)" }}>{_ph.dates} · kliknij aby zarządzać →</div>
+              <div style={{ fontSize:10,color:"rgba(255,255,255,0.25)" }}>{_ph.dates} · {t("admin.dash.fm_status_cta_hint")}</div>
             </div>
             <div style={{ display:"flex",gap:8 }}>
-              {[[_sr+"/"+_suppliers.length,"Dostawców","rgba(255,255,255,0.07)","#6ee7b7"],[_cr+"/"+_fmRetailers.length,"Sieci","rgba(255,255,255,0.07)","#93c5fd"],[_mt,"Spotkań","rgba(5,150,105,0.18)","#6ee7b7"]].map(([v,l,bg,c])=>(
+              {[
+                [_sr+"/"+_suppliers.length, t("admin.dash.fm_status_stat_suppliers"), "rgba(255,255,255,0.07)", "#6ee7b7"],
+                [_cr+"/"+_fmRetailers.length, t("admin.dash.fm_status_stat_retailers"), "rgba(255,255,255,0.07)", "#93c5fd"],
+                [_mt, t("admin.dash.fm_status_stat_meetings"), "rgba(5,150,105,0.18)", "#6ee7b7"],
+              ].map(([v,l,bg,c])=>(
                 <div key={l} style={{ padding:"8px 12px",background:bg,borderRadius:8,textAlign:"center",minWidth:60 }}>
                   <div style={{ fontSize:15,fontWeight:800,color:c }}>{v}</div>
                   <div style={{ fontSize:9,color:"rgba(255,255,255,0.35)",marginTop:1 }}>{l}</div>
@@ -6882,9 +6890,13 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         );
       })()}
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16 }}>
-        {[["a-pipeline",Layers,"Pipeline","Moderacja, wysyłka, potwierdzenia 14 dni"],["a-retailers",Store,"Sieci","Kontakty kupców i harmonogram wysyłek"],["a-firmy",Building2,"Firmy","Pakiety, limity, rozliczenia per firma"]].map(([p,Ic,t,d])=>(
+        {[
+          ["a-pipeline", Layers, t("admin.dash.nav_pipeline_title"), t("admin.dash.nav_pipeline_desc")],
+          ["a-retailers", Store, t("admin.dash.nav_retailers_title"), t("admin.dash.nav_retailers_desc")],
+          ["a-firmy", Building2, t("admin.dash.nav_firmy_title"), t("admin.dash.nav_firmy_desc")],
+        ].map(([p,Ic,navTitle,d])=>(
           <div key={p} onClick={()=>nav(p)} style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:16,cursor:"pointer" }}>
-            <div style={{ display:"flex",gap:7,alignItems:"center",marginBottom:5 }}><Ic size={14} color="#0d9488"/><strong style={{ fontSize:13 }}>{t}</strong></div>
+            <div style={{ display:"flex",gap:7,alignItems:"center",marginBottom:5 }}><Ic size={14} color="#0d9488"/><strong style={{ fontSize:13 }}>{navTitle}</strong></div>
             <div style={{ fontSize:12,color:"#64748b" }}>{d}</div>
           </div>
         ))}
@@ -6892,9 +6904,9 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
       {resetToSeed&&(
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",alignItems:"center",gap:10 }}>
           <Btn outline sm onClick={resetToSeed} style={{ color:"#dc2626",borderColor:"#fca5a5",display:"flex",alignItems:"center",gap:5 }}>
-            <RotateCcw size={12}/> Reset danych testowych
+            <RotateCcw size={12}/> {t("admin.dash.reset_btn")}
           </Btn>
-          <span style={{ fontSize:11,color:"#94a3b8" }}>Przywraca domyślne propozycje, wysyłki i dane FM. Czyści localStorage.</span>
+          <span style={{ fontSize:11,color:"#94a3b8" }}>{t("admin.dash.reset_desc")}</span>
         </div>
       )}
     </div>
@@ -7147,7 +7159,14 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
 
 /* ── Admin: Sieci ─────────────────────────────────────────────────────── */
 function PageAdminRetailers({ retailers, setRetailers }) {
-  const CAT_OPTS = [["owoce","🍎 Owoce"],["warzywa","🥕 Warzywa"],["kwiaty","🌸 Kwiaty"]];
+  const { t } = useTranslation("legacy");
+  // [P2-admin] CAT_OPTS — wartości (klucze) PL zachowane jako historyczne
+  // dane DB, labelki idą przez t() z admin.retailers.cat_options.*
+  const CAT_OPTS = [
+    ["owoce", t("admin.retailers.cat_options.owoce")],
+    ["warzywa", t("admin.retailers.cat_options.warzywa")],
+    ["kwiaty", t("admin.retailers.cat_options.kwiaty")],
+  ];
   const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
   const [search, setSearch]               = useState("");
   const [filterCat, setFilterCat]         = useState("");
@@ -7208,7 +7227,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
     } catch (e) {
       // Cofnij zmianę state'a po błędzie zapisu
       setRetailers(prev => prev.map(r => r.id === id ? current : r));
-      setSaveError(prev => ({ ...prev, [id]: e?.message || "Nie udało się zapisać zmiany." }));
+      setSaveError(prev => ({ ...prev, [id]: e?.message || t("admin.retailers.toast_save_failed_default") }));
       setTimeout(() => setSaveError(prev => { const n = { ...prev }; delete n[id]; return n; }), 4000);
     }
   }
@@ -7253,7 +7272,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
         if (retailer.id === retailerId && buyer.id === buyerId) continue;
         if (buyer.active === false) continue;
         if (normalizeEmail(buyer.email) === normalized) {
-          return { retailerName: retailer.name, buyerName: buyer.name || buyer.email || "kupiec" };
+          return { retailerName: retailer.name, buyerName: buyer.name || buyer.email || t("admin.retailers.toast_duplicate_buyer_fallback") };
         }
       }
     }
@@ -7263,7 +7282,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
     const retailer = retailers.find(r => r.id === id);
     if (!retailer) return;
     const errs = {};
-    if(!retailer.name?.trim()) errs[id] = "Sieć musi mieć nazwę.";
+    if(!retailer.name?.trim()) errs[id] = t("admin.retailers.toast_save_name_required");
     const buyers = (retailer.buyers||[]).map((b) => ({
       ...b,
       name: String(b.name || "").trim(),
@@ -7273,22 +7292,22 @@ function PageAdminRetailers({ retailers, setRetailers }) {
       cats: [...new Set((b.cats || []).filter(Boolean))],
     }));
     const activeBuyers = buyers.filter((b) => b.active !== false);
-    if (retailer.active !== false && activeBuyers.length === 0) errs[id] = "Aktywna sieć musi mieć przynajmniej jednego aktywnego kupca.";
-    if (retailer.fm26Active && !activeBuyers.some((b) => b.fm26Active)) errs[id] = "Sieć FM 2026 musi mieć przynajmniej jednego aktywnego kupca oznaczonego dla FM 2026.";
+    if (retailer.active !== false && activeBuyers.length === 0) errs[id] = t("admin.retailers.toast_save_active_needs_buyer");
+    if (retailer.fm26Active && !activeBuyers.some((b) => b.fm26Active)) errs[id] = t("admin.retailers.toast_save_fm26_needs_fm_buyer");
     const seenEmails = new Set();
     for (const b of buyers) {
       if (b.active === false && !b.isNew) continue;
-      if (!b.name?.trim()) { errs[id] = "Każdy aktywny kupiec musi mieć imię i nazwisko."; break; }
-      if (!b.email?.trim()) { errs[id] = "Każdy aktywny kupiec musi mieć email."; break; }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email)) { errs[id] = `Adres e-mail kupca "${b.name || b.email}" ma niepoprawny format.`; break; }
+      if (!b.name?.trim()) { errs[id] = t("admin.retailers.toast_save_buyer_name_required"); break; }
+      if (!b.email?.trim()) { errs[id] = t("admin.retailers.toast_save_buyer_email_required"); break; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email)) { errs[id] = t("admin.retailers.toast_save_buyer_email_invalid_format", { buyer: b.name || b.email }); break; }
       const emailKey = String(b.email || "").trim().toLowerCase();
-      if (emailKey && seenEmails.has(emailKey)) { errs[id] = "Email kupca w obrębie jednej sieci musi być unikalny."; break; }
+      if (emailKey && seenEmails.has(emailKey)) { errs[id] = t("admin.retailers.toast_save_buyer_email_unique"); break; }
       const duplicate = getDuplicateBuyerEmail(id, b.id, emailKey);
-      if (duplicate) { errs[id] = `Email ${emailKey} jest już przypisany do kupca ${duplicate.buyerName} w sieci ${duplicate.retailerName}.`; break; }
+      if (duplicate) { errs[id] = t("admin.retailers.toast_save_buyer_email_duplicate_format", { email: emailKey, buyer: duplicate.buyerName, retailer: duplicate.retailerName }); break; }
       if (emailKey) seenEmails.add(emailKey);
-      if ((b.cats||[]).length === 0) { errs[id] = "Każdy aktywny kupiec musi mieć min. 1 kategorię."; break; }
+      if ((b.cats||[]).length === 0) { errs[id] = t("admin.retailers.toast_save_buyer_cats_required"); break; }
     }
-    if (retailer.fm26Active && !retailer.fm26ChainId) errs[id] = "Sieć FM 2026 musi mieć ustawione ID łańcucha.";
+    if (retailer.fm26Active && !retailer.fm26ChainId) errs[id] = t("admin.retailers.toast_save_fm26_id_required");
     if (Object.keys(errs).length) { setSaveError(prev => ({ ...prev, ...errs })); return; }
 
     setSavingId(id);
@@ -7357,7 +7376,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
       setSavedIds(prev=>({...prev,[id]:true}));
       setTimeout(()=>setSavedIds(prev=>{const n={...prev};delete n[id];return n;}),2500);
     } catch (e) {
-      setSaveError(prev => ({ ...prev, [id]: e?.message || "Nie udało się zapisać zmian." }));
+      setSaveError(prev => ({ ...prev, [id]: e?.message || t("admin.retailers.toast_save_failed_full_default") }));
     } finally {
       setSavingId(null);
     }
@@ -7367,16 +7386,16 @@ function PageAdminRetailers({ retailers, setRetailers }) {
   }
   function addRetailer() {
     const errs={};
-    if(!newR.name.trim()) errs.name="Wymagana";
-    if(!newR.country) errs.country="Wymagany";
-    if(!newR.buyers[0].name.trim()) errs.buyerName="Wymagane";
-    if(!newR.buyers[0].email.trim()) errs.buyerEmail="Wymagany";
-    if(newR.buyers[0].email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newR.buyers[0].email.trim())) errs.buyerEmail="Niepoprawny email";
-    if((newR.buyers[0].cats||[]).length===0) errs.buyerCats="Wybierz min. 1";
+    if(!newR.name.trim()) errs.name=t("admin.retailers.form_err_required");
+    if(!newR.country) errs.country=t("admin.retailers.form_err_country_required");
+    if(!newR.buyers[0].name.trim()) errs.buyerName=t("admin.retailers.form_err_buyer_name_required");
+    if(!newR.buyers[0].email.trim()) errs.buyerEmail=t("admin.retailers.form_err_buyer_email_required");
+    if(newR.buyers[0].email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newR.buyers[0].email.trim())) errs.buyerEmail=t("admin.retailers.form_err_invalid_email");
+    if((newR.buyers[0].cats||[]).length===0) errs.buyerCats=t("admin.retailers.form_err_cats_required");
     const duplicate = getDuplicateBuyerEmail(null, null, newR.buyers[0].email);
-    if (duplicate) errs.buyerEmail=`Email jest już przypisany do ${duplicate.buyerName} w sieci ${duplicate.retailerName}`;
-    if(newR.fm26Active && !newR.fm26ChainId?.trim()) errs.fm26ChainId="Wymagane gdy sieć uczestniczy w FM 2026 (np. ch28)";
-    if(newR.fm26Active && newR.fm26ChainId?.trim() && retailers.some(r=>r.fm26ChainId===newR.fm26ChainId.trim())) errs.fm26ChainId="Ten ID jest już zajęty przez inną sieć";
+    if (duplicate) errs.buyerEmail=t("admin.retailers.form_err_email_duplicate_format", { buyerName: duplicate.buyerName, retailerName: duplicate.retailerName });
+    if(newR.fm26Active && !newR.fm26ChainId?.trim()) errs.fm26ChainId=t("admin.retailers.form_err_fm26_id_required");
+    if(newR.fm26Active && newR.fm26ChainId?.trim() && retailers.some(r=>r.fm26ChainId===newR.fm26ChainId.trim())) errs.fm26ChainId=t("admin.retailers.form_err_fm26_id_taken");
     if(Object.keys(errs).length>0){setFormError(errs);return;}
     const initials=newR.name.split(" ").map(w=>w[0]).join("").slice(0,3).toUpperCase();
     const newId=Math.max(...retailers.map(r=>r.id),120)+1;
@@ -7399,51 +7418,51 @@ function PageAdminRetailers({ retailers, setRetailers }) {
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
         <div>
-          <div style={{fontWeight:700,fontSize:15,marginBottom:2}}>Sieci handlowe i kupcy</div>
-          <div style={{fontSize:12,color:"#64748b"}}>{retailers.filter(r=>r.active!==false).length} aktywnych · {retailers.filter(r=>r.active===false).length} nieaktywnych · {retailers.reduce((a,r)=>(a+(r.buyers||[]).length),0)} kupców łącznie</div>
+          <div style={{fontWeight:700,fontSize:15,marginBottom:2}}>{t("admin.retailers.header_title")}</div>
+          <div style={{fontSize:12,color:"#64748b"}}>{t("admin.retailers.header_stats_format", { active: retailers.filter(r=>r.active!==false).length, inactive: retailers.filter(r=>r.active===false).length, buyers: retailers.reduce((a,r)=>(a+(r.buyers||[]).length),0) })}</div>
         </div>
-        <Btn dark onClick={()=>setShowForm(!showForm)}><Plus size={13}/> {showForm?"Anuluj":"Dodaj sieć"}</Btn>
+        <Btn dark onClick={()=>setShowForm(!showForm)}><Plus size={13}/> {showForm?t("admin.retailers.header_cancel_btn"):t("admin.retailers.header_add_btn")}</Btn>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Szukaj sieci lub kraju..." style={{flex:1,minWidth:180,padding:"7px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={t("admin.retailers.search_placeholder")} style={{flex:1,minWidth:180,padding:"7px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
         <select value={filterCountry} onChange={e=>setFilterCountry(e.target.value)} style={{padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
-          <option value="">Wszystkie kraje</option>
+          <option value="">{t("admin.retailers.filter_countries_all")}</option>
           {[...new Set(retailers.map(r=>r.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {getCountryName(c)}</option>)}
         </select>
         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)} style={{padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
-          <option value="">Wszystkie kategorie</option>
+          <option value="">{t("admin.retailers.filter_categories_all")}</option>
           {CAT_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
         </select>
         <select value={filterActive} onChange={e=>setFilterActive(e.target.value)} style={{padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
-          <option value="all">Wszystkie</option>
-          <option value="active">Aktywne</option>
-          <option value="inactive">Nieaktywne</option>
+          <option value="all">{t("admin.retailers.filter_active_all")}</option>
+          <option value="active">{t("admin.retailers.filter_active_active")}</option>
+          <option value="inactive">{t("admin.retailers.filter_active_inactive")}</option>
         </select>
       </div>
       {showForm&&(
         <div style={{background:"white",border:"2px solid #0d9488",borderRadius:12,padding:20,marginBottom:16}}>
-          <div style={{fontWeight:700,fontSize:14,color:"#0d9488",marginBottom:16}}>Nowa sieć handlowa</div>
+          <div style={{fontWeight:700,fontSize:14,color:"#0d9488",marginBottom:16}}>{t("admin.retailers.form_title")}</div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
             <div>
-              <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NAZWA *</label>
-              <input value={newR.name} onChange={e=>setNewR(p=>({...p,name:e.target.value}))} placeholder="np. Kaufland CZ" style={fldStyle("name")}/>
+              <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.form_name_label")}</label>
+              <input value={newR.name} onChange={e=>setNewR(p=>({...p,name:e.target.value}))} placeholder={t("admin.retailers.form_name_placeholder")} style={fldStyle("name")}/>
               {formError.name&&<div style={{fontSize:10,color:"#dc2626",marginTop:2}}>{formError.name}</div>}
             </div>
             <div>
-              <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ *</label>
+              <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.form_country_label")}</label>
               <select value={newR.country} onChange={e=>setNewR(p=>({...p,country:e.target.value}))} style={fldStyle("country")}>
-                <option value="">— wybierz —</option>
+                <option value="">{t("admin.retailers.form_country_dash")}</option>
                 {getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}
               </select>
               {formError.country&&<div style={{fontSize:10,color:"#dc2626",marginTop:2}}>{formError.country}</div>}
             </div>
             <div>
-              <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>PIERWSZA WYSYŁKA</label>
+              <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.form_next_send_label")}</label>
               <input type="date" value={newR.nextSend} onChange={e=>setNewR(p=>({...p,nextSend:e.target.value}))} style={fldStyle("nextSend")}/>
             </div>
           </div>
           <div style={{marginBottom:16}}>
-            <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>OPIS / NOTATKA</label>
+            <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.form_desc_label")}</label>
             <textarea value={newR.description||""} onChange={e=>setNewR(p=>({...p,description:e.target.value}))} rows={3} style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"}}/>
           </div>
           <div style={{marginBottom:12}}>
@@ -7451,49 +7470,49 @@ function PageAdminRetailers({ retailers, setRetailers }) {
               <input type="checkbox" checked={newR.fm26Active||false}
                 onChange={e=>setNewR(p=>({...p,fm26Active:e.target.checked,fm26ChainId:e.target.checked?p.fm26ChainId:null}))}
                 style={{width:15,height:15,accentColor:"#0d9488"}}/>
-              Sieć uczestniczy w Fresh Market 2026
+              {t("admin.retailers.form_fm26_toggle")}
             </label>
             {newR.fm26Active&&(
               <div style={{marginTop:8,padding:"10px 12px",background:"#eff6ff",borderRadius:8,border:`1px solid ${formError.fm26ChainId?"#dc2626":"#bfdbfe"}`}}>
                 <label style={{fontSize:12,fontWeight:600,color:"#1e40af",display:"block",marginBottom:4}}>
-                  ID sieci FM 2026 (fm26ChainId) <span style={{color:"#dc2626"}}>*</span>
+                  {t("admin.retailers.form_fm26_id_label")} <span style={{color:"#dc2626"}}>{t("admin.retailers.form_fm26_id_required_mark")}</span>
                 </label>
                 <input
                   value={newR.fm26ChainId||""}
                   onChange={e=>setNewR(p=>({...p,fm26ChainId:e.target.value.trim()||null}))}
-                  placeholder="np. ch28, ch29 — musi być unikalne"
+                  placeholder={t("admin.retailers.form_fm26_id_placeholder")}
                   style={{width:"100%",padding:"7px 10px",border:`1px solid ${formError.fm26ChainId?"#dc2626":"#bfdbfe"}`,borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
                 {formError.fm26ChainId
                   ? <div style={{fontSize:10,color:"#dc2626",marginTop:2}}>{formError.fm26ChainId}</div>
-                  : <div style={{fontSize:10,color:"#3b82f6",marginTop:2}}>Bez tego ID sieć nie pojawi się w panelu dostawcy FM. Np. ch28, ch29...</div>
+                  : <div style={{fontSize:10,color:"#3b82f6",marginTop:2}}>{t("admin.retailers.form_fm26_id_hint")}</div>
                 }
               </div>
             )}
           </div>
           <div style={{borderTop:"1px solid #f1f5f9",paddingTop:14,marginBottom:14}}>
-            <div style={{fontWeight:600,fontSize:12,marginBottom:10,color:"#334155"}}>Kupiec (główna osoba kontaktowa)</div>
+            <div style={{fontWeight:600,fontSize:12,marginBottom:10,color:"#334155"}}>{t("admin.retailers.form_buyer_section_title")}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
               <div>
-                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>IMIĘ I NAZWISKO *</label>
-                <input value={newR.buyers[0].name} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],name:e.target.value};return{...p,buyers:b};})} placeholder="np. Anna Kowalska" style={fldStyle("buyerName")}/>
+                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.form_buyer_name_label")}</label>
+                <input value={newR.buyers[0].name} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],name:e.target.value};return{...p,buyers:b};})} placeholder={t("admin.retailers.form_buyer_name_placeholder")} style={fldStyle("buyerName")}/>
                 {formError.buyerName&&<div style={{fontSize:10,color:"#dc2626",marginTop:2}}>{formError.buyerName}</div>}
               </div>
               <div>
-                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>EMAIL *</label>
-                <input type="email" value={newR.buyers[0].email} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],email:e.target.value};return{...p,buyers:b};})} placeholder="kupiec@siec.pl" style={fldStyle("buyerEmail")}/>
+                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.form_buyer_email_label")}</label>
+                <input type="email" value={newR.buyers[0].email} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],email:e.target.value};return{...p,buyers:b};})} placeholder={t("admin.retailers.form_buyer_email_placeholder")} style={fldStyle("buyerEmail")}/>
                 {formError.buyerEmail&&<div style={{fontSize:10,color:"#dc2626",marginTop:2}}>{formError.buyerEmail}</div>}
               </div>
               <div>
-                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>TELEFON</label>
-                <input value={newR.buyers[0].phone} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],phone:e.target.value};return{...p,buyers:b};})} placeholder="+48 22 123 4567" style={fldStyle("phone")}/>
+                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.form_buyer_phone_label")}</label>
+                <input value={newR.buyers[0].phone} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],phone:e.target.value};return{...p,buyers:b};})} placeholder={t("admin.retailers.form_buyer_phone_placeholder")} style={fldStyle("phone")}/>
               </div>
               <div>
-                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>STANOWISKO</label>
-                <input value={newR.buyers[0].position||""} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],position:e.target.value};return{...p,buyers:b};})} placeholder="np. Category Manager" style={fldStyle("position")}/>
+                <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.form_buyer_position_label")}</label>
+                <input value={newR.buyers[0].position||""} onChange={e=>setNewR(p=>{const b=[...p.buyers];b[0]={...b[0],position:e.target.value};return{...p,buyers:b};})} placeholder={t("admin.retailers.form_buyer_position_placeholder")} style={fldStyle("position")}/>
               </div>
             </div>
             <div>
-              <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:6}}>ODPOWIEDZIALNOŚĆ *</label>
+              <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:6}}>{t("admin.retailers.form_buyer_resp_label")}</label>
               <div style={{display:"flex",gap:8}}>
                 {CAT_OPTS.map(([val,lbl])=>(
                   <label key={val} style={{display:"flex",alignItems:"center",gap:7,padding:"8px 14px",border:`2px solid ${newR.buyers[0].cats.includes(val)?"#0d9488":"#e2e8f0"}`,borderRadius:8,cursor:"pointer",fontSize:12,background:newR.buyers[0].cats.includes(val)?"rgba(13,148,136,0.06)":"white",color:newR.buyers[0].cats.includes(val)?"#0d9488":"#475569",fontWeight:newR.buyers[0].cats.includes(val)?600:500,userSelect:"none"}}>
@@ -7506,12 +7525,12 @@ function PageAdminRetailers({ retailers, setRetailers }) {
             </div>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <Btn primary onClick={addRetailer}><Plus size={13}/> Dodaj sieć</Btn>
-            <Btn outline onClick={()=>{setShowForm(false);setFormError({});setNewR({...EMPTY_RETAILER,buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]});}}>Anuluj</Btn>
+            <Btn primary onClick={addRetailer}><Plus size={13}/> {t("admin.retailers.form_add_btn")}</Btn>
+            <Btn outline onClick={()=>{setShowForm(false);setFormError({});setNewR({...EMPTY_RETAILER,buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]});}}>{t("admin.retailers.form_cancel_btn")}</Btn>
           </div>
         </div>
       )}
-      {filtered.length===0&&<div style={{padding:32,textAlign:"center",color:"#94a3b8",background:"white",borderRadius:12,border:"1px solid #e2e8f0"}}>Brak sieci spełniających kryteria.</div>}
+      {filtered.length===0&&<div style={{padding:32,textAlign:"center",color:"#94a3b8",background:"white",borderRadius:12,border:"1px solid #e2e8f0"}}>{t("admin.retailers.empty")}</div>}
       {filtered.map(r=>{
         const isExpanded=expandedId===r.id;
         const isSaved=savedIds[r.id];
@@ -7526,18 +7545,18 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                   <span style={{fontSize:12,color:"#64748b"}}>{FLAGS[r.country]||"🌐"} {getCountryName(r.country)}</span>
                   {allCats.map(c=><Badge key={c} color="#0d9488">{CEMOJI[c]} {c}</Badge>)}
                 </div>
-                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{(r.buyers||[]).filter(b=>b.active!==false).length} kupców aktywnych · Wysyłka: {effectiveNextSend(r.nextSend)}</div>
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{t("admin.retailers.list_buyers_count_format", { count: (r.buyers||[]).filter(b=>b.active!==false).length, date: effectiveNextSend(r.nextSend) })}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-                {isSaved&&<span style={{fontSize:11,color:"#059669",fontWeight:600}}>✅ Zapisano</span>}
+                {isSaved&&<span style={{fontSize:11,color:"#059669",fontWeight:600}}>{t("admin.retailers.list_saved_indicator")}</span>}
                 {/* [B2B Round prod-rollout / admin-toggle-fix] Auto-save zamiast tylko local state */}
                 <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:600,border:`1px solid ${r.active!==false?"#bbf7d0":"#fca5a5"}`,background:r.active!==false?"#f0fdf4":"#fef2f2",color:r.active!==false?"#059669":"#dc2626",userSelect:"none"}} onClick={e=>e.stopPropagation()}>
                   <input type="checkbox" checked={r.active!==false} onChange={e=>quickToggleRetailer(r.id,{active:e.target.checked})} style={{display:"none"}}/>
-                  {r.active!==false?"✅ Aktywna":"⛔ Nieaktywna"}
+                  {r.active!==false?t("admin.retailers.list_active_badge"):t("admin.retailers.list_inactive_badge")}
                 </label>
-                <label title="Kliknij aby przełączyć — zapisuje się od razu. fm26ChainId i kupcy FM26 ustawisz rozwijając kartę sieci." style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:600,userSelect:"none",border:`1px solid ${r.fm26Active?"#2563eb":"#e2e8f0"}`,background:r.fm26Active?"#eff6ff":"#f8fafc",color:r.fm26Active?"#2563eb":"#94a3b8"}} onClick={e=>e.stopPropagation()}>
+                <label title={t("admin.retailers.list_fm26_toggle_title")} style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",padding:"4px 10px",borderRadius:20,fontSize:11,fontWeight:600,userSelect:"none",border:`1px solid ${r.fm26Active?"#2563eb":"#e2e8f0"}`,background:r.fm26Active?"#eff6ff":"#f8fafc",color:r.fm26Active?"#2563eb":"#94a3b8"}} onClick={e=>e.stopPropagation()}>
                   <input type="checkbox" checked={r.fm26Active||false} onChange={e=>quickToggleRetailer(r.id,{fm26Active:e.target.checked})} style={{display:"none"}}/>
-                  {r.fm26Active?"📅 FM 2026":"📅 Poza FM"}
+                  {r.fm26Active?t("admin.retailers.list_fm26_active_badge"):t("admin.retailers.list_fm26_inactive_badge")}
                 </label>
                 <span style={{fontSize:16,color:"#94a3b8"}}>{isExpanded?"▲":"▼"}</span>
               </div>
@@ -7546,7 +7565,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
               <div style={{padding:"0 16px 16px",borderTop:"1px solid #f1f5f9"}}>
                 {/* Logo retailera */}
                 <div style={{margin:"14px 0",padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0"}}>
-                  <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:8,fontWeight:600}}>LOGO SIECI</label>
+                  <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:8,fontWeight:600}}>{t("admin.retailers.expand_logo_label")}</label>
                   <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
                     <div style={{width:64,height:64,borderRadius:10,background:r.logo_url?"white":(r.bg||"#f1f5f9"),border:`2px solid ${r.color}44`,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
                       {r.logo_url
@@ -7568,48 +7587,53 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                         value={r.logo_url || null}
                         onChange={(newUrl) => updateRetailer(r.id, { logo_url: newUrl })}
                         multi={false}
-                        label={r.logo_url ? "Kliknij aby zmienić logo sieci" : "Kliknij aby wgrać logo sieci"}
+                        label={r.logo_url ? t("admin.retailers.expand_logo_upload_change") : t("admin.retailers.expand_logo_upload_new")}
                       />
                     </div>
                   </div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,margin:"14px 0"}}>
-                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NAZWA</label><input value={r.name||""} onChange={e=>updateRetailer(r.id,{name:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
-                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>KRAJ</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
-                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>NASTĘPNA WYSYŁKA <span style={{color:"#94a3b8",fontWeight:400,textTransform:"none"}}>(domyślnie pierwszy wtorek miesiąca)</span></label><input type="date" value={effectiveNextSend(r.nextSend)} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.expand_field_name")}</label><input value={r.name||""} onChange={e=>updateRetailer(r.id,{name:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
+                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.expand_field_country")}</label><select value={r.country||"PL"} onChange={e=>updateRetailer(r.id,{country:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
+                  <div><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.expand_field_next_send_label")} <span style={{color:"#94a3b8",fontWeight:400,textTransform:"none"}}>{t("admin.retailers.expand_field_next_send_hint")}</span></label><input type="date" value={effectiveNextSend(r.nextSend)} onChange={e=>updateRetailer(r.id,{nextSend:e.target.value})} style={{width:"100%",padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                 </div>
                 <div style={{marginBottom:14}}>
-                  <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>OPIS / NOTATKA ADMINA</label>
+                  <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.expand_field_desc_label")}</label>
                   <textarea value={r.description||""} onChange={e=>updateRetailer(r.id,{description:e.target.value})} rows={3} style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"}}/>
                 </div>
                 <div style={{marginTop:8}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-                    <span style={{fontWeight:600,fontSize:13}}>Kupcy ({(r.buyers||[]).length})</span>
-                    <Btn sm outline onClick={()=>addBuyer(r.id)}><Plus size={11}/> Dodaj kupca</Btn>
+                    <span style={{fontWeight:600,fontSize:13}}>{t("admin.retailers.buyers_section_title_format", { count: (r.buyers||[]).length })}</span>
+                    <Btn sm outline onClick={()=>addBuyer(r.id)}><Plus size={11}/> {t("admin.retailers.buyers_add_btn")}</Btn>
                   </div>
                   {(r.buyers||[]).map((b,bi)=>(
                     <div key={b.id} style={{padding:"12px 14px",background:"#f8fafc",borderRadius:10,marginBottom:8,border:"1px solid #e2e8f0",opacity:b.active===false?0.55:1}}>
                       <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
-                        <span style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>Kupiec #{bi+1}</span>
+                        <span style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>{t("admin.retailers.buyer_no_format", { n: bi+1 })}</span>
                         <div style={{marginLeft:"auto",display:"flex",gap:6,alignItems:"center"}}>
                           <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:11,fontWeight:600,color:b.active!==false?"#059669":"#dc2626",userSelect:"none"}}>
                             <input type="checkbox" checked={b.active!==false} onChange={e=>updateBuyer(r.id,b.id,{active:e.target.checked})} style={{marginTop:0,width:13,height:13,cursor:"pointer",accentColor:"#0d9488"}}/>
-                            {b.active!==false?"Aktywny":"Nieaktywny"}
+                            {b.active!==false?t("admin.retailers.buyer_active"):t("admin.retailers.buyer_inactive")}
                           </label>
                           <label style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:11,color:"#2563eb",userSelect:"none"}}>
                             <input type="checkbox" checked={b.fm26Active||false} onChange={e=>updateBuyer(r.id,b.id,{fm26Active:e.target.checked})} style={{width:13,height:13,cursor:"pointer",accentColor:"#2563eb"}}/>
-                            FM 2026
+                            {t("admin.retailers.buyer_fm26")}
                           </label>
                           {(r.buyers||[]).length>1&&<button onClick={()=>removeBuyer(r.id,b.id)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:2,fontSize:11}}><X size={13}/></button>}
                         </div>
                       </div>
                       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:8,marginBottom:10}}>
-                        {[["IMIĘ I NAZWISKO","name",b.name,"text","np. Anna Nowak"],["EMAIL","email",b.email,"email","kupiec@siec.pl"],["TELEFON","phone",b.phone,"tel","+48 22 ..."],["STANOWISKO","position",b.position,"text","np. Category Manager"]].map(([lbl,key,val,type,ph])=>(
+                        {[
+                          [t("admin.retailers.buyer_field_name_label"), "name", b.name, "text", t("admin.retailers.buyer_field_name_placeholder")],
+                          [t("admin.retailers.buyer_field_email_label"), "email", b.email, "email", t("admin.retailers.buyer_field_email_placeholder")],
+                          [t("admin.retailers.buyer_field_phone_label"), "phone", b.phone, "tel", t("admin.retailers.buyer_field_phone_placeholder")],
+                          [t("admin.retailers.buyer_field_position_label"), "position", b.position, "text", t("admin.retailers.buyer_field_position_placeholder")],
+                        ].map(([lbl,key,val,type,ph])=>(
                           <div key={key}><label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:2}}>{lbl}</label><input type={type} value={val||""} placeholder={ph} onChange={e=>updateBuyer(r.id,b.id,{[key]:e.target.value})} style={{width:"100%",padding:"6px 9px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/></div>
                         ))}
                       </div>
                       <div>
-                        <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:6}}>ODPOWIADA ZA</label>
+                        <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:6}}>{t("admin.retailers.buyer_resp_label")}</label>
                         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                           {CAT_OPTS.map(([val,lbl])=>(
                             <label key={val} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 12px",border:`1.5px solid ${(b.cats||[]).includes(val)?"#0d9488":"#e2e8f0"}`,borderRadius:20,cursor:"pointer",fontSize:12,background:(b.cats||[]).includes(val)?"rgba(13,148,136,0.07)":"white",color:(b.cats||[]).includes(val)?"#0d9488":"#475569",fontWeight:(b.cats||[]).includes(val)?600:400,userSelect:"none"}}>
@@ -7624,7 +7648,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                 </div>
                 {saveMeta[r.id]?.links?.length > 0 && (
                   <div style={{marginTop:12,padding:"10px 12px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8}}>
-                    <div style={{fontSize:12,fontWeight:700,color:"#1d4ed8",marginBottom:6}}>Nowe konta kupców utworzone</div>
+                    <div style={{fontSize:12,fontWeight:700,color:"#1d4ed8",marginBottom:6}}>{t("admin.retailers.new_buyer_accounts_title")}</div>
                     {saveMeta[r.id].links.map((lnk, idx) => (
                       <div key={idx} style={{fontSize:11,color:"#334155",marginBottom:4,wordBreak:"break-all"}}>
                         <strong>{lnk.email}</strong>: {lnk.magic_link}
@@ -7638,8 +7662,8 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                   </div>
                 )}
                 <div style={{display:"flex",gap:8,marginTop:14,paddingTop:12,borderTop:"1px solid #f1f5f9"}}>
-                  <Btn primary onClick={()=>saveRetailer(r.id)}>{savingId===r.id ? "Zapisywanie..." : "💾 Zapisz zmiany"}</Btn>
-                  <Btn outline onClick={()=>setExpandedId(null)}>Zwiń</Btn>
+                  <Btn primary onClick={()=>saveRetailer(r.id)}>{savingId===r.id ? t("admin.retailers.saving") : t("admin.retailers.save_btn")}</Btn>
+                  <Btn outline onClick={()=>setExpandedId(null)}>{t("admin.retailers.collapse_btn")}</Btn>
                 </div>
               </div>
             )}
@@ -7654,6 +7678,7 @@ function PageAdminRetailers({ retailers, setRetailers }) {
 
 /* ── Admin Firmy: pakiety, limity, rozliczenia per firma ─────────────────── */
 // [B2B Round supplier-onboarding-access-and-communication]
+// [P2-admin] Tylko kolory/bg, labelka idzie przez t() z admin.firmy.status_labels.*
 const ACCOUNT_STATUS_LABELS = {
   pending_review: ["Czeka na zatwierdzenie", "#92400e", "#fef3c7"],
   active:         ["✓ Aktywne",                 "#059669", "#d1fae5"],
@@ -7662,6 +7687,7 @@ const ACCOUNT_STATUS_LABELS = {
 };
 
 function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity }) {
+  const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -7694,7 +7720,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
 
   async function regenerateForCompany(firmCo) {
     if (!firmCo?.name) {
-      fl("Firma nie ma jeszcze nazwy — nie da się wygenerować opisu.", "warning");
+      fl(t("admin.firmy.toast_ai_no_name"), "warning");
       return;
     }
     setAiLoadingId(firmCo.id);
@@ -7708,9 +7734,12 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         description_short: result?.description_short || "",
         ai_review_status: "pending",
       });
-      fl(`AI wygenerował opisy dla ${firmCo.name}. ${result?.richness === "rich" ? "(profil rozszerzony)" : result?.richness === "minimal" ? "(profil krótki)" : ""}`.trim());
+      const richKey = result?.richness === "rich" ? "toast_ai_richness_rich"
+                    : result?.richness === "minimal" ? "toast_ai_richness_minimal"
+                    : "toast_ai_richness_default";
+      fl(t("admin.firmy.toast_ai_generated_format", { name: firmCo.name, richness: t(`admin.firmy.${richKey}`) }).trim());
     } catch (e) {
-      fl(e?.message || "Nie udało się wygenerować opisu firmy.", "warning");
+      fl(e?.message || t("admin.firmy.toast_ai_failed"), "warning");
     } finally {
       setAiLoadingId(null);
     }
@@ -7718,7 +7747,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
 
   function approveDescriptions(firmCo) {
     patchCompany(firmCo.id, { ai_review_status: "approved" });
-    fl(`Profil firmy ${firmCo.name} zatwierdzony.`);
+    fl(t("admin.firmy.toast_ai_approved_format", { name: firmCo.name }));
   }
 
   function startEdit(firmCo) {
@@ -7735,7 +7764,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
       ai_review_status: "edited",
     });
     setEditingId(null);
-    fl(`Opisy zapisane dla ${firmCo.name}.`);
+    fl(t("admin.firmy.toast_ai_saved_format", { name: firmCo.name }));
   }
   function cancelEdit() {
     setEditingId(null);
@@ -7777,21 +7806,24 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         },
       });
       if (result.ok) {
-        fl(`Status firmy ${firmCo.name} → ${newStatus}. Mail wysłany.`);
+        fl(t("admin.firmy.toast_status_changed_with_email_format", { name: firmCo.name, status: newStatus }));
       } else {
-        fl(`Status firmy ${firmCo.name} → ${newStatus}. (Mail nie został wysłany — sprawdź konfigurację.)`, "warning");
+        fl(t("admin.firmy.toast_status_changed_without_email_format", { name: firmCo.name, status: newStatus }), "warning");
       }
     } else {
-      fl(`Status firmy ${firmCo.name} → ${newStatus}.`);
+      fl(t("admin.firmy.toast_status_changed_format", { name: firmCo.name, status: newStatus }));
     }
     setSavingStatusId(null);
   }
 
   function toggleAccessFlag(firmCo, key, value) {
     patchCompany(firmCo.id, { [key]: value });
-    fl(`${key === "preconnect_enabled" ? "PreConnect" : "Spotkania B2B"} ${value ? "aktywny" : "wyłączony"} dla ${firmCo.name}.`);
+    const flagLabel = t(key === "preconnect_enabled" ? "admin.firmy.toast_flag_preconnect" : "admin.firmy.toast_flag_fm_b2b");
+    const stateLabel = t(value ? "admin.firmy.toast_flag_state_active" : "admin.firmy.toast_flag_state_inactive");
+    fl(t("admin.firmy.toast_flag_format", { flag: flagLabel, state: stateLabel, name: firmCo.name }));
   }
 
+  // [P2-admin] Color/bg PRESERVE, labelka idzie przez t() z admin.firmy.review_labels.*
   const reviewLabel = {
     pending: ["Czeka na review", "#92400e", "#fef3c7"],
     approved: ["✓ Zatwierdzony", "#059669", "#d1fae5"],
@@ -7825,16 +7857,16 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   return (
     <div>
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap" }}>
-        <div style={{ fontWeight:700,fontSize:15 }}>Firmy, statusy i limity pakietów</div>
+        <div style={{ fontWeight:700,fontSize:15 }}>{t("admin.firmy.header_title")}</div>
         <div style={{ display:"flex",gap:6 }}>
-          <button onClick={()=>setFilter("all")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="all"?"2px solid #0d9488":"1px solid #e2e8f0",background:filter==="all"?"rgba(13,148,136,0.05)":"white",fontSize:12,fontWeight:filter==="all"?600:500,cursor:"pointer",fontFamily:"inherit" }}>Wszystkie ({allLims.length})</button>
+          <button onClick={()=>setFilter("all")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="all"?"2px solid #0d9488":"1px solid #e2e8f0",background:filter==="all"?"rgba(13,148,136,0.05)":"white",fontSize:12,fontWeight:filter==="all"?600:500,cursor:"pointer",fontFamily:"inherit" }}>{t("admin.firmy.filter_all_format", { count: allLims.length })}</button>
           <button onClick={()=>setFilter("pending")} style={{ padding:"6px 12px",borderRadius:7,border:filter==="pending"?"2px solid #d97706":"1px solid #e2e8f0",background:filter==="pending"?"rgba(217,119,6,0.05)":"white",fontSize:12,fontWeight:filter==="pending"?600:500,cursor:"pointer",fontFamily:"inherit" }}>
-            Do zatwierdzenia {pendingCount > 0 && <span style={{ background:"#d97706",color:"white",borderRadius:10,fontSize:10,padding:"1px 6px",marginLeft:4 }}>{pendingCount}</span>}
+            {t("admin.firmy.filter_pending_label")} {pendingCount > 0 && <span style={{ background:"#d97706",color:"white",borderRadius:10,fontSize:10,padding:"1px 6px",marginLeft:4 }}>{pendingCount}</span>}
           </button>
         </div>
       </div>
       {visibleLims.length === 0 && (
-        <Alrt type="info">{filter === "pending" ? "Brak firm oczekujących na zatwierdzenie." : "Brak firm w systemie."}</Alrt>
+        <Alrt type="info">{filter === "pending" ? t("admin.firmy.empty_pending") : t("admin.firmy.empty_all")}</Alrt>
       )}
       {visibleLims.map(lim=>{
         const isExpanded = expandedId===lim.id;
@@ -7855,19 +7887,20 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                   {/* [B2B Round supplier-onboarding-access-and-communication] Status badge */}
                   {(() => {
                     const status = firmCo?.account_status || "active";
-                    const [lbl, color, bg] = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
-                    return <span style={{ fontSize:10,color,background:bg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{lbl}</span>;
+                    const meta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+                    const [, color, bg] = meta;
+                    return <span style={{ fontSize:10,color,background:bg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{t(`admin.firmy.status_labels.${status}`, { defaultValue: meta[0] })}</span>;
                   })()}
                 </div>
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
-                  {lim.country} · Pakiet: {lim.pkg} · Ważny do: {lim.pkgExpiry}
-                  {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>· PreConnect off</span>}
-                  {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>· FM B2B</span>}
+                  {lim.country} · {t("admin.firmy.list_pkg_label")} {lim.pkg} · {t("admin.firmy.list_valid_until_label")} {lim.pkgExpiry}
+                  {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>{t("admin.firmy.list_preconnect_off")}</span>}
+                  {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>{t("admin.firmy.list_fm_b2b")}</span>}
                 </div>
               </div>
               <div style={{ textAlign:"right",flexShrink:0 }}>
                 <div style={{ fontWeight:700,fontSize:16,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{used}/{lim.max}</div>
-                <div style={{ fontSize:10,color:"#94a3b8" }}>wysyłek</div>
+                <div style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.firmy.list_used_unit")}</div>
               </div>
               <span style={{ fontSize:16,color:"#94a3b8",marginLeft:8 }}>{isExpanded?"▲":"▼"}</span>
             </div>
@@ -7879,7 +7912,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     expanded view, przed pakietem i AI opisem. */}
                 {firmCo?.name && setCompanies && (() => {
                   const status = firmCo.account_status || "active";
-                  const [statusLbl, statusColor, statusBg] = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+                  const statusMeta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+                  const [, statusColor, statusBg] = statusMeta;
+                  const statusLbl = t(`admin.firmy.status_labels.${status}`, { defaultValue: statusMeta[0] });
                   const isPending = status === "pending_review";
                   const isSaving = savingStatusId === firmCo.id;
                   const note = statusNoteDraft[firmCo.id] ?? (firmCo.status_note || "");
@@ -7887,9 +7922,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",margin:"14px 0 12px",border:"1px solid #e2e8f0" }}>
                       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
                         <div style={{ fontWeight:700,fontSize:12,color:"#334155",display:"flex",alignItems:"center",gap:8 }}>
-                          Status & dostęp
+                          {t("admin.firmy.status_section_title")}
                           <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{statusLbl}</span>
-                          {firmCo.approved_at && status === "active" && <span style={{ fontSize:10,color:"#94a3b8" }}>· od {String(firmCo.approved_at).slice(0,10)}</span>}
+                          {firmCo.approved_at && status === "active" && <span style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.firmy.status_approved_at_format", { date: String(firmCo.approved_at).slice(0,10) })}</span>}
                         </div>
                       </div>
                       {/* Pole notatki (powód odrzucenia/zawieszenia, lub komentarz aktywacji) */}
@@ -7897,7 +7932,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                         <textarea
                           value={note}
                           onChange={(e) => setStatusNoteDraft((prev) => ({ ...prev, [firmCo.id]: e.target.value }))}
-                          placeholder="Notatka dla supplera (powód odrzucenia/zawieszenia, instrukcja co poprawić). Pojawi się w mailu."
+                          placeholder={t("admin.firmy.status_note_placeholder")}
                           style={{ width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:48,marginBottom:10,boxSizing:"border-box" }}
                         />
                       )}
@@ -7905,15 +7940,15 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:12 }}>
                         {isPending && (
                           <>
-                            <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>✓ Zatwierdź konto</Btn>
-                            <Btn sm onClick={()=>changeAccountStatus(firmCo, "rejected")} disabled={isSaving} style={{ background:"#dc2626",color:"white",border:"none" }}>Odrzuć</Btn>
+                            <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>{t("admin.firmy.status_btn_approve")}</Btn>
+                            <Btn sm onClick={()=>changeAccountStatus(firmCo, "rejected")} disabled={isSaving} style={{ background:"#dc2626",color:"white",border:"none" }}>{t("admin.firmy.status_btn_reject")}</Btn>
                           </>
                         )}
                         {status === "active" && (
-                          <Btn sm outline onClick={()=>changeAccountStatus(firmCo, "suspended")} disabled={isSaving} style={{ color:"#dc2626",borderColor:"#fecaca" }}>Wstrzymaj konto</Btn>
+                          <Btn sm outline onClick={()=>changeAccountStatus(firmCo, "suspended")} disabled={isSaving} style={{ color:"#dc2626",borderColor:"#fecaca" }}>{t("admin.firmy.status_btn_suspend")}</Btn>
                         )}
                         {(status === "rejected" || status === "suspended") && (
-                          <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>Aktywuj ponownie</Btn>
+                          <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>{t("admin.firmy.status_btn_reactivate")}</Btn>
                         )}
                       </div>
                       {/* Dwie niezależne flagi dostępu — admin ustawia osobno */}
@@ -7921,15 +7956,15 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                         <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.preconnect_enabled?"rgba(13,148,136,0.06)":"white",border:`1px solid ${firmCo.preconnect_enabled?"#0d9488":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
                           <input type="checkbox" checked={!!firmCo.preconnect_enabled} onChange={(e) => toggleAccessFlag(firmCo, "preconnect_enabled", e.target.checked)} />
                           <div>
-                            <div style={{ fontWeight:600,color:"#0f172a" }}>PreConnect</div>
-                            <div style={{ color:"#64748b",fontSize:10 }}>Wysyłka ofert do sieci</div>
+                            <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_preconnect_title")}</div>
+                            <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_preconnect_desc")}</div>
                           </div>
                         </label>
                         <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.fm_b2b_enabled?"rgba(124,58,237,0.06)":"white",border:`1px solid ${firmCo.fm_b2b_enabled?"#7c3aed":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
                           <input type="checkbox" checked={!!firmCo.fm_b2b_enabled} onChange={(e) => toggleAccessFlag(firmCo, "fm_b2b_enabled", e.target.checked)} />
                           <div>
-                            <div style={{ fontWeight:600,color:"#0f172a" }}>Spotkania B2B</div>
-                            <div style={{ color:"#64748b",fontSize:10 }}>Fresh Market 2026</div>
+                            <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_fm_b2b_title")}</div>
+                            <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_fm_b2b_desc")}</div>
                           </div>
                         </label>
                       </div>
@@ -7938,8 +7973,8 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 })()}
                 <div style={{ margin:"14px 0 10px",background:"#f8fafc",borderRadius:8,padding:"10px 14px" }}>
                   <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12 }}>
-                    <span style={{ color:"#64748b" }}>Wykorzystanie pakietu</span>
-                    <span style={{ fontWeight:700,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{pct}% ({used}/{lim.max})</span>
+                    <span style={{ color:"#64748b" }}>{t("admin.firmy.pkg_usage_label")}</span>
+                    <span style={{ fontWeight:700,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{t("admin.firmy.pkg_usage_value_format", { pct, used, max: lim.max })}</span>
                   </div>
                   <div style={{ background:"#e2e8f0",borderRadius:4,height:6,overflow:"hidden" }}>
                     <div style={{ height:"100%",borderRadius:4,width:`${Math.min(100,pct)}%`,background:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}/>
@@ -7947,26 +7982,28 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 </div>
                 <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12 }}>
                   <div>
-                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>LIMIT WYSYŁEK</label>
+                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_limit_label")}</label>
                     <input type="number" value={lim.max} onChange={e=>updateLimit(lim.id,{max:+e.target.value})}
                       style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}/>
                   </div>
                   <div>
-                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>PAKIET</label>
+                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_select_label")}</label>
                     <select value={lim.pkg} onChange={e=>updateLimit(lim.id,{pkg:e.target.value})}
                       style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}>
-                      <option value="std_5">Standard 5</option>
-                      <option value="std_10">Standard 10</option>
-                      <option value="std_20">Standard 20</option>
-                      <option value="prem_10">Premium 10</option>
-                      <option value="prem_20">Premium 20</option>
+                      <option value="std_5">{t("admin.firmy.pkg_option_std_5")}</option>
+                      <option value="std_10">{t("admin.firmy.pkg_option_std_10")}</option>
+                      <option value="std_20">{t("admin.firmy.pkg_option_std_20")}</option>
+                      <option value="prem_10">{t("admin.firmy.pkg_option_prem_10")}</option>
+                      <option value="prem_20">{t("admin.firmy.pkg_option_prem_20")}</option>
                     </select>
                   </div>
                 </div>
                 {/* [B2B Round adaptive-company-profile-ai] AI review block ─ */}
                 {firmCo?.name && setCompanies && (() => {
                   const status = firmCo.ai_review_status || "pending";
-                  const [statusLabel, statusColor, statusBg] = reviewLabel[status] || reviewLabel.pending;
+                  const reviewMeta = reviewLabel[status] || reviewLabel.pending;
+                  const [, statusColor, statusBg] = reviewMeta;
+                  const statusLabel = t(`admin.firmy.review_labels.${status}`, { defaultValue: reviewMeta[0] });
                   const isEditing = editingId === firmCo.id;
                   const isLoading = aiLoadingId === firmCo.id;
                   return (
@@ -7974,19 +8011,19 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
                         <div style={{ display:"flex",alignItems:"center",gap:8 }}>
                           <Bot size={14} color="#3b82f6"/>
-                          <strong style={{ fontSize:12 }}>Opis AI</strong>
+                          <strong style={{ fontSize:12 }}>{t("admin.firmy.ai_section_title")}</strong>
                           <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 7px",borderRadius:4,fontWeight:600 }}>{statusLabel}</span>
                         </div>
                         <div style={{ display:"flex",gap:6 }}>
-                          <Btn sm outline onClick={()=>setPreviewCompany(firmCo)}><Eye size={11}/> Podgląd</Btn>
+                          <Btn sm outline onClick={()=>setPreviewCompany(firmCo)}><Eye size={11}/> {t("admin.firmy.ai_btn_preview")}</Btn>
                           {!isEditing && (
                             <>
-                              <Btn sm outline onClick={()=>startEdit(firmCo)}>Edytuj</Btn>
+                              <Btn sm outline onClick={()=>startEdit(firmCo)}>{t("admin.firmy.ai_btn_edit")}</Btn>
                               <Btn sm outline onClick={()=>regenerateForCompany(firmCo)} disabled={isLoading}>
                                 {isLoading ? <RefreshCw size={11} style={{ animation:"spin 1s linear infinite" }}/> : <Sparkles size={11}/>}
-                                {isLoading ? " Generuję…" : " Generuj AI"}
+                                {isLoading ? t("admin.firmy.ai_btn_generating") : t("admin.firmy.ai_btn_generate")}
                               </Btn>
-                              {status !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(firmCo)}>Zatwierdź</Btn>}
+                              {status !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(firmCo)}>{t("admin.firmy.ai_btn_approve")}</Btn>}
                             </>
                           )}
                         </div>
@@ -7994,38 +8031,38 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       {isEditing ? (
                         <>
                           <Inp
-                            label="Opis krótki"
+                            label={t("admin.firmy.ai_edit_short_label")}
                             ta
                             value={editDraft.description_short}
                             onChange={e=>setEditDraft(d=>({ ...d, description_short: e.target.value }))}
                             style={{ minHeight:50,fontSize:12 }}
                           />
                           <Inp
-                            label="Opis standardowy"
+                            label={t("admin.firmy.ai_edit_standard_label")}
                             ta
                             value={editDraft.description}
                             onChange={e=>setEditDraft(d=>({ ...d, description: e.target.value }))}
                             style={{ fontSize:12 }}
                           />
                           <div style={{ display:"flex",gap:6,justifyContent:"flex-end" }}>
-                            <Btn sm outline onClick={cancelEdit}>Anuluj</Btn>
-                            <Btn sm primary onClick={()=>saveEdit(firmCo)}>Zapisz</Btn>
+                            <Btn sm outline onClick={cancelEdit}>{t("admin.firmy.ai_edit_cancel")}</Btn>
+                            <Btn sm primary onClick={()=>saveEdit(firmCo)}>{t("admin.firmy.ai_edit_save")}</Btn>
                           </div>
                         </>
                       ) : (
                         <>
                           {firmCo.description_short ? (
                             <div style={{ fontSize:12,color:"#334155",marginBottom:6 }}>
-                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>Krótki:</span> {firmCo.description_short}
+                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_short_prefix")}</span> {firmCo.description_short}
                             </div>
                           ) : null}
                           {firmCo.description ? (
                             <div style={{ fontSize:12,color:"#334155",lineHeight:1.6 }}>
-                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>Standard:</span> {firmCo.description}
+                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_standard_prefix")}</span> {firmCo.description}
                             </div>
                           ) : null}
                           {!firmCo.description_short && !firmCo.description && (
-                            <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}>Brak opisów. Kliknij „Generuj AI", aby utworzyć.</div>
+                            <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}><Trans i18nKey="admin.firmy.ai_view_empty_html" ns="legacy" components={{ em: <em /> }}/></div>
                           )}
                         </>
                       )}
@@ -8033,14 +8070,14 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                   );
                 })()}
                 <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>
-                  <strong>Wysyłki ({firmSends.length}):</strong> {firmSends.length===0?"Brak wysyłek.":""}
+                  <strong>{t("admin.firmy.sends_section_title_format", { count: firmSends.length })}</strong> {firmSends.length===0?t("admin.firmy.sends_empty"):""}
                 </div>
                 {firmSends.slice(-5).reverse().map(s=>{
                   const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId);
                   return (
                     <div key={s.id} style={{ display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9",fontSize:12 }}>
                       <span style={{ fontSize:14 }}>{CEMOJI[o?.category]||"📦"}</span>
-                      <div style={{ flex:1 }}>{o?.title||o?.product||"Propozycja"} → {r?.name||"—"}</div>
+                      <div style={{ flex:1 }}>{o?.title||o?.product||t("admin.firmy.sends_row_fallback_offer")} → {r?.name||t("admin.firmy.sends_row_fallback_retailer")}</div>
                       <span title={STATUS_TIPS[s.status]||""} style={{ cursor:"help" }}>
                         <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
                       </span>
