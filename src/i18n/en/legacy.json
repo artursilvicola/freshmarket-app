@@ -1513,8 +1513,12 @@
     "dash": {
       "urgent_title": "Action required",
       "urgent_proposals_html_one": "<strong>{{count}}</strong> proposal awaiting moderation",
+      "urgent_proposals_html_few": "<strong>{{count}}</strong> proposals awaiting moderation",
+      "urgent_proposals_html_many": "<strong>{{count}}</strong> proposals awaiting moderation",
       "urgent_proposals_html_other": "<strong>{{count}}</strong> proposals awaiting moderation",
       "urgent_firms_html_one": "<strong>{{count}}</strong> company awaiting account activation",
+      "urgent_firms_html_few": "<strong>{{count}}</strong> companies awaiting account activation",
+      "urgent_firms_html_many": "<strong>{{count}}</strong> companies awaiting account activation",
       "urgent_firms_html_other": "<strong>{{count}}</strong> companies awaiting account activation",
       "urgent_separator": " · ",
       "urgent_btn_pipeline": "Open Pipeline →",
