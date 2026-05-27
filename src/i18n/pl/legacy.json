@@ -1916,7 +1916,8 @@
       "ai_suggest_hint": "Szkic zostanie wklejony do pola odpowiedzi — przejrzyj przed wysłaniem.",
       "reply_placeholder_format": "Odpowiedz do {{name}}... (Enter = wyślij)",
       "send_btn": "Wyślij",
-      "clear_btn": "Wyczyść"
+      "clear_btn": "Wyczyść",
+      "ai_fallback_reply": "Dzień dobry! Przekazuję to zapytanie do naszego zespołu. Wrócę z odpowiedzią najszybciej jak to możliwe. W pilnych sprawach zapraszam do kontaktu: oksana@freshmarket.eu · +48 603 811 818."
     }
   },
   "errors": {

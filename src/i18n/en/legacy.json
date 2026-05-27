@@ -1916,7 +1916,8 @@
       "ai_suggest_hint": "The draft will be pasted into the reply field — review before sending.",
       "reply_placeholder_format": "Reply to {{name}}... (Enter = send)",
       "send_btn": "Send",
-      "clear_btn": "Clear"
+      "clear_btn": "Clear",
+      "ai_fallback_reply": "Hello! I'm forwarding this question to our team. I'll get back to you as soon as possible. For urgent matters please contact: oksana@freshmarket.eu · +48 603 811 818."
     }
   },
   "errors": {

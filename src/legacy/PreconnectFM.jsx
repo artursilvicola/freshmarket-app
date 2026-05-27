@@ -1253,9 +1253,6 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
     if (open && bottomRef.current) bottomRef.current.scrollIntoView({ behavior: "smooth" });
   }, [open, thread.length]);
 
-  // [P2-extras] roleName const — dead code (assigned, never used in JSX), kept for backward compat.
-  const roleName = account.role === "supplier" ? "Dostawca" : "Sieć"; // eslint-disable-line no-unused-vars
-
   return (
     <div style={{ position:"fixed", bottom:24, right:24, zIndex:3000 }}>
       {open && (
@@ -1324,7 +1321,13 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
    PAGE ADMIN CHAT — widok administratora z listą wątków i oknem rozmowy
 ══════════════════════════════════════════════════════════════════════════ */
 function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRead, onSuggestReply }) {
-  const { t } = useTranslation("legacy");
+  const { t, i18n } = useTranslation("legacy");
+  // [P2-extras review] AI fallback: getAiAnswer() zwraca PL z KNOWLEDGE_BASE.
+  // W EN locale używamy generic fallback z legacy.chat.admin.ai_fallback_reply,
+  // żeby admin w EN nie dostawał PL gotowca do wklejenia.
+  const aiFallback = (text) => i18n.language?.startsWith("en")
+    ? t("chat.admin.ai_fallback_reply")
+    : getAiAnswer(text);
   const [selectedId, setSelectedId] = useState(null);
   const [replyText, setReplyText] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -1401,10 +1404,10 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
         },
         thread: threadPayload,
       });
-      setReplyText(suggestion || getAiAnswer(lastMsg.text));
+      setReplyText(suggestion || aiFallback(lastMsg.text));
     } catch (e) {
       console.warn("[suggestAdminReplyAI]", e);
-      setReplyText(getAiAnswer(lastMsg.text));
+      setReplyText(aiFallback(lastMsg.text));
     } finally {
       setAiLoading(false);
     }
