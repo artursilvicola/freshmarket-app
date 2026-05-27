@@ -28,6 +28,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { markLegacySendsSeen } from "./_shared/legacy-send-seen.js";
+import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -36,8 +37,11 @@ const cors = {
 };
 
 export const handler = async (event) => {
+  // [P2-backend-mails C3] Caller is buyer/admin → use Accept-Language → profile.locale.
+  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  let locale = resolveLocale({ acceptLanguage: acceptLang });
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== "POST") return json(405, { error: "Method Not Allowed" });
+  if (event.httpMethod !== "POST") return json(405, { error: errLoc(locale, "method_not_allowed") });
 
   const env = resolveEnvConfig();
   const missing = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey"]);
@@ -46,32 +50,36 @@ export const handler = async (event) => {
   // ── Auth ────────────────────────────────────────────────────────────
   const authHeader = event.headers.authorization || event.headers.Authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token) return json(401, { error: "Brak tokenu autoryzacji" });
+  if (!token) return json(401, { error: errLoc(locale, "no_auth_token") });
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   const { data: userData, error: userErr } = await supaSvc.auth.getUser(token);
   if (userErr || !userData?.user) {
-    return json(401, { error: "Nieprawidłowy token" });
+    return json(401, { error: errLoc(locale, "invalid_token") });
   }
 
+  // [P2-backend-mails C3] Pull `locale` for caller-facing error messages.
   const { data: profile, error: profileErr } = await supaSvc
     .from("profiles")
-    .select("id, role, retailer_id, active")
+    .select("id, role, retailer_id, active, locale")
     .eq("id", userData.user.id)
     .maybeSingle();
   if (profileErr) return json(500, { error: profileErr.message });
-  if (!profile?.active) return json(403, { error: "Konto jest nieaktywne" });
+  if (!profile?.active) return json(403, { error: errLoc(locale, "account_inactive") });
   if (!["buyer", "admin"].includes(profile?.role)) {
-    return json(403, { error: "Tylko kupiec lub admin może oznaczyć ofertę jako zobaczoną" });
+    return json(403, { error: errLoc(locale, "only_buyer_or_admin_mark_seen") });
   }
+  locale = resolveLocale({ profileLocale: profile.locale, acceptLanguage: acceptLang });
 
   // ── Body ────────────────────────────────────────────────────────────
   let body;
   try { body = JSON.parse(event.body || "{}"); }
-  catch { return json(400, { error: "Niepoprawny JSON" }); }
+  catch { return json(400, { error: errLoc(locale, "invalid_json") }); }
+  // [P2-backend-mails C3] body.locale wygrywa, jeśli klient przekazał.
+  locale = resolveLocale({ bodyLocale: body.locale, profileLocale: profile.locale, acceptLanguage: acceptLang });
   const legacyId = Number(body.legacy_id);
   if (!Number.isFinite(legacyId) || legacyId <= 0) {
-    return json(400, { error: "Brak / nieprawidłowy legacy_id" });
+    return json(400, { error: errLoc(locale, "missing_legacy_id") });
   }
 
   const result = await markLegacySendsSeen({

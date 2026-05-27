@@ -34,6 +34,7 @@ import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { renderRetailerEmail, buildSubject } from "./_shared/render-retailer-email.js";
 import { tplOffersSentToRetailer } from "./_shared/supplier-email-templates.js";
+import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -42,8 +43,11 @@ const cors = {
 };
 
 export const handler = async (event) => {
+  // [P2-backend-mails C3] adminFacing locale (caller = admin).
+  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  let adminLocale = resolveLocale({ acceptLanguage: acceptLang });
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== "POST") return json(405, { error: "Method Not Allowed" });
+  if (event.httpMethod !== "POST") return json(405, { error: errLoc(adminLocale, "method_not_allowed") });
 
   const env = resolveEnvConfig();
   const required = ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey", "resendApiKey"];
@@ -52,40 +56,44 @@ export const handler = async (event) => {
 
   // ── Auth: admin only ─────────────────────────────────────────────────
   const authHeader = event.headers.authorization || event.headers.Authorization;
-  if (!authHeader?.startsWith("Bearer ")) return json(401, { error: "Brak nagłówka Authorization" });
+  if (!authHeader?.startsWith("Bearer ")) return json(401, { error: errLoc(adminLocale, "no_auth_header") });
   const token = authHeader.slice(7);
 
   const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: userErr } = await supaUser.auth.getUser(token);
-  if (userErr || !userData?.user) return json(401, { error: "Nieprawidłowy token" });
+  if (userErr || !userData?.user) return json(401, { error: errLoc(adminLocale, "invalid_token") });
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+  // [P2-backend-mails C3] Pull admin `locale` for error messages.
   const { data: caller, error: callerErr } = await supaSvc
     .from("profiles")
-    .select("id, role, name, email")
+    .select("id, role, name, email, locale")
     .eq("id", userData.user.id)
     .maybeSingle();
-  if (callerErr || !caller) return json(403, { error: "Nie znaleziono profilu użytkownika" });
+  if (callerErr || !caller) return json(403, { error: errLoc(adminLocale, "profile_not_found") });
   if (caller.role !== "admin") {
-    return json(403, { error: "Tylko admin może wysyłać zbiorcze maile do sieci." });
+    return json(403, { error: errLoc(adminLocale, "only_admin_send_batch") });
   }
+  adminLocale = resolveLocale({ profileLocale: caller.locale, acceptLanguage: acceptLang });
 
   // ── Body ─────────────────────────────────────────────────────────────
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return json(400, { error: "Niepoprawny JSON" });
+    return json(400, { error: errLoc(adminLocale, "invalid_json") });
   }
+  // [P2-backend-mails C3] body.locale (admin UI) overrides profile.locale dla errorów.
+  adminLocale = resolveLocale({ bodyLocale: body.locale, profileLocale: caller.locale, acceptLanguage: acceptLang });
 
   const retailerId = Number(body.retailer_id);
   const sendIds = Array.isArray(body.send_ids) ? body.send_ids.map(Number).filter(Number.isFinite) : [];
   const dryRun = !!body.dry_run;
 
-  if (!retailerId) return json(400, { error: "Brak retailer_id" });
-  if (!sendIds.length) return json(400, { error: "send_ids jest puste — nie ma czego wysłać." });
+  if (!retailerId) return json(400, { error: errLoc(adminLocale, "missing_retailer_id") });
+  if (!sendIds.length) return json(400, { error: errLoc(adminLocale, "missing_send_ids") });
 
   // ── Retailer + active buyers ─────────────────────────────────────────
   // [P2-backend-mails C2] Buyer rows include `locale` so each buyer can get
@@ -97,14 +105,14 @@ export const handler = async (event) => {
              buyers:profiles!fk_profiles_retailer(id, role, name, email, active, fm26_active, locale)`)
     .eq("id", retailerId)
     .maybeSingle();
-  if (retErr || !retailer) return json(404, { error: "Sieć handlowa nie znaleziona." });
+  if (retErr || !retailer) return json(404, { error: errLoc(adminLocale, "retailer_not_found_short") });
 
   const activeBuyers = (retailer.buyers || []).filter(
     (b) => b && b.role === "buyer" && b.active && b.email && b.email.includes("@")
   );
   if (!activeBuyers.length) {
     return json(400, {
-      error: `Sieć ${retailer.name} nie ma żadnego aktywnego kupca z e-mailem. Najpierw uzupełnij Buyer w "Sieci".`,
+      error: errLoc(adminLocale, "no_active_buyers", { retailerName: retailer.name }),
     });
   }
 
@@ -113,7 +121,7 @@ export const handler = async (event) => {
     .from("legacy_sends")
     .select("legacy_id, retailer_id, status, data")
     .in("legacy_id", sendIds);
-  if (sendsErr) return json(500, { error: "Błąd odczytu sends: " + sendsErr.message });
+  if (sendsErr) return json(500, { error: errLoc(adminLocale, "sends_read_failed", { detail: sendsErr.message }) });
 
   const eligible = (sendsRaw || []).filter(
     (s) => Number(s.retailer_id) === retailerId && s.status === "approved"
@@ -122,7 +130,7 @@ export const handler = async (event) => {
 
   if (!eligible.length) {
     return json(400, {
-      error: "Brak ofert gotowych do wysyłki — wszystkie są odrzucone, w moderacji albo już wysłane.",
+      error: errLoc(adminLocale, "no_approved_sends"),
       skipped_statuses: skipped.map((s) => ({ legacy_id: s.legacy_id, status: s.status })),
     });
   }

@@ -20,6 +20,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
+import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -28,8 +29,11 @@ const cors = {
 };
 
 export const handler = async (event) => {
+  // [P2-backend-mails C3] Locale resolution (Accept-Language → profile → body).
+  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  let locale = resolveLocale({ acceptLanguage: acceptLang });
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== "POST") return { statusCode: 405, headers: cors, body: "Method Not Allowed" };
+  if (event.httpMethod !== "POST") return { statusCode: 405, headers: cors, body: errLoc(locale, "method_not_allowed") };
 
   const env = resolveEnvConfig();
   const missing = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey", "supabaseAnonKey"]);
@@ -39,30 +43,34 @@ export const handler = async (event) => {
 
   // 1. Autoryzacja: caller musi byc admin
   const authHeader = event.headers.authorization || event.headers.Authorization;
-  if (!authHeader?.startsWith("Bearer ")) return errJson(401, "Brak naglowka Authorization");
+  if (!authHeader?.startsWith("Bearer ")) return errJson(401, errLoc(locale, "no_auth_header"));
   const token = authHeader.slice(7);
 
   const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
-  if (uErr || !userData?.user) return errJson(401, "Nieprawidlowy token");
+  if (uErr || !userData?.user) return errJson(401, errLoc(locale, "invalid_token"));
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+  // [P2-backend-mails C3] Pull admin `locale` for error messages.
   const { data: caller, error: cErr } = await supaSvc
     .from("profiles")
-    .select("role")
+    .select("role, locale")
     .eq("id", userData.user.id)
     .maybeSingle();
-  if (cErr || caller?.role !== "admin") return errJson(403, "Tylko admin moze resetowac hasla");
+  if (cErr || caller?.role !== "admin") return errJson(403, errLoc(locale, "only_admin_reset_password"));
+  locale = resolveLocale({ profileLocale: caller.locale, acceptLanguage: acceptLang });
 
   // 2. Walidacja body
   let body;
-  try { body = JSON.parse(event.body || "{}"); } catch { return errJson(400, "Niepoprawny JSON"); }
+  try { body = JSON.parse(event.body || "{}"); } catch { return errJson(400, errLoc(locale, "invalid_json")); }
+  // [P2-backend-mails C3] body.locale overrides profile.locale.
+  locale = resolveLocale({ bodyLocale: body.locale, profileLocale: caller.locale, acceptLanguage: acceptLang });
   const { email, new_password, send_magic_link = false } = body;
-  if (!email) return errJson(400, "Brak email");
+  if (!email) return errJson(400, errLoc(locale, "missing_email_short"));
   if (!new_password && !send_magic_link) {
-    return errJson(400, "Podaj new_password ALBO send_magic_link=true");
+    return errJson(400, errLoc(locale, "missing_user_password_or_link"));
   }
 
   // 3. Znajdz user-a po email (w auth.users — wymaga service role)
@@ -72,7 +80,7 @@ export const handler = async (event) => {
     .select("id, email")
     .eq("email", email)
     .maybeSingle();
-  if (!profile?.id) return errJson(404, "User nie znaleziony");
+  if (!profile?.id) return errJson(404, errLoc(locale, "user_not_found"));
 
   // 4. Reset hasla LUB magic link
   if (new_password) {
@@ -80,7 +88,7 @@ export const handler = async (event) => {
       profile.id,
       { password: new_password }
     );
-    if (updErr) return errJson(500, "Nie udalo sie zaktualizowac hasla: " + updErr.message);
+    if (updErr) return errJson(500, errLoc(locale, "password_update_failed", { detail: updErr.message }));
     return okJson({ user_id: profile.id, email, password_reset: true });
   }
 
@@ -92,7 +100,7 @@ export const handler = async (event) => {
       redirectTo: env.b2bAppUrl,
     },
   });
-  if (linkErr) return errJson(500, "Magic link nie wygenerowany: " + linkErr.message);
+  if (linkErr) return errJson(500, errLoc(locale, "magic_link_failed", { detail: linkErr.message }));
   return okJson({
     user_id: profile.id,
     email,

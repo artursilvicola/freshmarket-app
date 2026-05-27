@@ -32,6 +32,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
+import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
 
@@ -42,11 +43,15 @@ const cors = {
 };
 
 export const handler = async (event) => {
+  // [P2-backend-mails C3] Locale pre-body (Accept-Language fallback); odświeżamy
+  // po parse body i po pull profile.locale (caller = admin = profile.locale).
+  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  let locale = resolveLocale({ acceptLanguage: acceptLang });
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: cors };
   }
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers: cors, body: "Method Not Allowed" };
+    return { statusCode: 405, headers: cors, body: errLoc(locale, "method_not_allowed") };
   }
 
   const env = resolveEnvConfig();
@@ -58,7 +63,7 @@ export const handler = async (event) => {
   // 1. Autoryzacja: musi byc zalogowany admin
   const authHeader = event.headers.authorization || event.headers.Authorization;
   if (!authHeader?.startsWith("Bearer ")) {
-    return errJson(401, "Brak naglowka Authorization");
+    return errJson(401, errLoc(locale, "no_auth_header"));
   }
   const token = authHeader.slice(7);
 
@@ -69,26 +74,31 @@ export const handler = async (event) => {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
-  if (uErr || !userData?.user) return errJson(401, "Nieprawidlowy token");
+  if (uErr || !userData?.user) return errJson(401, errLoc(locale, "invalid_token"));
 
   // Sprawdz role w profiles
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+  // [P2-backend-mails C3] Pull admin `locale` for error messages.
   const { data: profile, error: pErr } = await supaSvc
     .from("profiles")
-    .select("role")
+    .select("role, locale")
     .eq("id", userData.user.id)
     .maybeSingle();
   if (pErr || profile?.role !== "admin") {
-    return errJson(403, "Tylko admin moze tworzyc konta B2B");
+    return errJson(403, errLoc(locale, "only_admin_create_users"));
   }
+  locale = resolveLocale({ profileLocale: profile.locale, acceptLanguage: acceptLang });
 
   // 2. Walidacja body
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return errJson(400, "Niepoprawny JSON");
+    return errJson(400, errLoc(locale, "invalid_json"));
   }
+  // [P2-backend-mails C3] body.locale (jeśli klient przekazał) overrides
+  // profile.locale dla błędów zwrotu — gdy admin patrzy w UI EN, dostaje EN.
+  locale = resolveLocale({ bodyLocale: body.locale, profileLocale: profile.locale, acceptLanguage: acceptLang });
   const {
     email,
     role,
@@ -104,18 +114,18 @@ export const handler = async (event) => {
   } = body;
   const normalizedEmail = normalizeEmail(email);
   const normalizedName = normalizeText(name);
-  if (!normalizedEmail) return errJson(400, "Brak email");
+  if (!normalizedEmail) return errJson(400, errLoc(locale, "missing_email_short"));
   if (!["admin", "supplier", "buyer"].includes(role)) {
-    return errJson(400, "Niepoprawna role (admin/supplier/buyer)");
+    return errJson(400, errLoc(locale, "invalid_role"));
   }
   if (role === "supplier" && !company_id) {
-    return errJson(400, "supplier wymaga company_id");
+    return errJson(400, errLoc(locale, "supplier_needs_company"));
   }
   if (role === "buyer" && !retailer_id) {
-    return errJson(400, "buyer wymaga retailer_id");
+    return errJson(400, errLoc(locale, "buyer_needs_retailer"));
   }
   if (role === "buyer" && !normalizedName) {
-    return errJson(400, "buyer wymaga imienia i nazwiska");
+    return errJson(400, errLoc(locale, "buyer_needs_name"));
   }
 
   if (role === "buyer") {
@@ -124,16 +134,16 @@ export const handler = async (event) => {
       .select("id")
       .eq("id", Number(retailer_id))
       .maybeSingle();
-    if (rErr || !retailer) return errJson(400, "Wybrana sieć handlowa nie istnieje.");
+    if (rErr || !retailer) return errJson(400, errLoc(locale, "retailer_not_found"));
 
     const { data: profiles, error: dupErr } = await supaSvc
       .from("profiles")
       .select("id, email")
       .eq("role", "buyer")
       .not("email", "is", null);
-    if (dupErr) return errJson(500, "Nie udało się sprawdzić duplikatów kupców.");
+    if (dupErr) return errJson(500, errLoc(locale, "duplicate_check_failed"));
     const duplicate = (profiles || []).find((p) => normalizeEmail(p.email) === normalizedEmail);
-    if (duplicate) return errJson(409, "Kupiec z tym adresem e-mail już istnieje.");
+    if (duplicate) return errJson(409, errLoc(locale, "buyer_email_duplicate"));
   }
 
   // 3. Stworz auth.users
@@ -143,7 +153,10 @@ export const handler = async (event) => {
     user_metadata: { name: normalizedName, role, company_id, retailer_id: retailer_id ? Number(retailer_id) : null },
   });
   if (cErr || !created?.user) {
-    return errJson(cErr?.message?.toLowerCase().includes("already been registered") ? 409 : 500, "Nie udalo sie utworzyc usera: " + (cErr?.message || ""));
+    return errJson(
+      cErr?.message?.toLowerCase().includes("already been registered") ? 409 : 500,
+      errLoc(locale, "create_user_failed_short", { detail: cErr?.message || "" })
+    );
   }
 
   // 4. Upsert profile (na pewniaka, nawet jesli trigger handle_new_user istnieje)
@@ -168,7 +181,7 @@ export const handler = async (event) => {
     .single();
   if (upErr) {
     // Konto powstalo, profile nie - zwrocmy bledy z context'em
-    return errJson(500, "Konto utworzone, ale update profile nie powiodl sie: " + upErr.message);
+    return errJson(500, errLoc(locale, "update_profile_after_auth_failed", { detail: upErr.message }));
   }
 
   // 5. Magic link (jesli zazadane)
@@ -187,7 +200,7 @@ export const handler = async (event) => {
         user_id: created.user.id,
         email,
         magic_link: null,
-        warning: "Konto utworzone, magic link nie wygenerowany: " + linkErr.message,
+        warning: errLoc(locale, "magic_link_failed_warning", { detail: linkErr.message }),
       });
     }
     magic_link = linkData?.properties?.action_link || null;
