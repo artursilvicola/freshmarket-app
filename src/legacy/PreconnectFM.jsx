@@ -8374,6 +8374,12 @@ function ProfileSection({ title, icon: Ic, children }) {
 }
 
 function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role }) {
+  const { t } = useTranslation("legacy");
+  // [P2-shared] Helpers do labelek z konstant zdefiniowanych poniżej
+  // (CUSTOMER_TYPE_LABELS / PARTNERSHIP_LABELS / CAPABILITY_LABELS) — używamy
+  // istniejących kluczy z supplier.company.ext_* (P2-5) jako primary,
+  // legacy stała jako defaultValue fallback.
+  const catKeyToPath = (k) => k === "zioła" ? "ziola" : k;
   const pd = co.profile_data || {};
   const basics = pd.basics || {};
   const offer = pd.offer || {};
@@ -8401,7 +8407,7 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
   const hasCerts = certs.length > 0;
 
   return (
-    <Modal title="Podgląd profilu firmy – widok kupca" onClose={onClose} wide>
+    <Modal title={t("common.company_preview.modal_title")} onClose={onClose} wide>
       {/* ── TIER 1 ── zawsze widoczny: logo, nazwa, kraj, opis krótki, typy ── */}
       <div style={{ display:"flex",gap:14,marginBottom:14,padding:14,background:"#f8fafc",borderRadius:10 }}>
         {co.logo?<img src={co.logo} alt="" style={{ width:70,height:70,objectFit:"contain",borderRadius:10,flexShrink:0,background:"white",border:"1px solid #e2e8f0",padding:4 }}/>:<div style={{ width:70,height:70,borderRadius:10,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Building2 size={28} color="#94a3b8"/></div>}
@@ -8411,81 +8417,81 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
             {FLAGS[co.country]||"🌐"} {getCountryName(co.country)}
             {co.city && <> · {co.city}</>}
             {co.nip && <> · {co.nip}</>}
-            {basics.founded_year && <> · od {basics.founded_year}</>}
-            {basics.employees && <> · {basics.employees} pracowników</>}
+            {basics.founded_year && <> · {t("common.company_preview.founded_format", { year: basics.founded_year })}</>}
+            {basics.employees && <> · {t("common.company_preview.employees_format", { count: basics.employees })}</>}
           </div>
           {co.website&&<div style={{ fontSize:12,color:"#3b82f6",marginTop:2 }}>{co.website}</div>}
           <div style={{ marginTop:7,display:"flex",gap:4,flexWrap:"wrap" }}>
-            {(co.types||[]).map(t=><Badge key={t} color="#0d9488">{TYPE_LABELS[t]||t}</Badge>)}
-            {(co.categories||[]).map(t=><Badge key={`c-${t}`} color="#65a30d" bg="#f7fee7">{CEMOJI[t]||""} {t}</Badge>)}
+            {(co.types||[]).map(tp=><Badge key={tp} color="#0d9488">{t(`common.type_labels.${tp}`, { defaultValue: TYPE_LABELS[tp]||tp })}</Badge>)}
+            {(co.categories||[]).map(cat=><Badge key={`c-${cat}`} color="#65a30d" bg="#f7fee7">{CEMOJI[cat]||""} {t(`common.offer_filters.category_options.${catKeyToPath(cat)}`, { defaultValue: cat })}</Badge>)}
           </div>
         </div>
       </div>
       {tier1Desc
         ? <p style={{ color:"#1e293b",lineHeight:1.65,marginBottom:14,fontSize:13.5,fontWeight:500 }}>{tier1Desc}</p>
-        : <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic",marginBottom:14 }}>Firma nie dodała jeszcze opisu.</div>
+        : <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic",marginBottom:14 }}>{t("common.company_preview.no_description")}</div>
       }
       {/* ── TIER 2 ── widoczne tylko, jeśli supplier coś podał ─────────────── */}
       {(hasOffer || hasMarkets || hasOps || hasCerts || hasMaterials || tier2Desc || supplierPitch) && (
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14 }}>
           {hasOffer && (
-            <ProfileSection title="Oferta" icon={Tag}>
-              {offer.products_year_round && <div><strong style={{ color:"#0d9488" }}>Całoroczne:</strong> {offer.products_year_round}</div>}
-              {offer.products_seasonal && <div><strong style={{ color:"#0d9488" }}>Sezonowe:</strong> {offer.products_seasonal}</div>}
+            <ProfileSection title={t("common.company_preview.section_offer")} icon={Tag}>
+              {offer.products_year_round && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.offer_year_round_label")}</strong> {offer.products_year_round}</div>}
+              {offer.products_seasonal && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.offer_seasonal_label")}</strong> {offer.products_seasonal}</div>}
               {customerTypes.length > 0 && (
                 <div style={{ marginTop:5,display:"flex",gap:4,flexWrap:"wrap" }}>
-                  {customerTypes.map(t=><Badge key={t} color="#0891b2" bg="#ecfeff">{CUSTOMER_TYPE_LABELS[t]||t}</Badge>)}
+                  {customerTypes.map(ct=><Badge key={ct} color="#0891b2" bg="#ecfeff">{t(`supplier.company.ext_offer.customer_type_options.${ct}`, { defaultValue: CUSTOMER_TYPE_LABELS[ct]||ct })}</Badge>)}
                 </div>
               )}
-              {offer.private_label && <div style={{ marginTop:5,fontSize:12,color:"#059669" }}>✓ Marka własna / private label</div>}
+              {offer.private_label && <div style={{ marginTop:5,fontSize:12,color:"#059669" }}>{t("common.company_preview.offer_private_label")}</div>}
             </ProfileSection>
           )}
           {hasMarkets && (
-            <ProfileSection title="Rynki i handel" icon={Send}>
+            <ProfileSection title={t("common.company_preview.section_markets")} icon={Send}>
               {exportCountries.length > 0 && (
                 <div style={{ marginBottom:4 }}>
-                  <strong style={{ color:"#0d9488" }}>Eksport: </strong>
+                  <strong style={{ color:"#0d9488" }}>{t("common.company_preview.markets_export_label")} </strong>
                   {exportCountries.map(cc => `${FLAGS[cc]||"🌐"} ${getCountryName(cc)}`).join(" · ")}
                 </div>
               )}
-              {trade.main_markets && <div><strong style={{ color:"#0d9488" }}>Główne rynki:</strong> {trade.main_markets}</div>}
-              {co.markets && !trade.main_markets && <div><strong style={{ color:"#0d9488" }}>Rynki:</strong> {co.markets}</div>}
-              {trade.typical_volumes && <div><strong style={{ color:"#0d9488" }}>Wolumeny:</strong> {trade.typical_volumes}</div>}
+              {trade.main_markets && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.markets_main_label")}</strong> {trade.main_markets}</div>}
+              {co.markets && !trade.main_markets && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.markets_markets_label")}</strong> {co.markets}</div>}
+              {trade.typical_volumes && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.markets_volumes_label")}</strong> {trade.typical_volumes}</div>}
               {partnershipTypes.length > 0 && (
                 <div style={{ marginTop:5,display:"flex",gap:4,flexWrap:"wrap" }}>
-                  {partnershipTypes.map(t=><Badge key={t} color="#7c3aed" bg="#f3f0ff">{PARTNERSHIP_LABELS[t]||t}</Badge>)}
+                  {partnershipTypes.map(pt=><Badge key={pt} color="#7c3aed" bg="#f3f0ff">{t(`supplier.company.ext_trade.partnership_options.${pt}`, { defaultValue: PARTNERSHIP_LABELS[pt]||pt })}</Badge>)}
                 </div>
               )}
             </ProfileSection>
           )}
           {hasOps && (
-            <ProfileSection title="Zaplecze operacyjne" icon={ShieldCheck}>
+            <ProfileSection title={t("common.company_preview.section_ops")} icon={ShieldCheck}>
               <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
-                {capabilities.map(t=><Badge key={t} color="#0d9488" bg="#ccfbf1">{CAPABILITY_LABELS[t]||t}</Badge>)}
+                {capabilities.map(cap=><Badge key={cap} color="#0d9488" bg="#ccfbf1">{t(`supplier.company.ext_ops.capability_options.${cap}`, { defaultValue: CAPABILITY_LABELS[cap]||cap })}</Badge>)}
               </div>
             </ProfileSection>
           )}
           {hasCerts && (
-            <ProfileSection title="Certyfikaty" icon={ShieldCheck}>
+            <ProfileSection title={t("common.company_preview.section_certs")} icon={ShieldCheck}>
               {certs.map((ct,i)=>(
                 <div key={i} style={{ display:"flex",gap:10,padding:"7px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:5,fontSize:13,border:"1px solid #bbf7d0" }}>
                   <ShieldCheck size={13} color="#059669"/>
                   <strong style={{ color:"#0d9488" }}>{ct.type}</strong>
-                  {ct.number && <span style={{ color:"#64748b" }}>Nr: {ct.number}</span>}
-                  {ct.valid && <span style={{ marginLeft:"auto",color:"#059669" }}>do {ct.valid}</span>}
+                  {ct.number && <span style={{ color:"#64748b" }}>{t("common.company_preview.cert_number_prefix_format", { number: ct.number })}</span>}
+                  {ct.valid && <span style={{ marginLeft:"auto",color:"#059669" }}>{t("common.company_preview.cert_valid_prefix_format", { date: ct.valid })}</span>}
                 </div>
               ))}
             </ProfileSection>
           )}
           {hasMaterials && (
-            <ProfileSection title="Materiały" icon={Award}>
+            <ProfileSection title={t("common.company_preview.section_materials")} icon={Award}>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(120px, 1fr))",gap:8 }}>
                 {materials.map(url => {
                   const isPdf = /\.pdf(\?|$)/i.test(url);
                   return (
                     <a key={url} href={url} target="_blank" rel="noreferrer" style={{ display:"block",aspectRatio:"4/3",borderRadius:8,overflow:"hidden",border:"1px solid #e2e8f0",background:"#f8fafc",position:"relative",textDecoration:"none" }}>
                       {isPdf
-                        ? <div style={{ width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#3b82f6",fontSize:11,fontWeight:600 }}><span style={{ fontSize:28 }}>📄</span><span>PDF</span></div>
+                        ? <div style={{ width:"100%",height:"100%",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#3b82f6",fontSize:11,fontWeight:600 }}><span style={{ fontSize:28 }}>📄</span><span>{t("common.company_preview.material_pdf_label")}</span></div>
                         : <img src={url} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
                       }
                     </a>
@@ -8495,12 +8501,12 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
             </ProfileSection>
           )}
           {tier2Desc && (
-            <ProfileSection title="Pełny opis" icon={Building2}>
+            <ProfileSection title={t("common.company_preview.section_long_desc")} icon={Building2}>
               <p style={{ color:"#475569",lineHeight:1.7,margin:0 }}>{tier2Desc}</p>
             </ProfileSection>
           )}
           {supplierPitch && (
-            <ProfileSection title="Co podkreśla firma" icon={Sparkles}>
+            <ProfileSection title={t("common.company_preview.section_pitch")} icon={Sparkles}>
               <div style={{ padding:"10px 12px",background:"#fef3c7",border:"1px solid #fde68a",borderRadius:8,fontSize:13,color:"#78350f",fontStyle:"italic" }}>
                 {supplierPitch}
               </div>
@@ -8510,14 +8516,14 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
       )}
       {(co.contacts||[]).length > 0 && (
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,marginTop:6 }}>
-          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:"#64748b",marginBottom:6 }}>Kontakty</div>
+          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:"#64748b",marginBottom:6 }}>{t("common.company_preview.contacts_section_title")}</div>
           {(co.contacts||[]).map((ct,i)=><div key={i} style={{ padding:10,background:"#f8fafc",borderRadius:7,marginBottom:7,border:"1px solid #e2e8f0" }}><div style={{ fontWeight:600,fontSize:13 }}>{ct.name}</div><div style={{ fontSize:12,color:"#64748b" }}>{ct.position} · {ct.phone} · {ct.email}</div></div>)}
         </div>
       )}
       {offers!==undefined&&(
         <div style={{marginTop:20,paddingTop:16,borderTop:"1px solid #e2e8f0"}}>
           <div style={{fontWeight:700,fontSize:13,marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
-            <Tag size={13} color="#0d9488"/> Aktywne propozycje
+            <Tag size={13} color="#0d9488"/> {t("common.company_preview.active_offers_section_title")}
           </div>
           {(()=>{
             const coOffers = (() => {
@@ -8538,8 +8544,8 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
                 // Supplier or admin: show all active offers of this company
                 return (offers||[]).filter(o=>legacyKeyMatchesCompany(o.supplierId, co)&&o.status==="active");
               })();
-            if(coOffers==="__no_retailer__") return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>Brak przypisanej sieci detalicznej — podgląd propozycji niedostępny.</div>;
-            if(coOffers.length===0) return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>Brak aktywnych propozycji w tej chwili.</div>;
+            if(coOffers==="__no_retailer__") return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>{t("common.company_preview.no_retailer_assigned")}</div>;
+            if(coOffers.length===0) return <div style={{fontSize:12,color:"#94a3b8",padding:"12px",background:"#f8fafc",borderRadius:8,textAlign:"center"}}>{t("common.company_preview.no_active_offers")}</div>;
             const safeOffers = Array.isArray(coOffers) ? coOffers : [];
             return <div style={{display:"flex",flexDirection:"column",gap:8}}>{safeOffers.map(o=>(
               <div key={o.id} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 12px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0"}}>
@@ -8549,7 +8555,7 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
                   <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}{o.volume?` · ${o.volume} ${o.volumeUnit||""}`:""}
                   </div>
                 </div>
-                {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">Premium</Badge>}
+                {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">{t("common.company_preview.premium_badge")}</Badge>}
               </div>
             ))}</div>;
           })()}
