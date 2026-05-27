@@ -7083,45 +7083,47 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
       {/* TRACKING TAB */}
       {tab==="track"&&<>
         <Alrt type={sentSends.filter(s=>s.status==="sent").length>0?"warning":"success"}>
-          {sentSends.filter(s=>s.status==="sent").length>0?<><strong>{sentSends.filter(s=>s.status==="sent").length}</strong> propozycji czeka na potwierdzenie odczytu (14 dni).</>:"Wszystkie dostarczone propozycje mają potwierdzenie."}
+          {sentSends.filter(s=>s.status==="sent").length>0
+            ? <Trans i18nKey="admin.pipeline.track_alert_pending_html" ns="legacy" count={sentSends.filter(s=>s.status==="sent").length} values={{ count: sentSends.filter(s=>s.status==="sent").length }} components={{ strong: <strong /> }}/>
+            : t("admin.pipeline.track_alert_done")}
         </Alrt>
-        <Card title="Rozliczenia dostawców" icon={CreditCard}>
+        <Card title={t("admin.pipeline.settle_card_title")} icon={CreditCard}>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:12 }}>
             <div style={{ padding:"10px 12px",background:"#ecfdf5",border:"1px solid #bbf7d0",borderRadius:8 }}>
-              <div style={{ fontSize:10,color:"#047857",textTransform:"uppercase",fontWeight:800 }}>Rozliczone</div>
+              <div style={{ fontSize:10,color:"#047857",textTransform:"uppercase",fontWeight:800 }}>{t("admin.pipeline.settle_settled_label")}</div>
               <div style={{ fontSize:22,fontWeight:900,color:"#059669" }}>{settlementRows.filter(r=>r.charged).length}</div>
-              <div style={{ fontSize:11,color:"#047857" }}>{settlementRows.filter(r=>r.charged).reduce((sum,r)=>sum+r.amount,0)} EUR w pakietach</div>
+              <div style={{ fontSize:11,color:"#047857" }}>{t("admin.pipeline.settle_settled_amount_format", { amount: settlementRows.filter(r=>r.charged).reduce((sum,r)=>sum+r.amount,0) })}</div>
             </div>
             <div style={{ padding:"10px 12px",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:8 }}>
-              <div style={{ fontSize:10,color:"#c2410c",textTransform:"uppercase",fontWeight:800 }}>Czeka</div>
+              <div style={{ fontSize:10,color:"#c2410c",textTransform:"uppercase",fontWeight:800 }}>{t("admin.pipeline.settle_waiting_label")}</div>
               <div style={{ fontSize:22,fontWeight:900,color:"#ea580c" }}>{settlementRows.filter(r=>!r.charged).length}</div>
-              <div style={{ fontSize:11,color:"#c2410c" }}>wysłane, ale jeszcze nie zobaczone / brak pakietu</div>
+              <div style={{ fontSize:11,color:"#c2410c" }}>{t("admin.pipeline.settle_waiting_desc")}</div>
             </div>
           </div>
           {Object.values(settlementsBySupplier).length===0 ? (
-            <div style={{ color:"#94a3b8",fontSize:13 }}>Brak wysłanych propozycji do rozliczenia.</div>
+            <div style={{ color:"#94a3b8",fontSize:13 }}>{t("admin.pipeline.settle_empty")}</div>
           ) : (
             <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
               {Object.values(settlementsBySupplier).map(group => (
                 <div key={group.supplier?.id || group.rows[0]?.send?.supplierId || "unknown"} style={{ border:"1px solid #e2e8f0",borderRadius:8,overflow:"hidden" }}>
                   <div style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0" }}>
                     <CompanyLogo company={group.supplier} size={26}/>
-                    <div style={{ flex:1,fontWeight:800,fontSize:12 }}>{group.supplier?.name || "Dostawca"}</div>
-                    <Badge color="#059669" bg="#ecfdf5">{group.charged} rozliczone</Badge>
-                    {group.waiting>0&&<Badge color="#d97706" bg="#fffbeb">{group.waiting} czeka</Badge>}
+                    <div style={{ flex:1,fontWeight:800,fontSize:12 }}>{group.supplier?.name || t("admin.pipeline.settle_supplier_fallback")}</div>
+                    <Badge color="#059669" bg="#ecfdf5">{t("admin.pipeline.settle_badge_settled_count_format", { count: group.charged })}</Badge>
+                    {group.waiting>0&&<Badge color="#d97706" bg="#fffbeb">{t("admin.pipeline.settle_badge_waiting_count_format", { count: group.waiting })}</Badge>}
                     <strong style={{ fontSize:12,color:"#0f172a" }}>{group.amount} EUR</strong>
                   </div>
                   {group.rows.slice(0,4).map(row => (
                     <div key={row.send.id} style={{ display:"grid",gridTemplateColumns:"1.4fr 1fr auto",gap:8,alignItems:"center",padding:"7px 10px",fontSize:12,borderTop:"1px solid #f1f5f9" }}>
-                      <span>{CEMOJI[row.offer?.category]} <strong>{row.offer?.title || row.offer?.product || "Oferta"}</strong></span>
-                      <span style={{ color:"#64748b" }}>{row.retailer?.name || "Sieć"}</span>
+                      <span>{CEMOJI[row.offer?.category]} <strong>{row.offer?.title || row.offer?.product || t("admin.pipeline.settle_offer_fallback")}</strong></span>
+                      <span style={{ color:"#64748b" }}>{row.retailer?.name || t("admin.pipeline.settle_retailer_fallback")}</span>
                       {row.charged
-                        ? <Badge color="#059669" bg="#ecfdf5">Rozliczona {row.amount} EUR</Badge>
-                        : <Badge color={row.billingStatus==="no_package_available"?"#dc2626":"#d97706"} bg={row.billingStatus==="no_package_available"?"#fef2f2":"#fffbeb"}>{row.billingStatus==="no_package_available"?"Brak pakietu":"Czeka"}</Badge>
+                        ? <Badge color="#059669" bg="#ecfdf5">{t("admin.pipeline.settle_row_charged_badge_format", { amount: row.amount })}</Badge>
+                        : <Badge color={row.billingStatus==="no_package_available"?"#dc2626":"#d97706"} bg={row.billingStatus==="no_package_available"?"#fef2f2":"#fffbeb"}>{row.billingStatus==="no_package_available"?t("admin.pipeline.settle_row_no_package"):t("admin.pipeline.settle_row_waiting")}</Badge>
                       }
                     </div>
                   ))}
-                  {group.rows.length>4&&<div style={{ padding:"6px 10px",fontSize:11,color:"#94a3b8" }}>+{group.rows.length-4} więcej</div>}
+                  {group.rows.length>4&&<div style={{ padding:"6px 10px",fontSize:11,color:"#94a3b8" }}>{t("admin.pipeline.settle_more_format", { count: group.rows.length-4 })}</div>}
                 </div>
               ))}
             </div>
@@ -7136,22 +7138,22 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
                 <div style={{ fontSize:12,color:"#64748b" }}>→ {r?.name} · {r?.buyer} · {s.sentAt}</div>
                 {/* TrackingBar only here in detail – not on list */}
                 {s.status==="sent"&&<div style={{ marginTop:5 }}>
-                  <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>Tracking 14 dni</span><span style={{ color:s.daysLeft<=3?"#dc2626":"#f59e0b" }}>{s.daysLeft} dni pozostało</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>{t("admin.pipeline.track_tracking_label")}</span><span style={{ color:s.daysLeft<=3?"#dc2626":"#f59e0b" }}>{t("admin.pipeline.track_days_left_format", { count: s.daysLeft })}</span></div>
                   <div style={{ background:"#e2e8f0",borderRadius:3,height:4,overflow:"hidden" }}><div style={{ height:"100%",background:s.daysLeft<=3?"#dc2626":"#f59e0b",width:`${((14-s.daysLeft)/14)*100}%` }}/></div>
                 </div>}
               </div>
               <div style={{ display:"flex",gap:5,flexShrink:0 }}>
-                {isConf?<Badge color={isEmail?"#7c3aed":isAuto?"#059669":"#047857"}>{isEmail?"Mail otwarty":isAuto?"Lista/app":"Manual"}</Badge>:<Badge color="#ea580c">Nieprzeczytana</Badge>}
-                {hasChargeMarker(s)&&<Badge color="#059669" bg="#ecfdf5">Rozliczona</Badge>}
+                {isConf?<Badge color={isEmail?"#7c3aed":isAuto?"#059669":"#047857"}>{isEmail?t("admin.pipeline.track_badge_email_opened"):isAuto?t("admin.pipeline.track_badge_auto_app"):t("admin.pipeline.track_badge_manual")}</Badge>:<Badge color="#ea580c">{t("admin.pipeline.track_badge_unread")}</Badge>}
+                {hasChargeMarker(s)&&<Badge color="#059669" bg="#ecfdf5">{t("admin.pipeline.track_badge_settled")}</Badge>}
                 <Btn sm outline onClick={()=>setPreviewOffer(o)}><Eye size={10}/></Btn>
                 <Btn sm outline onClick={()=>setHistoryId(s.id)} style={{ position:"relative" }}><Clock size={10}/>{histLen>0&&<span style={{ position:"absolute",top:-4,right:-4,background:"#2563eb",color:"white",borderRadius:"50%",fontSize:9,width:14,height:14,display:"flex",alignItems:"center",justifyContent:"center" }}>{histLen}</span>}</Btn>
-                {isConf&&<Btn sm danger onClick={()=>undoConfirm(s.id)} style={{ fontSize:11 }}><RotateCcw size={10}/> Cofnij</Btn>}
+                {isConf&&<Btn sm danger onClick={()=>undoConfirm(s.id)} style={{ fontSize:11 }}><RotateCcw size={10}/> {t("admin.pipeline.track_confirm_undo_btn")}</Btn>}
               </div>
             </div>
-            {!isConf&&s.status==="sent"&&<ConfirmForm send={s} onConfirm={(id,rt,note)=>{ confirmManual(id,rt,note); fl("Potwierdzenie zapisane."); }}/>}
+            {!isConf&&s.status==="sent"&&<ConfirmForm send={s} onConfirm={(id,rt,note)=>{ confirmManual(id,rt,note); fl(t("admin.pipeline.confirm_form_toast_saved")); }}/>}
             {isConf&&<div style={{ padding:"8px 10px",background:"#f8fafc",borderRadius:7,fontSize:12,marginTop:4 }}>
-              {isEmail?<span style={{ color:"#7c3aed" }}>Kupiec otworzył mail zbiorczy z ofertami</span>:isAuto?<span style={{ color:"#059669" }}>Kupiec zobaczył ofertę w PreConnect</span>:<><strong>{s.readType==="manual_phone"?"Telefon":s.readType==="manual_email"?"E-mail":"Spotkanie"}</strong>{s.manualNote&&<span style={{ color:"#64748b" }}> · {s.manualNote}</span>}</>}
-              {hasChargeMarker(s)&&<span style={{ marginLeft:10,color:"#059669" }}>Rozliczenie: {getChargeAmount(s, Number(s.price||0))} EUR</span>}
+              {isEmail?<span style={{ color:"#7c3aed" }}>{t("admin.pipeline.track_confirmed_email")}</span>:isAuto?<span style={{ color:"#059669" }}>{t("admin.pipeline.track_confirmed_auto")}</span>:<><strong>{s.readType==="manual_phone"?t("admin.pipeline.track_manual_phone"):s.readType==="manual_email"?t("admin.pipeline.track_manual_email"):t("admin.pipeline.track_manual_meeting")}</strong>{s.manualNote&&<span style={{ color:"#64748b" }}> · {s.manualNote}</span>}</>}
+              {hasChargeMarker(s)&&<span style={{ marginLeft:10,color:"#059669" }}>{t("admin.pipeline.track_settlement_inline_format", { amount: getChargeAmount(s, Number(s.price||0)) })}</span>}
               {(s.readAt||s.seenAt||s.emailOpenedAt)&&<span style={{ marginLeft:10,color:"#047857" }}>✓ {s.readAt||s.seenAt||s.emailOpenedAt}</span>}
             </div>}
           </Card>
