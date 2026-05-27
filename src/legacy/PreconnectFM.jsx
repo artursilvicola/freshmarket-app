@@ -6915,6 +6915,7 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
 
 /* ── Admin Pipeline: tabs Moderacja / Wysłane+Tracking ──────────────────── */
 function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies }) {
+  const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -7003,35 +7004,38 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
           ));
         }}
       />}
-      {histSend&&<Modal title={`Historia: ${getOffer(histSend.offerId,offers)?.product}`} onClose={()=>setHistoryId(null)}>
-        {(histSend.confirmHistory||[]).length===0?<div style={{ color:"#94a3b8",textAlign:"center",padding:16 }}>Brak historii.</div>:(histSend.confirmHistory||[]).map((h,i)=>(
+      {histSend&&<Modal title={t("admin.pipeline.history_modal_title_format", { product: getOffer(histSend.offerId,offers)?.product })} onClose={()=>setHistoryId(null)}>
+        {(histSend.confirmHistory||[]).length===0?<div style={{ color:"#94a3b8",textAlign:"center",padding:16 }}>{t("admin.pipeline.history_empty")}</div>:(histSend.confirmHistory||[]).map((h,i)=>(
           <div key={i} style={{ display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #f1f5f9" }}>
             <div style={{ width:26,height:26,borderRadius:"50%",background:h.action==="confirm"?"#d1fae5":"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>{h.action==="confirm"?<CheckCircle size={12} color="#059669"/>:<RotateCcw size={12} color="#dc2626"/>}</div>
-            <div style={{ flex:1 }}><div style={{ fontWeight:600,fontSize:12 }}>{h.action==="confirm"?"Potwierdzono":"Cofnięto"}</div>{h.type&&<div style={{ fontSize:11,color:"#64748b" }}>{h.type}</div>}{h.note&&<div style={{ fontSize:11,color:"#64748b" }}>{h.note}</div>}<div style={{ fontSize:10,color:"#94a3b8" }}>{h.at}</div></div>
+            <div style={{ flex:1 }}><div style={{ fontWeight:600,fontSize:12 }}>{h.action==="confirm"?t("admin.pipeline.history_action_confirm"):t("admin.pipeline.history_action_revert")}</div>{h.type&&<div style={{ fontSize:11,color:"#64748b" }}>{h.type}</div>}{h.note&&<div style={{ fontSize:11,color:"#64748b" }}>{h.note}</div>}<div style={{ fontSize:10,color:"#94a3b8" }}>{h.at}</div></div>
           </div>
         ))}
       </Modal>}
 
       {/* Tab bar */}
       <div style={{ display:"flex",gap:4,marginBottom:16,background:"#f1f5f9",borderRadius:10,padding:4,width:"fit-content" }}>
-        {[["mod",`Moderacja (${modSends.length})`],["track",`Wysłane & Tracking (${sentSends.length})`]].map(([t,l])=>(
-          <button key={t} onClick={()=>setTab(t)} style={{ padding:"7px 16px",borderRadius:8,border:"none",background:tab===t?"white":"transparent",fontWeight:tab===t?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:tab===t?"#1e293b":"#64748b",boxShadow:tab===t?"0 1px 3px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
+        {[
+          ["mod", t("admin.pipeline.tab_mod_format", { count: modSends.length })],
+          ["track", t("admin.pipeline.tab_track_format", { count: sentSends.length })],
+        ].map(([tabKey,l])=>(
+          <button key={tabKey} onClick={()=>setTab(tabKey)} style={{ padding:"7px 16px",borderRadius:8,border:"none",background:tab===tabKey?"white":"transparent",fontWeight:tab===tabKey?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:tab===tabKey?"#1e293b":"#64748b",boxShadow:tab===tabKey?"0 1px 3px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
 
       {/* MODERACJA TAB */}
       {tab==="mod"&&<>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
-          <div style={{ fontSize:12,color:"#64748b" }}>Edytuj pozycję (nr 1 = na górze u kupca). Wysyłka: <strong>{formatPolishDate(effectiveNextSend(null))}</strong></div>
+          <div style={{ fontSize:12,color:"#64748b" }}>{t("admin.pipeline.hint_pos_label")}<strong>{formatPolishDate(effectiveNextSend(null))}</strong></div>
           {/* [B2B Round prod-rollout / UX] Bug fix: poprzednio inline style ustawiał
               background na #94a3b8 (szary) gdy ap===0, a Btn w disabled state ma color
               też #94a3b8 — tekst zlewał się z tłem, widać było pusty szary prostokąt.
               Teraz inline style tylko gdy są zatwierdzone, w disabled state Btn
               używa swoich defaults (bg #e2e8f0, color #94a3b8 — kontrast OK). */}
-          <Btn primary onClick={sendApproved} disabled={ap===0} style={{ background:ap>0?"#059669":"#e2e8f0",color:ap>0?"white":"#475569",border:ap>0?"none":"1px solid #cbd5e1" }}><Send size={13}/> Wyślij zatwierdzone ({ap})</Btn>
+          <Btn primary onClick={sendApproved} disabled={ap===0} style={{ background:ap>0?"#059669":"#e2e8f0",color:ap>0?"white":"#475569",border:ap>0?"none":"1px solid #cbd5e1" }}><Send size={13}/> {t("admin.pipeline.send_approved_btn_format", { count: ap })}</Btn>
         </div>
-        {sends.some(s=>s.status==="pending_moderation")&&<Alrt type="warning"><strong>{sends.filter(s=>s.status==="pending_moderation").length}</strong> propozycji czeka na moderację.</Alrt>}
-        {Object.keys(byR).length===0&&<Alrt>Brak propozycji w kolejkach. {sentSends.length>0&&<button onClick={()=>setTab("track")} style={{ marginLeft:8,padding:"4px 10px",borderRadius:6,border:"1px solid #bfdbfe",background:"white",color:"#1e40af",fontWeight:700,cursor:"pointer",fontFamily:"inherit" }}>Pokaż Wysłane & Tracking ({sentSends.length})</button>}</Alrt>}
+        {sends.some(s=>s.status==="pending_moderation")&&<Alrt type="warning"><Trans i18nKey="admin.pipeline.alert_pending_html" ns="legacy" count={sends.filter(s=>s.status==="pending_moderation").length} values={{ count: sends.filter(s=>s.status==="pending_moderation").length }} components={{ strong: <strong /> }}/></Alrt>}
+        {Object.keys(byR).length===0&&<Alrt>{t("admin.pipeline.alert_empty_queues")} {sentSends.length>0&&<button onClick={()=>setTab("track")} style={{ marginLeft:8,padding:"4px 10px",borderRadius:6,border:"1px solid #bfdbfe",background:"white",color:"#1e40af",fontWeight:700,cursor:"pointer",fontFamily:"inherit" }}>{t("admin.pipeline.btn_show_tracking_format", { count: sentSends.length })}</button>}</Alrt>}
         {Object.entries(byR).map(([rid,ss])=>{
           const r=getRetailerLive(+rid);
           const isOpen=expandedRetailers.has(+rid);
@@ -7041,12 +7045,12 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
             <div onClick={()=>toggleExpand(+rid)} style={{ display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:isOpen?"10px 10px 0 0":"10px",cursor:"pointer" }}>
               <RetailerLogo retailer={r} size={28}/>
               <div style={{ flex:1 }}>
-                <strong>{r?.name}</strong>{r?.active===false&&<Badge color="#94a3b8" style={{marginLeft:6}}>Nieaktywna</Badge>}
-                <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[r?.country]||"🌐"} · {ss.length} propozycji{pendingCount>0&&<span style={{color:"#d97706",fontWeight:700,marginLeft:6}}>· {pendingCount} wymaga moderacji</span>}</div>
+                <strong>{r?.name}</strong>{r?.active===false&&<Badge color="#94a3b8" style={{marginLeft:6}}>{t("admin.pipeline.retailer_inactive_badge")}</Badge>}
+                <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[r?.country]||"🌐"} · {t("admin.pipeline.retailer_proposals_count_format", { count: ss.length })}{pendingCount>0&&<span style={{color:"#d97706",fontWeight:700,marginLeft:6}}>{t("admin.pipeline.retailer_pending_count_format", { count: pendingCount })}</span>}</div>
               </div>
-              <Badge color={ss.length>=8?"#dc2626":"#059669"}>{ss.length}/10 slotów</Badge>
+              <Badge color={ss.length>=8?"#dc2626":"#059669"}>{t("admin.pipeline.retailer_slots_format", { count: ss.length })}</Badge>
               <Btn sm onClick={(e)=>{e.stopPropagation();setEmailPreview({retailer:r,sends:ss,supplierCo:(companies||[]).find(c=>c.id===ss[0]?.supplierId)||COMPANY_INIT})}} style={{ background:"rgba(37,99,235,0.08)",color:"#2563eb",border:"1px solid rgba(37,99,235,0.25)",gap:5 }}>
-                <Mail size={11}/> E-mail
+                <Mail size={11}/> {t("admin.pipeline.retailer_email_btn")}
               </Btn>
               <span style={{color:"#94a3b8",fontSize:13}}>{isOpen?"▲":"▼"}</span>
             </div>
@@ -7056,18 +7060,18 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
                   <div style={{ display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:6 }}>
                     <div style={{ display:"flex",alignItems:"center",gap:3 }}>
                       <input type="number" min={1} max={20} value={s.pos||1} onChange={e=>updateSendPos(s.id,e.target.value)} style={{ width:44,textAlign:"center",padding:"3px 6px",border:"2px solid #e2e8f0",borderRadius:6,fontSize:13,fontWeight:700,fontFamily:"inherit" }}/>
-                      <span style={{ fontSize:10,color:"#94a3b8" }}>poz.</span>
+                      <span style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.pipeline.send_pos_label")}</span>
                     </div>
-                    {isPrem&&<Badge color="#d97706" bg="#fef3c7"><Star size={9} fill="#d97706" color="#d97706"/> Prem.</Badge>}
+                    {isPrem&&<Badge color="#d97706" bg="#fef3c7"><Star size={9} fill="#d97706" color="#d97706"/> {t("admin.pipeline.send_prem_badge")}</Badge>}
                     <div style={{ flex:1 }}><strong style={{ fontSize:12 }}>{CEMOJI[o?.category]} {o?.title||o?.product}</strong><div style={{ fontSize:11,color:"#64748b" }}>{o?.volume} {o?.volumeUnit}</div></div>
-                    <Badge color={ip?"#d97706":ia?"#2563eb":"#059669"}>{ip?"Do moderacji":ia?"Zatwierdzona":"W kolejce"}</Badge>
+                    <Badge color={ip?"#d97706":ia?"#2563eb":"#059669"}>{ip?t("admin.pipeline.send_status_pending"):ia?t("admin.pipeline.send_status_approved"):t("admin.pipeline.send_status_queued")}</Badge>
                     <Btn sm outline onClick={()=>setPreviewOffer(o)}><Eye size={10}/></Btn>
-                    {ip&&<><Btn sm onClick={()=>moderate(s.id,"approve")} style={{ background:"#059669",color:"white",border:"none",padding:"6px 14px" }}><CheckCircle size={13}/> Zatwierdź</Btn><Btn sm onClick={()=>moderate(s.id,"reject")} style={{ background:"#dc2626",color:"white",border:"none",padding:"6px 14px" }}><X size={13}/> Odrzuć</Btn></>}
+                    {ip&&<><Btn sm onClick={()=>moderate(s.id,"approve")} style={{ background:"#059669",color:"white",border:"none",padding:"6px 14px" }}><CheckCircle size={13}/> {t("admin.pipeline.send_btn_approve")}</Btn><Btn sm onClick={()=>moderate(s.id,"reject")} style={{ background:"#dc2626",color:"white",border:"none",padding:"6px 14px" }}><X size={13}/> {t("admin.pipeline.send_btn_reject")}</Btn></>}
                   </div>
                   <div style={{ display:"flex",alignItems:"center",gap:7,fontSize:11,color:"#64748b" }}>
-                    <Clock size={10}/> Data wysyłki:
+                    <Clock size={10}/> {t("admin.pipeline.send_date_label")}
                     <input type="date" value={s.sendDate||"2026-05-06"} onChange={e=>updateSendDate(s.id,e.target.value)} style={{ padding:"2px 7px",border:"1px solid #e2e8f0",borderRadius:5,fontSize:11,fontFamily:"inherit" }}/>
-                    <span style={{ color:"#94a3b8" }}>domyślnie: 1. wtorek miesiąca</span>
+                    <span style={{ color:"#94a3b8" }}>{t("admin.pipeline.send_date_default_hint")}</span>
                   </div>
                 </div>
               );})}
