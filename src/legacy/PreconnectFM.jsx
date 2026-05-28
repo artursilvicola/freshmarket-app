@@ -8615,7 +8615,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
 
   // Aktywni kupcy tej sieci — to do nich pójdą maile.
   const activeBuyers = (retailer?.buyers || []).filter(b =>
-    b && b.role === "buyer" && b.active && b.email && String(b.email).includes("@")
+    b && b.role === "buyer" && b.active !== false && b.email && String(b.email).includes("@")
   );
 
   // Helper: znajdź firmę dostawcy dla danej oferty (firmy są w state legacy
