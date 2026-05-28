@@ -2293,6 +2293,8 @@
       "reply_placeholder_format": "Reply to {{name}}... (Enter = send)",
       "send_btn": "Send",
       "clear_btn": "Clear",
+      "send_failed": "The message could not be sent. Please try again.",
+      "no_recipient_error": "Cannot send the message: this company has no active user account assigned.",
       "ai_fallback_reply": "Hello! I'm forwarding this question to our team. I'll get back to you as soon as possible. For urgent matters please contact: oksana@freshmarket.eu · +48 603 811 818."
     }
   },

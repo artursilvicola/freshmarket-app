@@ -832,9 +832,9 @@ function getFmThreadKey(userId) {
 function normalizeFmMessage(row) {
   if (!row) return null;
   const threadUserId =
+    row.data?.thread_user_id ||
     row.to_user_id ||
     row.data?.to_user_id ||
-    row.data?.thread_user_id ||
     (typeof row.thread_key === "string" && row.thread_key.startsWith("user:") ? row.thread_key.slice(5) : null) ||
     row.from_user_id ||
     null;
@@ -1378,6 +1378,7 @@ function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [
     : getAiAnswer(text);
   const [selectedId, setSelectedId] = useState(null);
   const [replyText, setReplyText] = useState("");
+  const [sendError, setSendError] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const bottomRef = useRef(null);
 
@@ -1514,6 +1515,7 @@ function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [
   async function selectUser(uid) {
     setSelectedId(uid);
     setReplyText("");
+    setSendError("");
     if (typeof onMarkThreadRead === "function") {
       await Promise.all([...participantAliases(uid)].map(alias => onMarkThreadRead(alias, "admin")));
     }
@@ -1526,13 +1528,16 @@ function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [
   }, [initialSelectedId, accountById, profileById, profileIdsByCompanyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function sendReply() {
-    const t = replyText.trim();
-    if (!t || !selectedId) return;
+    const text = replyText.trim();
+    if (!text || !selectedId) return;
+    setSendError("");
     const targetRole = getAccount(selectedId).role;
-    const saved = await onSendReply?.(selectedId, targetRole, t);
+    const saved = await onSendReply?.(selectedId, targetRole, text);
     if (saved) {
       setReplyText("");
       setAiLoading(false);
+    } else {
+      setSendError(t("chat.admin.send_failed"));
     }
   }
 
@@ -1698,6 +1703,11 @@ function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [
               );
             })()}
             {/* Reply input */}
+            {sendError && (
+              <div style={{ padding:"8px 14px 0", background:"white" }}>
+                <Alrt type="error">{sendError}</Alrt>
+              </div>
+            )}
             <div style={{ padding:"12px 14px", borderTop:"1px solid #e2e8f0", background:"white", display:"flex", gap:8 }}>
               <textarea
                 value={replyText} onChange={e=>setReplyText(e.target.value)} onKeyDown={onKey}
@@ -3130,23 +3140,62 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return null;
     }
   }
+  function resolveAdminChatRecipient(targetUserId, targetRole) {
+    const id = targetUserId ? String(targetUserId) : "";
+    if (!id) return null;
+    const directProfile = (adminChatProfiles || []).find(p => p?.id && String(p.id) === id);
+    if (directProfile) {
+      return {
+        recipientId: directProfile.id,
+        threadParticipantId: directProfile.company_id && directProfile.role === "supplier"
+          ? String(directProfile.company_id)
+          : id,
+        role: directProfile.role || targetRole || "supplier",
+      };
+    }
+    if ((targetRole || "supplier") === "supplier") {
+      const supplierProfiles = (adminChatProfiles || [])
+        .filter(p => p?.company_id && String(p.company_id) === id && (p.role || "supplier") === "supplier")
+        .filter(p => p.active !== false)
+        .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+      const primary = supplierProfiles[0] || (adminChatProfiles || [])
+        .find(p => p?.company_id && String(p.company_id) === id);
+      if (primary?.id) {
+        return {
+          recipientId: primary.id,
+          threadParticipantId: id,
+          role: primary.role || "supplier",
+        };
+      }
+    }
+    return null;
+  }
   async function sendAdminReply(targetUserId, targetRole, body) {
     const text = String(body || "").trim();
     if (!text || !targetUserId) return null;
+    const target = resolveAdminChatRecipient(targetUserId, targetRole);
+    if (!target?.recipientId) {
+      fl(t("chat.admin.no_recipient_error"), "error");
+      return null;
+    }
     try {
       const created = await dbSaveFmMessage({
-        thread_key: getFmThreadKey(targetUserId),
+        thread_key: getFmThreadKey(target.threadParticipantId),
         from_role: "admin",
-        to_role: targetRole || "supplier",
-        to_user_id: targetUserId,
+        to_role: target.role || targetRole || "supplier",
+        to_user_id: target.recipientId,
         body: text,
-        data: { to_user_id: targetUserId }
+        data: {
+          to_user_id: target.recipientId,
+          thread_user_id: target.threadParticipantId,
+        }
       });
       const msg = normalizeFmMessage(created);
       setMessages(prev => mergeMessage(prev, msg));
       return msg;
     } catch (e) {
       console.warn("[sendAdminReply]", e);
+      fl(t("chat.admin.send_failed"), "error");
       return null;
     }
   }

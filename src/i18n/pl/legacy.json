@@ -2293,6 +2293,8 @@
       "reply_placeholder_format": "Odpowiedz do {{name}}... (Enter = wyślij)",
       "send_btn": "Wyślij",
       "clear_btn": "Wyczyść",
+      "send_failed": "Nie udało się wysłać wiadomości. Spróbuj ponownie.",
+      "no_recipient_error": "Nie można wysłać wiadomości: ta firma nie ma przypisanego aktywnego konta użytkownika.",
       "ai_fallback_reply": "Dzień dobry! Przekazuję to zapytanie do naszego zespołu. Wrócę z odpowiedzią najszybciej jak to możliwe. W pilnych sprawach zapraszam do kontaktu: oksana@freshmarket.eu · +48 603 811 818."
     }
   },
