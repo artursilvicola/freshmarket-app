@@ -2263,7 +2263,38 @@
       "payu_must_be_logged_in": "You must be logged in to buy a package.",
       "payu_status_format": "PayU: error {{status}}",
       "payu_no_redirect_uri": "PayU: no redirectUri in response",
-      "company_id_required": "Missing company identifier."
+      "company_id_required": "Missing company identifier.",
+      "buyer_name_required": "Buyer must have a first and last name.",
+      "buyer_email_required": "Buyer must have an email address.",
+      "buyer_email_invalid_format": "Buyer email has an invalid format.",
+      "buyer_retailer_required": "Buyer must be assigned to one retailer.",
+      "buyer_category_required": "An active buyer must have at least one assigned category.",
+      "buyer_create_failed": "Failed to create buyer",
+      "buyer_update_failed": "Failed to update buyer",
+      "public_url_fetch_failed": "Failed to fetch public URL",
+      "save_offer_failed_format": "Failed to save submission ({{status}})",
+      "supplier_register_failed": "Failed to register the account.",
+      "send_email_failed": "Failed to send email.",
+      "admin_promote_user_not_found_format": "No user {{email}}. They must register in the app first (e.g. via the supplier registration page), then promote.",
+      "admin_promote_already_admin_format": "{{email}} is already an administrator.",
+      "admin_demote_self_forbidden": "You cannot remove administrator rights from yourself.",
+      "admin_super_demote_self_forbidden": "You cannot remove super admin rights from yourself."
+    }
+  },
+  "shell": {
+    "account_switcher": {
+      "role_admin": "Admin",
+      "role_supplier": "Supplier",
+      "role_buyer": "Buyer",
+      "role_filter_all": "All",
+      "role_filter_admins": "Admin",
+      "role_filter_suppliers": "Suppliers",
+      "role_filter_buyers": "Buyers",
+      "role_group_admins_format": "Admins ({{count}})",
+      "role_group_suppliers_format": "Suppliers ({{count}})",
+      "role_group_buyers_format": "Buyers ({{count}})",
+      "retailer_inactive_inline": "(retailer inactive)",
+      "active_account_marker": "✓ active"
     }
   }
 }

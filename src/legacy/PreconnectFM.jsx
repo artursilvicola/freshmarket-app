@@ -8676,10 +8676,24 @@ const ROLE_COLORS = { admin:"#7c3aed", supplier:"#0d9488", buyer:"#2563eb" };
 const ROLE_LABELS  = { admin:"Admin", supplier:"Dostawca", buyer:"Kupiec" };
 
 function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, retailers }) {
+  const { t } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
   const [filterRole, setFilterRole] = useState("all");
   // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej fazy.
   const ph = FM_PHASES[fmSettings.currentPhase-1] || FM_PHASES[FM_PHASES.length-1];
+  // [P2-final-qa C2] Locale-aware FM_PHASES.label dla badge w switcher bar.
+  const phLabel = ph ? t(`fm.phases.${ph.id}.label`, { defaultValue: ph.label }) : null;
+  // [P2-final-qa C2] Locale-aware ROLE_LABELS — wcześniej hardcoded
+  // { admin:"Admin", supplier:"Dostawca", buyer:"Kupiec" } przeciekały do EN UI.
+  // Helper trzyma się tych samych kluczy co stary obiekt — w niezależnych
+  // miejscach (gdyby kiedyś użyć poza switcherem) wystarczy `t()` na podstawie role.
+  const roleLabel = (role) => t(`shell.account_switcher.role_${role}`, { defaultValue: ROLE_LABELS[role] || role });
+  const roleGroupHeader = (role, count) => {
+    if (role === "admin") return t("shell.account_switcher.role_group_admins_format", { count });
+    if (role === "supplier") return t("shell.account_switcher.role_group_suppliers_format", { count });
+    if (role === "buyer") return t("shell.account_switcher.role_group_buyers_format", { count });
+    return `${roleLabel(role)} (${count})`;
+  };
 
   const groups = {
     admin:    accounts.filter(a=>a.role==="admin"),
@@ -8698,14 +8712,14 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
         <div style={{ display:"flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:20,background:ROLE_COLORS[account.role]+"22",border:`1px solid ${ROLE_COLORS[account.role]}55`,cursor:"pointer" }} onClick={()=>setOpen(!open)}>
           <span style={{ width:7,height:7,borderRadius:"50%",background:ROLE_COLORS[account.role] }}/>
           <span style={{ color:"white",fontSize:12,fontWeight:600 }}>{account.name}</span>
-          <span style={{ fontSize:10,color:ROLE_COLORS[account.role],background:ROLE_COLORS[account.role]+"22",padding:"1px 6px",borderRadius:8,fontWeight:700 }}>{ROLE_LABELS[account.role]}{account.pkg?` · ${account.pkg}`:""}</span>
+          <span style={{ fontSize:10,color:ROLE_COLORS[account.role],background:ROLE_COLORS[account.role]+"22",padding:"1px 6px",borderRadius:8,fontWeight:700 }}>{roleLabel(account.role)}{account.pkg?` · ${account.pkg}`:""}</span>
           <span style={{ color:"rgba(255,255,255,0.4)",fontSize:12 }}>{open?"▲":"▼"}</span>
         </div>
 
         {/* FM phase badge */}
         {fmSettings.schedulingOpen&&(
           <div style={{ padding:"3px 10px",borderRadius:16,background:ph?.color+"22",border:`1px solid ${ph?.color}55`,fontSize:10,color:ph?.color,fontWeight:700,display:"flex",gap:4,alignItems:"center" }}>
-            <Calendar size={9}/>{ph?.label}
+            <Calendar size={9}/>{phLabel}
           </div>
         )}
 
@@ -8718,7 +8732,7 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
 
         {/* Role filter quick buttons */}
         <div style={{ marginLeft:"auto",display:"flex",gap:4 }}>
-          {[["all","Wszyscy",(accounts.length)],["admin","Admin",groups.admin.length],["supplier","Dostawcy",groups.supplier.length],["buyer","Kupcy",groups.buyer.length]].map(([k,l,n])=>(
+          {[["all",t("shell.account_switcher.role_filter_all"),(accounts.length)],["admin",t("shell.account_switcher.role_filter_admins"),groups.admin.length],["supplier",t("shell.account_switcher.role_filter_suppliers"),groups.supplier.length],["buyer",t("shell.account_switcher.role_filter_buyers"),groups.buyer.length]].map(([k,l,n])=>(
             <button key={k} onClick={()=>{setFilterRole(k);setOpen(true);}}
               style={{ padding:"3px 10px",borderRadius:12,border:`1px solid ${filterRole===k?ROLE_COLORS[k]||"#0d9488":"rgba(255,255,255,0.12)"}`,background:filterRole===k?(ROLE_COLORS[k]||"#0d9488"):"transparent",color:filterRole===k?"white":"rgba(255,255,255,0.5)",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit" }}>
               {l} <span style={{ opacity:0.6 }}>({n})</span>
@@ -8737,7 +8751,7 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
             return(
               <div key={roleKey}>
                 <div style={{ padding:"6px 16px",fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700,background:"rgba(255,255,255,0.03)",borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                  {ROLE_LABELS[roleKey]}s ({grp.length})
+                  {roleGroupHeader(roleKey, grp.length)}
                 </div>
                 {grp.map(acc=>(
                   <button key={acc.id} onClick={()=>{onSwitch(acc);setOpen(false);setFilterRole("all");}}
@@ -8747,11 +8761,11 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
                       <div style={{ color:"white",fontSize:12,fontWeight:account.id===acc.id?700:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{acc.name}</div>
                       <div style={{ color:"rgba(255,255,255,0.35)",fontSize:10,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
                         {acc.email} · {acc.title}
-                        {acc.role==="buyer"&&retailers&&(()=>{const r=(retailers||[]).find(x=>x.id===acc.retailerId);return r&&r.active===false?<span style={{color:"#fca5a5",marginLeft:4,fontWeight:600}}>(sieć nieaktywna)</span>:null;})()}
+                        {acc.role==="buyer"&&retailers&&(()=>{const r=(retailers||[]).find(x=>x.id===acc.retailerId);return r&&r.active===false?<span style={{color:"#fca5a5",marginLeft:4,fontWeight:600}}>{t("shell.account_switcher.retailer_inactive_inline")}</span>:null;})()}
                       </div>
                     </div>
                     {acc.pkg&&<span style={{ fontSize:9,padding:"2px 7px",borderRadius:8,background:acc.pkg==="Premium"?"rgba(251,191,36,0.2)":"rgba(59,130,246,0.2)",color:acc.pkg==="Premium"?"#fbbf24":"#60a5fa",fontWeight:700,flexShrink:0 }}>{acc.pkg}</span>}
-                    {account.id===acc.id&&<span style={{ fontSize:10,color:"#0d9488",fontWeight:700,flexShrink:0 }}>✓ aktywne</span>}
+                    {account.id===acc.id&&<span style={{ fontSize:10,color:"#0d9488",fontWeight:700,flexShrink:0 }}>{t("shell.account_switcher.active_account_marker")}</span>}
                   </button>
                 ))}
               </div>
@@ -8782,16 +8796,9 @@ function NumBadge({ num, size="md" }) {
   );
 }
 
-/* ── ZoneLegend ── */
-function ZoneLegend() {
-  return (
-    <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginTop:12 }}>
-      {[["🟢","1–25","Dobra pozycja","#059669","#f0fdf4","#bbf7d0"],["🟠","26–35","Średnia pozycja","#d97706","#fffbeb","#fde68a"],["🔴","36+","Późna pozycja","#dc2626","#fee2e2","#fca5a5"]].map(([i,r,l,c,bg,b])=>(
-      <span key={r} style={{ padding:"3px 12px",borderRadius:8,background:bg,border:`1px solid ${b}`,fontSize:11,fontWeight:600,color:c }}>{i} Numery {r} — {l}</span>
-    ))}
-    </div>
-  );
-}
+// [P2-final-qa C2] ZoneLegend() removed — dead code (zero call sites confirmed via grep).
+// Funkcja generowała PL legendę numerów (Dobra/Średnia/Późna pozycja), ale była
+// zastąpiona przez fm.corrections.legend_{green,orange,red} keys w P2-fm C5.
 
 /* ═══════════════════════════════════════════════════════════════
    ADMIN PREFERENCES VIEW (Faza 2 podgląd dla admina)

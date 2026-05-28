@@ -45,11 +45,11 @@ function validateBuyerAccountPayload(payload, { allowRetailerless = false } = {}
   const active = payload.active !== false;
   const fm26_active = !!payload.fm26_active;
 
-  if (!name) throw new Error("Kupiec musi mieć imię i nazwisko.");
-  if (!email) throw new Error("Kupiec musi mieć adres e-mail.");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Adres e-mail kupca ma niepoprawny format.");
-  if (!allowRetailerless && !Number.isInteger(retailer_id)) throw new Error("Kupiec musi być przypisany do jednej sieci handlowej.");
-  if (active && buyer_categories.length === 0) throw new Error("Aktywny kupiec musi mieć przypisaną przynajmniej jedną kategorię.");
+  if (!name) throw new Error(i18n.t("legacy:errors.db.buyer_name_required"));
+  if (!email) throw new Error(i18n.t("legacy:errors.db.buyer_email_required"));
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error(i18n.t("legacy:errors.db.buyer_email_invalid_format"));
+  if (!allowRetailerless && !Number.isInteger(retailer_id)) throw new Error(i18n.t("legacy:errors.db.buyer_retailer_required"));
+  if (active && buyer_categories.length === 0) throw new Error(i18n.t("legacy:errors.db.buyer_category_required"));
 
   return {
     name,
@@ -415,7 +415,7 @@ export async function createBuyerAccount({
     }),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json?.error || "Nie udało się utworzyć kupca");
+  if (!res.ok) throw new Error(json?.error || i18n.t("legacy:errors.db.buyer_create_failed"));
   return json;
 }
 
@@ -465,7 +465,7 @@ export async function adminUpdateBuyerAccount({
     }),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json?.error || "Nie udało się zaktualizować kupca");
+  if (!res.ok) throw new Error(json?.error || i18n.t("legacy:errors.db.buyer_update_failed"));
   return json;
 }
 
@@ -813,7 +813,7 @@ export async function uploadBrandLogo(file) {
 
   const { data: pub } = supabase.storage.from("brand-assets").getPublicUrl(objectPath);
   const url = pub?.publicUrl || null;
-  if (!url) return { ok: false, error: "Nie udało się pobrać public URL" };
+  if (!url) return { ok: false, error: i18n.t("legacy:errors.db.public_url_fetch_failed") };
 
   // Zapisz URL w fm_settings (single row). Wykorzystuje istniejący saveFmSettings —
   // pobiera obecne settings, mergeuje brand_logo_url, zapisuje z powrotem.
@@ -887,7 +887,7 @@ export async function upsertLegacyOffer(offer) {
       body: JSON.stringify({ offer }),
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body?.error || `Nie udało się zapisać propozycji (${res.status})`);
+    if (!res.ok) throw new Error(body?.error || i18n.t("legacy:errors.db.save_offer_failed_format", { status: res.status }));
     return body?.offer || offer;
   }
   const row = {
@@ -1448,7 +1448,7 @@ export async function selfRegisterSupplier({
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(json?.error || "Nie udało się zarejestrować konta.");
+    const err = new Error(json?.error || i18n.t("legacy:errors.db.supplier_register_failed"));
     err.payload = json;
     throw err;
   }
@@ -1475,7 +1475,7 @@ export async function sendRetailerBatch({ retailer_id, send_ids, dry_run = false
   });
   const json = await res.json();
   if (!res.ok) {
-    const err = new Error(json?.error || "Nie udało się wysłać maila.");
+    const err = new Error(json?.error || i18n.t("legacy:errors.db.send_email_failed"));
     err.payload = json;
     throw err;
   }
@@ -1657,11 +1657,11 @@ export async function promoteToAdmin(email) {
   if (!existing) {
     return {
       ok: false,
-      error: `Brak użytkownika ${email}. Najpierw musi zarejestrować się w aplikacji (np. przez stronę rejestracji dostawcy), potem promuj.`,
+      error: i18n.t("legacy:errors.db.admin_promote_user_not_found_format", { email }),
     };
   }
   if (existing.role === "admin") {
-    return { ok: false, error: `${email} już jest administratorem.` };
+    return { ok: false, error: i18n.t("legacy:errors.db.admin_promote_already_admin_format", { email }) };
   }
   // Promuj
   const { data: updated, error: updErr } = await supabase
@@ -1681,7 +1681,7 @@ export async function demoteFromAdmin(userId) {
   if (!userId) return { ok: false, error: "Brak userId" };
   const { data: me } = await supabase.auth.getUser();
   if (me?.user?.id === userId) {
-    return { ok: false, error: "Nie możesz zdjąć uprawnień administratora samemu sobie." };
+    return { ok: false, error: i18n.t("legacy:errors.db.admin_demote_self_forbidden") };
   }
   const { data, error } = await supabase
     .from("profiles")
@@ -1700,7 +1700,7 @@ export async function setSuperAdmin(userId, enabled) {
   if (!userId) return { ok: false, error: "Brak userId" };
   const { data: me } = await supabase.auth.getUser();
   if (me?.user?.id === userId && !enabled) {
-    return { ok: false, error: "Nie możesz odebrać sobie samemu uprawnień super admina." };
+    return { ok: false, error: i18n.t("legacy:errors.db.admin_super_demote_self_forbidden") };
   }
   const { data, error } = await supabase
     .from("profiles")

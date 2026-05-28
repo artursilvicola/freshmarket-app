@@ -2263,7 +2263,38 @@
       "payu_must_be_logged_in": "Musisz być zalogowany żeby kupić pakiet.",
       "payu_status_format": "PayU: błąd {{status}}",
       "payu_no_redirect_uri": "PayU: brak redirectUri w odpowiedzi",
-      "company_id_required": "Brak identyfikatora firmy."
+      "company_id_required": "Brak identyfikatora firmy.",
+      "buyer_name_required": "Kupiec musi mieć imię i nazwisko.",
+      "buyer_email_required": "Kupiec musi mieć adres e-mail.",
+      "buyer_email_invalid_format": "Adres e-mail kupca ma niepoprawny format.",
+      "buyer_retailer_required": "Kupiec musi być przypisany do jednej sieci handlowej.",
+      "buyer_category_required": "Aktywny kupiec musi mieć przypisaną przynajmniej jedną kategorię.",
+      "buyer_create_failed": "Nie udało się utworzyć kupca",
+      "buyer_update_failed": "Nie udało się zaktualizować kupca",
+      "public_url_fetch_failed": "Nie udało się pobrać public URL",
+      "save_offer_failed_format": "Nie udało się zapisać propozycji ({{status}})",
+      "supplier_register_failed": "Nie udało się zarejestrować konta.",
+      "send_email_failed": "Nie udało się wysłać maila.",
+      "admin_promote_user_not_found_format": "Brak użytkownika {{email}}. Najpierw musi zarejestrować się w aplikacji (np. przez stronę rejestracji dostawcy), potem promuj.",
+      "admin_promote_already_admin_format": "{{email}} już jest administratorem.",
+      "admin_demote_self_forbidden": "Nie możesz zdjąć uprawnień administratora samemu sobie.",
+      "admin_super_demote_self_forbidden": "Nie możesz odebrać sobie samemu uprawnień super admina."
+    }
+  },
+  "shell": {
+    "account_switcher": {
+      "role_admin": "Admin",
+      "role_supplier": "Dostawca",
+      "role_buyer": "Kupiec",
+      "role_filter_all": "Wszyscy",
+      "role_filter_admins": "Admin",
+      "role_filter_suppliers": "Dostawcy",
+      "role_filter_buyers": "Kupcy",
+      "role_group_admins_format": "Adminowie ({{count}})",
+      "role_group_suppliers_format": "Dostawcy ({{count}})",
+      "role_group_buyers_format": "Kupcy ({{count}})",
+      "retailer_inactive_inline": "(sieć nieaktywna)",
+      "active_account_marker": "✓ aktywne"
     }
   }
 }
