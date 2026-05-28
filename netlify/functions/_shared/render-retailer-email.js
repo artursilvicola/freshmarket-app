@@ -72,8 +72,12 @@ function pluralKupiecPL(n) {
   return "kupców";
 }
 
+// [P2-final-qa C3] Terminologia v1.1: "submission(s)" zamiast "offer(s)" —
+// consistent z resztą EN templates supplier-side (tplOffersSentToRetailer,
+// tplOffersReadByBuyer, tplOfferExpired) gdzie używamy Submission.
+// Per Codex non-blocker notatka na P2-backend-mails C3 review.
 function pluralOfferEN(n) {
-  return n === 1 ? "offer" : "offers";
+  return n === 1 ? "submission" : "submissions";
 }
 
 function pluralBuyerEN(n) {
@@ -108,7 +112,7 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
     headerSubtitleFormat: (m) => `Propositions ${esc(m)}`,
     headerMailingFor: (name) => `Mailing for <strong style="color:rgba(255,255,255,0.9);">${esc(name)}</strong>`,
     introGreet: "Dear Sir or Madam,",
-    introBody: (count, retName) => `we're sending you a selection of <strong>${count} ${pluralOfferEN(count)}</strong> curated for <strong>${esc(retName)}</strong> by the Fresh Market team. You'll find the details of each proposition after signing in to the platform.`,
+    introBody: (count, retName) => `we're sending you a selection of <strong>${count} ${pluralOfferEN(count)}</strong> curated for <strong>${esc(retName)}</strong> by the Fresh Market team. You'll find the details of each submission after signing in to the platform.`,
     buyerLine: (count, retName) => `Goes to ${count} ${pluralBuyerEN(count)} at ${esc(retName)}`,
     footerAddress: "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Poland",
     footerLegalFormat: (year, retName) => `You received this message because you are registered with the Fresh Market PreConnect programme as a buyer at ${esc(retName)}.<br>© ${year} KJOW Sp. z o.o. All rights reserved.`,
