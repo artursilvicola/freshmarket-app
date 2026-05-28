@@ -23,3 +23,6 @@ npm-debug.log*
 # Cache
 .cache/
 .parcel-cache/
+
+# Audit script output (regenerated on demand by scripts/pl-audit.cjs)
+pl-audit.json

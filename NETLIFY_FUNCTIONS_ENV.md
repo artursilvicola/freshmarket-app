@@ -14,12 +14,16 @@ Używane przez:
 - `/.netlify/functions/admin-update-user`
 - `/.netlify/functions/admin-reset-password`
 
-## Dodatkowo dla wysyłki oferty
+## Dodatkowo dla wysyłki maili (Resend)
 
 - `RESEND_API_KEY`
 
 Używane przez:
-- `/.netlify/functions/send-offer`
+- `/.netlify/functions/send-retailer-batch` (zbiorczy mailing do sieci)
+- `/.netlify/functions/send-supplier-notification` (transactional dostawca)
+- `/.netlify/functions/register-supplier-self` (welcome mail)
+- `/.netlify/functions/notify-supplier-read` (powiadomienie o odczycie)
+- `/.netlify/functions/mark-buyer-preconnect-seen` (idempotent supplier notify)
 
 ## Dodatkowo dla funkcji AI
 
@@ -50,7 +54,7 @@ Możesz otworzyć:
 
 Zobaczysz:
 - czy konfiguracja dla adminowych funkcji jest kompletna,
-- czy konfiguracja dla `send-offer` jest kompletna,
+- czy konfiguracja Resend (mailing) jest kompletna,
 - czy konfiguracja dla funkcji AI jest kompletna,
 - jakich zmiennych brakuje.
 

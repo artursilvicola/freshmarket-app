@@ -157,7 +157,10 @@ Gdy chcesz, żeby oferty faktycznie szły mailem do kupców:
 2. **API Keys → Create API Key**, skopiuj.
 3. W Netlify: **Site settings → Environment variables** dodaj `RESEND_API_KEY`.
 4. Zweryfikuj domenę freshmarket.eu w Resend (DNS records).
-5. Funkcja `netlify/functions/send-offer.js` jest już gotowa — wywołasz ją z aplikacji.
+5. Funkcje mailowe (`send-retailer-batch`, `send-supplier-notification`,
+   `register-supplier-self`, `notify-supplier-read`) są już gotowe — używają
+   `_shared/supplier-email-templates.js` + `_shared/render-retailer-email.js`
+   z dispatcherem locale (PL/EN per recipient).
 
 ---
 
@@ -183,7 +186,10 @@ freshmarket-app/
 │
 ├── netlify/
 │   └── functions/
-│       └── send-offer.js     # wysyłka maili (Resend)
+│       ├── send-retailer-batch.js     # zbiorczy mail do sieci (Resend)
+│       ├── send-supplier-notification.js
+│       ├── register-supplier-self.js
+│       └── _shared/                   # templates + error dictionary
 │
 └── src/
     ├── main.jsx              # entry point

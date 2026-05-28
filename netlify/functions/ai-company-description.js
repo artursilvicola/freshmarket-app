@@ -67,14 +67,16 @@ export const handler = async (event) => {
   }
 
   const site = await fetchWebsiteSnippet(company.website);
-  const prompt = buildCompanyPrompt(company, site);
+  const prompt = buildCompanyPrompt(company, site, locale);
   const richness = estimateDataRichness(company, site);
 
-  // JSON-mode prompt: AI zwraca {description_short, description} w jednym call
+  // JSON-mode prompt: AI zwraca {description_short, description} w jednym call.
+  // [P2-final-qa C3] System prompt locale-aware — supplier z locale='en'
+  // dostaje wygenerowany opis po angielsku (zgodność z UI lang). Fallback PL.
   const raw = await openAiChat({
     apiKey: env.openAiApiKey,
     model: env.openAiModel,
-    system: systemPrompt(),
+    system: systemPrompt(locale),
     user: prompt,
     temperature: 0.4,
     responseFormat: { type: "json_object" },
@@ -102,7 +104,15 @@ export const handler = async (event) => {
   });
 };
 
-function systemPrompt() {
+// [P2-final-qa C3] Locale-aware system prompt — PL/EN dispatcher.
+// Fallback PL gdy locale nie 'en'. JSON output structure identyczna.
+function systemPrompt(locale) {
+  const lng = (locale === "en") ? "en" : "pl";
+  if (lng === "en") return systemPromptEN();
+  return systemPromptPL();
+}
+
+function systemPromptPL() {
   return [
     "Tworzysz wiarygodne opisy firm B2B dla platformy Fresh Market (rynek owoce-warzywa-kwiaty).",
     "Piszesz po polsku, językiem handlowym i konkretnym. Adresat: kupiec sieci handlowej.",
@@ -118,7 +128,90 @@ function systemPrompt() {
   ].join("\n");
 }
 
-function buildCompanyPrompt(company, site) {
+function systemPromptEN() {
+  return [
+    "You write trustworthy B2B company descriptions for the Fresh Market platform (fruit-vegetable-flower market).",
+    "Write in English, in concrete commercial language. Audience: a retailer's category buyer.",
+    "RULES:",
+    "1. Do not invent facts. If something is missing from the data, skip it. Never invent export countries, certificates, employee counts or volumes.",
+    "2. Do not use empty marketing language (e.g. 'leader', 'best', 'long tradition') if it doesn't follow from the data.",
+    "3. Scale length to the amount of data: little data → short; more data → broader, but still specific.",
+    "4. No headings, no bullet lists, no emoji.",
+    "5. Emphasis: company type + what they sell + for whom + on which markets + capacity/certificates (only if provided).",
+    "Return JSON: {\"description_short\": string, \"description\": string}.",
+    "description_short: 2-3 sentences, ~200-300 characters, for card and buyer dashboard preview.",
+    "description: 4-6 sentences, ~450-700 characters, the main profile description. If data is limited (just name, country, one type) — 2-3 sentences (~250-400 characters) are enough.",
+  ].join("\n");
+}
+
+// [P2-final-qa C3] Locale-aware field labels — AI sees the prompt in caller's
+// language. Strukturalne dane (countries, products, certs) NIE są tłumaczone
+// (to surowe wejście z formularza supplier'a — może być PL albo EN zależnie
+// jak supplier wpisał). Tylko etykiety/intro/footer prompta są w locale.
+function buildCompanyPrompt(company, site, locale) {
+  const lng = (locale === "en") ? "en" : "pl";
+  const labels = lng === "en" ? {
+    intro: "Generate a company profile description. Return JSON with two fields: description_short and description.",
+    sectionTitle: "COMPANY DATA:",
+    name: "Name",
+    country: "Country",
+    city: "City",
+    website: "Website",
+    companyType: "Company type",
+    productCategories: "Product categories",
+    products: "Products (free text)",
+    markets: "Sales markets (free text)",
+    seasonality: "Seasonality",
+    foundedYear: "Founded year",
+    employees: "Employees count",
+    yearRound: "Year-round products",
+    seasonal: "Seasonal products",
+    privateLabel: "Private label",
+    yes: "yes",
+    no: "no",
+    customerTypes: "Customer types served",
+    exportCountries: "Export countries",
+    mainMarkets: "Main markets",
+    partnership: "Partnership types",
+    volumes: "Typical volumes",
+    capabilities: "Operational capabilities",
+    materials: "Number of supplied materials (PDF/photos)",
+    pitchTitle: "EMPHASIS FROM THE COMPANY (commercial priority to include, but without copying verbatim):",
+    contacts: "Contacts",
+    certs: "Certificates",
+    website_snippet: "Website snippet",
+  } : {
+    intro: "Wygeneruj opis profilu firmy. Zwróć JSON z dwoma polami: description_short i description.",
+    sectionTitle: "DANE FIRMY:",
+    name: "Nazwa",
+    country: "Kraj",
+    city: "Miasto",
+    website: "WWW",
+    companyType: "Typ firmy",
+    productCategories: "Kategorie produktowe",
+    products: "Produkty (wolny tekst)",
+    markets: "Rynki sprzedaży (wolny tekst)",
+    seasonality: "Sezonowość",
+    foundedYear: "Rok założenia",
+    employees: "Liczba pracowników",
+    yearRound: "Produkty całoroczne",
+    seasonal: "Produkty sezonowe",
+    privateLabel: "Marka własna / private label",
+    yes: "tak",
+    no: "nie",
+    customerTypes: "Typ obsługiwanych klientów",
+    exportCountries: "Kraje eksportu",
+    mainMarkets: "Główne rynki",
+    partnership: "Typ współpracy",
+    volumes: "Typowe wolumeny",
+    capabilities: "Zaplecze operacyjne",
+    materials: "Liczba dostarczonych materiałów (PDF/zdjęcia)",
+    pitchTitle: "PODKREŚLENIE OD FIRMY (priorytet handlowy do uwzględnienia, ale bez kopiowania dosłownie):",
+    contacts: "Kontakty",
+    certs: "Certyfikaty",
+    website_snippet: "Fragment strony WWW",
+  };
+
   const contacts = (company.contacts || [])
     .map((ct) => [ct?.role, ct?.name, ct?.position, ct?.email, ct?.phone].filter(Boolean).join(" | "))
     .filter(Boolean)
@@ -138,57 +231,57 @@ function buildCompanyPrompt(company, site) {
   const supplierPitch = typeof pd.supplier_pitch === "string" ? pd.supplier_pitch.trim() : "";
 
   const lines = [
-    "Wygeneruj opis profilu firmy. Zwróć JSON z dwoma polami: description_short i description.",
+    labels.intro,
     "",
-    "DANE FIRMY:",
-    `Nazwa: ${company.name || "-"}`,
-    `Kraj: ${company.country || "-"}`,
-    `Miasto: ${company.city || "-"}`,
-    `WWW: ${company.website || "-"}`,
-    `Typ firmy: ${(company.types || []).join(", ") || "-"}`,
-    `Kategorie produktowe: ${(company.categories || []).join(", ") || "-"}`,
-    `Produkty (wolny tekst): ${company.products || "-"}`,
-    `Rynki sprzedaży (wolny tekst): ${company.markets || "-"}`,
-    `Sezonowość: ${company.seasonality || "-"}`,
+    labels.sectionTitle,
+    `${labels.name}: ${company.name || "-"}`,
+    `${labels.country}: ${company.country || "-"}`,
+    `${labels.city}: ${company.city || "-"}`,
+    `${labels.website}: ${company.website || "-"}`,
+    `${labels.companyType}: ${(company.types || []).join(", ") || "-"}`,
+    `${labels.productCategories}: ${(company.categories || []).join(", ") || "-"}`,
+    `${labels.products}: ${company.products || "-"}`,
+    `${labels.markets}: ${company.markets || "-"}`,
+    `${labels.seasonality}: ${company.seasonality || "-"}`,
   ];
 
-  if (basics.founded_year) lines.push(`Rok założenia: ${basics.founded_year}`);
-  if (basics.employees) lines.push(`Liczba pracowników: ${basics.employees}`);
+  if (basics.founded_year) lines.push(`${labels.foundedYear}: ${basics.founded_year}`);
+  if (basics.employees) lines.push(`${labels.employees}: ${basics.employees}`);
 
-  if (offer.products_year_round) lines.push(`Produkty całoroczne: ${offer.products_year_round}`);
-  if (offer.products_seasonal) lines.push(`Produkty sezonowe: ${offer.products_seasonal}`);
-  if (typeof offer.private_label === "boolean") lines.push(`Marka własna / private label: ${offer.private_label ? "tak" : "nie"}`);
+  if (offer.products_year_round) lines.push(`${labels.yearRound}: ${offer.products_year_round}`);
+  if (offer.products_seasonal) lines.push(`${labels.seasonal}: ${offer.products_seasonal}`);
+  if (typeof offer.private_label === "boolean") lines.push(`${labels.privateLabel}: ${offer.private_label ? labels.yes : labels.no}`);
   if (Array.isArray(offer.customer_types) && offer.customer_types.length) {
-    lines.push(`Typ obsługiwanych klientów: ${offer.customer_types.join(", ")}`);
+    lines.push(`${labels.customerTypes}: ${offer.customer_types.join(", ")}`);
   }
 
   if (Array.isArray(trade.export_countries) && trade.export_countries.length) {
-    lines.push(`Kraje eksportu: ${trade.export_countries.join(", ")}`);
+    lines.push(`${labels.exportCountries}: ${trade.export_countries.join(", ")}`);
   }
-  if (trade.main_markets) lines.push(`Główne rynki: ${trade.main_markets}`);
+  if (trade.main_markets) lines.push(`${labels.mainMarkets}: ${trade.main_markets}`);
   if (Array.isArray(trade.partnership_types) && trade.partnership_types.length) {
-    lines.push(`Typ współpracy: ${trade.partnership_types.join(", ")}`);
+    lines.push(`${labels.partnership}: ${trade.partnership_types.join(", ")}`);
   }
-  if (trade.typical_volumes) lines.push(`Typowe wolumeny: ${trade.typical_volumes}`);
+  if (trade.typical_volumes) lines.push(`${labels.volumes}: ${trade.typical_volumes}`);
 
   if (Array.isArray(ops.capabilities) && ops.capabilities.length) {
-    lines.push(`Zaplecze operacyjne: ${ops.capabilities.join(", ")}`);
+    lines.push(`${labels.capabilities}: ${ops.capabilities.join(", ")}`);
   }
 
   if (materials.length) {
-    lines.push(`Liczba dostarczonych materiałów (PDF/zdjęcia): ${materials.length}`);
+    lines.push(`${labels.materials}: ${materials.length}`);
   }
 
   if (supplierPitch) {
     lines.push("");
-    lines.push("PODKREŚLENIE OD FIRMY (priorytet handlowy do uwzględnienia, ale bez kopiowania dosłownie):");
+    lines.push(labels.pitchTitle);
     lines.push(supplierPitch);
   }
 
   lines.push("");
-  lines.push(contacts ? `Kontakty:\n${contacts}` : "Kontakty: -");
-  lines.push(certs ? `Certyfikaty:\n${certs}` : "Certyfikaty: -");
-  lines.push(site.text ? `Fragment strony WWW:\n${site.text}` : "Fragment strony WWW: -");
+  lines.push(contacts ? `${labels.contacts}:\n${contacts}` : `${labels.contacts}: -`);
+  lines.push(certs ? `${labels.certs}:\n${certs}` : `${labels.certs}: -`);
+  lines.push(site.text ? `${labels.website_snippet}:\n${site.text}` : `${labels.website_snippet}: -`);
 
   return lines.join("\n");
 }

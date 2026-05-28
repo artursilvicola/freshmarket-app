@@ -1939,7 +1939,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const wallet = useMemo(() => {
     const refundTxs = refundedSendsForWallet.map((s) => ({
       id: `refund-${s.id}`,
-      desc: `Zwrot za brak odczytu propozycji #${s.id}`,
+      desc: t("shell.refunds.wallet_desc_format", { id: s.id }),
       amount: getRefundAmount(s),
       date: s.refundAt || s.data?.refundAt || s.expiredAt || s.sentAt || s.sendDate || nowStr().slice(0, 10),
       type: "refund",
@@ -2509,7 +2509,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
           id: `refund-${s.id}`,
           supplierId: mySupplierKey,
           amount: getRefundAmount(s),
-          msg: `Zwrot za brak odczytu propozycji #${s.id} został zapisany na portfelu.`,
+          msg: t("shell.refunds.notif_msg_format", { id: s.id }),
           dismissed: false,
         }));
       return additions.length ? [...additions, ...(prev || [])] : prev;
@@ -2550,7 +2550,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     // sup-s1/sup-s14 ghost suppliers — undoing any cleanup. Admin who
     // really needs to reset prod must do it consciously via Supabase SQL.
     if (import.meta.env.PROD) {
-      fl("Reset danych testowych jest wyłączony w produkcji. Skontaktuj się z deweloperem aby wykonać reset bezpośrednio w bazie.", "error");
+      fl(t("shell.app_toasts.reset_disabled"), "error");
       return;
     }
     ["fm_offers","fm_sends","fm_fmPrefs","fm_fmResps","fm_fmSchedule","fm_retailers","fm_companies","fm_refundNotifs","fm_fmWishlists","fm_fmLateResps","fm_previewFor","fm_messages"].forEach(k=>localStorage.removeItem(k));
@@ -2565,7 +2565,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     setCompanies(COMPANIES_DB);
     setRefundNotifs(REFUND_NOTIFS_SEED);
     setPreviewFor({ suppliers: [], chains: [] });
-    fl("Dane testowe zresetowane do domyślnych.");
+    fl(t("shell.app_toasts.reset_done"));
   }
 
   // ── Buy Package (simulated payment flow) ───────────────────────────────
@@ -2606,7 +2606,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     ));
     // 4. Update company pkg reference in companies SSOT
     setCo(prev => ({ ...prev, pkg: planId }));
-    fl(`Pakiet zakupiony! +${plan.qty} wysyłek dodanych do Twojego konta.`);
+    fl(t("shell.app_toasts.package_purchased_format", { qty: plan.qty }));
   }
 
   // ── Actions ────────────────────────────────────────────────────────────
@@ -2700,13 +2700,13 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     try {
       await upsertLegacySend(updated);
     } catch (e) {
-      fl(`Błąd moderacji: ${e?.message || "spróbuj ponownie"}`, "error");
+      fl(t("shell.app_toasts.moderate_error_format", { message: e?.message || t("shell.app_toasts.tryagain_fallback") }), "error");
       return;
     }
     _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
     // Akceptacja moderacji też zostaje jako status w panelu. Mail do dostawcy
     // wysyłamy dopiero zbiorczo, gdy batch faktycznie wyjdzie do kupca.
-    fl(act === "approve" ? "Propozycja zatwierdzona" : "Propozycja odrzucona");
+    fl(act === "approve" ? t("shell.app_toasts.moderate_approved") : t("shell.app_toasts.moderate_rejected"));
   }
 
   // updateSendDate / updateSendPos: lightweight admin-only edits, keep silent
@@ -2716,18 +2716,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 
   async function sendApproved() {
     const approved = sends.filter(s => s.status === "approved");
-    if (!approved.length) { fl("Brak zatwierdzonych propozycji.", "warning"); return; }
+    if (!approved.length) { fl(t("shell.app_toasts.send_no_approved"), "warning"); return; }
     const today = new Date().toISOString().slice(0, 10);
     const updated = approved.map(s => ({ ...s, status: "sent", sentAt: s.sendDate || today, daysLeft: 14 }));
     try {
       await bulkUpsertLegacySends(updated);
     } catch (e) {
-      fl(`Błąd wysyłki: ${e?.message || "spróbuj ponownie"}`, "error");
+      fl(t("shell.app_toasts.send_error_format", { message: e?.message || t("shell.app_toasts.tryagain_fallback") }), "error");
       return;
     }
     const updatedById = new Map(updated.map(u => [u.id, u]));
     _setSendsRaw(s => s.map(x => updatedById.get(x.id) || x));
-    fl(`Wysłano ${updated.length} propozycji.`);
+    fl(t("shell.app_toasts.send_success_format", { count: updated.length }));
   }
 
   async function confirmManual(id, rt, note) {
@@ -2746,11 +2746,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     try {
       await upsertLegacySend(updated);
     } catch (e) {
-      fl(`Błąd potwierdzenia: ${e?.message || "spróbuj ponownie"}`, "error");
+      fl(t("shell.app_toasts.confirm_error_format", { message: e?.message || t("shell.app_toasts.tryagain_fallback") }), "error");
       return;
     }
     _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
-    fl("Potwierdzenie zapisane.");
+    fl(t("shell.app_toasts.confirm_saved"));
   }
 
   async function undoConfirm(id) {
@@ -2769,11 +2769,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     try {
       await upsertLegacySend(updated);
     } catch (e) {
-      fl(`Błąd cofania potwierdzenia: ${e?.message || "spróbuj ponownie"}`, "error");
+      fl(t("shell.app_toasts.undo_confirm_error_format", { message: e?.message || t("shell.app_toasts.tryagain_fallback") }), "error");
       return;
     }
     _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
-    fl("Potwierdzenie cofnięte", "warning");
+    fl(t("shell.app_toasts.undo_confirm_done"), "warning");
   }
 
   // [B2B Round 5.3] Buyer-open marker: called by PageBuyerDetail useEffect when
@@ -2879,19 +2879,19 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       || (account.legacySupplierId && c.legacy_supplier_id === account.legacySupplierId)
     );
     if (!co?.id) {
-      fl("Nie udało się znaleźć Twojej firmy w bazie. Skontaktuj się z administratorem.", "error");
+      fl(t("shell.app_toasts.fm_company_not_found"), "error");
       return null;
     }
     let saved;
     try {
       saved = await dbSaveFmSelectionConfirmation(co.id);
     } catch (e) {
-      fl(`Błąd potwierdzenia: ${e?.message || "spróbuj ponownie"}`, "error");
+      fl(t("shell.app_toasts.fm_confirm_error_format", { message: e?.message || t("shell.app_toasts.tryagain_fallback") }), "error");
       return null;
     }
     const ts = saved?.fm_selection_confirmed_at || new Date().toISOString();
     _setCompaniesRaw(prev => prev.map(c => c.id === co.id ? { ...c, fm_selection_confirmed_at: ts } : c));
-    fl("Dziękujemy, Twój wybór sieci został zapisany.");
+    fl(t("shell.app_toasts.fm_confirm_saved"));
     return ts;
   }
 
@@ -2979,13 +2979,13 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       if (typeof applyDraft === "function") applyDraft(patch);
       else setCo(prev=>({ ...prev, ...patch }));
       setAiModal(false);
-      const tierMsg = result?.richness === "rich" ? "(profil rozszerzony)"
-                    : result?.richness === "minimal" ? "(profil krótki — uzupełnij więcej danych dla bogatszego opisu)"
+      const tierMsg = result?.richness === "rich" ? t("shell.app_toasts.ai_tier_rich")
+                    : result?.richness === "minimal" ? t("shell.app_toasts.ai_tier_minimal")
                     : "";
-      fl(`${result?.source?.website_used ? "AI przygotował opis na podstawie danych firmy i strony WWW." : "AI przygotował opis na podstawie danych firmy."} ${tierMsg}`.trim());
+      fl(`${result?.source?.website_used ? t("shell.app_toasts.ai_ready_with_website") : t("shell.app_toasts.ai_ready_company_only")} ${tierMsg}`.trim());
     } catch (e) {
       console.warn("[generateCompanyDescriptionAI]", e);
-      fl(e?.message || "Nie udało się wygenerować opisu firmy.", "warning");
+      fl(e?.message || t("shell.app_toasts.ai_failed"), "warning");
     } finally {
       setAiLoad(false);
     }
@@ -2994,14 +2994,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   function toggleStar(offerId){ setBuyer(b=>({ ...b, starred: b.starred?.includes(offerId) ? b.starred.filter(x=>x!==offerId) : [...(b.starred||[]),offerId] })); }
 
   // ── Navigation ─────────────────────────────────────────────────────────
-  // Supplier: 5 items  |  Buyer: 2 items  |  Admin: 4 items
-  const menuItems = {
-    supplier: [[Home,"Dashboard","dashboard"],[Building2,"Firma","company"],[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"],[User,"Mój profil","profile"]],
-    buyer:    [[Send,"Propozycje asortymentowe","b-offers"],[Building2,"Dostawcy","b-katalog"],[Heart,"Zapisane","b-saved"],[User,"Mój Profil","b-profile"]],
-    admin:    [[Home,"Dashboard","a-dash"],[Layers,"Pipeline","a-pipeline"],[Store,"Sieci","a-retailers"],[Building2,"Firmy","a-firmy"]],
-  };
-
-  const am = menuItems[role];
+  // [P2-final-qa post-review C2 follow-up] Sidebar items są teraz inline w JSX
+  // niżej i jadą przez t("shell.sidebar.*"). Stary const menuItems/am usunięty —
+  // był dead code (rzeczywiste menu rendrowane przez bezpośrednie tablice w
+  // JSX dla każdej roli). navKey computation zostaje — używany do podświetlania.
   const navKey = pg.startsWith("offer-")?"offers":pg.startsWith("b-det")?"b-offers":pg==="b-dash"?"dashboard":pg==="b-katalog"?"b-katalog":pg==="b-saved"?"b-saved":pg;
   const userName = account.name;
 
@@ -3066,23 +3062,23 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             {/* ── DASHBOARD (not for buyer — their main page is Propozycje) ── */}
             {role!=="buyer" && (
               <div onClick={()=>nav("dashboard")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="dashboard"?"white":"#64748b",background:navKey==="dashboard"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:4,cursor:"pointer",fontSize:13,fontWeight:navKey==="dashboard"?600:400,transition:"all 0.15s" }}>
-                <Home size={14}/><span>Dashboard</span>
+                <Home size={14}/><span>{t("shell.sidebar.dashboard")}</span>
               </div>
             )}
 
             {/* ── SUPPLIER NAV ── */}
             {role==="supplier"&&<>
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>PreConnect</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.preconnect_section")}</span>
               </div>
-              {[[Send,"Wysyłki","wysylki"],[Tag,"Moje propozycje","offers"],[CreditCard,"Finanse","finanse"],[Building2,"Twoja firma","company"],[User,"Mój profil","profile"]].map(([Ic,label,key])=>(
+              {[[Send,t("shell.sidebar.supplier_wysylki"),"wysylki"],[Tag,t("shell.sidebar.supplier_my_offers"),"offers"],[CreditCard,t("shell.sidebar.supplier_finance"),"finanse"],[Building2,t("shell.sidebar.supplier_your_company"),"company"],[User,t("shell.sidebar.supplier_my_profile"),"profile"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
                   {key==="finanse"&&wallet.balance>0&&<span style={{ marginLeft:"auto",background:"#059669",color:"white",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 6px" }}>{wallet.balance}€</span>}
                 </div>
               ))}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>Fresh Market 2026</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
               </div>
               {/* [B2B Round supplier-onboarding-access-and-communication]
                   Dwie warstwy locka:
@@ -3090,15 +3086,15 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                     2. co.fm_b2b_enabled — per-supplier (admin dopuszcza firmę do FM B2B)
                   Jedno LUB drugie = lock. Tooltip mówi czego brakuje. */}
               {!fmSettings.schedulingOpen || !co?.fm_b2b_enabled
-                ? <div title={!co?.fm_b2b_enabled ? "Spotkania B2B są aktywowane indywidualnie przez administratora dla Twojej firmy." : "Faza Spotkań B2B nie jest jeszcze otwarta."} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:"#475569",borderRadius:8,marginBottom:1,cursor:"not-allowed",fontSize:13 }}>
-                    <Calendar size={14}/><span style={{ opacity:0.5 }}>Spotkania FM 2026</span>
+                ? <div title={!co?.fm_b2b_enabled ? t("shell.sidebar.fm_locked_tooltip_company") : t("shell.sidebar.fm_locked_tooltip_phase")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:"#475569",borderRadius:8,marginBottom:1,cursor:"not-allowed",fontSize:13 }}>
+                    <Calendar size={14}/><span style={{ opacity:0.5 }}>{t("shell.sidebar.fm_locked_label")}</span>
                     <span style={{ marginLeft:"auto",fontSize:10,color:"#475569" }}>🔒</span>
                   </div>
                 : [
-                    {key:"fm-sched",label:"Wybór sieci",  Icon:Store,   unlocked:true},
-                    {key:"fm-algo", label:"Algorytm",      Icon:Zap,     unlocked:fmSettings.currentPhase>=3},
+                    {key:"fm-sched",label:t("shell.sidebar.fm_select_retailers"),  Icon:Store,   unlocked:true},
+                    {key:"fm-algo", label:t("shell.sidebar.fm_algorithm"),      Icon:Zap,     unlocked:fmSettings.currentPhase>=3},
                     // fm-korekty tab removed — supplier corrections are handled via admin chat
-                    {key:"fm-wyniki",label:"Twoje spotkania",Icon:Calendar,unlocked:fmSettings.planPublished},
+                    {key:"fm-wyniki",label:t("shell.sidebar.fm_your_meetings"),Icon:Calendar,unlocked:fmSettings.planPublished},
                   ].map(s=>{
                     const isActive = navKey===s.key || (navKey==="fm-sched"&&s.key==="fm-sched");
                     const SIc = s.Icon;
@@ -3118,19 +3114,19 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             {/* ── BUYER NAV ── */}
             {role==="buyer"&&<>
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>PreConnect</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.preconnect_section")}</span>
               </div>
-              {[[Send,"Propozycje asortymentowe","b-offers"],[Building2,"Dostawcy","b-katalog"],[Heart,"Zapisane","b-saved"],[User,"Mój Profil","b-profile"]].map(([Ic,label,key])=>(
+              {[[Send,t("shell.sidebar.buyer_offers"),"b-offers"],[Building2,t("shell.sidebar.buyer_suppliers"),"b-katalog"],[Heart,t("shell.sidebar.buyer_saved"),"b-saved"],[User,t("shell.sidebar.buyer_my_profile"),"b-profile"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
                 </div>
               ))}
               <div style={{ padding:"5px 14px 3px",marginTop:4 }}/>
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>Fresh Market 2026</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
               </div>
               <div onClick={()=>fmSettings.schedulingOpen&&nav("fm-sched")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="fm-sched"?"white":"#64748b",background:navKey==="fm-sched"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:fmSettings.schedulingOpen?"pointer":"not-allowed",fontSize:13,opacity:fmSettings.schedulingOpen?1:0.5,fontWeight:navKey==="fm-sched"?600:400 }}>
-                <Calendar size={14}/><span>Spotkania FM 2026</span>
+                <Calendar size={14}/><span>{t("shell.sidebar.buyer_fm_meetings")}</span>
                 {!fmSettings.schedulingOpen&&<span style={{ marginLeft:"auto",fontSize:10 }}>🔒</span>}
               </div>
             </>}
@@ -3138,21 +3134,23 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             {/* ── ADMIN NAV ── */}
             {role==="admin"&&<>
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>Admin</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.admin_section")}</span>
               </div>
-              {[[Layers,"Pipeline","a-pipeline"],[Store,"Sieci","a-retailers"],[Building2,"Firmy","a-firmy"]].map(([Ic,label,key])=>{
+              {[[Layers,t("shell.sidebar.admin_pipeline"),"a-pipeline"],[Store,t("shell.sidebar.admin_retailers"),"a-retailers"],[Building2,t("shell.sidebar.admin_firmy"),"a-firmy"]].map(([Ic,label,key])=>{
                 // [B2B Round prod-rollout / admin-notifications] Badge w sidebarze
                 // dla pozycji wymagających akcji admina:
                 //   - Pipeline: propozycje czekające na moderację (status pending_moderation)
                 //   - Firmy: dostawcy w pending_review
+                // [P2-final-qa post-review C2] Tooltip via t() z CLDR plural suffix
+                // (pluralSuffixPL — module helper, handles 22/23/24 correctly).
                 let pendingCount = 0;
                 let pendingTitle = "";
                 if (key === "a-pipeline") {
                   pendingCount = (sends || []).filter(s => s.status === "pending_moderation").length;
-                  pendingTitle = `${pendingCount} ${pendingCount===1?"propozycja czeka":"propozycji czeka"} na moderację`;
+                  pendingTitle = t("shell.sidebar.admin_pipeline_pending_tooltip" + pluralSuffixPL(pendingCount) + "_format", { count: pendingCount });
                 } else if (key === "a-firmy") {
                   pendingCount = (companies || []).filter(c => c.account_status === "pending_review").length;
-                  pendingTitle = `${pendingCount} ${pendingCount===1?"firma czeka":"firm czeka"} na zatwierdzenie`;
+                  pendingTitle = t("shell.sidebar.admin_firmy_pending_tooltip" + pluralSuffixPL(pendingCount) + "_format", { count: pendingCount });
                 }
                 return (
                   <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
@@ -3165,34 +3163,34 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 const unread = messages.filter(m=>m.toId==="admin"&&!m.read).length;
                 return (
                   <div onClick={()=>nav("a-chat")} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="a-chat"?"white":"#64748b",background:navKey==="a-chat"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-chat"?600:400,transition:"all 0.15s" }}>
-                    <MessageSquare size={14}/><span>Wiadomości</span>
+                    <MessageSquare size={14}/><span>{t("shell.sidebar.admin_messages")}</span>
                     {unread>0&&<span style={{ marginLeft:"auto",background:"#dc2626",color:"white",borderRadius:"50%",fontSize:9,fontWeight:700,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>{unread>9?"9+":unread}</span>}
                   </div>
                 );
               })()}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>Fresh Market 2026</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
               </div>
               <div onClick={()=>nav("a-fm")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-fm"?"white":"#64748b",background:navKey==="a-fm"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-fm"?600:400 }}>
-                <Settings size={14}/><span>FM Spotkania</span>
-                <span style={{ marginLeft:"auto",background:fmSettings.planPublished?"rgba(5,150,105,0.3)":fmSettings.schedulingOpen?"rgba(37,99,235,0.3)":"rgba(220,38,38,0.25)",color:fmSettings.planPublished?"#6ee7b7":fmSettings.schedulingOpen?"#93c5fd":"#fca5a5",borderRadius:8,fontSize:9,fontWeight:700,padding:"2px 6px" }}>{fmSettings.planPublished?"Opublikowany":fmSettings.schedulingOpen?"Aktywna":"Zamknięta"}</span>
+                <Settings size={14}/><span>{t("shell.sidebar.admin_fm_meetings")}</span>
+                <span style={{ marginLeft:"auto",background:fmSettings.planPublished?"rgba(5,150,105,0.3)":fmSettings.schedulingOpen?"rgba(37,99,235,0.3)":"rgba(220,38,38,0.25)",color:fmSettings.planPublished?"#6ee7b7":fmSettings.schedulingOpen?"#93c5fd":"#fca5a5",borderRadius:8,fontSize:9,fontWeight:700,padding:"2px 6px" }}>{fmSettings.planPublished?t("shell.sidebar.admin_fm_status_published"):fmSettings.schedulingOpen?t("shell.sidebar.admin_fm_status_active"):t("shell.sidebar.admin_fm_status_closed")}</span>
               </div>
               {/* [B2B Round prod-rollout / branding] Sekcja "System" — globalne
                   ustawienia całej aplikacji. Brand = logo Fresh Market podmieniane
                   przez admina (zamiast zielone-jabłko-SVG fallback). */}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>System</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.system_section")}</span>
               </div>
               <div onClick={()=>nav("a-branding")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-branding"?"white":"#64748b",background:navKey==="a-branding"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-branding"?600:400 }}>
-                <Sparkles size={14}/><span>Branding</span>
+                <Sparkles size={14}/><span>{t("shell.sidebar.admin_branding")}</span>
               </div>
               {/* [B2B Round prod-rollout / admin-team] Pozycja "Administratorzy"
                   widoczna TYLKO dla super admina (is_super_admin = role=admin
                   AND admin_level='super'). Zwykli admini nie zobaczą tej zakładki. */}
               {currentUser?.is_super_admin && (
                 <div onClick={()=>nav("a-team")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-team"?"white":"#64748b",background:navKey==="a-team"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-team"?600:400 }}>
-                  <Users size={14}/><span>Administratorzy</span>
-                  <span title="Tylko super admin widzi tę zakładkę" style={{ marginLeft:"auto",fontSize:9,color:"#a78bfa",background:"rgba(124,58,237,0.15)",padding:"1px 6px",borderRadius:6,fontWeight:700 }}>SUPER</span>
+                  <Users size={14}/><span>{t("shell.sidebar.admin_team")}</span>
+                  <span title={t("shell.sidebar.admin_super_tooltip")} style={{ marginLeft:"auto",fontSize:9,color:"#a78bfa",background:"rgba(124,58,237,0.15)",padding:"1px 6px",borderRadius:6,fontWeight:700 }}>{t("shell.sidebar.admin_super_badge")}</span>
                 </div>
               )}
             </>}
@@ -3219,22 +3217,25 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               const lsKey = `fm_activation_sent_pending_${account.id}`;
               const alreadySent = typeof window !== "undefined" && window.localStorage?.getItem(lsKey) === "1";
               const onClick = async () => {
-                const template = `Proszę o aktywację konta firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B.\n\nProfil mam uzupełniony i czekam na decyzję. Daj znać, jeśli coś jeszcze trzeba uzupełnić.`;
+                // [P2-final-qa post-review C2] Chat template w UI locale —
+                // wiadomość trafia do admina jako body chatu, więc supplier
+                // pisze w swoim języku UI.
+                const template = t("shell.activation_banner.pending_chat_template_format", { name: co.name || t("shell.activation_banner.company_name_placeholder") });
                 const saved = await sendChatMessage(template);
                 if (saved) {
                   try { window.localStorage?.setItem(lsKey, "1"); } catch (e) {}
-                  fl("✓ Wiadomość wysłana do administratora. Odpowiedź pojawi się w czacie (prawy dolny róg).", "success");
+                  fl(t("shell.app_toasts.chat_msg_sent_success"), "success");
                 } else {
-                  fl("Nie udało się wysłać wiadomości. Spróbuj ponownie lub napisz bezpośrednio: newsletter@freshmarket.eu", "error");
+                  fl(t("shell.app_toasts.chat_msg_failed"), "error");
                 }
               };
               return <div style={{ background:"#fef3c7",border:"1.5px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
                 <Clock size={16} color="#92400e" style={{ flexShrink:0,marginTop:2 }}/>
                 <div style={{ flex:1,fontSize:13,color:"#78350f" }}>
-                  <strong>Konto oczekuje na zatwierdzenie.</strong> Możesz uzupełnić profil firmy, wgrać logo i certyfikaty. Po aktywacji przez administratora odblokujemy wysyłkę ofert do sieci (PreConnect) oraz Spotkania B2B.
+                  <strong>{t("shell.activation_banner.pending_title")}</strong>{t("shell.activation_banner.pending_desc")}
                 </div>
                 <button onClick={onClick} disabled={alreadySent} style={{ padding:"7px 12px",background:alreadySent?"#d1d5db":"#d97706",color:alreadySent?"#6b7280":"white",borderRadius:7,fontSize:12,fontWeight:600,border:"none",cursor:alreadySent?"default":"pointer",flexShrink:0,whiteSpace:"nowrap",fontFamily:"inherit" }}>
-                  {alreadySent ? "✓ Wysłano" : "Napisz do admina"}
+                  {alreadySent ? t("shell.activation_banner.pending_button_sent") : t("shell.activation_banner.pending_button_default")}
                 </button>
               </div>;
             }
@@ -3242,7 +3243,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               return <div style={{ background:"#fee2e2",border:"1.5px solid #fecaca",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
                 <AlertTriangle size={16} color="#dc2626" style={{ flexShrink:0,marginTop:2 }}/>
                 <div style={{ flex:1,fontSize:13,color:"#991b1b" }}>
-                  <strong>Rejestracja nie została aktywowana.</strong>{co.status_note ? ` ${co.status_note}` : ""} Skontaktuj się z <a href="mailto:newsletter@freshmarket.eu" style={{color:"#0d9488"}}>newsletter@freshmarket.eu</a>.
+                  <strong>{t("shell.activation_banner.rejected_title")}</strong>{co.status_note ? ` ${co.status_note}` : ""}{t("shell.activation_banner.rejected_desc_suffix")}<a href="mailto:newsletter@freshmarket.eu" style={{color:"#0d9488"}}>newsletter@freshmarket.eu</a>.
                 </div>
               </div>;
             }
@@ -3250,43 +3251,43 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               return <div style={{ background:"#fee2e2",border:"1.5px solid #fecaca",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
                 <AlertTriangle size={16} color="#dc2626" style={{ flexShrink:0,marginTop:2 }}/>
                 <div style={{ flex:1,fontSize:13,color:"#991b1b" }}>
-                  <strong>Konto zostało wstrzymane.</strong>{co.status_note ? ` ${co.status_note}` : ""} Profil firmy pozostaje dostępny, wysyłki i Spotkania B2B są zablokowane do czasu wyjaśnienia.
+                  <strong>{t("shell.activation_banner.suspended_title")}</strong>{co.status_note ? ` ${co.status_note}` : ""}{t("shell.activation_banner.suspended_desc_suffix")}
                 </div>
               </div>;
             }
             // status === "active" ale któryś moduł off — komunikat informacyjny z CTA
             const offBits = [];
-            if (!preOk) offBits.push("PreConnect (wysyłka ofert do sieci) jest jeszcze nieaktywny");
-            if (!fmOk) offBits.push("Spotkania B2B Fresh Market 2026 są aktywowane indywidualnie przez administratora");
-            const missingMods = [!preOk && "PreConnect", !fmOk && "Spotkania FM 2026"].filter(Boolean).join(" + ");
+            if (!preOk) offBits.push(t("shell.activation_banner.partial_off_preconnect"));
+            if (!fmOk) offBits.push(t("shell.activation_banner.partial_off_fm"));
+            const missingMods = [!preOk && t("shell.activation_banner.partial_module_preconnect"), !fmOk && t("shell.activation_banner.partial_module_fm")].filter(Boolean).join(" + ");
             const lsKey = `fm_activation_sent_modules_${account.id}_${missingMods}`;
             const alreadySent = typeof window !== "undefined" && window.localStorage?.getItem(lsKey) === "1";
             const onClick = async () => {
-              const template = `Proszę o aktywację modułów ${missingMods} dla firmy ${co.name || "(brak nazwy)"} w panelu Fresh Market B2B.\n\nMoje konto jest aktywne, ale wybrane moduły jeszcze nie. Czy mogę dostać dostęp?`;
+              const template = t("shell.activation_banner.partial_chat_template_format", { modules: missingMods, name: co.name || t("shell.activation_banner.company_name_placeholder") });
               const saved = await sendChatMessage(template);
               if (saved) {
                 try { window.localStorage?.setItem(lsKey, "1"); } catch (e) {}
-                fl("✓ Prośba wysłana do administratora. Odpowiedź pojawi się w czacie (prawy dolny róg).", "success");
+                fl(t("shell.app_toasts.chat_req_sent_success"), "success");
               } else {
-                fl("Nie udało się wysłać wiadomości. Spróbuj ponownie lub napisz bezpośrednio: newsletter@freshmarket.eu", "error");
+                fl(t("shell.app_toasts.chat_req_failed"), "error");
               }
             };
             return <div style={{ background:"#eff6ff",border:"1.5px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
               <Info size={16} color="#3b82f6" style={{ flexShrink:0,marginTop:2 }}/>
               <div style={{ flex:1,fontSize:12,color:"#1e3a5f" }}>
-                <strong>Konto jest aktywne.</strong> {offBits.join(". ")}.
+                <strong>{t("shell.activation_banner.partial_title")}</strong> {offBits.join(". ")}.
               </div>
               <button onClick={onClick} disabled={alreadySent} style={{ padding:"6px 12px",background:alreadySent?"#d1d5db":"#3b82f6",color:alreadySent?"#6b7280":"white",borderRadius:7,fontSize:11,fontWeight:600,border:"none",cursor:alreadySent?"default":"pointer",flexShrink:0,whiteSpace:"nowrap",fontFamily:"inherit" }}>
-                {alreadySent ? "✓ Wysłano" : "Poproś o aktywację"}
+                {alreadySent ? t("shell.activation_banner.pending_button_sent") : t("shell.activation_banner.partial_button")}
               </button>
             </div>;
           })()}
           {account.role==="supplier"&&pg!=="fm-sched"&&activeRefunds.map(n=>(
             <div key={n.id} style={{ background:"#fffbeb",border:"1.5px solid #fbbf24",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
               <RotateCcw size={16} color="#d97706" style={{ flexShrink:0,marginTop:2 }}/>
-              <div style={{ flex:1,fontSize:13,color:"#92400e" }}><strong>Zwrot {n.amount} EUR</strong> — {n.msg}</div>
+              <div style={{ flex:1,fontSize:13,color:"#92400e" }}><strong>{t("shell.refunds.notif_amount_label_format", { amount: n.amount })}</strong> — {n.msg}</div>
               <div style={{ display:"flex",gap:6,flexShrink:0 }}>
-                <Btn sm onClick={()=>{dismissRefund(n.id);nav("wysylki");}} style={{ background:"#d97706",color:"white",border:"none" }}><Send size={10}/> Wyślij dalej</Btn>
+                <Btn sm onClick={()=>{dismissRefund(n.id);nav("wysylki");}} style={{ background:"#d97706",color:"white",border:"none" }}><Send size={10}/> {t("shell.refunds.notif_forward_btn")}</Btn>
                 <button onClick={()=>dismissRefund(n.id)} style={{ background:"none",border:"none",cursor:"pointer",color:"#92400e",padding:2 }}><X size={14}/></button>
               </div>
             </div>
@@ -8676,10 +8677,24 @@ const ROLE_COLORS = { admin:"#7c3aed", supplier:"#0d9488", buyer:"#2563eb" };
 const ROLE_LABELS  = { admin:"Admin", supplier:"Dostawca", buyer:"Kupiec" };
 
 function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, retailers }) {
+  const { t } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
   const [filterRole, setFilterRole] = useState("all");
   // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej fazy.
   const ph = FM_PHASES[fmSettings.currentPhase-1] || FM_PHASES[FM_PHASES.length-1];
+  // [P2-final-qa C2] Locale-aware FM_PHASES.label dla badge w switcher bar.
+  const phLabel = ph ? t(`fm.phases.${ph.id}.label`, { defaultValue: ph.label }) : null;
+  // [P2-final-qa C2] Locale-aware ROLE_LABELS — wcześniej hardcoded
+  // { admin:"Admin", supplier:"Dostawca", buyer:"Kupiec" } przeciekały do EN UI.
+  // Helper trzyma się tych samych kluczy co stary obiekt — w niezależnych
+  // miejscach (gdyby kiedyś użyć poza switcherem) wystarczy `t()` na podstawie role.
+  const roleLabel = (role) => t(`shell.account_switcher.role_${role}`, { defaultValue: ROLE_LABELS[role] || role });
+  const roleGroupHeader = (role, count) => {
+    if (role === "admin") return t("shell.account_switcher.role_group_admins_format", { count });
+    if (role === "supplier") return t("shell.account_switcher.role_group_suppliers_format", { count });
+    if (role === "buyer") return t("shell.account_switcher.role_group_buyers_format", { count });
+    return `${roleLabel(role)} (${count})`;
+  };
 
   const groups = {
     admin:    accounts.filter(a=>a.role==="admin"),
@@ -8698,14 +8713,14 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
         <div style={{ display:"flex",alignItems:"center",gap:6,padding:"4px 12px",borderRadius:20,background:ROLE_COLORS[account.role]+"22",border:`1px solid ${ROLE_COLORS[account.role]}55`,cursor:"pointer" }} onClick={()=>setOpen(!open)}>
           <span style={{ width:7,height:7,borderRadius:"50%",background:ROLE_COLORS[account.role] }}/>
           <span style={{ color:"white",fontSize:12,fontWeight:600 }}>{account.name}</span>
-          <span style={{ fontSize:10,color:ROLE_COLORS[account.role],background:ROLE_COLORS[account.role]+"22",padding:"1px 6px",borderRadius:8,fontWeight:700 }}>{ROLE_LABELS[account.role]}{account.pkg?` · ${account.pkg}`:""}</span>
+          <span style={{ fontSize:10,color:ROLE_COLORS[account.role],background:ROLE_COLORS[account.role]+"22",padding:"1px 6px",borderRadius:8,fontWeight:700 }}>{roleLabel(account.role)}{account.pkg?` · ${account.pkg}`:""}</span>
           <span style={{ color:"rgba(255,255,255,0.4)",fontSize:12 }}>{open?"▲":"▼"}</span>
         </div>
 
         {/* FM phase badge */}
         {fmSettings.schedulingOpen&&(
           <div style={{ padding:"3px 10px",borderRadius:16,background:ph?.color+"22",border:`1px solid ${ph?.color}55`,fontSize:10,color:ph?.color,fontWeight:700,display:"flex",gap:4,alignItems:"center" }}>
-            <Calendar size={9}/>{ph?.label}
+            <Calendar size={9}/>{phLabel}
           </div>
         )}
 
@@ -8718,7 +8733,7 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
 
         {/* Role filter quick buttons */}
         <div style={{ marginLeft:"auto",display:"flex",gap:4 }}>
-          {[["all","Wszyscy",(accounts.length)],["admin","Admin",groups.admin.length],["supplier","Dostawcy",groups.supplier.length],["buyer","Kupcy",groups.buyer.length]].map(([k,l,n])=>(
+          {[["all",t("shell.account_switcher.role_filter_all"),(accounts.length)],["admin",t("shell.account_switcher.role_filter_admins"),groups.admin.length],["supplier",t("shell.account_switcher.role_filter_suppliers"),groups.supplier.length],["buyer",t("shell.account_switcher.role_filter_buyers"),groups.buyer.length]].map(([k,l,n])=>(
             <button key={k} onClick={()=>{setFilterRole(k);setOpen(true);}}
               style={{ padding:"3px 10px",borderRadius:12,border:`1px solid ${filterRole===k?ROLE_COLORS[k]||"#0d9488":"rgba(255,255,255,0.12)"}`,background:filterRole===k?(ROLE_COLORS[k]||"#0d9488"):"transparent",color:filterRole===k?"white":"rgba(255,255,255,0.5)",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit" }}>
               {l} <span style={{ opacity:0.6 }}>({n})</span>
@@ -8737,7 +8752,7 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
             return(
               <div key={roleKey}>
                 <div style={{ padding:"6px 16px",fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700,background:"rgba(255,255,255,0.03)",borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                  {ROLE_LABELS[roleKey]}s ({grp.length})
+                  {roleGroupHeader(roleKey, grp.length)}
                 </div>
                 {grp.map(acc=>(
                   <button key={acc.id} onClick={()=>{onSwitch(acc);setOpen(false);setFilterRole("all");}}
@@ -8747,11 +8762,11 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
                       <div style={{ color:"white",fontSize:12,fontWeight:account.id===acc.id?700:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{acc.name}</div>
                       <div style={{ color:"rgba(255,255,255,0.35)",fontSize:10,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>
                         {acc.email} · {acc.title}
-                        {acc.role==="buyer"&&retailers&&(()=>{const r=(retailers||[]).find(x=>x.id===acc.retailerId);return r&&r.active===false?<span style={{color:"#fca5a5",marginLeft:4,fontWeight:600}}>(sieć nieaktywna)</span>:null;})()}
+                        {acc.role==="buyer"&&retailers&&(()=>{const r=(retailers||[]).find(x=>x.id===acc.retailerId);return r&&r.active===false?<span style={{color:"#fca5a5",marginLeft:4,fontWeight:600}}>{t("shell.account_switcher.retailer_inactive_inline")}</span>:null;})()}
                       </div>
                     </div>
                     {acc.pkg&&<span style={{ fontSize:9,padding:"2px 7px",borderRadius:8,background:acc.pkg==="Premium"?"rgba(251,191,36,0.2)":"rgba(59,130,246,0.2)",color:acc.pkg==="Premium"?"#fbbf24":"#60a5fa",fontWeight:700,flexShrink:0 }}>{acc.pkg}</span>}
-                    {account.id===acc.id&&<span style={{ fontSize:10,color:"#0d9488",fontWeight:700,flexShrink:0 }}>✓ aktywne</span>}
+                    {account.id===acc.id&&<span style={{ fontSize:10,color:"#0d9488",fontWeight:700,flexShrink:0 }}>{t("shell.account_switcher.active_account_marker")}</span>}
                   </button>
                 ))}
               </div>
@@ -8782,16 +8797,9 @@ function NumBadge({ num, size="md" }) {
   );
 }
 
-/* ── ZoneLegend ── */
-function ZoneLegend() {
-  return (
-    <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginTop:12 }}>
-      {[["🟢","1–25","Dobra pozycja","#059669","#f0fdf4","#bbf7d0"],["🟠","26–35","Średnia pozycja","#d97706","#fffbeb","#fde68a"],["🔴","36+","Późna pozycja","#dc2626","#fee2e2","#fca5a5"]].map(([i,r,l,c,bg,b])=>(
-      <span key={r} style={{ padding:"3px 12px",borderRadius:8,background:bg,border:`1px solid ${b}`,fontSize:11,fontWeight:600,color:c }}>{i} Numery {r} — {l}</span>
-    ))}
-    </div>
-  );
-}
+// [P2-final-qa C2] ZoneLegend() removed — dead code (zero call sites confirmed via grep).
+// Funkcja generowała PL legendę numerów (Dobra/Średnia/Późna pozycja), ale była
+// zastąpiona przez fm.corrections.legend_{green,orange,red} keys w P2-fm C5.
 
 /* ═══════════════════════════════════════════════════════════════
    ADMIN PREFERENCES VIEW (Faza 2 podgląd dla admina)
