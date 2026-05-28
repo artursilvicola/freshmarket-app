@@ -35,7 +35,7 @@ Te ograniczenia obowiązują przez **całe** Admin Companies 2.0 (wszystkie 5 br
 ### 0.3 Założenia techniczne
 
 - React + Vite, istniejący `PageAdminFirmy` w `src/legacy/PreconnectFM.jsx` (linie 7745–8166)
-- i18n via `react-i18next`, namespace `admin.firmy.*` (już częściowo istnieje)
+- i18n via `react-i18next`, **namespace `legacy`** (jedyny używany w `src/legacy/PreconnectFM.jsx`); wszystkie nowe klucze idą do `src/i18n/{pl,en}/legacy.json` pod key path `admin.firmy.*` (admin.firmy już częściowo istnieje w `legacy.json`). Komponenty: `useTranslation("legacy")`. **NIE tworzymy** nowego namespace ani osobnego pliku `admin.json` w tym etapie.
 - Tabs/drawer/forms: na bazie istniejących komponentów z projektu (`Btn`, `Inp`, `Alrt`, `Modal`) — bez nowych dependency
 - Statusy: tylko **4 istniejące enum values** (`pending_review`, `active`, `rejected`, `suspended`)
 - Chat: tabela `fm_messages` + thread resolution przez pair `(userId, "admin")` (już istniejące)
@@ -63,8 +63,9 @@ Te ograniczenia obowiązują przez **całe** Admin Companies 2.0 (wszystkie 5 br
 | `pending` | Do zatwierdzenia | Pending review | `account_status === "pending_review"` | Approve, Reject (z notką), Kontakt |
 | `suspended` | Wstrzymane | Suspended | `account_status === "suspended"` | Reactivate, Czat, Kontakt |
 | `rejected` | Odrzucone | Rejected | `account_status === "rejected"` | Reactivate, Kontakt |
-| `archived` | Zarchiwizowane | Archived | _FUTURE — nie implementować_ | — |
 | `all` | Wszystkie | All | brak filtra status | wszystkie kontekstowo |
+
+> **NIE renderujemy** zakładki `Zarchiwizowane` w Admin Companies 2.0. Wraca dopiero po P3 Phase C (migracja 037 dodaje `companies.archived_at`). W tej serii tabów jest dokładnie 5: **Aktywne / Do zatwierdzenia / Wstrzymane / Odrzucone / Wszystkie**.
 
 ### 1.2 Default tab
 
@@ -80,27 +81,33 @@ Aktywne (124)   Do zatwierdzenia (3)   Wstrzymane (8)   Odrzucone (2)   Wszystki
 
 Liczby liczone z `dbCapacity` (lub `companies` jeśli `dbCapacity` jeszcze nie loaded). Counter dla `pending` ma **dodatkowo amber kropkę** jeśli `> 0` — żeby admin od razu widział że jest robota.
 
-### 1.4 Tab archived (przyszłość — bez kodu w 2.0)
+### 1.4 Tab archived (FUTURE — nie renderujemy w 2.0)
 
-W UI: tab dostępny ale **disabled + tooltip** "Wkrótce — wymaga P3 Phase C". Można pominąć całkowicie do P3.
+**Decyzja:** w Admin Companies 2.0 zakładka `Zarchiwizowane` **NIE jest renderowana wcale** — ani jako disabled, ani z tooltipem. Powód: bez kolumny `archived_at` nie ma czego pokazać i disabled tab tylko mylił by admina.
 
-Rekomendacja: **nie renderować** tabu archived w 2.0. Pojawi się dopiero po migracji 037 (dodaje `companies.archived_at`).
+Wraca dopiero po **P3 Phase C** (migracja 037 dodaje `companies.archived_at`). Wtedy nowy branch `feat/admin-companies-archived-tab` doda 6. tab. Do tego czasu zbiór tabów jest dokładnie taki, jaki w sekcji 1.1.
 
 ### 1.5 i18n keys do dodania
 
-```json
-"admin.firmy.tabs": {
-  "active": "Aktywne",
-  "pending": "Do zatwierdzenia",
-  "suspended": "Wstrzymane",
-  "rejected": "Odrzucone",
-  "archived": "Zarchiwizowane",
-  "all": "Wszystkie"
-},
-"admin.firmy.tabs_count_aria": "{{count}} firm"
+Plik: `src/i18n/pl/legacy.json` + `src/i18n/en/legacy.json` (namespace `legacy`, klucze pod `admin.firmy.*`). Bez `archived` — czeka P3.
+
+```jsonc
+// PL key path: admin.firmy.tabs.*
+"admin": {
+  "firmy": {
+    "tabs": {
+      "active": "Aktywne",
+      "pending": "Do zatwierdzenia",
+      "suspended": "Wstrzymane",
+      "rejected": "Odrzucone",
+      "all": "Wszystkie"
+    },
+    "tabs_count_aria": "{{count}} firm"
+  }
+}
 ```
 
-(EN: `Active / Pending review / Suspended / Rejected / Archived / All`)
+(EN counterpart: `Active / Pending review / Suspended / Rejected / All`)
 
 ### 1.6 URL state
 
@@ -541,7 +548,7 @@ const aiStatusLabels = {
 };
 ```
 
-→ Przenieść do `i18n/pl/admin.json` jako `admin.firmy.ai_status.{pending,approved,edited,rejected}` + EN counterpart. **Robić w branchu 1 (`tabs-and-list`) przy okazji**.
+→ Przenieść do `src/i18n/{pl,en}/legacy.json` jako `admin.firmy.ai_status.{pending,approved,edited,rejected}` (namespace `legacy`, użycie: `t("admin.firmy.ai_status.pending")` w komponencie z `useTranslation("legacy")`). **Robić w branchu 1 (`tabs-and-list`) przy okazji**. Nie tworzymy nowego pliku `admin.json`.
 
 ### 7.2 `updateLimit` client-only — **NIE FIX**
 
@@ -566,6 +573,8 @@ Każdy branch musi być **mergeable osobno** (lista + drawer mają działać nie
 **Pain solved:** segregacja statusów + kontakt widoczny w wierszu.
 
 **Scope:**
+- **Nowy plik `src/config/features.js`** — prosty config object eksportujący stałe `ADMIN_COMPANIES_2_0_LIST` itp. (jeśli repo nie ma jeszcze env-based flag systemu, plain `const` wystarczy na start). W Branch 1 wprowadzamy w nim tylko `ADMIN_COMPANIES_2_0_LIST`; pozostałe flagi (`_DRAWER`, `_FILTERS`, `_CHAT`, `_BULK`) dokłada następne branche.
+- Wszystkie nowe klucze i18n trafiają do `src/i18n/{pl,en}/legacy.json` pod `admin.firmy.*`. Komponent używa `useTranslation("legacy")`.
 - 5 tabs (active / pending / suspended / rejected / all) z counter badges
 - Nowy layout per row (kolumny z sekcji 2.1)
 - Email/phone visible w wierszu z `mailto:` / `tel:` + copy buttons
@@ -575,11 +584,11 @@ Każdy branch musi być **mergeable osobno** (lista + drawer mają działać nie
 - Empty states per tab
 - URL state dla aktywnego tab (`?tab=`)
 - i18n keys tabs + row + empty (sekcje 1.5, 2.9)
-- **Bonus fix:** AI status labels → i18n (sekcja 7.1)
+- **Bonus fix:** AI status labels → i18n w `legacy.json` (sekcja 7.1)
 
-**Out of scope:** drawer (zostaje stara modal Preview), chat integration, search/filters, bulk actions.
+**Out of scope:** drawer (zostaje stara modal Preview), chat integration, search/filters, bulk actions, tab `Zarchiwizowane` (czeka P3).
 
-**Risk:** zmiana layoutu listy w produkcji. Mitygacja: feature flag `ADMIN_COMPANIES_2_0_ENABLED=true|false`, można szybko cofnąć.
+**Risk:** zmiana layoutu listy w produkcji. Mitygacja: feature flag `ADMIN_COMPANIES_2_0_LIST`. W dev/local domyślnie `true`, w produkcji łatwy do przełączenia na `false` jeśli coś pójdzie źle (cofnięcie bez kolejnego deployu rolnięcie zmian w `features.js`).
 
 **Acceptance:**
 - [ ] Admin widzi tabs z liczbami
@@ -754,16 +763,30 @@ Każdy branch musi być **mergeable osobno** (lista + drawer mają działać nie
 
 ### 8.7 Feature flags
 
-Per branch flagi w `src/config/features.js`:
-- `ADMIN_COMPANIES_2_0_LIST` (branch 1)
-- `ADMIN_COMPANIES_2_0_DRAWER` (branch 2)
-- `ADMIN_COMPANIES_2_0_FILTERS` (branch 3)
-- `ADMIN_COMPANIES_2_0_CHAT` (branch 4)
-- `ADMIN_COMPANIES_2_0_BULK` (branch 5)
+Plik `src/config/features.js` **nie istnieje jeszcze w repo** — tworzy go **Branch 1** (`feat/admin-companies-tabs-and-list`). Każdy kolejny branch dokłada w nim swoją flagę (nie tworzy nowych plików).
 
-Default `false` przy first commit, flip na `true` po smoke test na staging i pierwszy dzień obserwacji w prod.
+Pełny zbiór flag (dokładnie te 5 nazw, bez wariantów typu `_ENABLED`):
 
-Po stabilizacji wszystkich 5 → usuwamy flagi + stary kod w osobnym cleanup branchu.
+| Flaga | Branch wprowadzający | Stan w Branch 1 |
+|---|---|---|
+| `ADMIN_COMPANIES_2_0_LIST` | 1 | wprowadzona w `features.js` — `true` w dev, łatwy override na `false` w prod |
+| `ADMIN_COMPANIES_2_0_DRAWER` | 2 | nie istnieje |
+| `ADMIN_COMPANIES_2_0_FILTERS` | 3 | nie istnieje |
+| `ADMIN_COMPANIES_2_0_CHAT` | 4 | nie istnieje |
+| `ADMIN_COMPANIES_2_0_BULK` | 5 | nie istnieje |
+
+Implementacja w `features.js` może być prostym config objectem:
+
+```js
+// src/config/features.js
+export const ADMIN_COMPANIES_2_0_LIST = true; // toggle off if production regression
+```
+
+Jeśli w przyszłości potrzebny env-based override, można rozszerzyć o `import.meta.env.VITE_ADMIN_COMPANIES_2_0_LIST` — ale **nie w Branch 1**.
+
+Po stabilizacji wszystkich 5 branchy → usuwamy flagi + stary kod w osobnym cleanup branchu (`chore/admin-companies-2-0-remove-flags`).
+
+**Uwaga:** nazwa `ADMIN_COMPANIES_2_0_ENABLED` (która mogła się pojawić we wcześniejszych wersjach planu) **nie obowiązuje** — używamy wyłącznie per-branch nazw powyżej, żeby nie mieć dwóch systemów flag.
 
 ---
 
@@ -866,8 +889,8 @@ Po akceptacji:
 | `src/legacy/PreconnectFM.jsx` lines 8483-8673 | Port `CompanyPreviewModal` → subtab Podgląd drawer | 2 |
 | `src/legacy/PreconnectFM.jsx` lines 1360-1500 (~) `PageAdminChat` | Wydzielenie `<AdminChatThread>` sub-component | 4 |
 | `src/lib/db.js` | Nowy helper `getCompanyOwnerProfile(companyId)` | 4 |
-| `src/i18n/pl/admin.json` (lub equivalent) | Nowe keys: tabs, row, drawer, chat, filters, status_change, ai_status | 1, 2, 3, 4, 5 |
-| `src/i18n/en/admin.json` | Counterparts EN | 1, 2, 3, 4, 5 |
-| `src/config/features.js` | Feature flags `ADMIN_COMPANIES_2_0_*` | wszystkie |
+| `src/i18n/pl/legacy.json` | Nowe klucze pod `admin.firmy.*` (tabs, row, drawer, chat, filters, status_change, ai_status). Bez nowego namespace, bez `admin.json`. | 1, 2, 3, 4, 5 |
+| `src/i18n/en/legacy.json` | Counterparts EN pod `admin.firmy.*` | 1, 2, 3, 4, 5 |
+| `src/config/features.js` | **Nowy plik** — tworzony przez Branch 1, zawiera `ADMIN_COMPANIES_2_0_LIST`; kolejne branche tylko dokładają flagi (`_DRAWER`, `_FILTERS`, `_CHAT`, `_BULK`) | 1 (create) + 2, 3, 4, 5 (extend) |
 
 **Bez zmian:** `supabase/migrations/*`, `netlify/functions/*` (emaile), `src/lib/payu.js`, `src/lib/fmAlgorithm.js`.
