@@ -571,15 +571,15 @@ const PRICING_PLANS=[
   { id:"prem_50", tier:"PREMIUM", qty:50, price:2250, perSend:45, discount:44, color:"#78350f", bg:"#fef3c7" },
 ];
 const PKG_OPTS=[
-  { id:"std_5",   label:"Standard – 5 wysyłek",   max:5,  price:225,  perSend:45, tier:"STANDARD" },
-  { id:"std_10",  label:"Standard – 10 wysyłek",  max:10, price:400,  perSend:40, tier:"STANDARD" },
-  { id:"std_20",  label:"Standard – 20 wysyłek",  max:20, price:700,  perSend:35, tier:"STANDARD" },
-  { id:"std_50",  label:"Standard – 50 wysyłek",  max:50, price:1500, perSend:30, tier:"STANDARD" },
-  { id:"prem_1",  label:"Premium – 1 wysyłka",    max:1,  price:80,   perSend:80, tier:"PREMIUM" },
-  { id:"prem_5",  label:"Premium – 5 wysyłek",    max:5,  price:350,  perSend:70, tier:"PREMIUM" },
-  { id:"prem_10", label:"Premium – 10 wysyłek",   max:10, price:600,  perSend:60, tier:"PREMIUM" },
-  { id:"prem_20", label:"Premium – 20 wysyłek",   max:20, price:1000, perSend:50, tier:"PREMIUM" },
-  { id:"prem_50", label:"Premium – 50 wysyłek",   max:50, price:2250, perSend:45, tier:"PREMIUM" },
+  { id:"std_5",   max:5,  price:225,  perSend:45, tier:"STANDARD" },
+  { id:"std_10",  max:10, price:400,  perSend:40, tier:"STANDARD" },
+  { id:"std_20",  max:20, price:700,  perSend:35, tier:"STANDARD" },
+  { id:"std_50",  max:50, price:1500, perSend:30, tier:"STANDARD" },
+  { id:"prem_1",  max:1,  price:80,   perSend:80, tier:"PREMIUM" },
+  { id:"prem_5",  max:5,  price:350,  perSend:70, tier:"PREMIUM" },
+  { id:"prem_10", max:10, price:600,  perSend:60, tier:"PREMIUM" },
+  { id:"prem_20", max:20, price:1000, perSend:50, tier:"PREMIUM" },
+  { id:"prem_50", max:50, price:2250, tier:"PREMIUM", perSend:45 },
 ];
 // Renders description text: **Bold-** becomes <strong>Bold-</strong>
 function renderDesc(text) {
@@ -591,7 +591,33 @@ function renderDesc(text) {
   });
 }
 function getPlanById(id){ return PRICING_PLANS.find(p=>p.id===id); }
-function getPlanLabel(id){ const p=getPlanById(id); if(!p) return id; return `${p.tier==="PREMIUM"?"Premium":"Standard"} ${p.qty} ${p.qty===1?"wysyłka":p.qty<5?"wysyłki":"wysyłek"} (${p.perSend} EUR/szt.)`; }
+const packagePluralSuffix = (qty) => (i18n.language || "pl").startsWith("en")
+  ? (Number(qty) === 1 ? "_one" : "_other")
+  : pluralSuffixPL(Number(qty));
+function getPlanLabel(id, { withPerSend = true } = {}) {
+  const p = getPlanById(id);
+  if (!p) return id || "";
+  const tier = p.tier === "PREMIUM" ? "premium" : "standard";
+  const suffix = packagePluralSuffix(p.qty);
+  const prefix = withPerSend ? "label_with_price" : "label";
+  return i18n.t(`legacy:shell.package.${prefix}_${tier}${suffix}_format`, {
+    qty: p.qty,
+    perSend: p.perSend,
+  });
+}
+function getOrderPlanLabel(order) {
+  const planId = order?.planId || order?.pkg || order?.pkg_plan;
+  return planId ? getPlanLabel(planId, { withPerSend:false }) : (order?.planLabel || "");
+}
+function getTransactionDescription(tx) {
+  if (tx?.planId) {
+    return i18n.t("legacy:shell.package.transaction_purchase_format", { pkgLabel: getPlanLabel(tx.planId, { withPerSend:false }) });
+  }
+  if (tx?.type === "credit" && tx?.desc === "topup") {
+    return i18n.t("legacy:shell.package.transaction_topup");
+  }
+  return tx?.desc || "";
+}
 
 /* ─────────────── UI PRIMITIVES ────────────────────────────────────────────── */
 function Badge({ children, color="#64748b", bg }) {
@@ -1922,9 +1948,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }, []);
   useEffect(() => { if (companiesLoaded) refreshCapacity(); }, [companiesLoaded, refreshCapacity]);
   const [walletMap, setWalletMap] = useState({
-    "sup-s1":  { balance:160, transactions:[{id:1,desc:"Zakup pakietu Premium 10",amount:-600,date:"2026-01-15",type:"debit"},{id:2,desc:"Doładowanie",amount:760,date:"2026-01-15",type:"credit"}] },
-    "sup-s5":  { balance:120, transactions:[{id:1,desc:"Zakup pakietu Standard 10",amount:-400,date:"2026-02-01",type:"debit"},{id:2,desc:"Doładowanie",amount:520,date:"2026-02-01",type:"credit"}] },
-    "sup-s14": { balance:200, transactions:[{id:1,desc:"Zakup pakietu Premium 10",amount:-600,date:"2026-01-20",type:"debit"},{id:2,desc:"Doładowanie",amount:800,date:"2026-01-20",type:"credit"}] },
+    "sup-s1":  { balance:160, transactions:[{id:1,desc:"package:prem_10",planId:"prem_10",amount:-600,date:"2026-01-15",type:"debit"},{id:2,desc:"topup",amount:760,date:"2026-01-15",type:"credit"}] },
+    "sup-s5":  { balance:120, transactions:[{id:1,desc:"package:std_10",planId:"std_10",amount:-400,date:"2026-02-01",type:"debit"},{id:2,desc:"topup",amount:520,date:"2026-02-01",type:"credit"}] },
+    "sup-s14": { balance:200, transactions:[{id:1,desc:"package:prem_10",planId:"prem_10",amount:-600,date:"2026-01-20",type:"debit"},{id:2,desc:"topup",amount:800,date:"2026-01-20",type:"credit"}] },
   });
   const walletKey = account.role === "supplier" ? mySupplierKey : account.id;
   const baseWallet = walletMap[walletKey] || walletMap[account.id] || WALLET_INIT;
@@ -1954,7 +1980,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }, [baseWallet, refundedSendsForWallet]);
   const setWallet = (val) => setWalletMap(prev=>({ ...prev, [walletKey]: typeof val==="function"?val(wallet):val }));
   const [orders, setOrders] = useState([
-    { id:1, planId:"std_10", planLabel:"Standard 10 wysyłek", price:400, perSend:40, qty:10, date:"2026-01-15", status:"paid", paymentMethod:"przelew", firmName:"Food Market" },
+    { id:1, planId:"std_10", planLabel:"std_10", price:400, perSend:40, qty:10, date:"2026-01-15", status:"paid", paymentMethod:"przelew", firmName:"Food Market" },
   ]);
   // [B2B Round 2.1] retailers: load from Supabase on mount; seed if empty.
   const [retailers, _setRetailersRaw] = useState(() =>
@@ -2578,7 +2604,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     setOrders(prev => [...prev, {
       id: newOrderId,
       planId: plan.id,
-      planLabel: `${plan.tier==="PREMIUM"?"Premium":"Standard"} ${plan.qty} ${plan.qty===1?"wysyłka":"wysyłek"}`,
+      planLabel: plan.id,
       price: plan.price,
       perSend: plan.perSend,
       qty: plan.qty,
@@ -2593,7 +2619,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       balance: Math.max(0, prev.balance - plan.price),
       transactions: [...prev.transactions, {
         id: newOrderId,
-        desc: `Zakup pakietu ${plan.tier==="PREMIUM"?"Premium":"Standard"} ${plan.qty} wysyłek`,
+        desc: `package:${plan.id}`,
+        planId: plan.id,
         amount: -plan.price,
         date: now,
         type: "debit",
@@ -5487,7 +5514,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           <div style={{ display:"flex",gap:14,alignItems:"center",flexWrap:"wrap" }}>
             <div style={{ padding:"12px 20px",background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,color:"white",flexShrink:0 }}>
               <div style={{ fontSize:10,opacity:0.6,marginBottom:2 }}>{t("supplier.finance.active_pkg.pkg_badge")}</div>
-              <div style={{ fontSize:14,fontWeight:700 }}>{pkgOpt.label}</div>
+              <div style={{ fontSize:14,fontWeight:700 }}>{getPlanLabel(pkgOpt.id, { withPerSend:false })}</div>
               <div style={{ fontSize:11,opacity:0.6,marginTop:2 }}>{t("supplier.finance.active_pkg.per_send_format", { perSend: pkgOpt.perSend })}</div>
             </div>
             <div style={{ flex:1,minWidth:200 }}>
@@ -5534,7 +5561,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
               <div style={{ width:30,height:30,borderRadius:"50%",background:tx.type==="refund"?"#d1fae5":tx.type==="credit"?"#dbeafe":"#fee2e2",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                 {tx.type==="refund"?<RotateCcw size={12} color="#059669"/>:tx.type==="credit"?<Plus size={12} color="#2563eb"/>:<X size={12} color="#dc2626"/>}
               </div>
-              <div style={{ flex:1 }}><div style={{ fontSize:13 }}>{tx.desc}</div><div style={{ fontSize:11,color:"#94a3b8" }}>{tx.date}</div></div>
+              <div style={{ flex:1 }}><div style={{ fontSize:13 }}>{getTransactionDescription(tx)}</div><div style={{ fontSize:11,color:"#94a3b8" }}>{tx.date}</div></div>
               <div style={{ fontWeight:700,color:tx.amount>0?"#059669":"#dc2626" }}>{t("supplier.finance.recent_tx.amount_format", { sign: tx.amount>0?"+":"", amount: tx.amount })}</div>
             </div>
           ))}
@@ -5860,7 +5887,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 <CreditCard size={15} color={ord.planId.startsWith("prem")?"#d97706":"#2563eb"}/>
               </div>
               <div style={{ flex:1 }}>
-                <div style={{ fontWeight:600,fontSize:13 }}>{ord.planLabel}</div>
+                <div style={{ fontWeight:600,fontSize:13 }}>{getOrderPlanLabel(ord)}</div>
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
                   {ord.date} · {ord.paymentMethod==="karta"?t("supplier.finance.pakiety.order_history.method_card"):ord.paymentMethod==="przelew"?t("supplier.finance.pakiety.order_history.method_bank"):t("supplier.finance.pakiety.order_history.method_wallet")} · {t("supplier.finance.pakiety.order_history.qty_added_format", { qty: ord.qty })}
                 </div>

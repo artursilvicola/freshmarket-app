@@ -2306,6 +2306,26 @@
       "retailer_inactive_inline": "(sieć nieaktywna)",
       "active_account_marker": "✓ aktywne"
     },
+    "package": {
+      "label_standard_one_format": "Standard – {{qty}} wysyłka",
+      "label_standard_few_format": "Standard – {{qty}} wysyłki",
+      "label_standard_many_format": "Standard – {{qty}} wysyłek",
+      "label_standard_other_format": "Standard – {{qty}} wysyłki",
+      "label_premium_one_format": "Premium – {{qty}} wysyłka",
+      "label_premium_few_format": "Premium – {{qty}} wysyłki",
+      "label_premium_many_format": "Premium – {{qty}} wysyłek",
+      "label_premium_other_format": "Premium – {{qty}} wysyłki",
+      "label_with_price_standard_one_format": "Standard – {{qty}} wysyłka ({{perSend}} EUR/szt.)",
+      "label_with_price_standard_few_format": "Standard – {{qty}} wysyłki ({{perSend}} EUR/szt.)",
+      "label_with_price_standard_many_format": "Standard – {{qty}} wysyłek ({{perSend}} EUR/szt.)",
+      "label_with_price_standard_other_format": "Standard – {{qty}} wysyłki ({{perSend}} EUR/szt.)",
+      "label_with_price_premium_one_format": "Premium – {{qty}} wysyłka ({{perSend}} EUR/szt.)",
+      "label_with_price_premium_few_format": "Premium – {{qty}} wysyłki ({{perSend}} EUR/szt.)",
+      "label_with_price_premium_many_format": "Premium – {{qty}} wysyłek ({{perSend}} EUR/szt.)",
+      "label_with_price_premium_other_format": "Premium – {{qty}} wysyłki ({{perSend}} EUR/szt.)",
+      "transaction_purchase_format": "Zakup pakietu {{pkgLabel}}",
+      "transaction_topup": "Doładowanie"
+    },
     "sidebar": {
       "dashboard": "Dashboard",
       "preconnect_section": "PreConnect",
