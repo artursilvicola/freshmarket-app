@@ -1723,7 +1723,33 @@
       "toast_flag_preconnect": "PreConnect",
       "toast_flag_fm_b2b": "B2B Meetings",
       "toast_flag_state_active": "enabled",
-      "toast_flag_state_inactive": "disabled"
+      "toast_flag_state_inactive": "disabled",
+      "tabs": {
+        "active": "Active",
+        "pending": "Pending review",
+        "suspended": "Suspended",
+        "rejected": "Rejected",
+        "all": "All"
+      },
+      "tab_count_aria": "{{count}} companies",
+      "row": {
+        "contact_person_label": "Contact",
+        "no_contact_person": "—",
+        "no_contact_email": "no email",
+        "no_contact_phone": "no phone",
+        "copy_email": "Copy email",
+        "copy_phone": "Copy phone",
+        "send_email": "Send email",
+        "open_details": "Details",
+        "open_chat_legacy": "Messages",
+        "open_chat_legacy_tooltip": "Go to the messages panel"
+      },
+      "empty_active": "No active companies.",
+      "empty_suspended": "No suspended companies.",
+      "empty_rejected": "No rejected companies.",
+      "toast_copied_email": "Email copied: {{email}}",
+      "toast_copied_phone": "Phone copied: {{phone}}",
+      "toast_copy_failed": "Couldn't copy to clipboard."
     },
     "pipeline": {
       "tab_mod_format": "Moderation ({{count}})",

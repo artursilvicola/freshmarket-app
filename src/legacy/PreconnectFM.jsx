@@ -56,6 +56,10 @@ import FreshMarketLogo from "../components/FreshMarketLogo";
 // [B2B Round prod-rollout / email-open-tracking] Potrzebny do auth.getSession()
 // gdy wołamy /.netlify/functions/notify-supplier-read z auth tokenem.
 import { supabase } from "../lib/supabase";
+// [Admin Companies 2.0 / Branch 1] Per-branch feature flag for the redesigned
+// PageAdminFirmy list. Toggle in src/config/features.js to fall back to the
+// legacy filter "all" / "pending" + collapsed-card layout.
+import { ADMIN_COMPANIES_2_0_LIST } from "../config/features";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
 // kolejne branche P2-N będą używać i18n / useTranslation w widokach Page*
@@ -3055,7 +3059,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
-    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity}/>;
+    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={()=>nav("a-chat")}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
@@ -7742,7 +7746,7 @@ const ACCOUNT_STATUS_LABELS = {
   suspended:      ["Wstrzymane",                "#dc2626", "#fee2e2"],
 };
 
-function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity }) {
+function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity, onOpenAdminChat }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -7750,7 +7754,15 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   const [expandedId, setExpandedId] = useState(null);
   // [B2B Round supplier-onboarding-access-and-communication]
   // Filtr listy: "all" | "pending" — admin chce szybko zobaczyć tylko nowe rejestracje.
+  // [Admin Companies 2.0 / Branch 1] Filter pozostaje dla legacy render path
+  // (gdy ADMIN_COMPANIES_2_0_LIST=false). Nowy render używa selectedTab.
   const [filter, setFilter] = useState("all");
+  // [Admin Companies 2.0 / Branch 1] Tab state dla nowego renderu listy firm.
+  // Wartości: "active" | "pending" | "suspended" | "rejected" | "all".
+  // Default "active" zgodnie z planem §1.2 (admin obsługuje normalne firmy,
+  // pending wybija się badge'em w nagłówku zakładki). Tab "archived"
+  // pominięty świadomie — czeka na P3 Phase C / migrację 037 (`archived_at`).
+  const [selectedTab, setSelectedTab] = useState("active");
   const [statusNoteDraft, setStatusNoteDraft] = useState({}); // { [companyId]: "powód" }
   const [savingStatusId, setSavingStatusId] = useState(null);
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
@@ -7879,6 +7891,35 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     fl(t("admin.firmy.toast_flag_format", { flag: flagLabel, state: stateLabel, name: firmCo.name }));
   }
 
+  // [Admin Companies 2.0 / Branch 1] Helper do quick contact actions.
+  // Używa Clipboard API z fallbackiem na document.execCommand("copy") dla
+  // starszych przeglądarek (Safari/IE) oraz kontekstów bez HTTPS, w których
+  // navigator.clipboard nie jest dostępne. W razie błędu pokazuje warning
+  // toast — admin musi sam skopiować ręcznie.
+  async function copyContact(value, kind) {
+    if (!value) return;
+    const successKey = kind === "email" ? "admin.firmy.toast_copied_email" : "admin.firmy.toast_copied_phone";
+    const successParams = kind === "email" ? { email: value } : { phone: value };
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else if (typeof document !== "undefined") {
+        const ta = document.createElement("textarea");
+        ta.value = value;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      fl(t(successKey, successParams));
+    } catch (e) {
+      fl(t("admin.firmy.toast_copy_failed"), "warning");
+    }
+  }
+
   // [P2-admin] Color/bg PRESERVE, labelka idzie przez t() z admin.firmy.review_labels.*
   const reviewLabel = {
     pending: ["Czeka na review", "#92400e", "#fef3c7"],
@@ -7909,6 +7950,400 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         return co?.account_status === "pending_review";
       })
     : allLims;
+
+  // [Admin Companies 2.0 / Branch 1] Tab counts + filter dla nowego renderu.
+  // Liczone w jednym przebiegu po capacitySource. Tab "all" = całość, tab
+  // "archived" nie istnieje (czeka P3 Phase C / migrację 037).
+  const tabCounts = capacitySource.reduce((acc, c) => {
+    const status = c.account_status || "active";
+    acc.all += 1;
+    if (status === "pending_review") acc.pending += 1;
+    else if (status === "active") acc.active += 1;
+    else if (status === "suspended") acc.suspended += 1;
+    else if (status === "rejected") acc.rejected += 1;
+    return acc;
+  }, { active: 0, pending: 0, suspended: 0, rejected: 0, all: 0 });
+
+  const visibleLimsByTab = selectedTab === "all"
+    ? allLims
+    : allLims.filter(lim => {
+        const co = capacitySource.find(c => c.id === lim.id);
+        const status = co?.account_status || "active";
+        if (selectedTab === "pending") return status === "pending_review";
+        if (selectedTab === "active") return status === "active";
+        if (selectedTab === "suspended") return status === "suspended";
+        if (selectedTab === "rejected") return status === "rejected";
+        return false;
+      });
+
+  // [Admin Companies 2.0 / Branch 1] Wydzielony expanded JSX —
+  // share'owany między legacy renderem (ADMIN_COMPANIES_2_0_LIST=false)
+  // a nowym tab-based renderem. Zawiera status actions + access flags +
+  // package usage + pkg input + AI editor + sends history. Branch 2
+  // zastąpi to drawerem; w Branch 1 musi zostać widoczne inline, bo bez
+  // status actions admin nie może approve/reject/suspend firmy.
+  function renderExpandedDetails(firmCo, lim, used, pct, firmSends) {
+    return (
+      <div style={{ padding:"0 16px 16px",borderTop:"1px solid #f1f5f9" }}>
+        {/* [B2B Round supplier-onboarding-access-and-communication]
+            Sekcja statusu konta + dwie flagi dostępu (PreConnect, Spotkania B2B).
+            To jest najważniejsze dla admina po rozwinięciu — dlatego idzie NA GÓRĘ
+            expanded view, przed pakietem i AI opisem. */}
+        {firmCo?.name && setCompanies && (() => {
+          const status = firmCo.account_status || "active";
+          const statusMeta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+          const [, statusColor, statusBg] = statusMeta;
+          const statusLbl = t(`admin.firmy.status_labels.${status}`, { defaultValue: statusMeta[0] });
+          const isPending = status === "pending_review";
+          const isSaving = savingStatusId === firmCo.id;
+          const note = statusNoteDraft[firmCo.id] ?? (firmCo.status_note || "");
+          return (
+            <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",margin:"14px 0 12px",border:"1px solid #e2e8f0" }}>
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
+                <div style={{ fontWeight:700,fontSize:12,color:"#334155",display:"flex",alignItems:"center",gap:8 }}>
+                  {t("admin.firmy.status_section_title")}
+                  <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{statusLbl}</span>
+                  {firmCo.approved_at && status === "active" && <span style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.firmy.status_approved_at_format", { date: String(firmCo.approved_at).slice(0,10) })}</span>}
+                </div>
+              </div>
+              {/* Pole notatki (powód odrzucenia/zawieszenia, lub komentarz aktywacji) */}
+              {(isPending || status === "rejected" || status === "suspended") && (
+                <textarea
+                  value={note}
+                  onChange={(e) => setStatusNoteDraft((prev) => ({ ...prev, [firmCo.id]: e.target.value }))}
+                  placeholder={t("admin.firmy.status_note_placeholder")}
+                  style={{ width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:48,marginBottom:10,boxSizing:"border-box" }}
+                />
+              )}
+              {/* Akcje statusu — różne zestawy w zależności od stanu */}
+              <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:12 }}>
+                {isPending && (
+                  <>
+                    <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>{t("admin.firmy.status_btn_approve")}</Btn>
+                    <Btn sm onClick={()=>changeAccountStatus(firmCo, "rejected")} disabled={isSaving} style={{ background:"#dc2626",color:"white",border:"none" }}>{t("admin.firmy.status_btn_reject")}</Btn>
+                  </>
+                )}
+                {status === "active" && (
+                  <Btn sm outline onClick={()=>changeAccountStatus(firmCo, "suspended")} disabled={isSaving} style={{ color:"#dc2626",borderColor:"#fecaca" }}>{t("admin.firmy.status_btn_suspend")}</Btn>
+                )}
+                {(status === "rejected" || status === "suspended") && (
+                  <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>{t("admin.firmy.status_btn_reactivate")}</Btn>
+                )}
+              </div>
+              {/* Dwie niezależne flagi dostępu — admin ustawia osobno */}
+              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
+                <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.preconnect_enabled?"rgba(13,148,136,0.06)":"white",border:`1px solid ${firmCo.preconnect_enabled?"#0d9488":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
+                  <input type="checkbox" checked={!!firmCo.preconnect_enabled} onChange={(e) => toggleAccessFlag(firmCo, "preconnect_enabled", e.target.checked)} />
+                  <div>
+                    <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_preconnect_title")}</div>
+                    <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_preconnect_desc")}</div>
+                  </div>
+                </label>
+                <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.fm_b2b_enabled?"rgba(124,58,237,0.06)":"white",border:`1px solid ${firmCo.fm_b2b_enabled?"#7c3aed":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
+                  <input type="checkbox" checked={!!firmCo.fm_b2b_enabled} onChange={(e) => toggleAccessFlag(firmCo, "fm_b2b_enabled", e.target.checked)} />
+                  <div>
+                    <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_fm_b2b_title")}</div>
+                    <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_fm_b2b_desc")}</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          );
+        })()}
+        <div style={{ margin:"14px 0 10px",background:"#f8fafc",borderRadius:8,padding:"10px 14px" }}>
+          <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12 }}>
+            <span style={{ color:"#64748b" }}>{t("admin.firmy.pkg_usage_label")}</span>
+            <span style={{ fontWeight:700,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{t("admin.firmy.pkg_usage_value_format", { pct, used, max: lim.max })}</span>
+          </div>
+          <div style={{ background:"#e2e8f0",borderRadius:4,height:6,overflow:"hidden" }}>
+            <div style={{ height:"100%",borderRadius:4,width:`${Math.min(100,pct)}%`,background:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}/>
+          </div>
+        </div>
+        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12 }}>
+          <div>
+            <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_limit_label")}</label>
+            <input type="number" value={lim.max} onChange={e=>updateLimit(lim.id,{max:+e.target.value})}
+              style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}/>
+          </div>
+          <div>
+            <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_select_label")}</label>
+            <select value={lim.pkg} onChange={e=>updateLimit(lim.id,{pkg:e.target.value})}
+              style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}>
+              <option value="std_5">{t("admin.firmy.pkg_option_std_5")}</option>
+              <option value="std_10">{t("admin.firmy.pkg_option_std_10")}</option>
+              <option value="std_20">{t("admin.firmy.pkg_option_std_20")}</option>
+              <option value="prem_10">{t("admin.firmy.pkg_option_prem_10")}</option>
+              <option value="prem_20">{t("admin.firmy.pkg_option_prem_20")}</option>
+            </select>
+          </div>
+        </div>
+        {/* [B2B Round adaptive-company-profile-ai] AI review block ─ */}
+        {firmCo?.name && setCompanies && (() => {
+          const status = firmCo.ai_review_status || "pending";
+          const reviewMeta = reviewLabel[status] || reviewLabel.pending;
+          const [, statusColor, statusBg] = reviewMeta;
+          const statusLabel = t(`admin.firmy.review_labels.${status}`, { defaultValue: reviewMeta[0] });
+          const isEditing = editingId === firmCo.id;
+          const isLoading = aiLoadingId === firmCo.id;
+          return (
+            <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",marginBottom:12,border:"1px solid #e2e8f0" }}>
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                  <Bot size={14} color="#3b82f6"/>
+                  <strong style={{ fontSize:12 }}>{t("admin.firmy.ai_section_title")}</strong>
+                  <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 7px",borderRadius:4,fontWeight:600 }}>{statusLabel}</span>
+                </div>
+                <div style={{ display:"flex",gap:6 }}>
+                  <Btn sm outline onClick={()=>setPreviewCompany(firmCo)}><Eye size={11}/> {t("admin.firmy.ai_btn_preview")}</Btn>
+                  {!isEditing && (
+                    <>
+                      <Btn sm outline onClick={()=>startEdit(firmCo)}>{t("admin.firmy.ai_btn_edit")}</Btn>
+                      <Btn sm outline onClick={()=>regenerateForCompany(firmCo)} disabled={isLoading}>
+                        {isLoading ? <RefreshCw size={11} style={{ animation:"spin 1s linear infinite" }}/> : <Sparkles size={11}/>}
+                        {isLoading ? t("admin.firmy.ai_btn_generating") : t("admin.firmy.ai_btn_generate")}
+                      </Btn>
+                      {status !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(firmCo)}>{t("admin.firmy.ai_btn_approve")}</Btn>}
+                    </>
+                  )}
+                </div>
+              </div>
+              {isEditing ? (
+                <>
+                  <Inp
+                    label={t("admin.firmy.ai_edit_short_label")}
+                    ta
+                    value={editDraft.description_short}
+                    onChange={e=>setEditDraft(d=>({ ...d, description_short: e.target.value }))}
+                    style={{ minHeight:50,fontSize:12 }}
+                  />
+                  <Inp
+                    label={t("admin.firmy.ai_edit_standard_label")}
+                    ta
+                    value={editDraft.description}
+                    onChange={e=>setEditDraft(d=>({ ...d, description: e.target.value }))}
+                    style={{ fontSize:12 }}
+                  />
+                  <div style={{ display:"flex",gap:6,justifyContent:"flex-end" }}>
+                    <Btn sm outline onClick={cancelEdit}>{t("admin.firmy.ai_edit_cancel")}</Btn>
+                    <Btn sm primary onClick={()=>saveEdit(firmCo)}>{t("admin.firmy.ai_edit_save")}</Btn>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {firmCo.description_short ? (
+                    <div style={{ fontSize:12,color:"#334155",marginBottom:6 }}>
+                      <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_short_prefix")}</span> {firmCo.description_short}
+                    </div>
+                  ) : null}
+                  {firmCo.description ? (
+                    <div style={{ fontSize:12,color:"#334155",lineHeight:1.6 }}>
+                      <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_standard_prefix")}</span> {firmCo.description}
+                    </div>
+                  ) : null}
+                  {!firmCo.description_short && !firmCo.description && (
+                    <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}><Trans i18nKey="admin.firmy.ai_view_empty_html" ns="legacy" components={{ em: <em /> }}/></div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>
+          <strong>{t("admin.firmy.sends_section_title_format", { count: firmSends.length })}</strong> {firmSends.length===0?t("admin.firmy.sends_empty"):""}
+        </div>
+        {firmSends.slice(-5).reverse().map(s=>{
+          const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId);
+          return (
+            <div key={s.id} style={{ display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9",fontSize:12 }}>
+              <span style={{ fontSize:14 }}>{CEMOJI[o?.category]||"📦"}</span>
+              <div style={{ flex:1 }}>{o?.title||o?.product||t("admin.firmy.sends_row_fallback_offer")} → {r?.name||t("admin.firmy.sends_row_fallback_retailer")}</div>
+              <span title={STATUS_TIPS[s.status]||""} style={{ cursor:"help" }}>
+                <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // [Admin Companies 2.0 / Branch 1] Nowy tab-based render listy firm.
+  // Sterowany flagą ADMIN_COMPANIES_2_0_LIST w src/config/features.js.
+  // Stary legacy render (filter all|pending) zostaje poniżej jako fallback —
+  // jeśli flaga jest false, renderuje się dokładnie ten sam JSX co przed
+  // Branch 1. Wszystkie handlery (changeAccountStatus, toggleAccessFlag,
+  // regenerateForCompany, etc.) są wspólne dla obu ścieżek.
+  if (ADMIN_COMPANIES_2_0_LIST) {
+    const TABS_V2 = ["active", "pending", "suspended", "rejected", "all"];
+    const tabAccent = (tabKey) => tabKey === "pending" ? "#d97706" : "#0d9488";
+    const tabBgActive = (tabKey) => tabKey === "pending" ? "rgba(217,119,6,0.05)" : "rgba(13,148,136,0.05)";
+    const emptyKey = (() => {
+      if (selectedTab === "pending") return "admin.firmy.empty_pending";
+      if (selectedTab === "active") return "admin.firmy.empty_active";
+      if (selectedTab === "suspended") return "admin.firmy.empty_suspended";
+      if (selectedTab === "rejected") return "admin.firmy.empty_rejected";
+      return "admin.firmy.empty_all";
+    })();
+
+    return (
+      <div>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,gap:12,flexWrap:"wrap" }}>
+          <div style={{ fontWeight:700,fontSize:15 }}>{t("admin.firmy.header_title")}</div>
+          <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+            {TABS_V2.map(tabKey => {
+              const isActive = selectedTab === tabKey;
+              const count = tabCounts[tabKey] ?? 0;
+              const accent = tabAccent(tabKey);
+              const showAlertDot = tabKey === "pending" && count > 0 && !isActive;
+              return (
+                <button
+                  key={tabKey}
+                  type="button"
+                  onClick={() => setSelectedTab(tabKey)}
+                  aria-label={t("admin.firmy.tab_count_aria", { count })}
+                  style={{
+                    padding:"6px 12px",borderRadius:7,
+                    border: isActive ? `2px solid ${accent}` : "1px solid #e2e8f0",
+                    background: isActive ? tabBgActive(tabKey) : "white",
+                    fontSize:12,fontWeight: isActive ? 600 : 500,
+                    cursor:"pointer",fontFamily:"inherit",
+                    display:"inline-flex",alignItems:"center",gap:6,
+                  }}
+                >
+                  {t(`admin.firmy.tabs.${tabKey}`)}
+                  <span style={{
+                    background: isActive ? accent : "#e2e8f0",
+                    color: isActive ? "white" : "#64748b",
+                    borderRadius:10,fontSize:10,padding:"1px 7px",fontWeight:700,
+                  }}>{count}</span>
+                  {showAlertDot && (
+                    <span aria-hidden="true" style={{ width:6,height:6,borderRadius:"50%",background:"#d97706" }}/>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        {visibleLimsByTab.length === 0 && (
+          <Alrt type="info">{t(emptyKey)}</Alrt>
+        )}
+        {visibleLimsByTab.map(lim => {
+          const isExpanded = expandedId === lim.id;
+          const firmCo = (companies||[]).find(c => c.id === lim.id) || { id: lim.id };
+          const firmSends = sends.filter(s => legacyKeyMatchesCompany(s.supplierId, firmCo));
+          const used = firmSends.filter(s => !["rejected","refunded","queued"].includes(s.status)).length;
+          const pct = lim.max > 0 ? Math.round(used/lim.max*100) : 0;
+          const status = firmCo?.account_status || "active";
+          const statusMeta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
+          const [, statusColor, statusBg] = statusMeta;
+          const statusLbl = t(`admin.firmy.status_labels.${status}`, { defaultValue: statusMeta[0] });
+          // Contact extraction: primary contact (contacts[0]) z fallbackiem
+          // na company-level email/phone (firmCo.email, firmCo.phone).
+          const primaryContact = (firmCo?.contacts && firmCo.contacts[0]) || {};
+          const contactName = primaryContact.name || null;
+          const contactPosition = primaryContact.position || null;
+          const contactEmail = primaryContact.email || firmCo?.email || null;
+          const contactPhone = primaryContact.phone || firmCo?.phone || null;
+          const countryFlag = FLAGS[lim.country] || "";
+          const countryLabel = getCountryName(lim.country) || lim.country || "—";
+          return (
+            <div key={lim.id} style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:12,marginBottom:10,overflow:"hidden" }}>
+              <div style={{ display:"flex",gap:12,alignItems:"flex-start",padding:"12px 16px" }}>
+                <div style={{ flexShrink:0,paddingTop:2 }}>
+                  <CompanyLogo company={firmCo?.name ? firmCo : lim} size={36}/>
+                </div>
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
+                    <div style={{ fontWeight:700,fontSize:14,color:"#0f172a" }}>{lim.name}</div>
+                    <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{statusLbl}</span>
+                    {firmCo?.preconnect_enabled === false && status === "active" && (
+                      <span style={{ color:"#d97706",fontSize:10,fontWeight:600 }}>{t("admin.firmy.list_preconnect_off")}</span>
+                    )}
+                    {firmCo?.fm_b2b_enabled && (
+                      <span style={{ color:"#0d9488",fontSize:10,fontWeight:600 }}>{t("admin.firmy.list_fm_b2b")}</span>
+                    )}
+                  </div>
+                  {/* Contact row: kraj · osoba · email · telefon */}
+                  <div style={{ display:"flex",flexWrap:"wrap",gap:"4px 14px",marginTop:6,fontSize:11,color:"#64748b",alignItems:"center" }}>
+                    <span>{countryFlag ? `${countryFlag} ` : ""}{countryLabel}</span>
+                    <span>
+                      {t("admin.firmy.row.contact_person_label")}:{" "}
+                      {contactName
+                        ? (contactPosition ? `${contactName} (${contactPosition})` : contactName)
+                        : <span style={{ color:"#94a3b8",fontStyle:"italic" }}>{t("admin.firmy.row.no_contact_person")}</span>}
+                    </span>
+                    <span style={{ display:"inline-flex",alignItems:"center",gap:4 }}>
+                      <Mail size={11}/>
+                      {contactEmail ? (
+                        <>
+                          <a href={`mailto:${contactEmail}`} title={t("admin.firmy.row.send_email")} style={{ color:"#0d9488",textDecoration:"none" }}>{contactEmail}</a>
+                          <button
+                            type="button"
+                            onClick={() => copyContact(contactEmail, "email")}
+                            title={t("admin.firmy.row.copy_email")}
+                            aria-label={t("admin.firmy.row.copy_email")}
+                            style={{ background:"transparent",border:"none",padding:"0 4px",cursor:"pointer",color:"#94a3b8",fontSize:11,lineHeight:1 }}
+                          >📋</button>
+                        </>
+                      ) : (
+                        <span style={{ color:"#94a3b8",fontStyle:"italic" }}>{t("admin.firmy.row.no_contact_email")}</span>
+                      )}
+                    </span>
+                    <span style={{ display:"inline-flex",alignItems:"center",gap:4 }}>
+                      <Phone size={11}/>
+                      {contactPhone ? (
+                        <>
+                          <a href={`tel:${contactPhone}`} style={{ color:"#0d9488",textDecoration:"none" }}>{contactPhone}</a>
+                          <button
+                            type="button"
+                            onClick={() => copyContact(contactPhone, "phone")}
+                            title={t("admin.firmy.row.copy_phone")}
+                            aria-label={t("admin.firmy.row.copy_phone")}
+                            style={{ background:"transparent",border:"none",padding:"0 4px",cursor:"pointer",color:"#94a3b8",fontSize:11,lineHeight:1 }}
+                          >📋</button>
+                        </>
+                      ) : (
+                        <span style={{ color:"#94a3b8",fontStyle:"italic" }}>{t("admin.firmy.row.no_contact_phone")}</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                {/* Right column: package badge + usage + actions */}
+                <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0 }}>
+                  <div style={{ textAlign:"right" }}>
+                    <div style={{ fontSize:10,color:"#94a3b8" }}>{lim.pkg} · {lim.pkgExpiry}</div>
+                    <div style={{ fontWeight:700,fontSize:14,color: pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>
+                      {used}/{lim.max} <span style={{ fontSize:10,color:"#94a3b8",fontWeight:400 }}>{t("admin.firmy.list_used_unit")}</span>
+                    </div>
+                  </div>
+                  <div style={{ display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end" }}>
+                    <Btn sm outline onClick={() => setPreviewCompany(firmCo)}>
+                      <Eye size={11}/> {t("admin.firmy.row.open_details")}
+                    </Btn>
+                    {onOpenAdminChat && (
+                      <Btn sm outline onClick={() => onOpenAdminChat()} title={t("admin.firmy.row.open_chat_legacy_tooltip")}>
+                        <MessageSquare size={11}/> {t("admin.firmy.row.open_chat_legacy")}
+                      </Btn>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedId(isExpanded ? null : lim.id)}
+                      aria-label={isExpanded ? "▲" : "▼"}
+                      style={{ background:"transparent",border:"1px solid #e2e8f0",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:12,color:"#64748b",fontFamily:"inherit" }}
+                    >{isExpanded ? "▲" : "▼"}</button>
+                  </div>
+                </div>
+              </div>
+              {isExpanded && renderExpandedDetails(firmCo, lim, used, pct, firmSends)}
+            </div>
+          );
+        })}
+        {previewCompany && (
+          <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" onClose={()=>setPreviewCompany(null)}/>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -7960,188 +8395,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
               </div>
               <span style={{ fontSize:16,color:"#94a3b8",marginLeft:8 }}>{isExpanded?"▲":"▼"}</span>
             </div>
-            {isExpanded&&(
-              <div style={{ padding:"0 16px 16px",borderTop:"1px solid #f1f5f9" }}>
-                {/* [B2B Round supplier-onboarding-access-and-communication]
-                    Sekcja statusu konta + dwie flagi dostępu (PreConnect, Spotkania B2B).
-                    To jest najważniejsze dla admina po rozwinięciu — dlatego idzie NA GÓRĘ
-                    expanded view, przed pakietem i AI opisem. */}
-                {firmCo?.name && setCompanies && (() => {
-                  const status = firmCo.account_status || "active";
-                  const statusMeta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
-                  const [, statusColor, statusBg] = statusMeta;
-                  const statusLbl = t(`admin.firmy.status_labels.${status}`, { defaultValue: statusMeta[0] });
-                  const isPending = status === "pending_review";
-                  const isSaving = savingStatusId === firmCo.id;
-                  const note = statusNoteDraft[firmCo.id] ?? (firmCo.status_note || "");
-                  return (
-                    <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",margin:"14px 0 12px",border:"1px solid #e2e8f0" }}>
-                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10 }}>
-                        <div style={{ fontWeight:700,fontSize:12,color:"#334155",display:"flex",alignItems:"center",gap:8 }}>
-                          {t("admin.firmy.status_section_title")}
-                          <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 8px",borderRadius:4,fontWeight:700 }}>{statusLbl}</span>
-                          {firmCo.approved_at && status === "active" && <span style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.firmy.status_approved_at_format", { date: String(firmCo.approved_at).slice(0,10) })}</span>}
-                        </div>
-                      </div>
-                      {/* Pole notatki (powód odrzucenia/zawieszenia, lub komentarz aktywacji) */}
-                      {(isPending || status === "rejected" || status === "suspended") && (
-                        <textarea
-                          value={note}
-                          onChange={(e) => setStatusNoteDraft((prev) => ({ ...prev, [firmCo.id]: e.target.value }))}
-                          placeholder={t("admin.firmy.status_note_placeholder")}
-                          style={{ width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:48,marginBottom:10,boxSizing:"border-box" }}
-                        />
-                      )}
-                      {/* Akcje statusu — różne zestawy w zależności od stanu */}
-                      <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:12 }}>
-                        {isPending && (
-                          <>
-                            <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>{t("admin.firmy.status_btn_approve")}</Btn>
-                            <Btn sm onClick={()=>changeAccountStatus(firmCo, "rejected")} disabled={isSaving} style={{ background:"#dc2626",color:"white",border:"none" }}>{t("admin.firmy.status_btn_reject")}</Btn>
-                          </>
-                        )}
-                        {status === "active" && (
-                          <Btn sm outline onClick={()=>changeAccountStatus(firmCo, "suspended")} disabled={isSaving} style={{ color:"#dc2626",borderColor:"#fecaca" }}>{t("admin.firmy.status_btn_suspend")}</Btn>
-                        )}
-                        {(status === "rejected" || status === "suspended") && (
-                          <Btn sm primary onClick={()=>changeAccountStatus(firmCo, "active")} disabled={isSaving} style={{ background:"#059669",color:"white",border:"none" }}>{t("admin.firmy.status_btn_reactivate")}</Btn>
-                        )}
-                      </div>
-                      {/* Dwie niezależne flagi dostępu — admin ustawia osobno */}
-                      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
-                        <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.preconnect_enabled?"rgba(13,148,136,0.06)":"white",border:`1px solid ${firmCo.preconnect_enabled?"#0d9488":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
-                          <input type="checkbox" checked={!!firmCo.preconnect_enabled} onChange={(e) => toggleAccessFlag(firmCo, "preconnect_enabled", e.target.checked)} />
-                          <div>
-                            <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_preconnect_title")}</div>
-                            <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_preconnect_desc")}</div>
-                          </div>
-                        </label>
-                        <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.fm_b2b_enabled?"rgba(124,58,237,0.06)":"white",border:`1px solid ${firmCo.fm_b2b_enabled?"#7c3aed":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
-                          <input type="checkbox" checked={!!firmCo.fm_b2b_enabled} onChange={(e) => toggleAccessFlag(firmCo, "fm_b2b_enabled", e.target.checked)} />
-                          <div>
-                            <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_fm_b2b_title")}</div>
-                            <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_fm_b2b_desc")}</div>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })()}
-                <div style={{ margin:"14px 0 10px",background:"#f8fafc",borderRadius:8,padding:"10px 14px" }}>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:12 }}>
-                    <span style={{ color:"#64748b" }}>{t("admin.firmy.pkg_usage_label")}</span>
-                    <span style={{ fontWeight:700,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{t("admin.firmy.pkg_usage_value_format", { pct, used, max: lim.max })}</span>
-                  </div>
-                  <div style={{ background:"#e2e8f0",borderRadius:4,height:6,overflow:"hidden" }}>
-                    <div style={{ height:"100%",borderRadius:4,width:`${Math.min(100,pct)}%`,background:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}/>
-                  </div>
-                </div>
-                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12 }}>
-                  <div>
-                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_limit_label")}</label>
-                    <input type="number" value={lim.max} onChange={e=>updateLimit(lim.id,{max:+e.target.value})}
-                      style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}/>
-                  </div>
-                  <div>
-                    <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_select_label")}</label>
-                    <select value={lim.pkg} onChange={e=>updateLimit(lim.id,{pkg:e.target.value})}
-                      style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}>
-                      <option value="std_5">{t("admin.firmy.pkg_option_std_5")}</option>
-                      <option value="std_10">{t("admin.firmy.pkg_option_std_10")}</option>
-                      <option value="std_20">{t("admin.firmy.pkg_option_std_20")}</option>
-                      <option value="prem_10">{t("admin.firmy.pkg_option_prem_10")}</option>
-                      <option value="prem_20">{t("admin.firmy.pkg_option_prem_20")}</option>
-                    </select>
-                  </div>
-                </div>
-                {/* [B2B Round adaptive-company-profile-ai] AI review block ─ */}
-                {firmCo?.name && setCompanies && (() => {
-                  const status = firmCo.ai_review_status || "pending";
-                  const reviewMeta = reviewLabel[status] || reviewLabel.pending;
-                  const [, statusColor, statusBg] = reviewMeta;
-                  const statusLabel = t(`admin.firmy.review_labels.${status}`, { defaultValue: reviewMeta[0] });
-                  const isEditing = editingId === firmCo.id;
-                  const isLoading = aiLoadingId === firmCo.id;
-                  return (
-                    <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",marginBottom:12,border:"1px solid #e2e8f0" }}>
-                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
-                        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
-                          <Bot size={14} color="#3b82f6"/>
-                          <strong style={{ fontSize:12 }}>{t("admin.firmy.ai_section_title")}</strong>
-                          <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 7px",borderRadius:4,fontWeight:600 }}>{statusLabel}</span>
-                        </div>
-                        <div style={{ display:"flex",gap:6 }}>
-                          <Btn sm outline onClick={()=>setPreviewCompany(firmCo)}><Eye size={11}/> {t("admin.firmy.ai_btn_preview")}</Btn>
-                          {!isEditing && (
-                            <>
-                              <Btn sm outline onClick={()=>startEdit(firmCo)}>{t("admin.firmy.ai_btn_edit")}</Btn>
-                              <Btn sm outline onClick={()=>regenerateForCompany(firmCo)} disabled={isLoading}>
-                                {isLoading ? <RefreshCw size={11} style={{ animation:"spin 1s linear infinite" }}/> : <Sparkles size={11}/>}
-                                {isLoading ? t("admin.firmy.ai_btn_generating") : t("admin.firmy.ai_btn_generate")}
-                              </Btn>
-                              {status !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(firmCo)}>{t("admin.firmy.ai_btn_approve")}</Btn>}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      {isEditing ? (
-                        <>
-                          <Inp
-                            label={t("admin.firmy.ai_edit_short_label")}
-                            ta
-                            value={editDraft.description_short}
-                            onChange={e=>setEditDraft(d=>({ ...d, description_short: e.target.value }))}
-                            style={{ minHeight:50,fontSize:12 }}
-                          />
-                          <Inp
-                            label={t("admin.firmy.ai_edit_standard_label")}
-                            ta
-                            value={editDraft.description}
-                            onChange={e=>setEditDraft(d=>({ ...d, description: e.target.value }))}
-                            style={{ fontSize:12 }}
-                          />
-                          <div style={{ display:"flex",gap:6,justifyContent:"flex-end" }}>
-                            <Btn sm outline onClick={cancelEdit}>{t("admin.firmy.ai_edit_cancel")}</Btn>
-                            <Btn sm primary onClick={()=>saveEdit(firmCo)}>{t("admin.firmy.ai_edit_save")}</Btn>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          {firmCo.description_short ? (
-                            <div style={{ fontSize:12,color:"#334155",marginBottom:6 }}>
-                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_short_prefix")}</span> {firmCo.description_short}
-                            </div>
-                          ) : null}
-                          {firmCo.description ? (
-                            <div style={{ fontSize:12,color:"#334155",lineHeight:1.6 }}>
-                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_standard_prefix")}</span> {firmCo.description}
-                            </div>
-                          ) : null}
-                          {!firmCo.description_short && !firmCo.description && (
-                            <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}><Trans i18nKey="admin.firmy.ai_view_empty_html" ns="legacy" components={{ em: <em /> }}/></div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                })()}
-                <div style={{ fontSize:12,color:"#64748b",marginBottom:8 }}>
-                  <strong>{t("admin.firmy.sends_section_title_format", { count: firmSends.length })}</strong> {firmSends.length===0?t("admin.firmy.sends_empty"):""}
-                </div>
-                {firmSends.slice(-5).reverse().map(s=>{
-                  const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId);
-                  return (
-                    <div key={s.id} style={{ display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9",fontSize:12 }}>
-                      <span style={{ fontSize:14 }}>{CEMOJI[o?.category]||"📦"}</span>
-                      <div style={{ flex:1 }}>{o?.title||o?.product||t("admin.firmy.sends_row_fallback_offer")} → {r?.name||t("admin.firmy.sends_row_fallback_retailer")}</div>
-                      <span title={STATUS_TIPS[s.status]||""} style={{ cursor:"help" }}>
-                        <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            {isExpanded && renderExpandedDetails(firmCo, lim, used, pct, firmSends)}
           </div>
         );
       })}

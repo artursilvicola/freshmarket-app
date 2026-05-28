@@ -1723,7 +1723,33 @@
       "toast_flag_preconnect": "PreConnect",
       "toast_flag_fm_b2b": "Spotkania B2B",
       "toast_flag_state_active": "aktywny",
-      "toast_flag_state_inactive": "wyłączony"
+      "toast_flag_state_inactive": "wyłączony",
+      "tabs": {
+        "active": "Aktywne",
+        "pending": "Do zatwierdzenia",
+        "suspended": "Wstrzymane",
+        "rejected": "Odrzucone",
+        "all": "Wszystkie"
+      },
+      "tab_count_aria": "{{count}} firm",
+      "row": {
+        "contact_person_label": "Osoba",
+        "no_contact_person": "—",
+        "no_contact_email": "brak e-maila",
+        "no_contact_phone": "brak telefonu",
+        "copy_email": "Skopiuj e-mail",
+        "copy_phone": "Skopiuj telefon",
+        "send_email": "Napisz e-mail",
+        "open_details": "Szczegóły",
+        "open_chat_legacy": "Wiadomości",
+        "open_chat_legacy_tooltip": "Przejdź do panelu wiadomości"
+      },
+      "empty_active": "Brak aktywnych firm.",
+      "empty_suspended": "Brak wstrzymanych firm.",
+      "empty_rejected": "Brak odrzuconych firm.",
+      "toast_copied_email": "Skopiowano e-mail: {{email}}",
+      "toast_copied_phone": "Skopiowano telefon: {{phone}}",
+      "toast_copy_failed": "Nie udało się skopiować."
     },
     "pipeline": {
       "tab_mod_format": "Moderacja ({{count}})",
