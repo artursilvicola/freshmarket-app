@@ -233,7 +233,7 @@ export async function getRetailers() {
 export async function generateCompanyDescriptionAI({ company_id = null, company }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
-  if (!token) throw new Error("Brak aktywnej sesji.");
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_session"));
 
   const res = await fetch("/.netlify/functions/ai-company-description", {
     method: "POST",
@@ -247,7 +247,7 @@ export async function generateCompanyDescriptionAI({ company_id = null, company 
     }),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json?.error || "Nie udalo sie wygenerowac opisu firmy.");
+  if (!res.ok) throw new Error(json?.error || i18n.t("legacy:errors.db.ai_company_description_failed"));
   return json;
 }
 
@@ -277,6 +277,9 @@ export async function updateRetailer(id, patch) {
 }
 
 export async function updateBuyerProfile(id, patch) {
+  // [P2-final-qa post-review] Dev sanity assertion — fires only if a programmer
+  // calls updateBuyerProfile(undefined, ...) directly. NIE user-facing (UI calls
+  // always pass a real id). Stays PL/dev-only intentionally.
   if (!id) throw new Error("updateBuyerProfile wymaga id");
   const normalized = validateBuyerAccountPayload(patch);
   const row = {
@@ -383,7 +386,7 @@ export async function createBuyerAccount({
 }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
-  if (!token) throw new Error("Brak aktywnej sesji admina");
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_admin_session"));
   const normalized = validateBuyerAccountPayload({
     email,
     name,
@@ -432,8 +435,8 @@ export async function adminUpdateBuyerAccount({
 }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
-  if (!token) throw new Error("Brak aktywnej sesji admina");
-  if (!user_id) throw new Error("Brak identyfikatora kupca do aktualizacji.");
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_admin_session"));
+  if (!user_id) throw new Error(i18n.t("legacy:errors.db.buyer_id_required"));
   const normalized = validateBuyerAccountPayload({
     email,
     name,
@@ -797,7 +800,7 @@ export async function getBrandSettings() {
 // file: File (z <input type="file">)
 // Zwraca: { ok: true, url } albo { ok: false, error }
 export async function uploadBrandLogo(file) {
-  if (!file) return { ok: false, error: "Brak pliku" };
+  if (!file) return { ok: false, error: i18n.t("legacy:errors.db.upload_no_file") };
   const ext = (file.name?.split(".").pop() || "png").toLowerCase();
   // Path: brand/logo-<timestamp>.<ext> — timestamp zapobiega cache problem'om
   // w przeglądarce (każdy upload to nowy URL).
@@ -823,12 +826,12 @@ export async function uploadBrandLogo(file) {
       .from("fm_settings")
       .update({ brand_logo_url: url, updated_at: new Date().toISOString() })
       .eq("id", existing.id);
-    if (updErr) return { ok: false, error: `Upload OK, ale zapis URL: ${updErr.message}` };
+    if (updErr) return { ok: false, error: i18n.t("legacy:errors.db.upload_ok_url_failed_format", { detail: updErr.message }) };
   } else {
     const { error: insErr } = await supabase
       .from("fm_settings")
       .insert({ brand_logo_url: url });
-    if (insErr) return { ok: false, error: `Upload OK, ale insert: ${insErr.message}` };
+    if (insErr) return { ok: false, error: i18n.t("legacy:errors.db.upload_ok_insert_failed_format", { detail: insErr.message }) };
   }
   return { ok: true, url };
 }
@@ -1081,6 +1084,8 @@ export async function getFmResps(retailerId) {
  * odpowiedz dla danego dostawcy.
  */
 export async function saveFmResp({ retailer_id, supplier_company_id, position, zone, status, meta }) {
+  // [P2-final-qa post-review] Dev sanity assertion (programmer error if called
+  // with missing IDs). NIE user-facing — UI ścieżki zawsze podają oba.
   if (!retailer_id || !supplier_company_id) {
     throw new Error("saveFmResp wymaga retailer_id + supplier_company_id");
   }
@@ -1200,6 +1205,7 @@ export async function getAllCompanyTargetRetailers() {
 // which is the desired behavior — admin sees the LATEST confirmation.
 // Pass null to clear (currently not used, but allowed).
 export async function saveFmSelectionConfirmation(companyId, confirmedAt = new Date().toISOString()) {
+  // [P2-final-qa post-review] Dev sanity assertion — UI zawsze podaje companyId.
   if (!companyId) throw new Error("saveFmSelectionConfirmation: companyId wymagane");
   const { data, error } = await supabase
     .from("companies")
@@ -1216,6 +1222,7 @@ export async function saveFmSelectionConfirmation(companyId, confirmedAt = new D
  * { retailer_id, priority, note }.
  */
 export async function setCompanyTargetRetailers(companyId, items) {
+  // [P2-final-qa post-review] Dev sanity assertion — UI ścieżki podają companyId.
   if (!companyId) throw new Error("setCompanyTargetRetailers: companyId wymagane");
   // Wymaz stare i wpisz nowe (transactional via supabase function w przyszlosci;
   // teraz: 2 osobne kroki)
@@ -1257,6 +1264,7 @@ export async function getFmWishlists(retailerId) {
 }
 
 export async function saveFmWishlist({ retailer_id, supplier_legacy_id, data }) {
+  // [P2-final-qa post-review] Dev sanity assertion — UI ścieżki podają oba.
   if (!retailer_id || !supplier_legacy_id) throw new Error("saveFmWishlist wymaga retailer_id + supplier_legacy_id");
   const { data: row, error } = await supabase
     .from("fm_wishlists")
@@ -1463,7 +1471,7 @@ export async function selfRegisterSupplier({
 export async function sendRetailerBatch({ retailer_id, send_ids, dry_run = false }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
-  if (!token) throw new Error("Brak aktywnej sesji admina.");
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_admin_session"));
 
   const res = await fetch("/.netlify/functions/send-retailer-batch", {
     method: "POST",
@@ -1485,7 +1493,7 @@ export async function sendRetailerBatch({ retailer_id, send_ids, dry_run = false
 export async function suggestAdminChatReplyAI({ participant, thread }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData?.session?.access_token;
-  if (!token) throw new Error("Brak aktywnej sesji admina.");
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_admin_session"));
 
   const res = await fetch("/.netlify/functions/ai-admin-chat-suggestion", {
     method: "POST",
@@ -1496,7 +1504,7 @@ export async function suggestAdminChatReplyAI({ participant, thread }) {
     body: JSON.stringify({ participant, thread }),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json?.error || "Nie udalo sie wygenerowac podpowiedzi odpowiedzi.");
+  if (!res.ok) throw new Error(json?.error || i18n.t("legacy:errors.db.ai_chat_suggestion_failed"));
   return json;
 }
 
@@ -1645,7 +1653,7 @@ export async function getAllAdmins() {
 // Zwraca: { ok: true, profile } albo { ok: false, error }
 export async function promoteToAdmin(email) {
   if (!email || !email.includes("@")) {
-    return { ok: false, error: "Niepoprawny email" };
+    return { ok: false, error: i18n.t("legacy:errors.db.admin_invalid_email") };
   }
   // Znajdź profile po emailu
   const { data: existing, error: findErr } = await supabase
@@ -1678,7 +1686,7 @@ export async function promoteToAdmin(email) {
 // Wymaga: super admin (RLS).
 // NIE pozwalamy zdjąć roli sobie samemu (frontend gating + safety w RLS).
 export async function demoteFromAdmin(userId) {
-  if (!userId) return { ok: false, error: "Brak userId" };
+  if (!userId) return { ok: false, error: i18n.t("legacy:errors.db.admin_missing_user_id") };
   const { data: me } = await supabase.auth.getUser();
   if (me?.user?.id === userId) {
     return { ok: false, error: i18n.t("legacy:errors.db.admin_demote_self_forbidden") };
@@ -1697,7 +1705,7 @@ export async function demoteFromAdmin(userId) {
 // Wymaga: super admin (RLS).
 // NIE pozwalamy zdjąć sobie samemu super-admin (żeby nie zostać samemu odciętym).
 export async function setSuperAdmin(userId, enabled) {
-  if (!userId) return { ok: false, error: "Brak userId" };
+  if (!userId) return { ok: false, error: i18n.t("legacy:errors.db.admin_missing_user_id") };
   const { data: me } = await supabase.auth.getUser();
   if (me?.user?.id === userId && !enabled) {
     return { ok: false, error: i18n.t("legacy:errors.db.admin_super_demote_self_forbidden") };

@@ -2278,7 +2278,17 @@
       "admin_promote_user_not_found_format": "Brak użytkownika {{email}}. Najpierw musi zarejestrować się w aplikacji (np. przez stronę rejestracji dostawcy), potem promuj.",
       "admin_promote_already_admin_format": "{{email}} już jest administratorem.",
       "admin_demote_self_forbidden": "Nie możesz zdjąć uprawnień administratora samemu sobie.",
-      "admin_super_demote_self_forbidden": "Nie możesz odebrać sobie samemu uprawnień super admina."
+      "admin_super_demote_self_forbidden": "Nie możesz odebrać sobie samemu uprawnień super admina.",
+      "no_active_session": "Brak aktywnej sesji.",
+      "no_active_admin_session": "Brak aktywnej sesji admina.",
+      "ai_company_description_failed": "Nie udało się wygenerować opisu firmy.",
+      "ai_chat_suggestion_failed": "Nie udało się wygenerować podpowiedzi odpowiedzi.",
+      "buyer_id_required": "Brak identyfikatora kupca do aktualizacji.",
+      "upload_no_file": "Brak pliku",
+      "upload_ok_url_failed_format": "Upload OK, ale zapis URL: {{detail}}",
+      "upload_ok_insert_failed_format": "Upload OK, ale insert: {{detail}}",
+      "admin_invalid_email": "Niepoprawny email",
+      "admin_missing_user_id": "Brak userId"
     }
   },
   "shell": {

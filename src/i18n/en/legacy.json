@@ -2278,7 +2278,17 @@
       "admin_promote_user_not_found_format": "No user {{email}}. They must register in the app first (e.g. via the supplier registration page), then promote.",
       "admin_promote_already_admin_format": "{{email}} is already an administrator.",
       "admin_demote_self_forbidden": "You cannot remove administrator rights from yourself.",
-      "admin_super_demote_self_forbidden": "You cannot remove super admin rights from yourself."
+      "admin_super_demote_self_forbidden": "You cannot remove super admin rights from yourself.",
+      "no_active_session": "No active session.",
+      "no_active_admin_session": "No active admin session.",
+      "ai_company_description_failed": "Failed to generate company description.",
+      "ai_chat_suggestion_failed": "Failed to generate reply suggestion.",
+      "buyer_id_required": "Missing buyer identifier to update.",
+      "upload_no_file": "No file",
+      "upload_ok_url_failed_format": "Upload OK, but URL write failed: {{detail}}",
+      "upload_ok_insert_failed_format": "Upload OK, but insert failed: {{detail}}",
+      "admin_invalid_email": "Invalid email",
+      "admin_missing_user_id": "Missing userId"
     }
   },
   "shell": {

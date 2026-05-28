@@ -34,7 +34,8 @@
 | After P2-shared | ~1450 | ~1450 |
 | After P2-admin{pipeline,extras} | ~1750 | ~1750 |
 | After P2-fm | 1871 | 1871 |
-| After P2-final-qa | **1898** | **1898** |
+| After P2-final-qa C1..C4 | 1898 | 1898 |
+| After P2-final-qa post-review (ASCII fix) | **1908** | **1908** |
 
 Plus separate namespaces: `common.json`, `panel.json`, dane testowe.
 
@@ -113,26 +114,48 @@ Per `P2_FINAL_LANGUAGE_DEBT_AUDIT.md` section C:
 
 ## Final audit numbers
 
-Re-run `node scripts/pl-audit.cjs`:
-- **files_with_pl_total:** 57 (-1 vs C1)
-- **files_with_code_pl:** 38 (-2)
-- **total_code_hits:** 1090 (-20 vs C1)
+`scripts/pl-audit.cjs` post-review upgraded — wykrywa też ASCII-only PL markery
+(`Brak`, `Nie udalo`, `Nie udało`, `wymaga`, `wymagane`, `Niepoprawny`,
+`Upload OK, ale` itd.) — wcześniej audit łapał tylko diacritics.
 
-Top files (intentional or excluded by audit C section):
-- `PreconnectFM.jsx` 385 (seed data + display dicts + comments)
-- `testy-przed-produkcja.html` 216 (internal)
-- `regulamin.html` 120 + `polityka-prywatnosci.html` 99 (Polish legal)
-- Backend templates / error dictionary / AI prompts (~165 across files) — intentional
+Re-run po post-review fix:
+- **files_with_pl_total:** 58
+- **files_with_code_pl:** 40
+- **total_code_hits:** 1128
+- **total_code_ASCII hits:** 87 (większość w słownikach PL po stronie backendu —
+  `error-messages.js` 32, w `error-messages.js` to definicje słownika)
+
+`src/lib/db.js`:
+- **0 user-facing PL** (wszystkie wrapped w `i18n.t("legacy:errors.db.*")`)
+- **5 dev sanity assertions** zostają jako PL — każda ma `[P2-final-qa
+  post-review] Dev sanity assertion` komentarz wyjaśniający, że odpalają się
+  tylko gdy programista wywoła funkcję z brakującym argumentem (UI ścieżki
+  zawsze podają wymagane parametry):
+  - line 283: `updateBuyerProfile wymaga id`
+  - line 1090: `saveFmResp wymaga retailer_id + supplier_company_id`
+  - line 1209: `saveFmSelectionConfirmation: companyId wymagane`
+  - line 1226: `setCompanyTargetRetailers: companyId wymagane`
+  - line 1268: `saveFmWishlist wymaga retailer_id + supplier_legacy_id`
+
+Top files (intentional / categorized C w audit):
+- `PreconnectFM.jsx` 389 (seed data + display dicts + comments)
+- `testy-przed-produkcja.html` 219 (internal admin)
+- `regulamin.html` 122 + `polityka-prywatnosci.html` 101 (Polish legal)
+- Backend templates / dictionary / AI prompts (~165) — intentional alongside EN
 
 ---
 
-## Verification (Commit 4)
+## Verification (Commit 4 + post-review fix)
 
 - ✅ `npm run build` — vite 1276 kB / gzip 336 kB
 - ✅ `node --check` na 24 plikach Netlify functions (15 functions + 9 _shared)
-- ✅ Symmetry PL/EN: **1898/1898** symmetric
-- ✅ Re-grep PL audit: 1110 → 1090 (-20 user-facing)
-- ✅ db.js non-comment PL: 14 → 0
+- ✅ Symmetry PL/EN: **1908/1908** symmetric (po post-review +10 keys)
+- ✅ Re-grep PL diacritic audit: 1110 → 1090 (Commit 2+3) → 1128 (po post-review,
+  wzrost wynika z dodanych ASCII-only markerów do detektora — sam codebase
+  ma MNIEJ PL niż wcześniej)
+- ✅ ASCII-only check w db.js: 0 user-facing, 5 dev sanity assertions (intentional)
+- ✅ rg ASCII-PL patterns w db.js (`Brak aktywnej|Nie udalo|Nie udało|Brak userId|
+   Brak pliku|Niepoprawny email|Upload OK, ale`): **0 hits**
 
 ---
 

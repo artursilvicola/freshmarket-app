@@ -20,7 +20,15 @@ Wykluczone:
 
 Output: `pl-audit.json` (gitignored, generowany on-demand).
 
-**Summary:**
+**Detection (post-review upgrade):**
+- (a) Polish diacritics: `[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]` (oryginalny pattern)
+- (b) ASCII-only PL markers: `\b(Brak|Nie udalo|Nie udało|wymaga|wymagane|wymagany|
+   Niepoprawny|Niepoprawna|sprobuj|spróbuj|Konto bez roli)\b|Upload OK, ale`
+
+Hits tagged `{kind: 'ascii' | 'diacritic'}`. Per-file output ma `count_ascii`
+priority signal dla code review.
+
+**Summary (initial scan przed naprawami):**
 - **58 plików** z dowolnym PL diacritickiem
 - **40 plików** z PL poza komentarzami
 - **1110 hits łącznie** poza komentarzami
