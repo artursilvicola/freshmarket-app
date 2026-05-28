@@ -50,6 +50,7 @@ import {
   // [B2B Round prod-rollout / admin-team] zarządzanie zespołem administratorów
   getAllAdmins as dbGetAllAdmins, promoteToAdmin as dbPromoteToAdmin,
   demoteFromAdmin as dbDemoteFromAdmin, setSuperAdmin as dbSetSuperAdmin,
+  getProfilesForAdminChat as dbGetProfilesForAdminChat,
 } from "../lib/db";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 import FreshMarketLogo from "../components/FreshMarketLogo";
@@ -831,6 +832,7 @@ function normalizeFmMessage(row) {
   const threadUserId =
     row.to_user_id ||
     row.data?.to_user_id ||
+    row.data?.thread_user_id ||
     (typeof row.thread_key === "string" && row.thread_key.startsWith("user:") ? row.thread_key.slice(5) : null) ||
     row.from_user_id ||
     null;
@@ -1364,7 +1366,7 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
 /* ══════════════════════════════════════════════════════════════════════════
    PAGE ADMIN CHAT — widok administratora z listą wątków i oknem rozmowy
 ══════════════════════════════════════════════════════════════════════════ */
-function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRead, onSuggestReply }) {
+function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [], retailers = [], onSendReply, onMarkThreadRead, onSuggestReply }) {
   const { t, i18n } = useTranslation("legacy");
   // [P2-extras review] AI fallback: getAiAnswer() zwraca PL z KNOWLEDGE_BASE.
   // W EN locale używamy generic fallback z legacy.chat.admin.ai_fallback_reply,
@@ -1377,33 +1379,137 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
   const [aiLoading, setAiLoading] = useState(false);
   const bottomRef = useRef(null);
 
+  const accountById = useMemo(() => {
+    const map = new Map();
+    (runtimeAccounts || []).forEach(a => { if (a?.id) map.set(String(a.id), a); });
+    return map;
+  }, [runtimeAccounts]);
+
+  const profileById = useMemo(() => {
+    const map = new Map();
+    (profiles || []).forEach(p => { if (p?.id) map.set(String(p.id), p); });
+    return map;
+  }, [profiles]);
+
+  const companyById = useMemo(() => {
+    const map = new Map();
+    (companies || []).forEach(c => { if (c?.id) map.set(String(c.id), c); });
+    return map;
+  }, [companies]);
+
+  const retailerById = useMemo(() => {
+    const map = new Map();
+    (retailers || []).forEach(r => { if (r?.id != null) map.set(String(r.id), r); });
+    return map;
+  }, [retailers]);
+
+  const profileIdsByCompanyId = useMemo(() => {
+    const map = new Map();
+    (profiles || []).forEach(p => {
+      if (!p?.company_id) return;
+      const key = String(p.company_id);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(String(p.id));
+    });
+    return map;
+  }, [profiles]);
+
+  function canonicalParticipantId(rawId) {
+    const id = rawId ? String(rawId) : "";
+    if (!id || id === "admin") return id;
+    if (accountById.has(id)) return id;
+    const profile = profileById.get(id);
+    if (profile?.company_id) return String(profile.company_id);
+    return id;
+  }
+
+  function participantAliases(uid) {
+    const id = uid ? String(uid) : "";
+    const aliases = new Set(id ? [id] : []);
+    const profile = profileById.get(id);
+    if (profile?.company_id) aliases.add(String(profile.company_id));
+    const companyProfileIds = profileIdsByCompanyId.get(id) || [];
+    companyProfileIds.forEach(pid => aliases.add(pid));
+    return aliases;
+  }
+
+  function accountFromProfile(uid) {
+    const profile = profileById.get(String(uid));
+    if (!profile) return null;
+    if (profile.company_id) {
+      const company = profile.company_id ? companyById.get(String(profile.company_id)) : null;
+      const primaryContact = Array.isArray(company?.contacts)
+        ? (company.contacts.find(c => c?.email || c?.phone || c?.name) || company.contacts[0])
+        : null;
+      return {
+        id: profile.id,
+        role: "supplier",
+        name: company?.name || profile.name || profile.email || profile.id,
+        title: [profile.name, company?.country ? getCountryName(company.country) : null].filter(Boolean).join(" · "),
+        email: profile.email || primaryContact?.email || company?.email || "",
+      };
+    }
+    if (profile.role === "buyer" || profile.retailer_id != null) {
+      const retailer = profile.retailer_id != null ? retailerById.get(String(profile.retailer_id)) : null;
+      return {
+        id: profile.id,
+        role: "buyer",
+        name: profile.name || retailer?.name || profile.email || profile.id,
+        title: retailer?.name || profile.position || "",
+        email: profile.email || "",
+      };
+    }
+    return {
+      id: profile.id,
+      role: profile.role || "supplier",
+      name: profile.name || profile.email || profile.id,
+      title: profile.position || "",
+      email: profile.email || "",
+    };
+  }
+
+  function accountFromCompany(uid) {
+    const company = companyById.get(String(uid));
+    if (!company) return null;
+    const primaryContact = Array.isArray(company.contacts)
+      ? (company.contacts.find(c => c?.email || c?.phone || c?.name) || company.contacts[0])
+      : null;
+    return {
+      id: company.id,
+      role: "supplier",
+      name: company.name || company.id,
+      title: company.country ? getCountryName(company.country) : "",
+      email: primaryContact?.email || company.email || "",
+    };
+  }
+
   // Build thread list: unique participants who messaged admin
   const participants = useMemo(() => {
     const seen = {};
     messages.forEach(m => {
-      const userId = m.fromId === "admin" ? m.toId : m.fromId;
+      const userId = canonicalParticipantId(m.fromId === "admin" ? m.toId : m.fromId);
       if (userId === "admin") return;
       if (!seen[userId]) seen[userId] = { userId, lastTs: 0, unread: 0 };
       if (m.timestamp > seen[userId].lastTs) seen[userId].lastTs = m.timestamp;
       if (m.fromId !== "admin" && !m.read) seen[userId].unread++;
     });
     return Object.values(seen).sort((a,b) => b.lastTs - a.lastTs);
-  }, [messages]);
+  }, [messages, accountById, profileById]);
 
   // Thread for selected user
-  const thread = useMemo(() =>
-    messages
-      .filter(m => (m.fromId === selectedId && m.toId === "admin") || (m.fromId === "admin" && m.toId === selectedId))
-      .sort((a,b) => a.timestamp - b.timestamp),
-    [messages, selectedId]
-  );
+  const thread = useMemo(() => {
+    const aliases = participantAliases(selectedId);
+    return messages
+      .filter(m => (aliases.has(String(m.fromId)) && m.toId === "admin") || (m.fromId === "admin" && aliases.has(String(m.toId))))
+      .sort((a,b) => a.timestamp - b.timestamp);
+  }, [messages, selectedId, profileById, profileIdsByCompanyId]);
 
   // Mark as read when selecting
   async function selectUser(uid) {
     setSelectedId(uid);
     setReplyText("");
     if (typeof onMarkThreadRead === "function") {
-      await onMarkThreadRead(uid, "admin");
+      await Promise.all([...participantAliases(uid)].map(alias => onMarkThreadRead(alias, "admin")));
     }
   }
 
@@ -1425,7 +1531,8 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
   }, [thread.length]);
 
   function getAccount(uid) {
-    return runtimeAccounts?.find(a => a.id === uid) || { name: uid, role: "supplier", title: "" };
+    const id = uid ? String(uid) : "";
+    return accountById.get(id) || accountFromCompany(id) || accountFromProfile(id) || { name: id, role: "supplier", title: "", email: "" };
   }
 
   async function suggestReplyWithAI() {
@@ -1479,7 +1586,10 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
           {participants.map(({ userId, lastTs, unread }) => {
             const acc = getAccount(userId);
             const isActive = selectedId === userId;
-            const lastMsg = messages.filter(m => (m.fromId===userId&&m.toId==="admin")||(m.fromId==="admin"&&m.toId===userId)).sort((a,b)=>b.timestamp-a.timestamp)[0];
+            const aliases = participantAliases(userId);
+            const lastMsg = messages
+              .filter(m => (aliases.has(String(m.fromId)) && m.toId==="admin") || (m.fromId==="admin" && aliases.has(String(m.toId))))
+              .sort((a,b)=>b.timestamp-a.timestamp)[0];
             return (
               <div key={userId} onClick={()=>void selectUser(userId)}
                 style={{ padding:"12px 14px", cursor:"pointer", background:isActive?"#f0fdfa":"transparent", borderBottom:"1px solid #f1f5f9", borderLeft:isActive?"3px solid #0d9488":"3px solid transparent", transition:"background 0.1s" }}>
@@ -2135,6 +2245,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     } catch(e){ return { suppliers: [], chains: [] }; }
   });
   const [messages, setMessages] = useState([]);
+  const [adminChatProfiles, setAdminChatProfiles] = useState([]);
   const [aiModal, setAiModal] = useState(false);
   const [aiLoad,  setAiLoad]  = useState(false);
 
@@ -2339,6 +2450,23 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     })();
     return () => { canceled = true; };
   }, [account.id, account.role]);
+  useEffect(() => {
+    if (account.role !== "admin") {
+      setAdminChatProfiles([]);
+      return;
+    }
+    let canceled = false;
+    (async () => {
+      try {
+        const rows = await dbGetProfilesForAdminChat();
+        if (!canceled) setAdminChatProfiles(rows || []);
+      } catch (e) {
+        console.warn("[load admin chat profiles]", e);
+        if (!canceled) setAdminChatProfiles([]);
+      }
+    })();
+    return () => { canceled = true; };
+  }, [account.role]);
   const fmChains = useMemo(() =>
     retailers
       .filter(r => r.fm26Active && r.active !== false && r.fm26ChainId)
@@ -3064,7 +3192,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={()=>nav("a-chat")}/>;
-    if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
+    if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>

@@ -1651,6 +1651,20 @@ export async function getAllAdmins() {
 // normalny flow (zarejestruj dostawcę lub zostać dodany jako buyer).
 //
 // Zwraca: { ok: true, profile } albo { ok: false, error }
+// Lightweight identity map for the admin chat. Admin RLS can read profiles;
+// suppliers/buyers never call this helper.
+export async function getProfilesForAdminChat() {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, role, name, email, phone, position, company_id, retailer_id, active, created_at")
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.warn("[getProfilesForAdminChat]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
 export async function promoteToAdmin(email) {
   if (!email || !email.includes("@")) {
     return { ok: false, error: i18n.t("legacy:errors.db.admin_invalid_email") };
