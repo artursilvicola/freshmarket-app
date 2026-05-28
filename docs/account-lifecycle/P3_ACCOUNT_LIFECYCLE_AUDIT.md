@@ -8,6 +8,19 @@ P2 (i18n) zostało zamknięte tagiem `v-i18n-complete` na `829f5cc`. P3 dotyka z
 
 ---
 
+## ⚠️ Errata (post-review przez Codex)
+
+**Sekcje A.1, A.3 i C.1 tego audit-u twierdziły że `profiles.active` i `retailers.active` nie istnieją.** To było błędne — Codex zwrócił uwagę przy review Phase B:
+
+- `supabase/migrations/016_buyer_admin_managed_retailers.sql:13` dodaje `retailers.active boolean default true` (+ `fm26_active`, `fm26_chain_id`, `description`).
+- `supabase/migrations/016_buyer_admin_managed_retailers.sql:32` dodaje `profiles.active boolean default true` (+ `fm26_active`, `buyer_categories`).
+
+Korekta wprowadzona w Phase B plan (sekcja 0 w `P3_MIGRATION_PLAN.md`). Migracja `037_account_lifecycle_core` **NIE dodaje** ponownie tych kolumn — używa istniejących i dokłada tylko `archived_at`, `archived_by`, `archive_reason` + tabelę `account_lifecycle_events`.
+
+Pozostała mapa zależności (FK, ON DELETE, RLS, storage, RPCs) pozostaje poprawna — błędna była tylko diagnoza dwóch kolumn `active`.
+
+---
+
 ## A. Mapa tabel powiązanych z tożsamością
 
 ### A.1 `profiles` — entry point tożsamości
