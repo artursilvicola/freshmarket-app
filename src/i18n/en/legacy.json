@@ -87,6 +87,9 @@
       "cert_number_prefix_format": "No.: {{number}}",
       "cert_valid_prefix_format": "until {{date}}",
       "material_pdf_label": "PDF",
+      "account_operator_title": "Account operator",
+      "account_operator_missing": "No account operator assigned.",
+      "account_operator_chat": "Messages",
       "contacts_section_title": "Contacts",
       "active_offers_section_title": "Active proposals",
       "no_retailer_assigned": "No retailer assigned — proposal preview unavailable.",
@@ -1734,6 +1737,8 @@
       "tab_count_aria": "{{count}} companies",
       "row": {
         "contact_person_label": "Contact",
+        "account_operator_label": "Account operator",
+        "business_contact_label": "Company contact",
         "no_contact_person": "—",
         "no_contact_email": "no email",
         "no_contact_phone": "no phone",

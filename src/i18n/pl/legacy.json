@@ -87,6 +87,9 @@
       "cert_number_prefix_format": "Nr: {{number}}",
       "cert_valid_prefix_format": "do {{date}}",
       "material_pdf_label": "PDF",
+      "account_operator_title": "Osoba obsługująca konto",
+      "account_operator_missing": "Brak przypisanej osoby konta.",
+      "account_operator_chat": "Wiadomości",
       "contacts_section_title": "Kontakty",
       "active_offers_section_title": "Aktywne propozycje",
       "no_retailer_assigned": "Brak przypisanej sieci detalicznej — podgląd propozycji niedostępny.",
@@ -1734,6 +1737,8 @@
       "tab_count_aria": "{{count}} firm",
       "row": {
         "contact_person_label": "Osoba",
+        "account_operator_label": "Operator konta",
+        "business_contact_label": "Kontakt firmy",
         "no_contact_person": "—",
         "no_contact_email": "brak e-maila",
         "no_contact_phone": "brak telefonu",
