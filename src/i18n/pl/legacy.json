@@ -2369,6 +2369,8 @@
       "ai_ready_with_website": "AI przygotował opis na podstawie danych firmy i strony WWW.",
       "ai_ready_company_only": "AI przygotował opis na podstawie danych firmy.",
       "ai_failed": "Nie udało się wygenerować opisu firmy.",
+      "ai_tier_rich": "(profil rozszerzony)",
+      "ai_tier_minimal": "(profil krótki — uzupełnij więcej danych dla bogatszego opisu)",
       "tryagain_fallback": "spróbuj ponownie",
       "chat_msg_sent_success": "✓ Wiadomość wysłana do administratora. Odpowiedź pojawi się w czacie (prawy dolny róg).",
       "chat_msg_failed": "Nie udało się wysłać wiadomości. Spróbuj ponownie lub napisz bezpośrednio: newsletter@freshmarket.eu",

@@ -2979,8 +2979,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       if (typeof applyDraft === "function") applyDraft(patch);
       else setCo(prev=>({ ...prev, ...patch }));
       setAiModal(false);
-      const tierMsg = result?.richness === "rich" ? "(profil rozszerzony)"
-                    : result?.richness === "minimal" ? "(profil krótki — uzupełnij więcej danych dla bogatszego opisu)"
+      const tierMsg = result?.richness === "rich" ? t("shell.app_toasts.ai_tier_rich")
+                    : result?.richness === "minimal" ? t("shell.app_toasts.ai_tier_minimal")
                     : "";
       fl(`${result?.source?.website_used ? t("shell.app_toasts.ai_ready_with_website") : t("shell.app_toasts.ai_ready_company_only")} ${tierMsg}`.trim());
     } catch (e) {
