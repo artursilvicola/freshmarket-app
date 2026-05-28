@@ -6397,7 +6397,6 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
         const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
         const hasVerification = allCerts.length>0;
         const hasPhotos = (o.photos||[]).length>0;
-        const coInitials = (dCo?.name||"FM").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
         const coTypes = (dCo?.types||[]).slice(0,2);
         return (
           <div key={s.id} style={{ background:isPremium?"linear-gradient(135deg,#fffbeb,#fff7ed)":"white",border:isPremium?"2px solid #fbbf24":"1px solid #e2e8f0",borderRadius:12,padding:16,marginBottom:10,position:"relative",overflow:"hidden",boxShadow:"0 1px 2px rgba(15,23,42,0.04)" }}>
@@ -6406,12 +6405,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
             {/* ── HEADER: dostawca = mocno widoczny ── */}
             <div style={{ display:"flex",gap:12,alignItems:"flex-start",marginBottom:12,paddingBottom:12,borderBottom:"1px solid #f1f5f9" }}>
               {/* Logo firmy — duże */}
-              <div style={{ width:56,height:56,borderRadius:12,background:dCo?.logo?"white":"linear-gradient(135deg,#1e3a5f,#0d9488)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:18,color:"white",flexShrink:0,letterSpacing:-0.5,boxShadow:"0 2px 6px rgba(15,23,42,0.08)",border:dCo?.logo?"1px solid #e2e8f0":"none",overflow:"hidden" }}>
-                {dCo?.logo
-                  ? <img src={dCo.logo} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                  : coInitials
-                }
-              </div>
+              <CompanyLogo company={dCo} size={56}/>
               {/* Nazwa + typ firmy + kraj */}
               <div style={{ flex:1,minWidth:0 }}>
                 <div style={{ display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:3 }}>
@@ -6589,11 +6583,10 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:14}}>
         {filtered.map(co=>{
           const cnt=activeOffersCount(co);
-          const initials=co.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
           return (
             <div key={co.id} style={{background:"white",border:"1px solid #e2e8f0",borderRadius:12,padding:18,display:"flex",flexDirection:"column",gap:10,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
               <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
-                <div style={{width:44,height:44,borderRadius:10,background:"linear-gradient(135deg,#0d9488,#0891b2)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:14,flexShrink:0}}>{initials}</div>
+                <CompanyLogo company={co} size={44}/>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{co.name}</div>
                   <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{FLAGS[co.country]||"🌐"} {getCountryName(co.country)}{co.city?` · ${co.city}`:""}</div>
@@ -7048,14 +7041,9 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
           <Card title={t("buyer.detail.supplier_card.title")} icon={Building2}>
             {(() => {
               const supCerts = (supplierCo?.certs||[]).length>0;
-              const initials = (supplierCo?.name||"FM").split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
               return <>
                 <div style={{ display:"flex",gap:10,alignItems:"flex-start",marginBottom:10 }}>
-                  <div style={{ width:48,height:48,borderRadius:10,background:supplierCo?.logo?"white":"linear-gradient(135deg,#1e3a5f,#0d9488)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:14,color:"white",flexShrink:0,letterSpacing:-0.5,boxShadow:"0 2px 6px rgba(15,23,42,0.08)",border:supplierCo?.logo?"1px solid #e2e8f0":"none",overflow:"hidden" }}>
-                    {supplierCo?.logo
-                      ? <img src={supplierCo.logo} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }}/>
-                      : initials}
-                  </div>
+                  <CompanyLogo company={supplierCo} size={48}/>
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontWeight:800,fontSize:14,marginBottom:2,color:"#0f172a" }}>{supplierCo?.name}</div>
                     <div style={{ fontSize:11,color:"#64748b" }}>{FLAGS[supplierCo?.country]||"🌐"} {getCountryName(supplierCo?.country)} · {supplierCo?.city}</div>
@@ -9052,7 +9040,7 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
     <Modal title={t("common.company_preview.modal_title")} onClose={onClose} wide>
       {/* ── TIER 1 ── zawsze widoczny: logo, nazwa, kraj, opis krótki, typy ── */}
       <div style={{ display:"flex",gap:14,marginBottom:14,padding:14,background:"#f8fafc",borderRadius:10 }}>
-        {co.logo?<img src={co.logo} alt="" style={{ width:70,height:70,objectFit:"contain",borderRadius:10,flexShrink:0,background:"white",border:"1px solid #e2e8f0",padding:4 }}/>:<div style={{ width:70,height:70,borderRadius:10,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Building2 size={28} color="#94a3b8"/></div>}
+        <CompanyLogo company={co} size={70}/>
         <div style={{ flex:1 }}>
           <h3 style={{ margin:"0 0 3px" }}>{co.name}</h3>
           <div style={{ fontSize:12,color:"#64748b" }}>
@@ -9266,7 +9254,7 @@ function OfferPreviewModal({ offer, co, onClose }) {
       </div>
       <p style={{ color:"#475569",lineHeight:1.7,marginBottom:12,fontSize:13,whiteSpace:"pre-line" }}>{renderDesc(offer.description)}</p>
       {allPack.length>0&&<div style={{ marginBottom:10 }}><strong style={{ fontSize:11,color:"#64748b" }}>{t("common.offer_preview.packaging_label")}</strong><div style={{ display:"flex",gap:4,marginTop:3,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p}>{p}</Badge>)}</div></div>}
-      {co&&<div style={{ padding:12,background:"#f8fafc",borderRadius:8,display:"flex",gap:10,fontSize:12 }}>{co.logo?<img src={co.logo} alt="" style={{ width:38,height:38,objectFit:"cover",borderRadius:7 }}/>:<div style={{ width:38,height:38,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center" }}><Building2 size={16} color="#94a3b8"/></div>}<div style={{ flex:1 }}><div style={{ fontWeight:700 }}>{co.name}</div><div style={{ color:"#64748b" }}>{FLAGS[co.country]||"🌐"} {co.city}</div></div>{ct&&<div><div><Phone size={11} style={{ verticalAlign:"middle" }}/> {ct.phone}</div><div><Mail size={11} style={{ verticalAlign:"middle" }}/> {ct.email}</div></div>}</div>}
+      {co&&<div style={{ padding:12,background:"#f8fafc",borderRadius:8,display:"flex",gap:10,fontSize:12 }}><CompanyLogo company={co} size={38}/><div style={{ flex:1 }}><div style={{ fontWeight:700 }}>{co.name}</div><div style={{ color:"#64748b" }}>{FLAGS[co.country]||"🌐"} {co.city}</div></div>{ct&&<div><div><Phone size={11} style={{ verticalAlign:"middle" }}/> {ct.phone}</div><div><Mail size={11} style={{ verticalAlign:"middle" }}/> {ct.email}</div></div>}</div>}
     </Modal>
   );
 }
