@@ -2306,6 +2306,26 @@
       "retailer_inactive_inline": "(retailer inactive)",
       "active_account_marker": "✓ active"
     },
+    "package": {
+      "label_standard_one_format": "Standard – {{qty}} submission",
+      "label_standard_few_format": "Standard – {{qty}} submissions",
+      "label_standard_many_format": "Standard – {{qty}} submissions",
+      "label_standard_other_format": "Standard – {{qty}} submissions",
+      "label_premium_one_format": "Premium – {{qty}} submission",
+      "label_premium_few_format": "Premium – {{qty}} submissions",
+      "label_premium_many_format": "Premium – {{qty}} submissions",
+      "label_premium_other_format": "Premium – {{qty}} submissions",
+      "label_with_price_standard_one_format": "Standard – {{qty}} submission ({{perSend}} EUR/submission)",
+      "label_with_price_standard_few_format": "Standard – {{qty}} submissions ({{perSend}} EUR/submission)",
+      "label_with_price_standard_many_format": "Standard – {{qty}} submissions ({{perSend}} EUR/submission)",
+      "label_with_price_standard_other_format": "Standard – {{qty}} submissions ({{perSend}} EUR/submission)",
+      "label_with_price_premium_one_format": "Premium – {{qty}} submission ({{perSend}} EUR/submission)",
+      "label_with_price_premium_few_format": "Premium – {{qty}} submissions ({{perSend}} EUR/submission)",
+      "label_with_price_premium_many_format": "Premium – {{qty}} submissions ({{perSend}} EUR/submission)",
+      "label_with_price_premium_other_format": "Premium – {{qty}} submissions ({{perSend}} EUR/submission)",
+      "transaction_purchase_format": "Package purchase: {{pkgLabel}}",
+      "transaction_topup": "Top-up"
+    },
     "sidebar": {
       "dashboard": "Dashboard",
       "preconnect_section": "PreConnect",
