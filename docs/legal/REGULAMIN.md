@@ -89,7 +89,7 @@ Do korzystania z Serwisu wymagane jest:
    - **17–22 września 2026** — algorytm dopasowania par + ręczne korekty Administratora.
    - **22 września 2026** — publikacja finalnego harmonogramu spotkań.
    - **24 września 2026** — Fresh Market 2026 — dzień spotkań B2B.
-3. Dostawca może wskazać **maksymalnie 5 sieci głównych** (oznaczone ⭐) oraz dowolną liczbę sieci rezerwowych (oznaczone 👍).
+3. Dostawca w ramach jednego pakietu może wskazać **maksymalnie 5 sieci głównych** (oznaczone ⭐) oraz dowolną liczbę sieci rezerwowych (oznaczone 👍).
 4. **Algorytm dopasowania** priorytetyzuje spotkania według następującej hierarchii:
    1. Obustronne potwierdzenie (Dostawca wybrał Sieć + Sieć zaakceptowała Dostawcę).
    2. Data wykupienia Pakietu (wcześniejsza płatność = wcześniejszy numer w grafiku).
