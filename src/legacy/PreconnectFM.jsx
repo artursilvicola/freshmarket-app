@@ -1366,7 +1366,7 @@ function FloatingChat({ account, messages, onSendMessage, onMarkThreadRead }) {
 /* ══════════════════════════════════════════════════════════════════════════
    PAGE ADMIN CHAT — widok administratora z listą wątków i oknem rozmowy
 ══════════════════════════════════════════════════════════════════════════ */
-function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [], retailers = [], onSendReply, onMarkThreadRead, onSuggestReply }) {
+function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [], retailers = [], initialSelectedId = null, onSendReply, onMarkThreadRead, onSuggestReply }) {
   const { t, i18n } = useTranslation("legacy");
   // [P2-extras review] AI fallback: getAiAnswer() zwraca PL z KNOWLEDGE_BASE.
   // W EN locale używamy generic fallback z legacy.chat.admin.ai_fallback_reply,
@@ -1493,8 +1493,12 @@ function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [
       if (m.timestamp > seen[userId].lastTs) seen[userId].lastTs = m.timestamp;
       if (m.fromId !== "admin" && !m.read) seen[userId].unread++;
     });
+    const selected = canonicalParticipantId(initialSelectedId || selectedId);
+    if (selected && selected !== "admin" && !seen[selected]) {
+      seen[selected] = { userId: selected, lastTs: Number.MAX_SAFE_INTEGER, unread: 0, draft: true };
+    }
     return Object.values(seen).sort((a,b) => b.lastTs - a.lastTs);
-  }, [messages, accountById, profileById]);
+  }, [messages, accountById, profileById, selectedId, initialSelectedId]);
 
   // Thread for selected user
   const thread = useMemo(() => {
@@ -1512,6 +1516,12 @@ function PageAdminChat({ messages, runtimeAccounts, profiles = [], companies = [
       await Promise.all([...participantAliases(uid)].map(alias => onMarkThreadRead(alias, "admin")));
     }
   }
+
+  useEffect(() => {
+    const next = canonicalParticipantId(initialSelectedId);
+    if (!next || next === "admin" || next === selectedId) return;
+    void selectUser(next);
+  }, [initialSelectedId, accountById, profileById, profileIdsByCompanyId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function sendReply() {
     const t = replyText.trim();
@@ -1796,6 +1806,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   );
   const [sid,    setSid]    = useState(null);
   const [flash,  setFlash]  = useState(null);
+  const [adminChatTargetId, setAdminChatTargetId] = useState(null);
   // co is derived from active account when supplier
   // OFFERS — ładowane z Supabase (legacy_offers table). Seed jeśli puste.
   const [offers, _setOffersRaw] = useState(OFFERS_INIT);
@@ -2703,7 +2714,16 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const rem     = Math.max(0, pkgMax - pkgUsed);
 
   const fl  = (m,t) => { setFlash({m, t:t||"success"}); setTimeout(()=>setFlash(null), 3800); };
-  const nav = (p,id) => { setPg(p); setSid(id||null); setFlash(null); };
+  const nav = (p,id) => {
+    setAdminChatTargetId(null);
+    setPg(p); setSid(id||null); setFlash(null);
+  };
+  const openAdminChatWithCompany = (companyId) => {
+    setAdminChatTargetId(companyId || null);
+    setPg("a-chat");
+    setSid(null);
+    setFlash(null);
+  };
 
   function resetToSeed() {
     // [B2B Round ghost-data-cleanup] Hard-block resetToSeed in production.
@@ -3191,8 +3211,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
-    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={()=>nav("a-chat")}/>;
-    if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
+    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany}/>;
+    if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
@@ -8453,7 +8473,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       <Eye size={11}/> {t("admin.firmy.row.open_details")}
                     </Btn>
                     {onOpenAdminChat && (
-                      <Btn sm outline onClick={() => onOpenAdminChat()} title={t("admin.firmy.row.open_chat_legacy_tooltip")}>
+                      <Btn sm outline onClick={() => onOpenAdminChat(firmCo?.id || lim.id)} title={t("admin.firmy.row.open_chat_legacy_tooltip")}>
                         <MessageSquare size={11}/> {t("admin.firmy.row.open_chat_legacy")}
                       </Btn>
                     )}
