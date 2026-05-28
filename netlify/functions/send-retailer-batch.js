@@ -366,6 +366,15 @@ export const handler = async (event) => {
     }
   }
 
+  // [P2-backend-mails C3 fix] `subject` was undefined here after the per-locale
+  // refactor (it only existed inside dry_run + the buyer loop). Codex review
+  // flagged this as ReferenceError blocker. Extract subjects from
+  // renderedByLocale map and return both: a default subject (first rendered)
+  // for back-compat plus a `subjects_by_locale` map for full diagnostics.
+  const subjectByLocale = Object.fromEntries(
+    [...renderedByLocale.entries()].map(([lng, rendered]) => [lng, rendered.subject])
+  );
+  const firstRendered = renderedByLocale.values().next().value || pickRender("pl");
   return json(200, {
     ok: anySent,
     sent_count: eligible.length,
@@ -374,7 +383,8 @@ export const handler = async (event) => {
     buyers_failed: resendResults.filter((r) => !r.ok),
     send_ids_marked: markedSendIds,
     skipped: skipped.map((s) => ({ legacy_id: s.legacy_id, status: s.status })),
-    subject,
+    subject: firstRendered.subject,
+    subjects_by_locale: subjectByLocale,
   });
 };
 
