@@ -1045,6 +1045,20 @@
         "website_label": "Strona WWW",
         "phone_label": "Telefon"
       },
+      "visibility": {
+        "card_title": "Widoczność profilu w katalogu kupców",
+        "intro": "Domyślnie profil Twojej firmy jest widoczny dla wszystkich aktywnych sieci handlowych w katalogu. Zaznacz sieci, przed którymi chcesz ukryć profil.",
+        "retailer_list_label": "Ukryj profil przed wybranymi sieciami",
+        "visible_all": "Widoczny dla wszystkich aktywnych sieci",
+        "hidden_count_format": "Ukryty przed {{count}} sieciami",
+        "empty_retailers": "Brak aktywnych sieci do wyboru.",
+        "visible_badge": "widoczny",
+        "hidden_badge": "ukryty",
+        "save_btn": "Zapisz widoczność",
+        "saving": "Zapisywanie...",
+        "saved": "Widoczność profilu zapisana.",
+        "save_error_format": "Nie udało się zapisać widoczności: {{message}}"
+      },
       "desc": {
         "card_title": "Opis firmy",
         "ready_badge": "Gotowy do wyświetlenia",

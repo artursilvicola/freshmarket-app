@@ -1045,6 +1045,20 @@
         "website_label": "Website",
         "phone_label": "Phone"
       },
+      "visibility": {
+        "card_title": "Profile visibility in the buyer catalog",
+        "intro": "By default, your company profile is visible to all active retailers in the catalog. Select retailers you want to hide your profile from.",
+        "retailer_list_label": "Hide profile from selected retailers",
+        "visible_all": "Visible to all active retailers",
+        "hidden_count_format": "Hidden from {{count}} retailers",
+        "empty_retailers": "No active retailers to choose from.",
+        "visible_badge": "visible",
+        "hidden_badge": "hidden",
+        "save_btn": "Save visibility",
+        "saving": "Saving...",
+        "saved": "Profile visibility saved.",
+        "save_error_format": "Could not save visibility: {{message}}"
+      },
       "desc": {
         "card_title": "Company description",
         "ready_badge": "Ready to display",
