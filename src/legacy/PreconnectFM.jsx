@@ -3211,7 +3211,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
-    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany}/>;
+    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
@@ -7898,7 +7898,27 @@ const ACCOUNT_STATUS_LABELS = {
   suspended:      ["Wstrzymane",                "#dc2626", "#fee2e2"],
 };
 
-function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity, onOpenAdminChat }) {
+function pickCompanyAccountOperator(companyId, profiles = []) {
+  const id = companyId ? String(companyId) : "";
+  if (!id) return null;
+  const linked = (profiles || []).filter(p => p?.company_id && String(p.company_id) === id);
+  if (!linked.length) return null;
+  const supplierProfiles = linked.filter(p => p.role === "supplier");
+  const pool = supplierProfiles.length ? supplierProfiles : linked;
+  return [...pool].sort((a, b) => {
+    const inactiveA = a.active === false ? 1 : 0;
+    const inactiveB = b.active === false ? 1 : 0;
+    if (inactiveA !== inactiveB) return inactiveA - inactiveB;
+    return String(a.created_at || "").localeCompare(String(b.created_at || ""));
+  })[0] || null;
+}
+
+function pickCompanyBusinessContact(company) {
+  if (!Array.isArray(company?.contacts)) return null;
+  return company.contacts.find(c => c?.email || c?.phone || c?.name) || company.contacts[0] || null;
+}
+
+function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity, onOpenAdminChat, profiles = [] }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -8389,13 +8409,13 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
           const statusMeta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
           const [, statusColor, statusBg] = statusMeta;
           const statusLbl = t(`admin.firmy.status_labels.${status}`, { defaultValue: statusMeta[0] });
-          // Contact extraction: primary contact (contacts[0]) z fallbackiem
-          // na company-level email/phone (firmCo.email, firmCo.phone).
-          const primaryContact = (firmCo?.contacts && firmCo.contacts[0]) || {};
-          const contactName = primaryContact.name || null;
-          const contactPosition = primaryContact.position || null;
-          const contactEmail = primaryContact.email || firmCo?.email || null;
-          const contactPhone = primaryContact.phone || firmCo?.phone || null;
+          const accountOperator = pickCompanyAccountOperator(firmCo?.id || lim.id, profiles);
+          const businessContact = pickCompanyBusinessContact(firmCo);
+          const contactName = accountOperator?.name || businessContact?.name || null;
+          const contactPosition = accountOperator?.position || businessContact?.position || null;
+          const contactEmail = accountOperator?.email || businessContact?.email || firmCo?.email || null;
+          const contactPhone = accountOperator?.phone || businessContact?.phone || firmCo?.phone || null;
+          const contactLabelKey = accountOperator ? "admin.firmy.row.account_operator_label" : "admin.firmy.row.business_contact_label";
           const countryFlag = FLAGS[lim.country] || "";
           const countryLabel = getCountryName(lim.country) || lim.country || "—";
           return (
@@ -8419,7 +8439,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                   <div style={{ display:"flex",flexWrap:"wrap",gap:"4px 14px",marginTop:6,fontSize:11,color:"#64748b",alignItems:"center" }}>
                     <span>{countryFlag ? `${countryFlag} ` : ""}{countryLabel}</span>
                     <span>
-                      {t("admin.firmy.row.contact_person_label")}:{" "}
+                      {t(contactLabelKey)}:{" "}
                       {contactName
                         ? (contactPosition ? `${contactName} (${contactPosition})` : contactName)
                         : <span style={{ color:"#94a3b8",fontStyle:"italic" }}>{t("admin.firmy.row.no_contact_person")}</span>}
@@ -8491,7 +8511,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
           );
         })}
         {previewCompany && (
-          <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" onClose={()=>setPreviewCompany(null)}/>
+          <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" accountProfiles={profiles} onOpenChat={onOpenAdminChat} onClose={()=>setPreviewCompany(null)}/>
         )}
       </div>
     );
@@ -8552,7 +8572,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         );
       })}
       {previewCompany && (
-        <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" onClose={()=>setPreviewCompany(null)}/>
+        <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" accountProfiles={profiles} onOpenChat={onOpenAdminChat} onClose={()=>setPreviewCompany(null)}/>
       )}
     </div>
   );
@@ -8886,7 +8906,7 @@ function ProfileSection({ title, icon: Ic, children }) {
   );
 }
 
-function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role }) {
+function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role, accountProfiles = [], onOpenChat }) {
   const { t } = useTranslation("legacy");
   // [P2-shared] Helpers do labelek z konstant zdefiniowanych poniżej
   // (CUSTOMER_TYPE_LABELS / PARTNERSHIP_LABELS / CAPABILITY_LABELS) — używamy
@@ -8918,6 +8938,7 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
   const hasOffer = offer.products_year_round || offer.products_seasonal || customerTypes.length > 0 || offer.private_label;
   const hasMaterials = materials.length > 0;
   const hasCerts = certs.length > 0;
+  const accountOperator = role === "admin" ? pickCompanyAccountOperator(co?.id, accountProfiles) : null;
 
   return (
     <Modal title={t("common.company_preview.modal_title")} onClose={onClose} wide>
@@ -9024,6 +9045,42 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
                 {supplierPitch}
               </div>
             </ProfileSection>
+          )}
+        </div>
+      )}
+      {role === "admin" && (
+        <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,marginTop:6 }}>
+          <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:"#64748b",marginBottom:6 }}>{t("common.company_preview.account_operator_title")}</div>
+          {accountOperator ? (
+            <div style={{ padding:10,background:"#f8fafc",borderRadius:7,marginBottom:7,border:"1px solid #e2e8f0" }}>
+              <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap" }}>
+                <div>
+                  <div style={{ fontWeight:700,fontSize:13 }}>{accountOperator.name || accountOperator.email || accountOperator.id}</div>
+                  {accountOperator.position && <div style={{ fontSize:12,color:"#64748b" }}>{accountOperator.position}</div>}
+                  <div style={{ display:"flex",gap:"4px 12px",flexWrap:"wrap",marginTop:5,fontSize:12,color:"#64748b" }}>
+                    {accountOperator.email && (
+                      <a href={`mailto:${accountOperator.email}`} style={{ display:"inline-flex",alignItems:"center",gap:4,color:"#0d9488",textDecoration:"none" }}>
+                        <Mail size={12}/> {accountOperator.email}
+                      </a>
+                    )}
+                    {accountOperator.phone && (
+                      <a href={`tel:${accountOperator.phone}`} style={{ display:"inline-flex",alignItems:"center",gap:4,color:"#0d9488",textDecoration:"none" }}>
+                        <Phone size={12}/> {accountOperator.phone}
+                      </a>
+                    )}
+                  </div>
+                </div>
+                {onOpenChat && (
+                  <Btn sm outline onClick={() => { onClose?.(); onOpenChat(co?.id); }}>
+                    <MessageSquare size={11}/> {t("common.company_preview.account_operator_chat")}
+                  </Btn>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic",padding:"10px 12px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0" }}>
+              {t("common.company_preview.account_operator_missing")}
+            </div>
           )}
         </div>
       )}
