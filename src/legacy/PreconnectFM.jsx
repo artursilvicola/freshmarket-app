@@ -35,6 +35,8 @@ import {
   // [B2B Round supplier-onboarding-access-and-communication]
   notifySupplier as dbNotifySupplier,
   getPendingSupplierCount as dbGetPendingSupplierCount,
+  getCompanyHiddenRetailers as dbGetCompanyHiddenRetailers,
+  setCompanyHiddenRetailers as dbSetCompanyHiddenRetailers,
   // [B2B Round 5] Per-action save lifecycle helpers
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
@@ -1949,6 +1951,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // [B2B Round 2.1] companies: load from Supabase on mount; seed if empty.
   const [companies, _setCompaniesRaw] = useState(COMPANIES_DB);
   const [companiesLoaded, setCompaniesLoaded] = useState(false);
+  const [companyHiddenRetailers, setCompanyHiddenRetailers] = useState([]);
   useEffect(() => {
     let canceled = false;
     (async () => {
@@ -1982,6 +1985,19 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     })();
     return () => { canceled = true; };
   }, []);
+  useEffect(() => {
+    if (!companiesLoaded) return;
+    let canceled = false;
+    (async () => {
+      try {
+        const rows = await dbGetCompanyHiddenRetailers(account.role === "supplier" ? account.id : null);
+        if (!canceled) setCompanyHiddenRetailers(rows || []);
+      } catch (e) {
+        console.warn("[load company hidden retailers]", e);
+      }
+    })();
+    return () => { canceled = true; };
+  }, [companiesLoaded, account.role, account.id]);
   // [B2B Round 2.2] Upewnij sie ze firma zalogowanego suppliera jest w state.
   // Bez tego PageCompany / FM supplier widget moze fallbackowac do COMPANY_INIT.
   useEffect(() => {
@@ -3194,7 +3210,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 
   function renderPage(){
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
-    if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers}/>;
+    if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers} retailers={retailers} hiddenRetailers={companyHiddenRetailers} setHiddenRetailers={setCompanyHiddenRetailers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
     if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey} setOffers={setOffers} fl={fl}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
@@ -3205,7 +3221,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
-    if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role}/>;
+    if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
@@ -4514,9 +4530,11 @@ function materialIsPdf(url) {
   return /\.pdf(\?|$)/i.test(url);
 }
 
-function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers }) {
+function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers, retailers = [], hiddenRetailers = [], setHiddenRetailers }) {
   const { t } = useTranslation("legacy");
   const [c,setC]=useState({...co, contacts:Array.isArray(co.contacts)?co.contacts:[]}); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
+  const [visibilitySaving, setVisibilitySaving] = useState(false);
+  const [hiddenRetailerDraft, setHiddenRetailerDraft] = useState([]);
   const u = (k, v) => setC(prev => ({ ...prev, [k]: v }));
   // Pomocnik do edycji zagnieżdżonych pól w profile_data.
   // setPd("offer", "private_label", true) -> {profile_data: {offer: {private_label: true}}}
@@ -4553,6 +4571,42 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
     }))
     .filter(ct=>ct.name || ct.position || ct.phone || ct.email);
   const contacts = Array.isArray(c.contacts) ? c.contacts : [];
+  useEffect(() => {
+    const id = c.id || companyId;
+    setHiddenRetailerDraft((hiddenRetailers || [])
+      .filter(row => String(row.company_id) === String(id))
+      .map(row => Number(row.retailer_id))
+      .filter(Number.isFinite)
+    );
+  }, [hiddenRetailers, c.id, companyId]);
+  const activeRetailersForVisibility = useMemo(
+    () => [...(retailers || [])]
+      .filter(r => r.active !== false)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), i18n.language?.startsWith("en") ? "en" : "pl")),
+    [retailers]
+  );
+  const hiddenRetailerSet = useMemo(() => new Set(hiddenRetailerDraft.map(Number)), [hiddenRetailerDraft]);
+  const toggleHiddenRetailer = (retailerId) => {
+    const id = Number(retailerId);
+    setHiddenRetailerDraft(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const saveCatalogVisibility = async () => {
+    const id = c.id || companyId;
+    if (!id) return;
+    setVisibilitySaving(true);
+    try {
+      const saved = await dbSetCompanyHiddenRetailers(id, hiddenRetailerDraft);
+      setHiddenRetailers?.(prev => [
+        ...(prev || []).filter(row => String(row.company_id) !== String(id)),
+        ...(saved || []),
+      ]);
+      fl(t("supplier.company.visibility.saved"));
+    } catch (e) {
+      fl(t("supplier.company.visibility.save_error_format", { message: e?.message || e }), "error");
+    } finally {
+      setVisibilitySaving(false);
+    }
+  };
   const calcCompleteness=(d)=>{
     let pts=0;
     if(d.logo) pts+=20;
@@ -4679,6 +4733,44 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
         <Row><Inp label={t("supplier.company.basics.website_label")} value={c.website||""} onChange={e=>u("website",e.target.value)}/><Inp label={t("supplier.company.basics.phone_label")} value={c.phone||""} onChange={e=>u("phone",e.target.value)}/></Row>
       </Card>
       {/* Opisy AI — dwa warstwy: krótki (podgląd) + standardowy (główny) */}
+      <Card title={t("supplier.company.visibility.card_title")} icon={Eye} actions={
+        <Badge color={hiddenRetailerDraft.length ? "#d97706" : "#059669"} bg={hiddenRetailerDraft.length ? "#fef3c7" : "#d1fae5"}>
+          {hiddenRetailerDraft.length
+            ? t("supplier.company.visibility.hidden_count_format", { count: hiddenRetailerDraft.length })
+            : t("supplier.company.visibility.visible_all")
+          }
+        </Badge>
+      }>
+        <div style={{ fontSize:12,color:"#64748b",lineHeight:1.55,marginBottom:12 }}>
+          {t("supplier.company.visibility.intro")}
+        </div>
+        <div style={{ fontSize:12,fontWeight:700,color:"#334155",marginBottom:8 }}>
+          {t("supplier.company.visibility.retailer_list_label")}
+        </div>
+        {activeRetailersForVisibility.length === 0 ? (
+          <Alrt type="info">{t("supplier.company.visibility.empty_retailers")}</Alrt>
+        ) : (
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:8,marginBottom:12 }}>
+            {activeRetailersForVisibility.map(r => {
+              const hidden = hiddenRetailerSet.has(Number(r.id));
+              return (
+                <label key={r.id} style={{ display:"flex",alignItems:"center",gap:8,padding:"9px 10px",border:`1px solid ${hidden ? "#f59e0b" : "#e2e8f0"}`,background:hidden ? "#fffbeb" : "white",borderRadius:8,cursor:"pointer",fontSize:12 }}>
+                  <input type="checkbox" checked={hidden} onChange={() => toggleHiddenRetailer(r.id)} style={{ accentColor:"#d97706" }}/>
+                  <span style={{ flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{r.name}</span>
+                  <span style={{ fontSize:10,color:hidden ? "#92400e" : "#059669",fontWeight:700 }}>
+                    {hidden ? t("supplier.company.visibility.hidden_badge") : t("supplier.company.visibility.visible_badge")}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <div style={{ display:"flex",justifyContent:"flex-end" }}>
+          <Btn primary onClick={saveCatalogVisibility} disabled={visibilitySaving}>
+            {visibilitySaving ? t("supplier.company.visibility.saving") : t("supplier.company.visibility.save_btn")}
+          </Btn>
+        </div>
+      </Card>
       <Card title={t("supplier.company.desc.card_title")} icon={Bot} actions={
         true
           ? <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>{t("supplier.company.desc.ready_badge")}</span>
@@ -6417,7 +6509,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
 }
 
 
-function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role }) {
+function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role, hiddenRetailers = [] }) {
   // [Krok P2-2b] Bilingual via legacy.buyer.catalog.*
   const { t } = useTranslation("legacy");
   const [search, setSearch]         = useState("");
@@ -6425,7 +6517,23 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
   const [filterCat, setFilterCat]   = useState("");
   const [previewCo, setPreviewCo]   = useState(null);
 
-  const filtered = companies.filter(c => {
+  const hiddenCompanyIdsForBuyer = useMemo(() => {
+    if (role !== "buyer" || !buyerRetailerId) return new Set();
+    return new Set((hiddenRetailers || [])
+      .filter(row => Number(row.retailer_id) === Number(buyerRetailerId))
+      .map(row => String(row.company_id))
+    );
+  }, [hiddenRetailers, buyerRetailerId, role]);
+
+  const catalogCompanies = companies.filter(c => {
+    if (role === "buyer") {
+      if (c.account_status && c.account_status !== "active") return false;
+      if (hiddenCompanyIdsForBuyer.has(String(c.id))) return false;
+    }
+    return true;
+  });
+
+  const filtered = catalogCompanies.filter(c => {
     if(search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     if(filterCountry && c.country !== filterCountry) return false;
     if(filterCat && !(c.categories||[]).includes(filterCat)) return false;
@@ -6453,7 +6561,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
           {t("buyer.catalog.subtitle_pre")}<span style={{ color:"#94a3b8" }}>{t("buyer.catalog.subtitle_post")}<strong>{t("buyer.catalog.subtitle_link")}</strong>.</span>
         </div>
         <div style={{fontSize:12,color:"#64748b",marginTop:10}}>
-          {t("buyer.catalog.summary",{total:companies.length,withOffers:companies.filter(c=>activeOffersCount(c)>0).length})}
+          {t("buyer.catalog.summary",{total:catalogCompanies.length,withOffers:catalogCompanies.filter(c=>activeOffersCount(c)>0).length})}
         </div>
       </div>
       <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
@@ -6463,7 +6571,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
         <select value={filterCountry} onChange={e=>setFilterCountry(e.target.value)}
           style={{padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
           <option value="">{t("buyer.catalog.country_filter_all")}</option>
-          {[...new Set(companies.map(c=>c.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {getCountryName(c)}</option>)}
+          {[...new Set(catalogCompanies.map(c=>c.country))].sort().map(c=><option key={c} value={c}>{FLAGS[c]||"🌐"} {getCountryName(c)}</option>)}
         </select>
         <select value={filterCat} onChange={e=>setFilterCat(e.target.value)}
           style={{padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>

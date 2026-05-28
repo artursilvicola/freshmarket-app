@@ -89,6 +89,48 @@ export async function getCompany(id) {
   return data;
 }
 
+export async function getCompanyHiddenRetailers(companyId = null) {
+  let q = supabase
+    .from("company_hidden_retailers")
+    .select("company_id, retailer_id, created_at");
+  if (companyId) q = q.eq("company_id", companyId);
+  const { data, error } = await q;
+  if (error) {
+    // Table exists after migration 037. Until production deploy catches up,
+    // keep catalog usable and simply behave as "visible to everyone".
+    console.warn("[getCompanyHiddenRetailers]", error.message);
+    return [];
+  }
+  return data || [];
+}
+
+export async function setCompanyHiddenRetailers(companyId, retailerIds = []) {
+  if (!companyId) throw new Error(i18n.t("legacy:errors.db.company_id_required"));
+  const ids = [...new Set((Array.isArray(retailerIds) ? retailerIds : [])
+    .map((id) => Number(id))
+    .filter(Number.isFinite)
+  )];
+
+  const { error: deleteError } = await supabase
+    .from("company_hidden_retailers")
+    .delete()
+    .eq("company_id", companyId);
+  if (deleteError) throw deleteError;
+
+  if (!ids.length) return [];
+
+  const rows = ids.map((retailer_id) => ({
+    company_id: companyId,
+    retailer_id,
+  }));
+  const { data, error } = await supabase
+    .from("company_hidden_retailers")
+    .insert(rows)
+    .select("company_id, retailer_id, created_at");
+  if (error) throw error;
+  return data || [];
+}
+
 export async function updateCompany(id, patch) {
   // [B2B Round adaptive-company-profile-ai + supplier-onboarding-access-and-communication]
   // Whitelist kolumn. patch może pochodzić ze stanu komponentu z dodatkowymi

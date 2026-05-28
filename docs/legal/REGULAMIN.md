@@ -78,6 +78,7 @@ Do korzystania z Serwisu wymagane jest:
    - kategoria produktu nie odpowiada profilowi działalności wybranej Sieci.
 6. **Wysyłki realizowane są w pierwszy wtorek każdego miesiąca** — wszystkie Propozycje zatwierdzone w danym miesiącu trafiają do Sieci w jednym mailingu zbiorczym.
 7. Dostawca może w każdej chwili **usunąć własną Propozycję** — pod warunkiem, że nie została jeszcze wysłana do żadnej Sieci. Po pierwszej wysyłce usunięcie jest niemożliwe (Propozycja żyje w pipeline procesowym Operatora).
+8. Profil Dostawcy w katalogu firm jest domyślnie widoczny dla zalogowanych Kupców reprezentujących aktywne Sieci. Dostawca może w panelu ukryć profil przed wybranymi Sieciami; ukrycie profilu w katalogu nie wpływa na Propozycje już wysłane do danej Sieci ani na rozliczenia wysyłek.
 
 ---
 
