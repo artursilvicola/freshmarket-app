@@ -34,6 +34,7 @@ import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { renderRetailerEmail, buildSubject } from "./_shared/render-retailer-email.js";
 import { tplOffersSentToRetailer } from "./_shared/supplier-email-templates.js";
+import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -42,8 +43,11 @@ const cors = {
 };
 
 export const handler = async (event) => {
+  // [P2-backend-mails C3] adminFacing locale (caller = admin).
+  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  let adminLocale = resolveLocale({ acceptLanguage: acceptLang });
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== "POST") return json(405, { error: "Method Not Allowed" });
+  if (event.httpMethod !== "POST") return json(405, { error: errLoc(adminLocale, "method_not_allowed") });
 
   const env = resolveEnvConfig();
   const required = ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey", "resendApiKey"];
@@ -52,56 +56,63 @@ export const handler = async (event) => {
 
   // ── Auth: admin only ─────────────────────────────────────────────────
   const authHeader = event.headers.authorization || event.headers.Authorization;
-  if (!authHeader?.startsWith("Bearer ")) return json(401, { error: "Brak nagłówka Authorization" });
+  if (!authHeader?.startsWith("Bearer ")) return json(401, { error: errLoc(adminLocale, "no_auth_header") });
   const token = authHeader.slice(7);
 
   const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: userErr } = await supaUser.auth.getUser(token);
-  if (userErr || !userData?.user) return json(401, { error: "Nieprawidłowy token" });
+  if (userErr || !userData?.user) return json(401, { error: errLoc(adminLocale, "invalid_token") });
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+  // [P2-backend-mails C3] Pull admin `locale` for error messages.
   const { data: caller, error: callerErr } = await supaSvc
     .from("profiles")
-    .select("id, role, name, email")
+    .select("id, role, name, email, locale")
     .eq("id", userData.user.id)
     .maybeSingle();
-  if (callerErr || !caller) return json(403, { error: "Nie znaleziono profilu użytkownika" });
+  if (callerErr || !caller) return json(403, { error: errLoc(adminLocale, "profile_not_found") });
   if (caller.role !== "admin") {
-    return json(403, { error: "Tylko admin może wysyłać zbiorcze maile do sieci." });
+    return json(403, { error: errLoc(adminLocale, "only_admin_send_batch") });
   }
+  adminLocale = resolveLocale({ profileLocale: caller.locale, acceptLanguage: acceptLang });
 
   // ── Body ─────────────────────────────────────────────────────────────
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return json(400, { error: "Niepoprawny JSON" });
+    return json(400, { error: errLoc(adminLocale, "invalid_json") });
   }
+  // [P2-backend-mails C3] body.locale (admin UI) overrides profile.locale dla errorów.
+  adminLocale = resolveLocale({ bodyLocale: body.locale, profileLocale: caller.locale, acceptLanguage: acceptLang });
 
   const retailerId = Number(body.retailer_id);
   const sendIds = Array.isArray(body.send_ids) ? body.send_ids.map(Number).filter(Number.isFinite) : [];
   const dryRun = !!body.dry_run;
 
-  if (!retailerId) return json(400, { error: "Brak retailer_id" });
-  if (!sendIds.length) return json(400, { error: "send_ids jest puste — nie ma czego wysłać." });
+  if (!retailerId) return json(400, { error: errLoc(adminLocale, "missing_retailer_id") });
+  if (!sendIds.length) return json(400, { error: errLoc(adminLocale, "missing_send_ids") });
 
   // ── Retailer + active buyers ─────────────────────────────────────────
+  // [P2-backend-mails C2] Buyer rows include `locale` so each buyer can get
+  // the mailing rendered in their preferred language. Mixed locale batches
+  // result in two render passes (PL + EN) — niżej grupujemy.
   const { data: retailer, error: retErr } = await supaSvc
     .from("retailers")
     .select(`id, name, country, color, bg, logo_url,
-             buyers:profiles!fk_profiles_retailer(id, role, name, email, active, fm26_active)`)
+             buyers:profiles!fk_profiles_retailer(id, role, name, email, active, fm26_active, locale)`)
     .eq("id", retailerId)
     .maybeSingle();
-  if (retErr || !retailer) return json(404, { error: "Sieć handlowa nie znaleziona." });
+  if (retErr || !retailer) return json(404, { error: errLoc(adminLocale, "retailer_not_found_short") });
 
   const activeBuyers = (retailer.buyers || []).filter(
     (b) => b && b.role === "buyer" && b.active && b.email && b.email.includes("@")
   );
   if (!activeBuyers.length) {
     return json(400, {
-      error: `Sieć ${retailer.name} nie ma żadnego aktywnego kupca z e-mailem. Najpierw uzupełnij Buyer w "Sieci".`,
+      error: errLoc(adminLocale, "no_active_buyers", { retailerName: retailer.name }),
     });
   }
 
@@ -110,7 +121,7 @@ export const handler = async (event) => {
     .from("legacy_sends")
     .select("legacy_id, retailer_id, status, data")
     .in("legacy_id", sendIds);
-  if (sendsErr) return json(500, { error: "Błąd odczytu sends: " + sendsErr.message });
+  if (sendsErr) return json(500, { error: errLoc(adminLocale, "sends_read_failed", { detail: sendsErr.message }) });
 
   const eligible = (sendsRaw || []).filter(
     (s) => Number(s.retailer_id) === retailerId && s.status === "approved"
@@ -119,7 +130,7 @@ export const handler = async (event) => {
 
   if (!eligible.length) {
     return json(400, {
-      error: "Brak ofert gotowych do wysyłki — wszystkie są odrzucone, w moderacji albo już wysłane.",
+      error: errLoc(adminLocale, "no_approved_sends"),
       skipped_statuses: skipped.map((s) => ({ legacy_id: s.legacy_id, status: s.status })),
     });
   }
@@ -167,33 +178,51 @@ export const handler = async (event) => {
     }
   }
 
-  // ── Render HTML ──────────────────────────────────────────────────────
-  const month = monthLabel();
-  const { html, subject } = renderRetailerEmail({
-    retailer,
-    sends: eligible,
-    offers: offersMap,
-    companies: companiesMap,
-    buyerCount: activeBuyers.length,
-    month,
-    appUrl: env.b2bAppUrl,
-  });
+  // ── Render HTML — per-locale ─────────────────────────────────────────
+  // [P2-backend-mails C2] Mailing renderujemy raz na język. Buyerzy z `locale='en'`
+  // dostają EN render, reszta PL. monthLabel() jest zależny od locale (np. "May 2026"
+  // vs "Maj 2026"). dry_run pokazuje preview pierwszego renderu (PL preferowany
+  // jeśli wszyscy PL, inaczej EN).
+  const renderedByLocale = new Map(); // locale -> { html, subject, month }
+  const pickRender = (lng) => {
+    if (renderedByLocale.has(lng)) return renderedByLocale.get(lng);
+    const month = monthLabel(lng);
+    const r = renderRetailerEmail({
+      retailer,
+      sends: eligible,
+      offers: offersMap,
+      companies: companiesMap,
+      buyerCount: activeBuyers.length,
+      month,
+      appUrl: env.b2bAppUrl,
+      locale: lng,
+    });
+    renderedByLocale.set(lng, { ...r, month });
+    return renderedByLocale.get(lng);
+  };
 
   if (dryRun) {
+    // [P2-backend-mails C2] dry_run zwraca preview w języku admina (jeśli możliwe)
+    // lub PL jako domyślne. UI admin może później rozszerzyć żeby pokazać oba.
+    const previewLocale = activeBuyers.some(b => (b.locale || "pl").toLowerCase().startsWith("en")) ? "en" : "pl";
+    const { html, subject } = pickRender(previewLocale);
     return json(200, {
       ok: true,
       dry_run: true,
       subject,
+      preview_locale: previewLocale,
       offer_count: eligible.length,
       buyer_count: activeBuyers.length,
-      buyers: activeBuyers.map((b) => ({ name: b.name, email: b.email })),
+      buyers: activeBuyers.map((b) => ({ name: b.name, email: b.email, locale: b.locale || "pl" })),
       html_preview: html.slice(0, 3000),
     });
   }
 
-  // ── Wysyłka przez Resend (po jednej wiadomości na buyera) ────────────
+  // ── Wysyłka przez Resend (po jednej wiadomości na buyera, w jego locale) ─
   const resendResults = [];
   for (const buyer of activeBuyers) {
+    const buyerLocale = (buyer.locale || "pl").toLowerCase().startsWith("en") ? "en" : "pl";
+    const { html, subject } = pickRender(buyerLocale);
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
@@ -210,13 +239,13 @@ export const handler = async (event) => {
       });
       if (!res.ok) {
         const detail = await res.text();
-        resendResults.push({ buyer: buyer.email, ok: false, status: res.status, detail });
+        resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: res.status, detail });
       } else {
         const r = await res.json().catch(() => ({}));
-        resendResults.push({ buyer: buyer.email, ok: true, message_id: r.id || null });
+        resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: true, message_id: r.id || null });
       }
     } catch (e) {
-      resendResults.push({ buyer: buyer.email, ok: false, status: 0, detail: e?.message || String(e) });
+      resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: 0, detail: e?.message || String(e) });
     }
   }
 
@@ -273,9 +302,11 @@ export const handler = async (event) => {
     }
     if (supplierEmailsByCompanyId.size) {
       const companyIds = [...supplierEmailsByCompanyId.keys()];
+      // [P2-backend-mails C2] Pull supplier `locale` so notification mail
+      // (offers_sent_to_retailer) renders in supplier's language.
       const { data: ownerProfiles } = await supaSvc
         .from("profiles")
-        .select("name, email, role, active, company_id")
+        .select("name, email, role, active, company_id, locale")
         .in("company_id", companyIds)
         .eq("role", "supplier");
       for (const p of ownerProfiles || []) {
@@ -312,6 +343,8 @@ export const handler = async (event) => {
           retailerName: retailer.name || "",
           sentAt: sentAtDate,
           appUrl: env.b2bAppUrl,
+          // [P2-backend-mails C2] Supplier sees notification in their language.
+          locale: group.owner.locale || "pl",
         });
         try {
           await fetch("https://api.resend.com/emails", {
@@ -333,6 +366,15 @@ export const handler = async (event) => {
     }
   }
 
+  // [P2-backend-mails C3 fix] `subject` was undefined here after the per-locale
+  // refactor (it only existed inside dry_run + the buyer loop). Codex review
+  // flagged this as ReferenceError blocker. Extract subjects from
+  // renderedByLocale map and return both: a default subject (first rendered)
+  // for back-compat plus a `subjects_by_locale` map for full diagnostics.
+  const subjectByLocale = Object.fromEntries(
+    [...renderedByLocale.entries()].map(([lng, rendered]) => [lng, rendered.subject])
+  );
+  const firstRendered = renderedByLocale.values().next().value || pickRender("pl");
   return json(200, {
     ok: anySent,
     sent_count: eligible.length,
@@ -341,12 +383,16 @@ export const handler = async (event) => {
     buyers_failed: resendResults.filter((r) => !r.ok),
     send_ids_marked: markedSendIds,
     skipped: skipped.map((s) => ({ legacy_id: s.legacy_id, status: s.status })),
-    subject,
+    subject: firstRendered.subject,
+    subjects_by_locale: subjectByLocale,
   });
 };
 
-function monthLabel() {
-  const months = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+// [P2-backend-mails C2] Locale-aware month label dla nagłówka maila retailera.
+function monthLabel(locale = "pl") {
+  const monthsPL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+  const monthsEN = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const months = locale === "en" ? monthsEN : monthsPL;
   const d = new Date();
   return `${months[d.getMonth()]} ${d.getFullYear()}`;
 }

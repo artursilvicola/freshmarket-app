@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { openAiChat } from "./_shared/openai.js";
 import { loadKompendium } from "./_shared/load-kompendium.js";
+import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -10,39 +11,46 @@ const cors = {
 };
 
 export const handler = async (event) => {
+  // [P2-backend-mails C3] Admin-only function — error msgs in admin locale.
+  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  let locale = resolveLocale({ acceptLanguage: acceptLang });
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== "POST") return json(405, { error: "Method Not Allowed" });
+  if (event.httpMethod !== "POST") return json(405, { error: errLoc(locale, "method_not_allowed") });
 
   const env = resolveEnvConfig();
   const missing = missingEnvNames(env, ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey", "openAiApiKey"]);
   if (missing.length) return json(500, envErrorPayload("ai-admin-chat-suggestion", missing));
 
   const authHeader = event.headers.authorization || event.headers.Authorization;
-  if (!authHeader?.startsWith("Bearer ")) return json(401, { error: "Brak naglowka Authorization" });
+  if (!authHeader?.startsWith("Bearer ")) return json(401, { error: errLoc(locale, "no_auth_header") });
   const token = authHeader.slice(7);
 
   const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: userErr } = await supaUser.auth.getUser(token);
-  if (userErr || !userData?.user) return json(401, { error: "Nieprawidlowy token" });
+  if (userErr || !userData?.user) return json(401, { error: errLoc(locale, "invalid_token") });
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+  // [P2-backend-mails C3] Pull admin `locale`.
   const { data: caller, error: callerErr } = await supaSvc
     .from("profiles")
-    .select("id, role, name, email")
+    .select("id, role, name, email, locale")
     .eq("id", userData.user.id)
     .maybeSingle();
   if (callerErr || caller?.role !== "admin") {
-    return json(403, { error: "Ta funkcja jest dostepna tylko dla administratora." });
+    return json(403, { error: errLoc(locale, "only_admin_ai_chat") });
   }
+  locale = resolveLocale({ profileLocale: caller.locale, acceptLanguage: acceptLang });
 
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return json(400, { error: "Niepoprawny JSON" });
+    return json(400, { error: errLoc(locale, "invalid_json") });
   }
+  // [P2-backend-mails C3] body.locale overrides.
+  locale = resolveLocale({ bodyLocale: body.locale, profileLocale: caller.locale, acceptLanguage: acceptLang });
 
   const participant = {
     name: text(body.participant?.name) || "Uczestnik",
@@ -60,7 +68,7 @@ export const handler = async (event) => {
         .slice(-12)
     : [];
 
-  if (!thread.length) return json(400, { error: "Brak wiadomosci do analizy." });
+  if (!thread.length) return json(400, { error: errLoc(locale, "missing_chat_messages") });
 
   // [B2B Round prod-rollout / AI knowledge base] Wczytaj kompendium PreConnect.
   // Plik dołączony do bundle przez included_files w netlify.toml. Failure mode:

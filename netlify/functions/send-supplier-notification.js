@@ -23,6 +23,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { pickTemplate } from "./_shared/supplier-email-templates.js";
+import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -31,8 +32,11 @@ const cors = {
 };
 
 export const handler = async (event) => {
+  // [P2-backend-mails C3] Caller-facing locale resolution (Accept-Language → body → profile).
+  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  let callerLocale = resolveLocale({ acceptLanguage: acceptLang });
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== "POST") return json(405, { error: "Method Not Allowed" });
+  if (event.httpMethod !== "POST") return json(405, { error: errLoc(callerLocale, "method_not_allowed") });
 
   const env = resolveEnvConfig();
   const missing = missingEnvNames(env, ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey", "resendApiKey"]);
@@ -43,10 +47,12 @@ export const handler = async (event) => {
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return json(400, { error: "Niepoprawny JSON" });
+    return json(400, { error: errLoc(callerLocale, "invalid_json") });
   }
+  // [P2-backend-mails C3] body.callerLocale overrides Accept-Language dla błędów.
+  callerLocale = resolveLocale({ bodyLocale: body.callerLocale, acceptLanguage: acceptLang });
   const { template, company_id, payload = {} } = body || {};
-  if (!template) return json(400, { error: "Brak template" });
+  if (!template) return json(400, { error: errLoc(callerLocale, "missing_template") });
 
   // ── Auth: admin/supplier dla większości; service-role override dla
   //         wewnętrznych wywołań (admin_new_registration / registration_accepted) ─
@@ -56,19 +62,21 @@ export const handler = async (event) => {
   let callerRole = null;
   if (!isInternal) {
     const authHeader = event.headers.authorization || event.headers.Authorization;
-    if (!authHeader?.startsWith("Bearer ")) return json(401, { error: "Brak tokena" });
+    if (!authHeader?.startsWith("Bearer ")) return json(401, { error: errLoc(callerLocale, "no_auth_token") });
     const token = authHeader.slice(7);
     const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     });
     const { data: userData, error: userErr } = await supaUser.auth.getUser(token);
-    if (userErr || !userData?.user) return json(401, { error: "Nieprawidłowy token" });
+    if (userErr || !userData?.user) return json(401, { error: errLoc(callerLocale, "invalid_token") });
     const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
-    const { data: caller } = await supaSvc.from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
+    // [P2-backend-mails C3] Pull caller `locale` for error messages (admin or supplier UI).
+    const { data: caller } = await supaSvc.from("profiles").select("role, locale").eq("id", userData.user.id).maybeSingle();
     callerRole = caller?.role || null;
     if (!["admin", "supplier"].includes(callerRole)) {
-      return json(403, { error: "Tylko admin lub supplier może wywołać." });
+      return json(403, { error: errLoc(callerLocale, "only_admin_or_supplier") });
     }
+    callerLocale = resolveLocale({ bodyLocale: body.callerLocale, profileLocale: caller?.locale, acceptLanguage: acceptLang });
   }
 
   // ── Resolve recipient ────────────────────────────────────────────────
@@ -76,6 +84,8 @@ export const handler = async (event) => {
   let companyName = payload.companyName || null;
   let contactName = payload.contactName || null;
   let country = payload.country || null;
+  // [P2-backend-mails C2] Resolve recipient locale: payload first, then DB.
+  let recipientLocale = payload.locale || null;
 
   // Dla większości templateów chcemy wyciągnąć email z profiles + nazwę z companies.
   if (company_id) {
@@ -90,18 +100,21 @@ export const handler = async (event) => {
       country = country || co.country;
       if (!payload.statusNote && co.status_note) payload.statusNote = co.status_note;
     }
-    if (!recipientEmail) {
+    if (!recipientEmail || !recipientLocale) {
+      // [P2-backend-mails C2] Pull supplier `locale` so tpl is rendered in
+      // supplier language when payload.locale missing (admin trigger path).
       const { data: ownerProfiles } = await supaSvc
         .from("profiles")
-        .select("name, email, role, active")
+        .select("name, email, role, active, locale")
         .eq("company_id", company_id)
         .eq("role", "supplier")
         .order("created_at", { ascending: true })
         .limit(1);
       const owner = ownerProfiles?.[0];
       if (owner) {
-        recipientEmail = owner.email;
-        contactName = contactName || owner.name;
+        if (!recipientEmail) recipientEmail = owner.email;
+        if (!contactName) contactName = contactName || owner.name;
+        if (!recipientLocale && owner.locale) recipientLocale = owner.locale;
       }
     }
   }
@@ -111,7 +124,7 @@ export const handler = async (event) => {
     recipientEmail = recipientEmail || "newsletter@freshmarket.eu";
   }
 
-  if (!recipientEmail) return json(400, { error: "Brak adresata maila." });
+  if (!recipientEmail) return json(400, { error: errLoc(callerLocale, "missing_recipient") });
 
   const tpl = pickTemplate(template, {
     ...payload,
@@ -119,8 +132,11 @@ export const handler = async (event) => {
     contactName: contactName || payload.contactName,
     country: country || payload.country,
     appUrl: env.b2bAppUrl,
+    // [P2-backend-mails C2] Pass resolved locale to template dispatcher.
+    // admin_new_registration ignoruje locale (zostaje PL — internal admin notification).
+    locale: recipientLocale || payload.locale || "pl",
   });
-  if (!tpl) return json(400, { error: `Nieznany template: ${template}` });
+  if (!tpl) return json(400, { error: errLoc(callerLocale, "unknown_template", { template }) });
 
   const { subject, html } = tpl;
 
@@ -140,7 +156,7 @@ export const handler = async (event) => {
   });
   if (!resendRes.ok) {
     const detail = await resendRes.text();
-    return json(502, { error: "Resend error", status: resendRes.status, detail });
+    return json(502, { error: errLoc(callerLocale, "resend_error"), status: resendRes.status, detail });
   }
   const r = await resendRes.json().catch(() => ({}));
 

@@ -28,6 +28,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { pickTemplate } from "./_shared/supplier-email-templates.js";
+import { errLoc } from "./_shared/error-messages.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -43,12 +44,26 @@ export const handler = async (event) => {
   const missing = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey", "resendApiKey"]);
   if (missing.length) return json(500, envErrorPayload("register-supplier-self", missing));
 
+  // [P2-backend-mails C3] locale dla błędów zwracanych w body — używamy
+  // body.locale, jeśli podane. Walidacja niżej. Errors są tłumaczone przez
+  // errLoc(locale, key) — fallback 'pl' jeśli locale brak / inny.
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return json(400, { error: "Niepoprawny JSON" });
+    // [P2-backend-mails C3] błąd parsowania → nie znamy locale, fallback 'pl'.
+    return json(400, { error: errLoc("pl", "invalid_json") });
   }
+
+  // [B2B Round prod-rollout / i18n MVP — Krok 3b]
+  // Walidacja locale — przyjmujemy tylko obsługiwane języki (pl/en).
+  // Brak / nieprawidłowa wartość → domyślnie 'pl'. Lista języków zsynchronizowana
+  // z src/i18n/locale.js SUPPORTED_LOCALES — gdy dodajemy nowy język, trzeba
+  // zaktualizować obie listy. Backend NIE robi automatycznej walidacji przez
+  // CHECK constraint w DB (świadomie — patrz migracja 036).
+  const SUPPORTED_LOCALES = ["pl", "en"];
+  const rawLocale = String(body.locale || "pl").trim().toLowerCase().split(/[-_]/)[0];
+  const locale = SUPPORTED_LOCALES.includes(rawLocale) ? rawLocale : "pl";
 
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
@@ -61,28 +76,18 @@ export const handler = async (event) => {
   const acceptedPrivacyVersion = String(body.accepted_privacy_version || "1.0").trim();
   const acceptedAt = new Date().toISOString();
 
-  // [B2B Round prod-rollout / i18n MVP — Krok 3b]
-  // Walidacja locale — przyjmujemy tylko obsługiwane języki (pl/en).
-  // Brak / nieprawidłowa wartość → domyślnie 'pl'. Lista języków zsynchronizowana
-  // z src/i18n/locale.js SUPPORTED_LOCALES — gdy dodajemy nowy język, trzeba
-  // zaktualizować obie listy. Backend NIE robi automatycznej walidacji przez
-  // CHECK constraint w DB (świadomie — patrz migracja 036).
-  const SUPPORTED_LOCALES = ["pl", "en"];
-  const rawLocale = String(body.locale || "pl").trim().toLowerCase().split(/[-_]/)[0];
-  const locale = SUPPORTED_LOCALES.includes(rawLocale) ? rawLocale : "pl";
-
   // ── Walidacja ──────────────────────────────────────────────────────
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return json(400, { error: "Podaj poprawny adres email." });
+    return json(400, { error: errLoc(locale, "missing_email") });
   }
   if (!password || password.length < 8) {
-    return json(400, { error: "Hasło musi mieć minimum 8 znaków." });
+    return json(400, { error: errLoc(locale, "missing_password") });
   }
   if (!companyName || companyName.length < 2) {
-    return json(400, { error: "Podaj nazwę firmy." });
+    return json(400, { error: errLoc(locale, "missing_company_name") });
   }
   if (companyName.length > 200) {
-    return json(400, { error: "Nazwa firmy jest za długa." });
+    return json(400, { error: errLoc(locale, "company_name_too_long") });
   }
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
@@ -94,7 +99,7 @@ export const handler = async (event) => {
     .eq("email", email)
     .maybeSingle();
   if (existing) {
-    return json(409, { error: "Konto z tym adresem email już istnieje. Spróbuj zalogować się lub odzyskać hasło." });
+    return json(409, { error: errLoc(locale, "email_exists") });
   }
 
   // ── Krok 1: utwórz auth user ────────────────────────────────────────
@@ -116,7 +121,7 @@ export const handler = async (event) => {
     },
   });
   if (userErr || !userData?.user) {
-    return json(500, { error: "Nie udało się utworzyć konta: " + (userErr?.message || "unknown") });
+    return json(500, { error: errLoc(locale, "create_user_failed", { detail: userErr?.message || "unknown" }) });
   }
   const userId = userData.user.id;
 
@@ -141,7 +146,7 @@ export const handler = async (event) => {
     } catch {
       // Best effort cleanup. Pierwotny błąd zwracamy niżej.
     }
-    return json(500, { error: "Nie udało się utworzyć firmy: " + (coErr?.message || "unknown") });
+    return json(500, { error: errLoc(locale, "create_company_failed", { detail: coErr?.message || "unknown" }) });
   }
 
   // ── Krok 3: utwórz profile (rola supplier) ─────────────────────────
@@ -180,7 +185,7 @@ export const handler = async (event) => {
     } catch {
       // Best effort cleanup. Pierwotny błąd zwracamy niżej.
     }
-    return json(500, { error: "Nie udało się utworzyć profilu: " + profErr.message });
+    return json(500, { error: errLoc(locale, "create_profile_failed", { detail: profErr.message }) });
   }
 
   // ── Krok 4: wyślij maile (fire-and-forget, nie blokujemy odpowiedzi) ──

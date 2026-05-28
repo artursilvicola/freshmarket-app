@@ -20,6 +20,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
+import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
 
@@ -30,11 +31,14 @@ const cors = {
 };
 
 export const handler = async (event) => {
+  // [P2-backend-mails C3] Locale resolution (Accept-Language → profile → body).
+  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  let locale = resolveLocale({ acceptLanguage: acceptLang });
   if (event.httpMethod === "OPTIONS") {
     return { statusCode: 204, headers: cors };
   }
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, headers: cors, body: "Method Not Allowed" };
+    return { statusCode: 405, headers: cors, body: errLoc(locale, "method_not_allowed") };
   }
 
   const env = resolveEnvConfig();
@@ -43,7 +47,7 @@ export const handler = async (event) => {
 
   const authHeader = event.headers.authorization || event.headers.Authorization;
   if (!authHeader?.startsWith("Bearer ")) {
-    return errJson(401, "Brak naglowka Authorization");
+    return errJson(401, errLoc(locale, "no_auth_header"));
   }
   const token = authHeader.slice(7);
 
@@ -51,24 +55,28 @@ export const handler = async (event) => {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
   const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
-  if (uErr || !userData?.user) return errJson(401, "Nieprawidlowy token");
+  if (uErr || !userData?.user) return errJson(401, errLoc(locale, "invalid_token"));
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+  // [P2-backend-mails C3] Pull admin `locale` for error messages.
   const { data: profile, error: pErr } = await supaSvc
     .from("profiles")
-    .select("role")
+    .select("role, locale")
     .eq("id", userData.user.id)
     .maybeSingle();
   if (pErr || profile?.role !== "admin") {
-    return errJson(403, "Tylko admin moze aktualizowac konta B2B");
+    return errJson(403, errLoc(locale, "only_admin_update_users"));
   }
+  locale = resolveLocale({ profileLocale: profile.locale, acceptLanguage: acceptLang });
 
   let body;
   try {
     body = JSON.parse(event.body || "{}");
   } catch {
-    return errJson(400, "Niepoprawny JSON");
+    return errJson(400, errLoc(locale, "invalid_json"));
   }
+  // [P2-backend-mails C3] body.locale overrides profile.locale jeśli klient przekazał.
+  locale = resolveLocale({ bodyLocale: body.locale, profileLocale: profile.locale, acceptLanguage: acceptLang });
 
   const {
     user_id,
@@ -84,7 +92,7 @@ export const handler = async (event) => {
     buyer_categories = [],
   } = body;
 
-  if (!user_id) return errJson(400, "Brak user_id");
+  if (!user_id) return errJson(400, errLoc(locale, "missing_user_id"));
   const normalizedEmail = normalizeEmail(email);
   const normalizedName = normalizeText(name);
   const normalizedPhone = normalizeText(phone);
@@ -93,11 +101,11 @@ export const handler = async (event) => {
   const normalizedBuyerCategories = normalizeBuyerCategories(buyer_categories);
 
   if (role === "buyer") {
-    if (!normalizedName) return errJson(400, "Kupiec musi mieć imię i nazwisko.");
-    if (!normalizedEmail) return errJson(400, "Kupiec musi mieć adres e-mail.");
-    if (!normalizedRetailerId) return errJson(400, "Kupiec musi być przypisany do jednej sieci handlowej.");
+    if (!normalizedName) return errJson(400, errLoc(locale, "buyer_needs_name_full"));
+    if (!normalizedEmail) return errJson(400, errLoc(locale, "buyer_needs_email"));
+    if (!normalizedRetailerId) return errJson(400, errLoc(locale, "buyer_needs_one_retailer"));
     if (active !== false && normalizedBuyerCategories.length === 0) {
-      return errJson(400, "Aktywny kupiec musi mieć przynajmniej jedną kategorię.");
+      return errJson(400, errLoc(locale, "buyer_needs_category"));
     }
   }
 
@@ -107,10 +115,10 @@ export const handler = async (event) => {
     .eq("id", user_id)
     .maybeSingle();
   if (targetErr || !targetProfile) {
-    return errJson(404, "Nie znaleziono profilu kupca do aktualizacji.");
+    return errJson(404, errLoc(locale, "target_profile_not_found"));
   }
   if (targetProfile.role !== "buyer" || role !== "buyer") {
-    return errJson(400, "Ta ścieżka służy tylko do zarządzania kupcami.");
+    return errJson(400, errLoc(locale, "buyer_only_path"));
   }
 
   const { data: retailer, error: rErr } = await supaSvc
@@ -118,16 +126,16 @@ export const handler = async (event) => {
     .select("id")
     .eq("id", normalizedRetailerId)
     .maybeSingle();
-  if (rErr || !retailer) return errJson(400, "Wybrana sieć handlowa nie istnieje.");
+  if (rErr || !retailer) return errJson(400, errLoc(locale, "retailer_not_found"));
 
   const { data: profiles, error: dupErr } = await supaSvc
     .from("profiles")
     .select("id, email")
     .eq("role", "buyer")
     .not("email", "is", null);
-  if (dupErr) return errJson(500, "Nie udało się sprawdzić duplikatów kupców.");
+  if (dupErr) return errJson(500, errLoc(locale, "duplicate_check_failed"));
   const duplicate = (profiles || []).find((p) => p.id !== user_id && normalizeEmail(p.email) === normalizedEmail);
-  if (duplicate) return errJson(409, "Kupiec z tym adresem e-mail już istnieje.");
+  if (duplicate) return errJson(409, errLoc(locale, "buyer_email_duplicate"));
 
   const authPatch = {
     user_metadata: { name: normalizedName, role, company_id, retailer_id: normalizedRetailerId },
@@ -136,7 +144,10 @@ export const handler = async (event) => {
 
   const { error: authErr } = await supaSvc.auth.admin.updateUserById(user_id, authPatch);
   if (authErr) {
-    return errJson(authErr.message?.toLowerCase().includes("already been registered") ? 409 : 500, "Nie udalo sie zaktualizowac auth.users: " + authErr.message);
+    return errJson(
+      authErr.message?.toLowerCase().includes("already been registered") ? 409 : 500,
+      errLoc(locale, "auth_update_failed", { detail: authErr.message })
+    );
   }
 
   const profilePatch = {
@@ -159,7 +170,7 @@ export const handler = async (event) => {
     .select()
     .single();
   if (saveErr) {
-    return errJson(500, "Auth zaktualizowany, ale profil nie: " + saveErr.message);
+    return errJson(500, errLoc(locale, "profile_after_auth_update_failed", { detail: saveErr.message }));
   }
 
   return okJson(saved);

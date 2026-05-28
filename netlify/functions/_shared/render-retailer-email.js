@@ -11,6 +11,10 @@
  *     buyerCount: number
  *     month:     string (np. "Maj 2026")
  *     appUrl:    string (B2B_APP_URL)
+ *     locale?:   'pl' | 'en'   // [P2-backend-mails C2] per-buyer locale
+ *                              //   resolved from profiles.locale; falls back
+ *                              //   to 'pl'. When mixed batch, caller renders
+ *                              //   twice (once per locale).
  *   }
  *
  * Wyjście: { html, subject }
@@ -32,7 +36,7 @@ const FLAG = {
   RO:"\u{1F1F7}\u{1F1F4}", SK:"\u{1F1F8}\u{1F1F0}", SI:"\u{1F1F8}\u{1F1EE}", ZA:"\u{1F1FF}\u{1F1E6}",
   SE:"\u{1F1F8}\u{1F1EA}", TR:"\u{1F1F9}\u{1F1F7}", UA:"\u{1F1FA}\u{1F1E6}", HU:"\u{1F1ED}\u{1F1FA}",
 };
-const CNAME = {
+const CNAME_PL = {
   AT:"Austria", BE:"Belgia", BG:"Bułgaria", BR:"Brazylia", CL:"Chile", CO:"Kolumbia", CR:"Kostaryka",
   HR:"Chorwacja", CY:"Cypr", CZ:"Czechy", DE:"Niemcy", DK:"Dania", EC:"Ekwador", EG:"Egipt",
   EE:"Estonia", FI:"Finlandia", FR:"Francja", GR:"Grecja", ES:"Hiszpania", NL:"Holandia",
@@ -40,24 +44,53 @@ const CNAME = {
   MT:"Malta", MA:"Maroko", PE:"Peru", PL:"Polska", PT:"Portugalia", RO:"Rumunia", SK:"Słowacja",
   SI:"Słowenia", ZA:"RPA", SE:"Szwecja", TR:"Turcja", UA:"Ukraina", HU:"Węgry",
 };
+// [P2-backend-mails C2] EN country labels — sync with src/legacy/PreconnectFM.jsx CNAMES_EN.
+const CNAME_EN = {
+  AT:"Austria", BE:"Belgium", BG:"Bulgaria", BR:"Brazil", CL:"Chile", CO:"Colombia", CR:"Costa Rica",
+  HR:"Croatia", CY:"Cyprus", CZ:"Czechia", DE:"Germany", DK:"Denmark", EC:"Ecuador", EG:"Egypt",
+  EE:"Estonia", FI:"Finland", FR:"France", GR:"Greece", ES:"Spain", NL:"Netherlands",
+  IE:"Ireland", IT:"Italy", KE:"Kenya", LV:"Latvia", LT:"Lithuania", LU:"Luxembourg", MD:"Moldova",
+  MT:"Malta", MA:"Morocco", PE:"Peru", PL:"Poland", PT:"Portugal", RO:"Romania", SK:"Slovakia",
+  SI:"Slovenia", ZA:"South Africa", SE:"Sweden", TR:"Turkey", UA:"Ukraine", HU:"Hungary",
+};
 
-export function buildSubject({ retailer, offerCount }) {
-  const safeName = retailer?.name || "sieci";
-  return `Fresh Market PreConnect – ${offerCount} ${pluralOferta(offerCount)} dla ${safeName}`;
+// [P2-backend-mails C2] Locale picker — synchronized with supplier-email-templates.
+function pickLocale(input) {
+  if (!input) return "pl";
+  const raw = String(input).trim().toLowerCase().split(/[-_]/)[0];
+  return ["pl", "en"].includes(raw) ? raw : "pl";
 }
 
-function pluralOferta(n) {
+function pluralOfertaPL(n) {
   if (n === 1) return "oferta";
   if (n >= 2 && n <= 4) return "oferty";
   return "ofert";
 }
 
-function pluralKupiec(n) {
+function pluralKupiecPL(n) {
   if (n === 1) return "kupca";
   return "kupców";
 }
 
-export function renderRetailerEmail({ retailer, sends, offers, companies, buyerCount, month, appUrl }) {
+function pluralOfferEN(n) {
+  return n === 1 ? "offer" : "offers";
+}
+
+function pluralBuyerEN(n) {
+  return n === 1 ? "buyer" : "buyers";
+}
+
+export function buildSubject({ retailer, offerCount, locale }) {
+  const lng = pickLocale(locale);
+  const safeName = retailer?.name || (lng === "en" ? "retailer" : "sieci");
+  if (lng === "en") {
+    return `Fresh Market PreConnect – ${offerCount} ${pluralOfferEN(offerCount)} for ${safeName}`;
+  }
+  return `Fresh Market PreConnect – ${offerCount} ${pluralOfertaPL(offerCount)} dla ${safeName}`;
+}
+
+export function renderRetailerEmail({ retailer, sends, offers, companies, buyerCount, month, appUrl, locale }) {
+  const lng = pickLocale(locale);
   const sortedSends = [...sends].sort((a, b) => {
     const ap = (a.data && a.data.pos) || a.pos || 99;
     const bp = (b.data && b.data.pos) || b.pos || 99;
@@ -65,17 +98,36 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
   });
 
   const offerCount = sortedSends.length;
-  const subject = buildSubject({ retailer, offerCount });
+  const subject = buildSubject({ retailer, offerCount, locale: lng });
 
-  const offerBlocks = sortedSends.map((s) => renderOfferBlock(s, offers, companies, appUrl)).join("");
+  const offerBlocks = sortedSends.map((s) => renderOfferBlock(s, offers, companies, appUrl, lng)).join("");
 
-  const introCount = `${offerCount} ${pluralOferta(offerCount)}`;
-  const buyerLine = `Trafia do ${buyerCount} ${pluralKupiec(buyerCount)} z sieci ${esc(retailer?.name || "")}`;
+  // [P2-backend-mails C2] Locale-aware copy. PL pozostaje wzorcem; EN jest
+  // tłumaczeniem 1:1 z terminologią v1.1 (Submission, Retailer, Buyer).
+  const i18n = lng === "en" ? {
+    headerSubtitleFormat: (m) => `Propositions ${esc(m)}`,
+    headerMailingFor: (name) => `Mailing for <strong style="color:rgba(255,255,255,0.9);">${esc(name)}</strong>`,
+    introGreet: "Dear Sir or Madam,",
+    introBody: (count, retName) => `we're sending you a selection of <strong>${count} ${pluralOfferEN(count)}</strong> curated for <strong>${esc(retName)}</strong> by the Fresh Market team. You'll find the details of each proposition after signing in to the platform.`,
+    buyerLine: (count, retName) => `Goes to ${count} ${pluralBuyerEN(count)} at ${esc(retName)}`,
+    footerAddress: "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Poland",
+    footerLegalFormat: (year, retName) => `You received this message because you are registered with the Fresh Market PreConnect programme as a buyer at ${esc(retName)}.<br>© ${year} KJOW Sp. z o.o. All rights reserved.`,
+  } : {
+    headerSubtitleFormat: (m) => `Propozycje ${esc(m)}`,
+    headerMailingFor: (name) => `Mailing dla <strong style="color:rgba(255,255,255,0.9);">${esc(name)}</strong>`,
+    introGreet: "Szanowni Państwo,",
+    introBody: (count, retName) => `przesyłamy zestaw <strong>${count} ${pluralOfertaPL(count)}</strong> wyselekcjonowanych dla <strong>${esc(retName)}</strong> przez zespół Fresh Market. Szczegóły każdej propozycji znajdziesz po wejściu na platformę.`,
+    buyerLine: (count, retName) => `Trafia do ${count} ${pluralKupiecPL(count)} z sieci ${esc(retName)}`,
+    footerAddress: "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska",
+    footerLegalFormat: (year, retName) => `Otrzymałeś tę wiadomość, ponieważ jesteś zarejestrowany w programie Fresh Market PreConnect jako kupiec sieci ${esc(retName)}.<br>© ${year} KJOW Sp. z o.o. Wszelkie prawa zastrzeżone.`,
+  };
+
+  const retailerName = retailer?.name || "";
 
   return {
     subject,
     html: `<!DOCTYPE html>
-<html lang="pl">
+<html lang="${lng}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -88,14 +140,14 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
       <!-- Header -->
       <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0d9488 100%);padding:28px 32px;text-align:center;">
         <div style="color:white;font-weight:800;font-size:22px;letter-spacing:-0.5px;margin-bottom:6px;">Fresh Market <span style="color:rgba(255,255,255,0.5);font-weight:600;font-size:13px;">PreConnect</span></div>
-        <div style="color:rgba(255,255,255,0.95);font-size:20px;font-weight:700;margin-bottom:4px;">Propozycje ${esc(month)}</div>
-        <div style="color:rgba(255,255,255,0.55);font-size:13px;">Mailing dla <strong style="color:rgba(255,255,255,0.9);">${esc(retailer?.name || "")}</strong></div>
+        <div style="color:rgba(255,255,255,0.95);font-size:20px;font-weight:700;margin-bottom:4px;">${i18n.headerSubtitleFormat(month)}</div>
+        <div style="color:rgba(255,255,255,0.55);font-size:13px;">${i18n.headerMailingFor(retailerName)}</div>
       </td></tr>
       <!-- Intro -->
       <tr><td style="padding:22px 32px 8px;border-left:4px solid #0d9488;border-right:4px solid #0d9488;">
-        <p style="margin:0 0 10px;color:#334155;line-height:1.6;font-size:14px;">Szanowni Państwo,</p>
-        <p style="margin:0 0 10px;color:#334155;line-height:1.65;font-size:14px;">przesyłamy zestaw <strong>${introCount}</strong> wyselekcjonowanych dla <strong>${esc(retailer?.name || "")}</strong> przez zespół Fresh Market. Szczegóły każdej propozycji znajdziesz po wejściu na platformę.</p>
-        <p style="margin:0;font-size:12px;color:#94a3b8;">${buyerLine}.</p>
+        <p style="margin:0 0 10px;color:#334155;line-height:1.6;font-size:14px;">${i18n.introGreet}</p>
+        <p style="margin:0 0 10px;color:#334155;line-height:1.65;font-size:14px;">${i18n.introBody(offerCount, retailerName)}</p>
+        <p style="margin:0;font-size:12px;color:#94a3b8;">${i18n.buyerLine(buyerCount, retailerName)}.</p>
       </td></tr>
       <!-- Offers -->
       ${offerBlocks}
@@ -103,14 +155,13 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
       <tr><td style="background:#0f172a;padding:22px 28px;text-align:center;">
         <div style="color:rgba(255,255,255,0.92);font-weight:700;font-size:14px;margin-bottom:6px;">Fresh Market PreConnect</div>
         <div style="color:rgba(255,255,255,0.45);font-size:11px;line-height:1.8;">
-          KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska<br>
+          ${i18n.footerAddress}<br>
           <a href="${esc(appUrl)}" style="color:rgba(255,255,255,0.7);text-decoration:none;">freshmarket.eu</a> ·
           <a href="mailto:newsletter@freshmarket.eu" style="color:rgba(255,255,255,0.7);text-decoration:none;">newsletter@freshmarket.eu</a> ·
           +48 603 424 346
         </div>
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.1);font-size:10px;color:rgba(255,255,255,0.35);line-height:1.6;">
-          Otrzymałeś tę wiadomość, ponieważ jesteś zarejestrowany w programie Fresh Market PreConnect jako kupiec sieci ${esc(retailer?.name || "")}.<br>
-          © ${new Date().getFullYear()} KJOW Sp. z o.o. Wszelkie prawa zastrzeżone.
+          ${i18n.footerLegalFormat(new Date().getFullYear(), retailerName)}
         </div>
       </td></tr>
     </table>
@@ -121,7 +172,7 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
   };
 }
 
-function renderOfferBlock(send, offersMap, companiesMap, appUrl) {
+function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng) {
   const data = send.data || {};
   const offerId = data.offerId || send.offer_legacy_id;
   const offer = offerId != null ? (offersMap.get(offerId) || offersMap.get(String(offerId))) : null;
@@ -138,15 +189,31 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl) {
   const certs = [...(offer.certs || []), offer.customCert].filter(Boolean);
   const packaging = [...(offer.packaging || []), offer.customPackaging].filter(Boolean);
 
+  // [P2-backend-mails C2] Locale-aware country names in origin label.
+  const cnames = lng === "en" ? CNAME_EN : CNAME_PL;
   const originLabel = offer.origin
-    ? `${FLAG[offer.origin] || "\u{1F310}"} ${esc(CNAME[offer.origin] || offer.origin)}`
+    ? `${FLAG[offer.origin] || "\u{1F310}"} ${esc(cnames[offer.origin] || offer.origin)}`
     : "";
 
   const cta = offer.cta || "";
-  const ctaLabel = cta.includes("samples") ? "Poproś o próbki"
-                 : cta.includes("rfq")     ? "Zapytaj o cenę i wolumen"
-                 : cta.includes("meet_fm") ? "Umów spotkanie"
-                 : "Zobacz ofertę";
+  // [P2-backend-mails C2] Locale-aware CTA labels.
+  const ctaLabels = lng === "en" ? {
+    samples: "Request samples",
+    rfq: "Ask about price & volume",
+    meet_fm: "Book a meeting",
+    default: "View offer",
+    supplierFallback: "Fresh Market supplier",
+  } : {
+    samples: "Poproś o próbki",
+    rfq: "Zapytaj o cenę i wolumen",
+    meet_fm: "Umów spotkanie",
+    default: "Zobacz ofertę",
+    supplierFallback: "Dostawca Fresh Market",
+  };
+  const ctaLabel = cta.includes("samples") ? ctaLabels.samples
+                 : cta.includes("rfq")     ? ctaLabels.rfq
+                 : cta.includes("meet_fm") ? ctaLabels.meet_fm
+                 : ctaLabels.default;
   // [B2B Round prod-rollout / email-open-tracking] Deep-link do panelu kupca,
   // z konkretnym send_id w query — PreconnectFM przy boot otwiera detal oferty.
   // Wcześniej link wskazywał /admin/oferty/{offerId} — kupiec nie ma roli admin
@@ -156,7 +223,7 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl) {
     ? `${appUrl}/kupiec?send=${esc(sendIdForLink)}`
     : `${appUrl}/kupiec`;
 
-  const companyName = company?.name || "Dostawca Fresh Market";
+  const companyName = company?.name || ctaLabels.supplierFallback;
   const companyLogo = company?.logo_url || company?.logo || null;
   const companyDescShort = (company?.description_short || "").trim();
 
