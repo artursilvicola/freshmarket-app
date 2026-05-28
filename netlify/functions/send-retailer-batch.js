@@ -108,7 +108,7 @@ export const handler = async (event) => {
   if (retErr || !retailer) return json(404, { error: errLoc(adminLocale, "retailer_not_found_short") });
 
   const activeBuyers = (retailer.buyers || []).filter(
-    (b) => b && b.role === "buyer" && b.active && b.email && b.email.includes("@")
+    (b) => b && b.role === "buyer" && b.active !== false && b.email && b.email.includes("@")
   );
   if (!activeBuyers.length) {
     return json(400, {
