@@ -834,7 +834,10 @@ function normalizeFmMessage(row) {
     (typeof row.thread_key === "string" && row.thread_key.startsWith("user:") ? row.thread_key.slice(5) : null) ||
     row.from_user_id ||
     null;
-  const fromId = row.from_role === "admin" ? "admin" : row.from_user_id;
+  // Supplier threads are keyed by company/account id, while Supabase stores
+  // from_user_id as the auth profile UUID. Use the thread participant id for
+  // UI grouping so admin sees the company/contact instead of a raw UUID.
+  const fromId = row.from_role === "admin" ? "admin" : (threadUserId || row.from_user_id);
   const toId = row.to_role === "admin" ? "admin" : threadUserId;
   return {
     id: row.id,
@@ -1493,6 +1496,7 @@ function PageAdminChat({ messages, runtimeAccounts, onSendReply, onMarkThreadRea
                       <span style={{ background:ROLE_COLORS_CHAT[acc.role]+"15", color:ROLE_COLORS_CHAT[acc.role], padding:"1px 5px", borderRadius:6, fontWeight:600 }}>
                         {acc.role==="supplier"?t("chat.admin.role_supplier"):acc.role==="buyer"?t("chat.admin.role_buyer"):t("chat.admin.role_admin")}
                       </span>
+                      {acc.email && <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{acc.email}</span>}
                       {lastMsg && <span>{new Date(lastMsg.timestamp).toLocaleDateString("pl-PL",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>}
                     </div>
                     {lastMsg && (
