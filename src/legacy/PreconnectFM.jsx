@@ -8977,19 +8977,18 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
           <div style={{ maxWidth:600,margin:"0 auto",fontFamily:"'Arial',Helvetica,sans-serif",fontSize:14,color:"#1a1a1a",lineHeight:1.5 }}>
             <table width="100%" cellPadding="0" cellSpacing="0" style={{ borderRadius:"12px 12px 0 0",overflow:"hidden" }}>
               <tbody><tr><td style={{ background:"linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0d9488 100%)",padding:"28px 32px",textAlign:"center" }}>
-                <div style={{ display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:10 }}>
-                  <span style={{ fontSize:24 }}>🍎</span>
-                  <span style={{ color:"white",fontWeight:800,fontSize:22,letterSpacing:"-0.5px" }}>Fresh Market</span>
-                  <span style={{ color:"rgba(255,255,255,0.35)",fontSize:12 }}>Preconnect</span>
+                <div style={{ display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.96)",borderRadius:12,padding:"8px 16px",marginBottom:14 }}>
+                  <FreshMarketLogo variant="dark" size={34} showText={false} />
                 </div>
-                <div style={{ color:"rgba(255,255,255,0.95)",fontSize:22,fontWeight:700,marginBottom:6 }}>Propozycje Preconnect – {monthName}</div>
-                <div style={{ color:"rgba(255,255,255,0.5)",fontSize:13 }}>Mailing dedykowany dla <strong style={{ color:"rgba(255,255,255,0.85)" }}>{retailer?.name}</strong></div>
+                <div style={{ color:"rgba(255,255,255,0.95)",fontSize:22,fontWeight:700,marginBottom:6 }}>Propozycje od dostawców – {monthName}</div>
+                <div style={{ color:"rgba(255,255,255,0.5)",fontSize:13 }}>Skierowane do sieci <strong style={{ color:"rgba(255,255,255,0.85)" }}>{retailer?.name}</strong></div>
               </td></tr></tbody>
             </table>
             <div style={{ background:"white",padding:"20px 28px 16px",borderLeft:"4px solid #0d9488",borderRight:"4px solid #0d9488" }}>
               <p style={{ margin:"0 0 10px",color:"#334155",lineHeight:1.75 }}>Szanowna Pani / Szanowny Panie,</p>
-              <p style={{ margin:"0 0 10px",color:"#334155",lineHeight:1.75 }}>przesyłamy <strong>{allSorted.length} {allSorted.length===1?"propozycję produktu":allSorted.length<5?"propozycje produktów":"propozycji produktów"}</strong> wyselekcjonowanych przez zespół Fresh Market dla kategorii zakupowej <strong>{retailer?.name}</strong>.</p>
-              <p style={{ margin:0,fontSize:13,color:"#94a3b8" }}>Kliknij przycisk przy wybranej propozycji, aby skontaktować się bezpośrednio z dostawcą.</p>
+              <p style={{ margin:"0 0 10px",color:"#334155",lineHeight:1.75 }}>poniżej znajdą Państwo <strong>{allSorted.length} {allSorted.length===1?"propozycję":allSorted.length<5?"propozycje":"propozycji"}</strong> od dostawców skierowanych do sieci <strong>{retailer?.name}</strong>.</p>
+              <p style={{ margin:"0 0 10px",color:"#334155",lineHeight:1.75 }}>To nie jest zamknięta selekcja: wszystkie aktualne propozycje, profile dostawców oraz dane kontaktowe firm są dostępne w aplikacji Fresh Market B2B.</p>
+              <p style={{ margin:0,fontSize:13,color:"#0f766e",fontWeight:700 }}>W wysłanym mailu przyciski prowadzą kupca magic linkiem bezpośrednio do danej propozycji w aplikacji.</p>
             </div>
             {premSends.length>0&&(
               <div style={{ background:"linear-gradient(90deg,#fffbeb,#fef3c7)",borderLeft:"4px solid #fbbf24",borderRight:"4px solid #fbbf24",padding:"8px 20px",display:"flex",alignItems:"center",gap:8 }}>
@@ -9063,7 +9062,9 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
               );
             })}
             <div style={{ background:"#0f172a",borderRadius:"0 0 12px 12px",padding:"20px 28px",textAlign:"center" }}>
-              <div style={{ color:"rgba(255,255,255,0.9)",fontWeight:700,fontSize:14,marginBottom:6 }}>🍎 Fresh Market Preconnect</div>
+              <div style={{ display:"inline-flex",alignItems:"center",justifyContent:"center",background:"rgba(255,255,255,0.96)",borderRadius:10,padding:"6px 12px",marginBottom:8 }}>
+                <FreshMarketLogo variant="dark" size={28} showText={false} />
+              </div>
               <div style={{ color:"rgba(255,255,255,0.4)",fontSize:11,lineHeight:1.9 }}>
                 KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska<br/>
                 freshmarket.eu · newsletter@freshmarket.eu · +48 603 424 346
