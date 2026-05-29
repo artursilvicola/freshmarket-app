@@ -84,16 +84,25 @@ function pluralBuyerEN(n) {
   return n === 1 ? "buyer" : "buyers";
 }
 
+function brandLogoBox(brandLogoUrl, { footer = false } = {}) {
+  if (!brandLogoUrl) {
+    return `<div style="color:${footer ? "rgba(255,255,255,0.92)" : "white"};font-weight:800;font-size:${footer ? "15px" : "22px"};letter-spacing:-0.5px;">Fresh Market <span style="color:${footer ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.55)"};font-weight:600;font-size:${footer ? "12px" : "13px"};">PreConnect</span></div>`;
+  }
+  return `<div style="display:inline-block;background:rgba(255,255,255,0.96);padding:${footer ? "6px 12px" : "8px 16px"};border-radius:12px;margin-bottom:${footer ? "8px" : "14px"};">
+    <img src="${esc(brandLogoUrl)}" alt="Fresh Market" width="${footer ? "130" : "170"}" style="display:block;max-width:${footer ? "130px" : "170px"};height:auto;border:0;outline:none;text-decoration:none;">
+  </div>`;
+}
+
 export function buildSubject({ retailer, offerCount, locale }) {
   const lng = pickLocale(locale);
   const safeName = retailer?.name || (lng === "en" ? "retailer" : "sieci");
   if (lng === "en") {
-    return `Fresh Market PreConnect – ${offerCount} ${pluralOfferEN(offerCount)} for ${safeName}`;
+    return `Fresh Market PreConnect – supplier ${pluralOfferEN(offerCount)} for ${safeName} (${offerCount})`;
   }
-  return `Fresh Market PreConnect – ${offerCount} ${pluralOfertaPL(offerCount)} dla ${safeName}`;
+  return `Fresh Market PreConnect – propozycje dostawców dla ${safeName} (${offerCount})`;
 }
 
-export function renderRetailerEmail({ retailer, sends, offers, companies, buyerCount, month, appUrl, locale }) {
+export function renderRetailerEmail({ retailer, sends, offers, companies, buyerCount, month, appUrl, locale, brandLogoUrl, magicLinksByLegacyId }) {
   const lng = pickLocale(locale);
   const sortedSends = [...sends].sort((a, b) => {
     const ap = (a.data && a.data.pos) || a.pos || 99;
@@ -104,23 +113,25 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
   const offerCount = sortedSends.length;
   const subject = buildSubject({ retailer, offerCount, locale: lng });
 
-  const offerBlocks = sortedSends.map((s) => renderOfferBlock(s, offers, companies, appUrl, lng)).join("");
+  const offerBlocks = sortedSends.map((s) => renderOfferBlock(s, offers, companies, appUrl, lng, magicLinksByLegacyId)).join("");
 
   // [P2-backend-mails C2] Locale-aware copy. PL pozostaje wzorcem; EN jest
   // tłumaczeniem 1:1 z terminologią v1.1 (Submission, Retailer, Buyer).
   const i18n = lng === "en" ? {
-    headerSubtitleFormat: (m) => `Propositions ${esc(m)}`,
-    headerMailingFor: (name) => `Mailing for <strong style="color:rgba(255,255,255,0.9);">${esc(name)}</strong>`,
+    headerSubtitleFormat: (m) => `Supplier proposals – ${esc(m)}`,
+    headerMailingFor: (name) => `Prepared for <strong style="color:rgba(255,255,255,0.9);">${esc(name)}</strong>`,
     introGreet: "Dear Sir or Madam,",
-    introBody: (count, retName) => `we're sending you a selection of <strong>${count} ${pluralOfferEN(count)}</strong> curated for <strong>${esc(retName)}</strong> by the Fresh Market team. You'll find the details of each submission after signing in to the platform.`,
+    introBody: (count, retName) => `below you will find <strong>${count} supplier ${pluralOfferEN(count)}</strong> directed to <strong>${esc(retName)}</strong>. This is not a closed selection: all current proposals, supplier profiles and company contact details are available in the Fresh Market B2B application.`,
+    introHint: "Use the button by a proposal to sign in securely with a magic link and open that proposal in the application.",
     buyerLine: (count, retName) => `Goes to ${count} ${pluralBuyerEN(count)} at ${esc(retName)}`,
     footerAddress: "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Poland",
     footerLegalFormat: (year, retName) => `You received this message because you are registered with the Fresh Market PreConnect programme as a buyer at ${esc(retName)}.<br>© ${year} KJOW Sp. z o.o. All rights reserved.`,
   } : {
-    headerSubtitleFormat: (m) => `Propozycje ${esc(m)}`,
-    headerMailingFor: (name) => `Mailing dla <strong style="color:rgba(255,255,255,0.9);">${esc(name)}</strong>`,
+    headerSubtitleFormat: (m) => `Propozycje od dostawców – ${esc(m)}`,
+    headerMailingFor: (name) => `Skierowane do sieci <strong style="color:rgba(255,255,255,0.9);">${esc(name)}</strong>`,
     introGreet: "Szanowni Państwo,",
-    introBody: (count, retName) => `przesyłamy zestaw <strong>${count} ${pluralOfertaPL(count)}</strong> wyselekcjonowanych dla <strong>${esc(retName)}</strong> przez zespół Fresh Market. Szczegóły każdej propozycji znajdziesz po wejściu na platformę.`,
+    introBody: (count, retName) => `poniżej znajdą Państwo <strong>${count} ${pluralOfertaPL(count)}</strong> od dostawców skierowanych do sieci <strong>${esc(retName)}</strong>. To nie jest zamknięta selekcja: wszystkie aktualne propozycje, profile dostawców oraz dane kontaktowe firm są dostępne w aplikacji Fresh Market B2B.`,
+    introHint: "Kliknij przycisk przy propozycji, aby bezpiecznie zalogować się magic linkiem i przejść bezpośrednio do tej propozycji w aplikacji.",
     buyerLine: (count, retName) => `Trafia do ${count} ${pluralKupiecPL(count)} z sieci ${esc(retName)}`,
     footerAddress: "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska",
     footerLegalFormat: (year, retName) => `Otrzymałeś tę wiadomość, ponieważ jesteś zarejestrowany w programie Fresh Market PreConnect jako kupiec sieci ${esc(retName)}.<br>© ${year} KJOW Sp. z o.o. Wszelkie prawa zastrzeżone.`,
@@ -143,7 +154,7 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 18px rgba(15,23,42,0.08);">
       <!-- Header -->
       <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0d9488 100%);padding:28px 32px;text-align:center;">
-        <div style="color:white;font-weight:800;font-size:22px;letter-spacing:-0.5px;margin-bottom:6px;">Fresh Market <span style="color:rgba(255,255,255,0.5);font-weight:600;font-size:13px;">PreConnect</span></div>
+        ${brandLogoBox(brandLogoUrl)}
         <div style="color:rgba(255,255,255,0.95);font-size:20px;font-weight:700;margin-bottom:4px;">${i18n.headerSubtitleFormat(month)}</div>
         <div style="color:rgba(255,255,255,0.55);font-size:13px;">${i18n.headerMailingFor(retailerName)}</div>
       </td></tr>
@@ -151,13 +162,14 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
       <tr><td style="padding:22px 32px 8px;border-left:4px solid #0d9488;border-right:4px solid #0d9488;">
         <p style="margin:0 0 10px;color:#334155;line-height:1.6;font-size:14px;">${i18n.introGreet}</p>
         <p style="margin:0 0 10px;color:#334155;line-height:1.65;font-size:14px;">${i18n.introBody(offerCount, retailerName)}</p>
+        <p style="margin:0 0 10px;color:#0f766e;line-height:1.6;font-size:13px;font-weight:700;">${i18n.introHint}</p>
         <p style="margin:0;font-size:12px;color:#94a3b8;">${i18n.buyerLine(buyerCount, retailerName)}.</p>
       </td></tr>
       <!-- Offers -->
       ${offerBlocks}
       <!-- Footer -->
       <tr><td style="background:#0f172a;padding:22px 28px;text-align:center;">
-        <div style="color:rgba(255,255,255,0.92);font-weight:700;font-size:14px;margin-bottom:6px;">Fresh Market PreConnect</div>
+        ${brandLogoBox(brandLogoUrl, { footer: true })}
         <div style="color:rgba(255,255,255,0.45);font-size:11px;line-height:1.8;">
           ${i18n.footerAddress}<br>
           <a href="${esc(appUrl)}" style="color:rgba(255,255,255,0.7);text-decoration:none;">freshmarket.eu</a> ·
@@ -176,7 +188,7 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
   };
 }
 
-function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng) {
+function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng, magicLinksByLegacyId) {
   const data = send.data || {};
   const offerId = data.offerId || send.offer_legacy_id;
   const offer = offerId != null ? (offersMap.get(offerId) || offersMap.get(String(offerId))) : null;
@@ -205,13 +217,13 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng) {
     samples: "Request samples",
     rfq: "Ask about price & volume",
     meet_fm: "Book a meeting",
-    default: "View offer",
+    default: "View in app",
     supplierFallback: "Fresh Market supplier",
   } : {
     samples: "Poproś o próbki",
     rfq: "Zapytaj o cenę i wolumen",
     meet_fm: "Umów spotkanie",
-    default: "Zobacz ofertę",
+    default: "Zobacz w aplikacji",
     supplierFallback: "Dostawca Fresh Market",
   };
   const ctaLabel = cta.includes("samples") ? ctaLabels.samples
@@ -223,9 +235,13 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng) {
   // Wcześniej link wskazywał /admin/oferty/{offerId} — kupiec nie ma roli admin
   // i lądował na "Konto bez roli" zamiast w aplikacji.
   const sendIdForLink = send.legacy_id || data.id || "";
-  const ctaUrl = sendIdForLink
+  const fallbackCtaUrl = sendIdForLink
     ? `${appUrl}/kupiec?send=${esc(sendIdForLink)}`
     : `${appUrl}/kupiec`;
+  const magicCtaUrl = sendIdForLink
+    ? magicLinksByLegacyId?.get?.(String(sendIdForLink))
+    : null;
+  const ctaUrl = magicCtaUrl || fallbackCtaUrl;
 
   const companyName = company?.name || ctaLabels.supplierFallback;
   const companyLogo = company?.logo_url || company?.logo || null;

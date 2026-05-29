@@ -57,6 +57,45 @@ function hasRetailerEmailMarker(row) {
   );
 }
 
+async function getBrandLogoUrl(supaSvc) {
+  try {
+    const { data } = await supaSvc
+      .from("fm_settings")
+      .select("brand_logo_url")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return data?.brand_logo_url || null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildMagicLinksByLegacyId({ supaSvc, buyer, sends, appUrl }) {
+  const links = new Map();
+  const email = String(buyer?.email || "").trim();
+  if (!email || !email.includes("@")) return links;
+
+  for (const s of sends || []) {
+    const legacyId = s?.legacy_id || s?.data?.id;
+    if (!legacyId) continue;
+    const redirectTo = `${appUrl}/kupiec?send=${encodeURIComponent(String(legacyId))}`;
+    try {
+      const { data, error } = await supaSvc.auth.admin.generateLink({
+        type: "magiclink",
+        email,
+        options: { redirectTo },
+      });
+      if (!error && data?.properties?.action_link) {
+        links.set(String(legacyId), data.properties.action_link);
+      }
+    } catch (e) {
+      console.warn("[retailer_batch_magic_link]", email, legacyId, e?.message || e);
+    }
+  }
+  return links;
+}
+
 export const handler = async (event) => {
   // [P2-backend-mails C3] adminFacing locale (caller = admin).
   const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
@@ -123,7 +162,7 @@ export const handler = async (event) => {
   if (retErr || !retailer) return json(404, { error: errLoc(adminLocale, "retailer_not_found_short") });
 
   const activeBuyers = (retailer.buyers || []).filter(
-    (b) => b && b.role === "buyer" && b.active !== false && b.email && b.email.includes("@")
+    (b) => b && (b.role == null || b.role === "buyer") && b.active !== false && b.email && b.email.includes("@")
   );
   if (!activeBuyers.length) {
     return json(400, {
@@ -198,6 +237,7 @@ export const handler = async (event) => {
   // dostają EN render, reszta PL. monthLabel() jest zależny od locale (np. "May 2026"
   // vs "Maj 2026"). dry_run pokazuje preview pierwszego renderu (PL preferowany
   // jeśli wszyscy PL, inaczej EN).
+  const brandLogoUrl = await getBrandLogoUrl(supaSvc);
   const renderedByLocale = new Map(); // locale -> { html, subject, month }
   const pickRender = (lng) => {
     if (renderedByLocale.has(lng)) return renderedByLocale.get(lng);
@@ -211,6 +251,7 @@ export const handler = async (event) => {
       month,
       appUrl: env.b2bAppUrl,
       locale: lng,
+      brandLogoUrl,
     });
     renderedByLocale.set(lng, { ...r, month });
     return renderedByLocale.get(lng);
@@ -237,7 +278,28 @@ export const handler = async (event) => {
   const resendResults = [];
   for (const buyer of activeBuyers) {
     const buyerLocale = (buyer.locale || "pl").toLowerCase().startsWith("en") ? "en" : "pl";
-    const { html, subject } = pickRender(buyerLocale);
+    const month = monthLabel(buyerLocale);
+    const magicLinksByLegacyId = await buildMagicLinksByLegacyId({
+      supaSvc,
+      buyer,
+      sends: eligible,
+      appUrl: env.b2bAppUrl,
+    });
+    const { html, subject } = renderRetailerEmail({
+      retailer,
+      sends: eligible,
+      offers: offersMap,
+      companies: companiesMap,
+      buyerCount: activeBuyers.length,
+      month,
+      appUrl: env.b2bAppUrl,
+      locale: buyerLocale,
+      brandLogoUrl,
+      magicLinksByLegacyId,
+    });
+    if (!renderedByLocale.has(buyerLocale)) {
+      renderedByLocale.set(buyerLocale, { html, subject, month });
+    }
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
