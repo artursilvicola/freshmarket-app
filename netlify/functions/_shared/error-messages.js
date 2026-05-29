@@ -95,7 +95,7 @@ const MESSAGES = {
     // ── Send batch ──
     no_active_buyers: "Sieć {retailerName} nie ma żadnego aktywnego kupca z e-mailem. Najpierw uzupełnij Buyer w \"Sieci\".",
     sends_read_failed: "Błąd odczytu sends: {detail}",
-    no_approved_sends: "Brak ofert gotowych do wysyłki — wszystkie są odrzucone, w moderacji albo już wysłane.",
+    no_approved_sends: "Brak propozycji gotowych do e-maila — wszystkie są odrzucone, w moderacji, odczytane albo e-mail już został wysłany.",
 
     // ── Send single ──
     send_not_found: "Wysyłka nie znaleziona",
@@ -190,7 +190,7 @@ const MESSAGES = {
     // ── Send batch ──
     no_active_buyers: "Retailer {retailerName} has no active buyer with an email. Add a Buyer in \"Retailers\" first.",
     sends_read_failed: "Sends read error: {detail}",
-    no_approved_sends: "No submissions ready to send — all are rejected, in moderation, or already sent.",
+    no_approved_sends: "No submissions ready for email — all are rejected, in moderation, already read, or email was already sent.",
 
     // ── Send single ──
     send_not_found: "Send not found",

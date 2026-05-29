@@ -42,6 +42,21 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+function hasRetailerEmailMarker(row) {
+  const data = row?.data || {};
+  const messageIds = data.resendMessageIds || [];
+  const buyerEmails = data.resendBuyerEmails || [];
+  return Boolean(
+    row?.resend_message_id ||
+    data.resendMessageId ||
+    data.resend_message_id ||
+    data.emailSentAt ||
+    data.email_sent_at ||
+    (Array.isArray(messageIds) && messageIds.length) ||
+    (Array.isArray(buyerEmails) && buyerEmails.length)
+  );
+}
+
 export const handler = async (event) => {
   // [P2-backend-mails C3] adminFacing locale (caller = admin).
   const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
@@ -119,19 +134,19 @@ export const handler = async (event) => {
   // ── Sends: tylko approved + należące do tej sieci ────────────────────
   const { data: sendsRaw, error: sendsErr } = await supaSvc
     .from("legacy_sends")
-    .select("legacy_id, retailer_id, status, data")
+    .select("legacy_id, retailer_id, status, resend_message_id, data")
     .in("legacy_id", sendIds);
   if (sendsErr) return json(500, { error: errLoc(adminLocale, "sends_read_failed", { detail: sendsErr.message }) });
 
   const eligible = (sendsRaw || []).filter(
-    (s) => Number(s.retailer_id) === retailerId && s.status === "approved"
+    (s) => Number(s.retailer_id) === retailerId && ["approved", "sent"].includes(s.status) && !hasRetailerEmailMarker(s)
   );
   const skipped = (sendsRaw || []).filter((s) => !eligible.includes(s));
 
   if (!eligible.length) {
     return json(400, {
       error: errLoc(adminLocale, "no_approved_sends"),
-      skipped_statuses: skipped.map((s) => ({ legacy_id: s.legacy_id, status: s.status })),
+      skipped_statuses: skipped.map((s) => ({ legacy_id: s.legacy_id, status: hasRetailerEmailMarker(s) ? "email_sent" : s.status })),
     });
   }
 
@@ -273,6 +288,8 @@ export const handler = async (event) => {
         status: "sent",
         sentAt: sentAtDate,
         sent_at: sentAtIso,
+        emailSentAt: sentAtIso,
+        email_sent_at: sentAtIso,
         daysLeft: 14,
         resendMessageIds: successfulMessageIds,
         resendBuyerEmails: resendResults.filter((r) => r.ok).map((r) => r.buyer),

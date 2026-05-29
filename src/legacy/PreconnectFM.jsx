@@ -880,6 +880,25 @@ function getRefundAmount(send) {
 function hasChargeMarker(send) {
   return Boolean(send?.chargeAt || send?.chargeTxId || send?.billingStatus === "charged" || send?.data?.chargeAt || send?.data?.chargeTxId || send?.data?.billingStatus === "charged");
 }
+function hasRetailerEmailMarker(send) {
+  const data = send?.data || {};
+  const messageIds = send?.resendMessageIds || data.resendMessageIds || [];
+  const buyerEmails = send?.resendBuyerEmails || data.resendBuyerEmails || [];
+  return Boolean(
+    send?.resendMessageId ||
+    send?.resend_message_id ||
+    data.resendMessageId ||
+    data.resend_message_id ||
+    send?.emailSentAt ||
+    data.emailSentAt ||
+    data.email_sent_at ||
+    (Array.isArray(messageIds) && messageIds.length) ||
+    (Array.isArray(buyerEmails) && buyerEmails.length)
+  );
+}
+function canEmailRetailerSend(send) {
+  return Boolean(send && ["approved", "sent"].includes(send.status) && !hasRetailerEmailMarker(send));
+}
 function isSeenOrCharged(send) {
   return ["opened", "read", "read_manual"].includes(send?.status) || hasChargeMarker(send);
 }
@@ -7296,11 +7315,15 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
     // otworzył maila przez Resend webhook (ale jeszcze nie kliknął w aplikacji).
     // Admin widzi w tab "Wysłane & Tracking" wszystkie statusy post-wysyłki.
   const ap=sends.filter(s=>s.status==="approved").length;
+  const emailablePanelSends = sentSends.filter(canEmailRetailerSend);
 
   // Group mod by retailer
   const byR={};
   modSends.forEach(s=>{ if(!byR[s.retailerId]) byR[s.retailerId]=[]; byR[s.retailerId].push(s); });
   Object.keys(byR).forEach(k=>{ byR[k].sort((a,b)=>(a.pos||99)-(b.pos||99)); });
+  const emailableByR={};
+  emailablePanelSends.forEach(s=>{ if(!emailableByR[s.retailerId]) emailableByR[s.retailerId]=[]; emailableByR[s.retailerId].push(s); });
+  Object.keys(emailableByR).forEach(k=>{ emailableByR[k].sort((a,b)=>(a.pos||99)-(b.pos||99)); });
 
   const histSend=historyId?sends.find(s=>s.id===historyId):null;
   const settlementRows = sentSends.map(s => {
@@ -7342,7 +7365,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
         companies={companies}
         fl={fl}
         onClose={()=>setEmailPreview(null)}
-        onSent={(markedIds, sentAt) => {
+        onSent={(markedIds, sentAt, result) => {
           // Round pipeline-retailer-email-mvp: po sukcesie aktualizujemy
           // lokalny state — pipelina przeładuje wybór i pozycje wysłanych
           // przejdą do statusu "sent". setSends sam zsync'uje DB przez
@@ -7350,7 +7373,22 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
           if (!markedIds || !markedIds.length) return;
           const idSet = new Set(markedIds.map(Number));
           setSends?.(prev => prev.map(s => idSet.has(Number(s.id))
-            ? { ...s, status: "sent", sentAt, daysLeft: 14 }
+            ? {
+                ...s,
+                status: "sent",
+                sentAt: s.sentAt || sentAt,
+                daysLeft: s.daysLeft || 14,
+                emailSentAt: sentAt,
+                resendBuyerEmails: result?.buyers_succeeded || s.resendBuyerEmails || [],
+                data: {
+                  ...(s.data || {}),
+                  status: "sent",
+                  sentAt: s.sentAt || sentAt,
+                  daysLeft: s.daysLeft || 14,
+                  emailSentAt: sentAt,
+                  resendBuyerEmails: result?.buyers_succeeded || s.data?.resendBuyerEmails || [],
+                },
+              }
             : s
           ));
         }}
@@ -7438,6 +7476,26 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
             ? <Trans i18nKey="admin.pipeline.track_alert_pending_html" ns="legacy" count={sentSends.filter(s=>s.status==="sent").length} values={{ count: sentSends.filter(s=>s.status==="sent").length }} components={{ strong: <strong /> }}/>
             : t("admin.pipeline.track_alert_done")}
         </Alrt>
+        {Object.keys(emailableByR).length>0&&<Card title={t("admin.pipeline.email_pending_card_title")} icon={Mail}>
+          <div style={{ fontSize:12,color:"#64748b",marginBottom:10,lineHeight:1.5 }}>{t("admin.pipeline.email_pending_card_desc")}</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            {Object.entries(emailableByR).map(([rid,ss])=>{
+              const r=getRetailerLive(+rid);
+              return (
+                <div key={rid} style={{ display:"flex",alignItems:"center",gap:10,padding:"9px 10px",border:"1px solid #e2e8f0",borderRadius:9,background:"#f8fafc" }}>
+                  <RetailerLogo retailer={r} size={28}/>
+                  <div style={{ flex:1 }}>
+                    <strong style={{ fontSize:12 }}>{r?.name || t("admin.pipeline.settle_retailer_fallback")}</strong>
+                    <div style={{ fontSize:11,color:"#64748b" }}>{t("admin.pipeline.email_pending_count_format", { count: ss.length })}</div>
+                  </div>
+                  <Btn sm onClick={()=>setEmailPreview({retailer:r,sends:ss,supplierCo:(companies||[]).find(c=>c.id===ss[0]?.supplierId)||COMPANY_INIT})} style={{ background:"rgba(37,99,235,0.08)",color:"#2563eb",border:"1px solid rgba(37,99,235,0.25)",gap:5 }}>
+                    <Mail size={11}/> {t("admin.pipeline.retailer_email_btn")}
+                  </Btn>
+                </div>
+              );
+            })}
+          </div>
+        </Card>}
         <Card title={t("admin.pipeline.settle_card_title")} icon={CreditCard}>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:12 }}>
             <div style={{ padding:"10px 12px",background:"#ecfdf5",border:"1px solid #bbf7d0",borderRadius:8 }}>
@@ -8748,19 +8806,32 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
     return `${months[d.getMonth()]} ${d.getFullYear()}`;
   })();
 
-  // Tylko zatwierdzone wchodzą do mailingu — inaczej kupiec dostałby
-  // ofertę odrzuconą lub jeszcze niemoderowaną.
-  const approvedSends = (sends || []).filter(s => s.status === "approved");
-  const skippedCount = (sends || []).length - approvedSends.length;
+  // Do e-maila wchodzą:
+  // - zatwierdzone propozycje, które jeszcze nie trafiły do panelu,
+  // - propozycje już widoczne w panelu kupca, ale jeszcze bez maila.
+  // Dzięki temu admin może najpierw dać kupcowi dostęp w panelu, a później
+  // wybrać tylko część propozycji do miesięcznego mailingu.
+  const candidateSends = (sends || []).filter(canEmailRetailerSend);
+  const skippedCount = (sends || []).length - candidateSends.length;
+  const sortedCandidates = [
+    ...candidateSends.filter(s => { const o = getOffer(s.offerId, offers); return o?.tier === "premium"; }).sort((a,b)=>(a.pos||99)-(b.pos||99)),
+    ...candidateSends.filter(s => { const o = getOffer(s.offerId, offers); return o?.tier !== "premium"; }).sort((a,b)=>(a.pos||99)-(b.pos||99)),
+  ];
+  const candidateKey = sortedCandidates.map(s => s.id).join(",");
+  const [selectedIds, setSelectedIds] = useState(() => sortedCandidates.map(s => Number(s.id)).filter(Number.isFinite));
+  useEffect(() => {
+    setSelectedIds(sortedCandidates.map(s => Number(s.id)).filter(Number.isFinite));
+  }, [candidateKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selectedSet = new Set(selectedIds.map(Number));
+  const allSorted = sortedCandidates.filter(s => selectedSet.has(Number(s.id)));
 
-  // Sortowanie: premium na górze, potem standard, w obu po `pos`.
-  const premSends = approvedSends.filter(s => { const o = getOffer(s.offerId, offers); return o?.tier === "premium"; }).sort((a,b)=>(a.pos||99)-(b.pos||99));
-  const stdSends  = approvedSends.filter(s => { const o = getOffer(s.offerId, offers); return o?.tier !== "premium"; }).sort((a,b)=>(a.pos||99)-(b.pos||99));
-  const allSorted = [...premSends, ...stdSends];
+  // Sortowanie preview: premium na górze, potem standard, w obu po `pos`.
+  const premSends = allSorted.filter(s => { const o = getOffer(s.offerId, offers); return o?.tier === "premium"; });
+  const stdSends  = allSorted.filter(s => { const o = getOffer(s.offerId, offers); return o?.tier !== "premium"; });
 
   // Aktywni kupcy tej sieci — to do nich pójdą maile.
   const activeBuyers = (retailer?.buyers || []).filter(b =>
-    b && b.role === "buyer" && b.active !== false && b.email && String(b.email).includes("@")
+    b && (b.role == null || b.role === "buyer") && b.active !== false && b.email && String(b.email).includes("@")
   );
 
   // Helper: znajdź firmę dostawcy dla danej oferty (firmy są w state legacy
@@ -8773,6 +8844,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
   const [sendingState, setSendingState] = useState("idle"); // idle | confirm | sending | success | error
   const [sendResult, setSendResult] = useState(null);
 
+  const candidateCount = sortedCandidates.length;
   const offerCount = allSorted.length;
   const buyerCount = activeBuyers.length;
   const subjectOffersLabel = t("admin.pipeline.email_subject_offers" + pluralSuffix(offerCount) + "_format", { count: offerCount });
@@ -8784,7 +8856,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
   const modalTitle = t("admin.pipeline.email_modal_title_format", { name: retailer?.name || t("admin.pipeline.email_modal_title_fallback") });
 
   // Pusta sieć / brak ofert / brak kupców — pokaż komunikat zamiast pustego maila
-  if (offerCount === 0) {
+  if (candidateCount === 0) {
     return (
       <Modal title={modalTitle} onClose={onClose}>
         <Alrt type="warning">
@@ -8824,7 +8896,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
       if (result.ok) {
         setSendingState("success");
         const sentAt = new Date().toISOString().slice(0, 10);
-        onSent?.(result.send_ids_marked || [], sentAt);
+        onSent?.(result.send_ids_marked || [], sentAt, result);
         const failedCount = (result.buyers_failed || []).length;
         if (failedCount > 0) {
           fl?.(t("admin.pipeline.toast_send_partial_format", { succeeded: result.buyer_count - failedCount, total: result.buyer_count, count: result.send_ids_marked?.length || 0, failed: failedCount }), "warning");
@@ -8857,7 +8929,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
             ? <span style={{ background:"#10b981",color:"white",fontSize:12,fontWeight:700,padding:"6px 12px",borderRadius:7 }}>{t("admin.pipeline.email_btn_sent")}</span>
             : <>
                 <Btn sm onClick={onClose} disabled={sendingState === "sending"} style={{ background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)" }}>{t("admin.pipeline.email_btn_cancel")}</Btn>
-                <Btn sm onClick={doSend} disabled={sendingState === "sending"} style={{ background:"#10b981",color:"white",border:"none",fontWeight:700 }}>
+                <Btn sm onClick={doSend} disabled={sendingState === "sending" || offerCount === 0} style={{ background:offerCount === 0 ? "#94a3b8" : "#10b981",color:"white",border:"none",fontWeight:700 }}>
                   {sendingState === "sending"
                     ? <><RefreshCw size={12} style={{ animation:"spin 1s linear infinite" }}/> {t("admin.pipeline.email_btn_sending")}</>
                     : <><Send size={12}/> {t("admin.pipeline.email_btn_send_format", { count: offerCount })}</>
@@ -8882,6 +8954,29 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
               {t("admin.pipeline.email_skipped_format" + pluralSuffix(skippedCount), { count: skippedCount })}
             </div>
           )}
+          <div style={{ marginTop:8,padding:"8px 10px",background:"white",border:"1px solid #cbd5e1",borderRadius:8 }}>
+            <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6 }}>
+              <strong style={{ fontSize:12,color:"#0f172a",flex:1 }}>{t("admin.pipeline.email_select_title")}</strong>
+              <button type="button" onClick={()=>setSelectedIds(sortedCandidates.map(s=>Number(s.id)).filter(Number.isFinite))} style={{ border:"none",background:"transparent",color:"#2563eb",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit" }}>{t("admin.pipeline.email_select_all")}</button>
+              <button type="button" onClick={()=>setSelectedIds([])} style={{ border:"none",background:"transparent",color:"#64748b",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit" }}>{t("admin.pipeline.email_select_none")}</button>
+            </div>
+            <div style={{ fontSize:11,color:"#64748b",marginBottom:6 }}>{t("admin.pipeline.email_select_hint")}</div>
+            <div style={{ display:"flex",flexDirection:"column",gap:5,maxHeight:140,overflowY:"auto" }}>
+              {sortedCandidates.map(s=>{
+                const o=getOffer(s.offerId,offers);
+                const co=findSupplierCo(s.supplierId);
+                const checked=selectedSet.has(Number(s.id));
+                return (
+                  <label key={s.id} style={{ display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#334155",padding:"4px 0",cursor:"pointer" }}>
+                    <input type="checkbox" checked={checked} onChange={(e)=>setSelectedIds(prev=>e.target.checked?[...new Set([...prev,Number(s.id)])]:prev.filter(id=>Number(id)!==Number(s.id)))} />
+                    <span style={{ flex:1 }}><strong>{o?.title||o?.product||t("admin.pipeline.settle_offer_fallback")}</strong>{co?.name&&<span style={{ color:"#64748b" }}> · {co.name}</span>}</span>
+                    <Badge color={s.status==="sent"?"#059669":"#2563eb"} bg={s.status==="sent"?"#ecfdf5":"#eff6ff"}>{s.status==="sent"?t("admin.pipeline.email_select_panel_badge"):t("admin.pipeline.email_select_approved_badge")}</Badge>
+                  </label>
+                );
+              })}
+            </div>
+            {offerCount===0&&<div style={{ marginTop:6,fontSize:11,color:"#b45309",fontWeight:700 }}>{t("admin.pipeline.email_select_empty_warning")}</div>}
+          </div>
         </div>
         <div style={{ background:"#ececec",padding:"20px 12px",overflowY:"auto",maxHeight:"calc(100vh - 180px)" }}>
           <div style={{ maxWidth:600,margin:"0 auto",fontFamily:"'Arial',Helvetica,sans-serif",fontSize:14,color:"#1a1a1a",lineHeight:1.5 }}>
