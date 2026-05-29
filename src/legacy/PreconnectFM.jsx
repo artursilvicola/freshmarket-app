@@ -6377,12 +6377,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
       const retailer = retailers.find(r=>r.id===buyerRetailerId);
       if(retailer) {
         if(retailer.active===false) return false;
-        const offer = getOffer(s.offerId, offers);
         if (buyer?.active === false) return false;
-        const myCats = buyer?.cats || [];
-        if(myCats.length && offer?.category && !myCats.includes(offer.category)) {
-          return false;
-        }
       }
     }
     return true;
