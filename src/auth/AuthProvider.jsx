@@ -58,9 +58,13 @@ export function AuthProvider({ children }) {
     // [B2B Round 5] legacy_supplier_id (np. "sup-s1") jest WYMAGANY przez RLS dla
     // legacy_offers / legacy_sends INSERT/UPDATE. Bez niego silent-fail przy
     // sendToChain (RLS check supplier_legacy_id = app_supplier_legacy_id()).
+    const inferredRole = data?.role
+      || (data?.company_id ? "supplier" : null)
+      || (data?.retailer_id != null ? "buyer" : null);
     const enriched = data
       ? {
           ...data,
+          role: inferredRole,
           legacy_fm_id: data.company?.legacy_fm_id || null,
           legacy_supplier_id: data.company?.legacy_supplier_id || null,
           company_name: data.company?.name || null,
@@ -74,10 +78,27 @@ export function AuthProvider({ children }) {
           // super admin = role=admin AND admin_level='super'. Aplikacja używa
           // tego do pokazania/ukrycia pozycji "Administratorzy" w sidebar
           // i przycisków zarządzania zespołem.
-          is_super_admin: data.role === "admin" && data.admin_level === "super",
+          is_super_admin: inferredRole === "admin" && data.admin_level === "super",
         }
       : null;
     setProfile(enriched);
+
+    // Some legacy/test accounts were created in auth.users and linked to a
+    // company/retailer, but profiles.role stayed NULL. Without a role the app
+    // stops on "Konto bez roli". If the linkage is unambiguous, repair it once.
+    if (data && !data.role && inferredRole && inferredRole !== "admin") {
+      supabase
+        .from("profiles")
+        .update({ role: inferredRole })
+        .eq("id", userId)
+        .then(({ error }) => {
+          if (error) {
+            console.warn("[Auth] role backfill failed:", error.message);
+          } else {
+            setProfile((prev) => prev ? { ...prev, role: inferredRole } : prev);
+          }
+        });
+    }
 
     // [B2B Round prod-rollout / i18n MVP — Krok 2 + 3b + 3c]
     // Synchronizacja języka po zalogowaniu — dwa scenariusze:
