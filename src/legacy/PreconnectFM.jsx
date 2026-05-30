@@ -62,7 +62,12 @@ import { supabase } from "../lib/supabase";
 // [Admin Companies 2.0 / Branch 1] Per-branch feature flag for the redesigned
 // PageAdminFirmy list. Toggle in src/config/features.js to fall back to the
 // legacy filter "all" / "pending" + collapsed-card layout.
-import { ADMIN_COMPANIES_2_0_LIST } from "../config/features";
+// [Admin Companies 2.0 / Branch 2] ADMIN_COMPANIES_2_0_DRAWER steruje reusable
+// AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
+// Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
+// drawer nie przejdzie smoke testu produkcyjnego.
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER } from "../config/features";
+import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
 // kolejne branche P2-N będą używać i18n / useTranslation w widokach Page*
@@ -8133,6 +8138,13 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   // pending wybija się badge'em w nagłówku zakładki). Tab "archived"
   // pominięty świadomie — czeka na P3 Phase C / migrację 037 (`archived_at`).
   const [selectedTab, setSelectedTab] = useState("active");
+  // [Admin Companies 2.0 / Branch 2] Drawer state — aktywne tylko gdy
+  // ADMIN_COMPANIES_2_0_DRAWER=true. `drawerCompany` jest pełnym obiektem
+  // firmy z `companies[]` (potrzebny dla wszystkich subtabów), `drawerSubtab`
+  // pamięta wybraną zakładkę między prev/next nav. Gdy flaga false, te stany
+  // są martwe — używamy starego `previewCompany` zamiast tego.
+  const [drawerCompany, setDrawerCompany] = useState(null);
+  const [drawerSubtab, setDrawerSubtab] = useState("preview");
   const [statusNoteDraft, setStatusNoteDraft] = useState({}); // { [companyId]: "powód" }
   const [savingStatusId, setSavingStatusId] = useState(null);
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
@@ -8687,7 +8699,17 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     </div>
                   </div>
                   <div style={{ display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end" }}>
-                    <Btn sm outline onClick={() => setPreviewCompany(firmCo)}>
+                    {/* [Admin Companies 2.0 / Branch 2] "Szczegóły" otwiera
+                        drawer gdy ADMIN_COMPANIES_2_0_DRAWER=true; default
+                        false → fallback do starego CompanyPreviewModal. */}
+                    <Btn sm outline onClick={() => {
+                      if (ADMIN_COMPANIES_2_0_DRAWER) {
+                        setDrawerSubtab("preview");
+                        setDrawerCompany(firmCo);
+                      } else {
+                        setPreviewCompany(firmCo);
+                      }
+                    }}>
                       <Eye size={11}/> {t("admin.firmy.row.open_details")}
                     </Btn>
                     {onOpenAdminChat && (
@@ -8711,6 +8733,113 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         {previewCompany && (
           <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" accountProfiles={profiles} onOpenChat={onOpenAdminChat} onClose={()=>setPreviewCompany(null)}/>
         )}
+        {/* [Admin Companies 2.0 / Branch 2 — Commit 1] Drawer skeleton.
+            Aktywny tylko gdy ADMIN_COMPANIES_2_0_DRAWER=true ORAZ aktualnie
+            mamy `drawerCompany` ustawione przez klik "Szczegóły". Subtaby:
+            wszystkie 5 widoczne, content = placeholdery (treść w Commit 2).
+            Czat — disabled placeholder z tooltipem (chat embedded planowany
+            dla Companies Branch 4). Prev/Next przeskakuje po visibleLimsByTab
+            (tej samej liście co render listy firm). Footer = placeholder
+            akcji statusowych (Commit 3). */}
+        {ADMIN_COMPANIES_2_0_DRAWER && drawerCompany && (() => {
+          const drawerIndex = visibleLimsByTab.findIndex(l => l.id === drawerCompany.id);
+          const drawerPrev = drawerIndex > 0 ? visibleLimsByTab[drawerIndex - 1] : null;
+          const drawerNext = (drawerIndex >= 0 && drawerIndex < visibleLimsByTab.length - 1)
+            ? visibleLimsByTab[drawerIndex + 1] : null;
+          const goPrev = drawerPrev
+            ? () => {
+                const co = (companies||[]).find(c => c.id === drawerPrev.id) || { id: drawerPrev.id, name: drawerPrev.name };
+                setDrawerCompany(co);
+              }
+            : undefined;
+          const goNext = drawerNext
+            ? () => {
+                const co = (companies||[]).find(c => c.id === drawerNext.id) || { id: drawerNext.id, name: drawerNext.name };
+                setDrawerCompany(co);
+              }
+            : undefined;
+          const drawerStatus = drawerCompany?.account_status || "active";
+          const drawerStatusMeta = ACCOUNT_STATUS_LABELS[drawerStatus] || ACCOUNT_STATUS_LABELS.active;
+          const [, drawerStatusColor, drawerStatusBg] = drawerStatusMeta;
+          const drawerStatusLbl = t(`admin.firmy.status_labels.${drawerStatus}`, { defaultValue: drawerStatusMeta[0] });
+          const drawerCountryFlag = FLAGS[drawerCompany?.country] || "";
+          const drawerCountryLabel = getCountryName(drawerCompany?.country) || drawerCompany?.country || "—";
+          const drawerTabs = [
+            { key: "preview", label: t("admin.firmy.drawer.tab_preview") },
+            { key: "chat", label: t("admin.firmy.drawer.tab_chat"), disabled: true, tooltip: t("admin.firmy.drawer.chat_placeholder_title") },
+            { key: "package", label: t("admin.firmy.drawer.tab_package") },
+            { key: "history", label: t("admin.firmy.drawer.tab_history") },
+            { key: "notes", label: t("admin.firmy.drawer.tab_notes") },
+          ];
+          const placeholderBox = (body, title) => (
+            <div style={{
+              background: "white",
+              border: "1px dashed #cbd5e1",
+              borderRadius: 8,
+              padding: "20px 16px",
+              textAlign: "center",
+              color: "#64748b",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}>
+              {title && <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: 6, fontSize: 13 }}>{title}</div>}
+              <div>{body}</div>
+            </div>
+          );
+          return (
+            <AdminRightDrawer
+              open={true}
+              onClose={() => setDrawerCompany(null)}
+              width={520}
+              closeAriaLabel={t("admin.firmy.drawer.close")}
+              prevAriaLabel={t("admin.firmy.drawer.prev_company")}
+              nextAriaLabel={t("admin.firmy.drawer.next_company")}
+              onPrev={goPrev}
+              onNext={goNext}
+              prevDisabled={!goPrev}
+              nextDisabled={!goNext}
+              tabs={drawerTabs}
+              activeTab={drawerSubtab}
+              onTabChange={(key) => setDrawerSubtab(key)}
+              header={
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <CompanyLogo company={drawerCompany} size={32}/>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{
+                      fontWeight: 700, fontSize: 14, color: "#0f172a",
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      display: "flex", alignItems: "center", gap: 8,
+                    }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {drawerCompany?.name || "—"}
+                      </span>
+                      <span style={{ fontSize: 10, color: drawerStatusColor, background: drawerStatusBg, padding: "2px 7px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>
+                        {drawerStatusLbl}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#64748b" }}>
+                      {drawerCountryFlag ? `${drawerCountryFlag} ` : ""}{drawerCountryLabel}
+                    </div>
+                  </div>
+                </div>
+              }
+              footer={
+                <div style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
+                  {t("admin.firmy.drawer.footer_actions_placeholder")}
+                </div>
+              }
+            >
+              {drawerSubtab === "preview" && placeholderBox(t("admin.firmy.drawer.placeholder_preview"))}
+              {drawerSubtab === "chat" && placeholderBox(
+                t("admin.firmy.drawer.chat_placeholder_body"),
+                t("admin.firmy.drawer.chat_placeholder_title")
+              )}
+              {drawerSubtab === "package" && placeholderBox(t("admin.firmy.drawer.placeholder_package"))}
+              {drawerSubtab === "history" && placeholderBox(t("admin.firmy.drawer.placeholder_history"))}
+              {drawerSubtab === "notes" && placeholderBox(t("admin.firmy.drawer.placeholder_notes"))}
+            </AdminRightDrawer>
+          );
+        })()}
       </div>
     );
   }

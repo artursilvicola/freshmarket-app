@@ -1768,7 +1768,31 @@
       "empty_rejected": "No rejected companies.",
       "toast_copied_email": "Email copied: {{email}}",
       "toast_copied_phone": "Phone copied: {{phone}}",
-      "toast_copy_failed": "Couldn't copy to clipboard."
+      "toast_copy_failed": "Couldn't copy to clipboard.",
+      "drawer": {
+        "tab_preview": "Overview",
+        "tab_chat": "Chat",
+        "tab_package": "Package",
+        "tab_history": "History",
+        "tab_notes": "Notes",
+        "close": "Close",
+        "prev_company": "Previous company",
+        "next_company": "Next company",
+        "chat_placeholder_title": "Chat with company — coming soon",
+        "chat_placeholder_body": "Embedded chat will land in the drawer in Branch 4. For now use the „Messages” button in the list row — it opens the full messages panel.",
+        "placeholder_preview": "Company profile overview — content lands here in Commit 2.",
+        "placeholder_package": "Package and access (PreConnect / FM B2B) + AI editor — content lands here in Commit 2.",
+        "placeholder_history": "Submission history and status note — content lands here in Commit 2.",
+        "placeholder_notes": "Status note editor — content lands here in Commit 2.",
+        "footer_actions_placeholder": "Status actions (Approve / Reject / Suspend / Reactivate) land here in Commit 3.",
+        "notes_save": "Save note",
+        "notes_saved": "Note saved",
+        "notes_unsaved_confirm": "You have unsaved changes in the note. Close the drawer?",
+        "history_recent_sends": "Recent submissions",
+        "history_empty": "No submissions for this company.",
+        "history_approved_at_label": "Account approved:",
+        "history_status_note_label": "Status note:"
+      }
     },
     "pipeline": {
       "tab_mod_format": "Moderation ({{count}})",

@@ -15,3 +15,17 @@
 // alternative names (e.g. *_ENABLED) here or anywhere else in the codebase.
 
 export const ADMIN_COMPANIES_2_0_LIST = true;
+
+// [Admin Companies 2.0 / Branch 2 — feat/admin-companies-detail-drawer]
+// Sterownie right-side drawer'em z 5 subtabami (Podgląd / Czat / Pakiet /
+// Historia / Notatki) + footer status actions + Prev/Next nav.
+//
+// Default `false`: branch wprowadza reusable AdminRightDrawer + integrację
+// w PageAdminFirmy, ale stary CompanyPreviewModal pozostaje aktywną ścieżką
+// dla "Szczegóły". Flip na `true` dopiero po smoke test prod.
+//
+// UWAGA: gdy `true`, drawer rządzi tylko buttonem "Szczegóły" w nowym
+// layoutcie (Branch 1 — ADMIN_COMPANIES_2_0_LIST=true). Stary legacy render
+// (gdy ADMIN_COMPANIES_2_0_LIST=false) używa starego CompanyPreviewModal
+// niezależnie od tej flagi.
+export const ADMIN_COMPANIES_2_0_DRAWER = false;

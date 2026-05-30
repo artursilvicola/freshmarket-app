@@ -1768,7 +1768,31 @@
       "empty_rejected": "Brak odrzuconych firm.",
       "toast_copied_email": "Skopiowano e-mail: {{email}}",
       "toast_copied_phone": "Skopiowano telefon: {{phone}}",
-      "toast_copy_failed": "Nie udało się skopiować."
+      "toast_copy_failed": "Nie udało się skopiować.",
+      "drawer": {
+        "tab_preview": "Podgląd",
+        "tab_chat": "Czat",
+        "tab_package": "Pakiet",
+        "tab_history": "Historia",
+        "tab_notes": "Notatki",
+        "close": "Zamknij",
+        "prev_company": "Poprzednia firma",
+        "next_company": "Następna firma",
+        "chat_placeholder_title": "Czat z firmą — wkrótce",
+        "chat_placeholder_body": "Embedded czat trafi do drawera w Branch 4. Tymczasem użyj przycisku „Wiadomości” w wierszu listy — przeniesie Cię do pełnego panelu wiadomości.",
+        "placeholder_preview": "Podgląd profilu firmy — treść trafi tu w Commit 2.",
+        "placeholder_package": "Pakiet i dostęp (PreConnect / FM B2B) + edytor AI — treść trafi tu w Commit 2.",
+        "placeholder_history": "Historia wysyłek i status_note — treść trafi tu w Commit 2.",
+        "placeholder_notes": "Edycja notatki statusu — treść trafi tu w Commit 2.",
+        "footer_actions_placeholder": "Akcje statusu (Zatwierdź / Odrzuć / Wstrzymaj / Reaktywuj) trafią tu w Commit 3.",
+        "notes_save": "Zapisz notatkę",
+        "notes_saved": "Notatka zapisana",
+        "notes_unsaved_confirm": "Masz niezapisane zmiany w notatce. Zamknąć drawer?",
+        "history_recent_sends": "Ostatnie wysyłki",
+        "history_empty": "Brak wysyłek dla tej firmy.",
+        "history_approved_at_label": "Konto zatwierdzone:",
+        "history_status_note_label": "Notatka statusu:"
+      }
     },
     "pipeline": {
       "tab_mod_format": "Moderacja ({{count}})",
