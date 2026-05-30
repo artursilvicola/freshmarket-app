@@ -8145,6 +8145,10 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   // są martwe — używamy starego `previewCompany` zamiast tego.
   const [drawerCompany, setDrawerCompany] = useState(null);
   const [drawerSubtab, setDrawerSubtab] = useState("preview");
+  // [Admin Companies 2.0 / Branch 2 — Commit 2] Draft notatki statusu w subtabie
+  // "Notatki". `null` = nieedytowane (pokazujemy zapisany status_note); string =
+  // użytkownik coś wpisał (dirty guard porównuje z zapisaną wartością).
+  const [drawerNoteDraft, setDrawerNoteDraft] = useState(null);
   const [statusNoteDraft, setStatusNoteDraft] = useState({}); // { [companyId]: "powód" }
   const [savingStatusId, setSavingStatusId] = useState(null);
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
@@ -8705,6 +8709,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     <Btn sm outline onClick={() => {
                       if (ADMIN_COMPANIES_2_0_DRAWER) {
                         setDrawerSubtab("preview");
+                        setDrawerNoteDraft(null);
                         setDrawerCompany(firmCo);
                       } else {
                         setPreviewCompany(firmCo);
@@ -8742,28 +8747,55 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
             (tej samej liście co render listy firm). Footer = placeholder
             akcji statusowych (Commit 3). */}
         {ADMIN_COMPANIES_2_0_DRAWER && drawerCompany && (() => {
+          // [Admin Companies 2.0 / Branch 2 — Commit 2]
+          // `drawerCompany` jest snapshotem z momentu kliknięcia "Szczegóły".
+          // Dla subtabów resolve'ujemy ŻYWĄ firmę z companies[] po id, żeby po
+          // toggle'u flag / edycji AI / zmianie notatki widok się odświeżał.
+          const liveCo = (companies||[]).find(c => c.id === drawerCompany.id) || drawerCompany;
+          const drawerLim = allLims.find(l => l.id === drawerCompany.id) || null;
+          const drawerFirmSends = sends.filter(s => legacyKeyMatchesCompany(s.supplierId, liveCo));
+          const drawerUsed = drawerFirmSends.filter(s => !["rejected","refunded","queued"].includes(s.status)).length;
+          const drawerMax = drawerLim ? drawerLim.max : 0;
+          const drawerPct = drawerMax > 0 ? Math.round(drawerUsed / drawerMax * 100) : 0;
+          const usageColor = (p) => p>=90?"#dc2626":p>=70?"#d97706":"#059669";
+
           const drawerIndex = visibleLimsByTab.findIndex(l => l.id === drawerCompany.id);
           const drawerPrev = drawerIndex > 0 ? visibleLimsByTab[drawerIndex - 1] : null;
           const drawerNext = (drawerIndex >= 0 && drawerIndex < visibleLimsByTab.length - 1)
             ? visibleLimsByTab[drawerIndex + 1] : null;
-          const goPrev = drawerPrev
-            ? () => {
-                const co = (companies||[]).find(c => c.id === drawerPrev.id) || { id: drawerPrev.id, name: drawerPrev.name };
-                setDrawerCompany(co);
-              }
-            : undefined;
-          const goNext = drawerNext
-            ? () => {
-                const co = (companies||[]).find(c => c.id === drawerNext.id) || { id: drawerNext.id, name: drawerNext.name };
-                setDrawerCompany(co);
-              }
-            : undefined;
-          const drawerStatus = drawerCompany?.account_status || "active";
+
+          // Dirty guard dla subtabu "Notatki": `drawerNoteDraft === null` →
+          // nieedytowane (pokazujemy zapisany status_note). Inaczej porównujemy
+          // z zapisaną wartością.
+          const savedNote = liveCo?.status_note || "";
+          const noteValue = drawerNoteDraft === null ? savedNote : drawerNoteDraft;
+          const noteIsDirty = drawerNoteDraft !== null && drawerNoteDraft !== savedNote;
+          const confirmDiscard = () => {
+            if (!noteIsDirty) return true;
+            return window.confirm(t("admin.firmy.drawer.notes_unsaved_confirm"));
+          };
+          const closeDrawer = () => { setDrawerNoteDraft(null); setDrawerCompany(null); };
+          const navTo = (limRow) => {
+            if (!confirmDiscard()) return;
+            const co = (companies||[]).find(c => c.id === limRow.id) || { id: limRow.id, name: limRow.name };
+            setDrawerNoteDraft(null);
+            setDrawerCompany(co);
+          };
+          const goPrev = drawerPrev ? () => navTo(drawerPrev) : undefined;
+          const goNext = drawerNext ? () => navTo(drawerNext) : undefined;
+          const saveNote = () => {
+            const val = (noteValue || "").trim() || null;
+            patchCompany(liveCo.id, { status_note: val });
+            setDrawerNoteDraft(null);
+            fl(t("admin.firmy.drawer.notes_saved"));
+          };
+
+          const drawerStatus = liveCo?.account_status || "active";
           const drawerStatusMeta = ACCOUNT_STATUS_LABELS[drawerStatus] || ACCOUNT_STATUS_LABELS.active;
           const [, drawerStatusColor, drawerStatusBg] = drawerStatusMeta;
           const drawerStatusLbl = t(`admin.firmy.status_labels.${drawerStatus}`, { defaultValue: drawerStatusMeta[0] });
-          const drawerCountryFlag = FLAGS[drawerCompany?.country] || "";
-          const drawerCountryLabel = getCountryName(drawerCompany?.country) || drawerCompany?.country || "—";
+          const drawerCountryFlag = FLAGS[liveCo?.country] || "";
+          const drawerCountryLabel = getCountryName(liveCo?.country) || liveCo?.country || "—";
           const drawerTabs = [
             { key: "preview", label: t("admin.firmy.drawer.tab_preview") },
             { key: "chat", label: t("admin.firmy.drawer.tab_chat"), disabled: true, tooltip: t("admin.firmy.drawer.chat_placeholder_title") },
@@ -8786,10 +8818,30 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
               <div>{body}</div>
             </div>
           );
+          const drawerCard = (children) => (
+            <div style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:8, padding:"12px 14px", marginBottom:12 }}>{children}</div>
+          );
+          const drawerSectionTitle = (txt) => (
+            <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.05em", color:"#64748b", marginBottom:8 }}>{txt}</div>
+          );
+
+          // AI editor reuse — te same handlery/state co inline expanded view
+          // (startEdit / saveEdit / cancelEdit / regenerateForCompany /
+          // approveDescriptions, editingId / editDraft / aiLoadingId). JSX
+          // świadomie zduplikowany pod flagą drawera (Codex OK: nie ruszamy
+          // renderExpandedDetails, żeby ścieżka flag=false została bez zmian).
+          const aiStatus = liveCo?.ai_review_status || "pending";
+          const aiMeta = reviewLabel[aiStatus] || reviewLabel.pending;
+          const [, aiColor, aiBg] = aiMeta;
+          const aiLabel = t(`admin.firmy.review_labels.${aiStatus}`, { defaultValue: aiMeta[0] });
+          const aiEditing = editingId === liveCo?.id;
+          const aiLoading = aiLoadingId === liveCo?.id;
+
           return (
             <AdminRightDrawer
               open={true}
-              onClose={() => setDrawerCompany(null)}
+              onClose={closeDrawer}
+              beforeClose={confirmDiscard}
               width={520}
               closeAriaLabel={t("admin.firmy.drawer.close")}
               prevAriaLabel={t("admin.firmy.drawer.prev_company")}
@@ -8803,7 +8855,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
               onTabChange={(key) => setDrawerSubtab(key)}
               header={
                 <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  <CompanyLogo company={drawerCompany} size={32}/>
+                  <CompanyLogo company={liveCo} size={32}/>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{
                       fontWeight: 700, fontSize: 14, color: "#0f172a",
@@ -8811,7 +8863,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       display: "flex", alignItems: "center", gap: 8,
                     }}>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {drawerCompany?.name || "—"}
+                        {liveCo?.name || "—"}
                       </span>
                       <span style={{ fontSize: 10, color: drawerStatusColor, background: drawerStatusBg, padding: "2px 7px", borderRadius: 4, fontWeight: 700, flexShrink: 0 }}>
                         {drawerStatusLbl}
@@ -8829,14 +8881,201 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 </div>
               }
             >
-              {drawerSubtab === "preview" && placeholderBox(t("admin.firmy.drawer.placeholder_preview"))}
+              {/* ── Podgląd ── wspólne body ze starym CompanyPreviewModal ── */}
+              {drawerSubtab === "preview" && (
+                <CompanyPreviewBody
+                  co={liveCo}
+                  offers={offers}
+                  role="admin"
+                  accountProfiles={profiles}
+                  onOpenChat={onOpenAdminChat}
+                  onClose={closeDrawer}
+                />
+              )}
+
+              {/* ── Czat ── disabled placeholder (embedded chat → Branch 4) ── */}
               {drawerSubtab === "chat" && placeholderBox(
                 t("admin.firmy.drawer.chat_placeholder_body"),
                 t("admin.firmy.drawer.chat_placeholder_title")
               )}
-              {drawerSubtab === "package" && placeholderBox(t("admin.firmy.drawer.placeholder_package"))}
-              {drawerSubtab === "history" && placeholderBox(t("admin.firmy.drawer.placeholder_history"))}
-              {drawerSubtab === "notes" && placeholderBox(t("admin.firmy.drawer.placeholder_notes"))}
+
+              {/* ── Pakiet ── plan + limity (read-only) + flagi dostępu + AI ── */}
+              {drawerSubtab === "package" && (
+                <>
+                  {drawerCard(
+                    <>
+                      {drawerSectionTitle(t("admin.firmy.drawer.package_plan_section"))}
+                      <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:6 }}>
+                        <span style={{ color:"#64748b" }}>{t("admin.firmy.pkg_usage_label")}</span>
+                        <span style={{ fontWeight:700, color: usageColor(drawerPct) }}>{t("admin.firmy.pkg_usage_value_format", { pct: drawerPct, used: drawerUsed, max: drawerMax })}</span>
+                      </div>
+                      <div style={{ background:"#e2e8f0", borderRadius:4, height:6, overflow:"hidden", marginBottom:10 }}>
+                        <div style={{ height:"100%", borderRadius:4, width:`${Math.min(100,drawerPct)}%`, background: usageColor(drawerPct) }}/>
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+                        <div>
+                          <div style={{ fontSize:10, color:"#94a3b8", marginBottom:3 }}>{t("admin.firmy.pkg_select_label")}</div>
+                          <div style={{ fontSize:13, fontWeight:600, color:"#0f172a" }}>{drawerLim?.pkg || "—"}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize:10, color:"#94a3b8", marginBottom:3 }}>{t("admin.firmy.pkg_limit_label")}</div>
+                          <div style={{ fontSize:13, fontWeight:600, color:"#0f172a" }}>{drawerMax}</div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize:10, color:"#94a3b8", marginTop:8 }}>{t("admin.firmy.drawer.package_limits_hint")}</div>
+                    </>
+                  )}
+                  {liveCo?.name && setCompanies && drawerCard(
+                    <>
+                      {drawerSectionTitle(t("admin.firmy.drawer.package_access_section"))}
+                      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
+                        <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:liveCo.preconnect_enabled?"rgba(13,148,136,0.06)":"white",border:`1px solid ${liveCo.preconnect_enabled?"#0d9488":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
+                          <input type="checkbox" checked={!!liveCo.preconnect_enabled} onChange={(e) => toggleAccessFlag(liveCo, "preconnect_enabled", e.target.checked)} />
+                          <div>
+                            <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_preconnect_title")}</div>
+                            <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_preconnect_desc")}</div>
+                          </div>
+                        </label>
+                        <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:liveCo.fm_b2b_enabled?"rgba(124,58,237,0.06)":"white",border:`1px solid ${liveCo.fm_b2b_enabled?"#7c3aed":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
+                          <input type="checkbox" checked={!!liveCo.fm_b2b_enabled} onChange={(e) => toggleAccessFlag(liveCo, "fm_b2b_enabled", e.target.checked)} />
+                          <div>
+                            <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_fm_b2b_title")}</div>
+                            <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_fm_b2b_desc")}</div>
+                          </div>
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  {liveCo?.name && setCompanies && drawerCard(
+                    <>
+                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,gap:8,flexWrap:"wrap" }}>
+                        <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+                          <Bot size={14} color="#3b82f6"/>
+                          <strong style={{ fontSize:12 }}>{t("admin.firmy.ai_section_title")}</strong>
+                          <span style={{ fontSize:10,color:aiColor,background:aiBg,padding:"2px 7px",borderRadius:4,fontWeight:600 }}>{aiLabel}</span>
+                        </div>
+                        {!aiEditing && (
+                          <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+                            <Btn sm outline onClick={()=>startEdit(liveCo)}>{t("admin.firmy.ai_btn_edit")}</Btn>
+                            <Btn sm outline onClick={()=>regenerateForCompany(liveCo)} disabled={aiLoading}>
+                              {aiLoading ? <RefreshCw size={11} style={{ animation:"spin 1s linear infinite" }}/> : <Sparkles size={11}/>}
+                              {aiLoading ? t("admin.firmy.ai_btn_generating") : t("admin.firmy.ai_btn_generate")}
+                            </Btn>
+                            {aiStatus !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(liveCo)}>{t("admin.firmy.ai_btn_approve")}</Btn>}
+                          </div>
+                        )}
+                      </div>
+                      {aiEditing ? (
+                        <>
+                          <Inp
+                            label={t("admin.firmy.ai_edit_short_label")}
+                            ta
+                            value={editDraft.description_short}
+                            onChange={e=>setEditDraft(d=>({ ...d, description_short: e.target.value }))}
+                            style={{ minHeight:50,fontSize:12 }}
+                          />
+                          <Inp
+                            label={t("admin.firmy.ai_edit_standard_label")}
+                            ta
+                            value={editDraft.description}
+                            onChange={e=>setEditDraft(d=>({ ...d, description: e.target.value }))}
+                            style={{ fontSize:12 }}
+                          />
+                          <div style={{ display:"flex",gap:6,justifyContent:"flex-end" }}>
+                            <Btn sm outline onClick={cancelEdit}>{t("admin.firmy.ai_edit_cancel")}</Btn>
+                            <Btn sm primary onClick={()=>saveEdit(liveCo)}>{t("admin.firmy.ai_edit_save")}</Btn>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {liveCo.description_short ? (
+                            <div style={{ fontSize:12,color:"#334155",marginBottom:6 }}>
+                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_short_prefix")}</span> {liveCo.description_short}
+                            </div>
+                          ) : null}
+                          {liveCo.description ? (
+                            <div style={{ fontSize:12,color:"#334155",lineHeight:1.6 }}>
+                              <span style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em" }}>{t("admin.firmy.ai_view_standard_prefix")}</span> {liveCo.description}
+                            </div>
+                          ) : null}
+                          {!liveCo.description_short && !liveCo.description && (
+                            <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}><Trans i18nKey="admin.firmy.ai_view_empty_html" ns="legacy" components={{ em: <em /> }}/></div>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* ── Historia ── ostatnie 20 wysyłek (read-only) ── */}
+              {drawerSubtab === "history" && (
+                <>
+                  {liveCo?.approved_at && drawerStatus === "active" && drawerCard(
+                    <div style={{ fontSize:12,color:"#334155" }}>
+                      <span style={{ color:"#64748b",fontWeight:600 }}>{t("admin.firmy.drawer.history_approved_at_label")}</span> {String(liveCo.approved_at).slice(0,10)}
+                    </div>
+                  )}
+                  {savedNote && drawerCard(
+                    <div style={{ fontSize:12,color:"#334155" }}>
+                      <div style={{ color:"#64748b",fontWeight:600,fontSize:10,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3 }}>{t("admin.firmy.drawer.history_status_note_label")}</div>
+                      <div style={{ whiteSpace:"pre-line" }}>{savedNote}</div>
+                    </div>
+                  )}
+                  {drawerCard(
+                    <>
+                      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8 }}>
+                        {drawerSectionTitle(t("admin.firmy.drawer.history_recent_sends"))}
+                        <span style={{ fontSize:10,color:"#94a3b8",textTransform:"none",letterSpacing:0 }}>{t("admin.firmy.sends_section_title_format", { count: drawerFirmSends.length }).replace(/\s*\(.*$/, "")}</span>
+                      </div>
+                      {drawerFirmSends.length === 0 ? (
+                        <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic" }}>{t("admin.firmy.drawer.history_empty")}</div>
+                      ) : (
+                        <>
+                          {drawerFirmSends.slice(-20).reverse().map(s => {
+                            const o = getOffer(s.offerId, offers);
+                            const r = getRetailerLive(s.retailerId);
+                            return (
+                              <div key={s.id} style={{ display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9",fontSize:12 }}>
+                                <span style={{ fontSize:14 }}>{CEMOJI[o?.category]||"📦"}</span>
+                                <div style={{ flex:1,minWidth:0 }}>
+                                  <div style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{o?.title||o?.product||t("admin.firmy.sends_row_fallback_offer")} → {r?.name||t("admin.firmy.sends_row_fallback_retailer")}</div>
+                                  {(s.sentAt || s.sendDate) && <div style={{ fontSize:10,color:"#94a3b8" }}>{s.sentAt || s.sendDate}</div>}
+                                </div>
+                                <span title={STATUS_TIPS[s.status]||""} style={{ cursor:"help",flexShrink:0 }}>
+                                  <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {drawerFirmSends.length > 20 && (
+                            <div style={{ fontSize:10,color:"#94a3b8",marginTop:8 }}>{t("admin.firmy.drawer.history_limit_hint")}</div>
+                          )}
+                        </>
+                      )}
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* ── Notatki ── edycja status_note + dirty guard ── */}
+              {drawerSubtab === "notes" && (
+                drawerCard(
+                  <>
+                    {drawerSectionTitle(t("admin.firmy.drawer.tab_notes"))}
+                    <div style={{ fontSize:11,color:"#64748b",marginBottom:8,lineHeight:1.5 }}>{t("admin.firmy.drawer.notes_intro")}</div>
+                    <textarea
+                      value={noteValue}
+                      onChange={(e) => setDrawerNoteDraft(e.target.value)}
+                      placeholder={t("admin.firmy.drawer.notes_placeholder")}
+                      style={{ width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",resize:"vertical",minHeight:120,marginBottom:10,boxSizing:"border-box" }}
+                    />
+                    <div style={{ display:"flex",justifyContent:"flex-end" }}>
+                      <Btn sm primary onClick={saveNote} disabled={!noteIsDirty}>{t("admin.firmy.drawer.notes_save")}</Btn>
+                    </div>
+                  </>
+                )
+              )}
             </AdminRightDrawer>
           );
         })()}
@@ -9271,7 +9510,13 @@ function ProfileSection({ title, icon: Ic, children }) {
   );
 }
 
-function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role, accountProfiles = [], onOpenChat }) {
+// [Admin Companies 2.0 / Branch 2 — Commit 2] Wspólne body podglądu firmy.
+// Reuse: stary CompanyPreviewModal (owija w <Modal>) ORAZ nowy drawer (subtab
+// "Podgląd" renderuje bezpośrednio). Te same propsy, te same warunki
+// widoczności, ten sam buyer privacy guard — tylko ekstrakcja JSX, zero zmian
+// logiki/danych. `onClose` nadal używane wewnątrz (przycisk czatu operatora
+// najpierw zamyka modal). W drawerze `onClose` zamyka drawer.
+function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role, accountProfiles = [], onOpenChat }) {
   const { t } = useTranslation("legacy");
   // [P2-shared] Helpers do labelek z konstant zdefiniowanych poniżej
   // (CUSTOMER_TYPE_LABELS / PARTNERSHIP_LABELS / CAPABILITY_LABELS) — używamy
@@ -9306,7 +9551,7 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
   const accountOperator = role === "admin" ? pickCompanyAccountOperator(co?.id, accountProfiles) : null;
 
   return (
-    <Modal title={t("common.company_preview.modal_title")} onClose={onClose} wide>
+    <>
       {/* ── TIER 1 ── zawsze widoczny: logo, nazwa, kraj, opis krótki, typy ── */}
       <div style={{ display:"flex",gap:14,marginBottom:14,padding:14,background:"#f8fafc",borderRadius:10 }}>
         <CompanyLogo company={co} size={70}/>
@@ -9496,6 +9741,19 @@ function CompanyPreviewModal({ co, onClose, offers, sends, buyerRetailerId, role
           })()}
         </div>
       )}
+    </>
+  );
+}
+
+// [Admin Companies 2.0 / Branch 2 — Commit 2] Cienki wrapper: zachowuje
+// publiczne API (te same propsy co wcześniej) i shell modala (header/close/
+// wide). Body współdzielone z drawerem przez CompanyPreviewBody. Callerzy
+// (PageBuyerOffers, PageAdminPipeline, legacy PageAdminFirmy) bez zmian.
+function CompanyPreviewModal(props) {
+  const { t } = useTranslation("legacy");
+  return (
+    <Modal title={t("common.company_preview.modal_title")} onClose={props.onClose} wide>
+      <CompanyPreviewBody {...props} />
     </Modal>
   );
 }

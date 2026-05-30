@@ -1791,7 +1791,13 @@
         "history_recent_sends": "Recent submissions",
         "history_empty": "No submissions for this company.",
         "history_approved_at_label": "Account approved:",
-        "history_status_note_label": "Status note:"
+        "history_status_note_label": "Status note:",
+        "history_limit_hint": "Showing the last 20 submissions.",
+        "package_plan_section": "Package and limits",
+        "package_access_section": "Access and visibility",
+        "package_limits_hint": "Plan and limits are read-only here.",
+        "notes_intro": "The status note is visible to the team and used when changing account status.",
+        "notes_placeholder": "Reason for rejection, activation comment or an internal note…"
       }
     },
     "pipeline": {
