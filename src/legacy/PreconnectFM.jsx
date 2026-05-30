@@ -8149,6 +8149,10 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   // "Notatki". `null` = nieedytowane (pokazujemy zapisany status_note); string =
   // użytkownik coś wpisał (dirty guard porównuje z zapisaną wartością).
   const [drawerNoteDraft, setDrawerNoteDraft] = useState(null);
+  // [Admin Companies 2.0 / Branch 2 — Commit 3] Która akcja statusowa footera
+  // jest rozwinięta i czeka na powód: null | "reject" | "suspend". Akcje bez
+  // wymaganego powodu (approve/reactivate) wykonują się od razu.
+  const [footerAction, setFooterAction] = useState(null);
   const [statusNoteDraft, setStatusNoteDraft] = useState({}); // { [companyId]: "powód" }
   const [savingStatusId, setSavingStatusId] = useState(null);
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
@@ -8710,6 +8714,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       if (ADMIN_COMPANIES_2_0_DRAWER) {
                         setDrawerSubtab("preview");
                         setDrawerNoteDraft(null);
+                        setFooterAction(null);
                         setDrawerCompany(firmCo);
                       } else {
                         setPreviewCompany(firmCo);
@@ -8774,11 +8779,12 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
             if (!noteIsDirty) return true;
             return window.confirm(t("admin.firmy.drawer.notes_unsaved_confirm"));
           };
-          const closeDrawer = () => { setDrawerNoteDraft(null); setDrawerCompany(null); };
+          const closeDrawer = () => { setDrawerNoteDraft(null); setFooterAction(null); setDrawerCompany(null); };
           const navTo = (limRow) => {
             if (!confirmDiscard()) return;
             const co = (companies||[]).find(c => c.id === limRow.id) || { id: limRow.id, name: limRow.name };
             setDrawerNoteDraft(null);
+            setFooterAction(null);
             setDrawerCompany(co);
           };
           const goPrev = drawerPrev ? () => navTo(drawerPrev) : undefined;
@@ -8788,6 +8794,28 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
             patchCompany(liveCo.id, { status_note: val });
             setDrawerNoteDraft(null);
             fl(t("admin.firmy.drawer.notes_saved"));
+          };
+
+          // [Branch 2 — Commit 3] Footer status actions. Reuse istniejącego
+          // changeAccountStatus (czyta powód z statusNoteDraft[id], wysyła mail
+          // transakcyjny, czyści draft). Akcje approve/reactivate idą od razu;
+          // reject/suspend rozwijają inline reason (footerAction) i wymagają
+          // niepustego powodu. Double-click guard: savingStatusId.
+          const isSavingStatus = savingStatusId === liveCo?.id;
+          const footerReason = statusNoteDraft[liveCo?.id] ?? "";
+          const setFooterReason = (v) => setStatusNoteDraft(prev => ({ ...prev, [liveCo.id]: v }));
+          const runStatusChange = (newStatus) => {
+            if (isSavingStatus) return;
+            setFooterAction(null);
+            changeAccountStatus(liveCo, newStatus);
+          };
+          const cancelFooterAction = () => { setFooterAction(null); setFooterReason(""); };
+          const confirmFooterAction = () => {
+            if (isSavingStatus) return;
+            if (!(footerReason || "").trim()) return;
+            const newStatus = footerAction === "reject" ? "rejected" : "suspended";
+            setFooterAction(null);
+            changeAccountStatus(liveCo, newStatus);
           };
 
           const drawerStatus = liveCo?.account_status || "active";
@@ -8876,8 +8904,59 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 </div>
               }
               footer={
-                <div style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
-                  {t("admin.firmy.drawer.footer_actions_placeholder")}
+                <div style={{ width:"100%", display:"flex", flexDirection:"column", gap:8 }}>
+                  {/* Inline reason — tylko gdy akcja wymaga powodu (reject/suspend) */}
+                  {footerAction && (
+                    <div>
+                      <div style={{ fontSize:10, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.05em", color:"#64748b", marginBottom:4 }}>
+                        {footerAction === "reject"
+                          ? t("admin.firmy.drawer.footer_reject_reason_label")
+                          : t("admin.firmy.drawer.footer_suspend_reason_label")}
+                      </div>
+                      <textarea
+                        value={footerReason}
+                        onChange={(e) => setFooterReason(e.target.value)}
+                        placeholder={t("admin.firmy.drawer.footer_reason_placeholder")}
+                        disabled={isSavingStatus}
+                        autoFocus
+                        style={{ width:"100%", padding:"8px 10px", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, fontFamily:"inherit", resize:"vertical", minHeight:56, boxSizing:"border-box" }}
+                      />
+                    </div>
+                  )}
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap" }}>
+                    <div style={{ fontSize:11, color:"#64748b", display:"inline-flex", alignItems:"center", gap:6 }}>
+                      <span>{t("admin.firmy.drawer.footer_status_label")}</span>
+                      <span style={{ fontSize:10, color:drawerStatusColor, background:drawerStatusBg, padding:"2px 7px", borderRadius:4, fontWeight:700 }}>{drawerStatusLbl}</span>
+                    </div>
+                    <div style={{ display:"flex", gap:6, flexWrap:"wrap", justifyContent:"flex-end" }}>
+                      {footerAction ? (
+                        <>
+                          <Btn sm outline onClick={cancelFooterAction} disabled={isSavingStatus}>{t("admin.firmy.drawer.footer_cancel")}</Btn>
+                          <Btn sm primary onClick={confirmFooterAction} disabled={isSavingStatus || !(footerReason || "").trim()}
+                            style={{ background:"#dc2626", color:"white", border:"none" }}>
+                            {footerAction === "reject"
+                              ? t("admin.firmy.drawer.footer_confirm_reject")
+                              : t("admin.firmy.drawer.footer_confirm_suspend")}
+                          </Btn>
+                        </>
+                      ) : (
+                        <>
+                          {drawerStatus === "pending_review" && (
+                            <>
+                              <Btn sm primary onClick={() => runStatusChange("active")} disabled={isSavingStatus} style={{ background:"#059669", color:"white", border:"none" }}>{t("admin.firmy.status_btn_approve")}</Btn>
+                              <Btn sm onClick={() => { setFooterReason(""); setFooterAction("reject"); }} disabled={isSavingStatus} style={{ background:"#dc2626", color:"white", border:"none" }}>{t("admin.firmy.status_btn_reject")}</Btn>
+                            </>
+                          )}
+                          {drawerStatus === "active" && (
+                            <Btn sm outline onClick={() => { setFooterReason(""); setFooterAction("suspend"); }} disabled={isSavingStatus} style={{ color:"#dc2626", borderColor:"#fecaca" }}>{t("admin.firmy.status_btn_suspend")}</Btn>
+                          )}
+                          {(drawerStatus === "rejected" || drawerStatus === "suspended") && (
+                            <Btn sm primary onClick={() => runStatusChange("active")} disabled={isSavingStatus} style={{ background:"#059669", color:"white", border:"none" }}>{t("admin.firmy.status_btn_reactivate")}</Btn>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               }
             >

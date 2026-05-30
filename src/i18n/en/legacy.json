@@ -1797,7 +1797,14 @@
         "package_access_section": "Access and visibility",
         "package_limits_hint": "Plan and limits are read-only here.",
         "notes_intro": "The status note is visible to the team and used when changing account status.",
-        "notes_placeholder": "Reason for rejection, activation comment or an internal note…"
+        "notes_placeholder": "Reason for rejection, activation comment or an internal note…",
+        "footer_status_label": "Status:",
+        "footer_reject_reason_label": "Reason for rejection",
+        "footer_suspend_reason_label": "Reason for suspension",
+        "footer_reason_placeholder": "Provide a reason — it will be saved to the status note and included in the company notification…",
+        "footer_confirm_reject": "Confirm rejection",
+        "footer_confirm_suspend": "Confirm suspension",
+        "footer_cancel": "Cancel"
       }
     },
     "pipeline": {

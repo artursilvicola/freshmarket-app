@@ -1797,7 +1797,14 @@
         "package_access_section": "Dostęp i widoczność",
         "package_limits_hint": "Plan i limity są tu tylko do podglądu.",
         "notes_intro": "Notatka statusu jest widoczna dla zespołu i używana przy zmianach statusu konta.",
-        "notes_placeholder": "Powód odrzucenia, komentarz aktywacji lub wewnętrzna notatka…"
+        "notes_placeholder": "Powód odrzucenia, komentarz aktywacji lub wewnętrzna notatka…",
+        "footer_status_label": "Status:",
+        "footer_reject_reason_label": "Powód odrzucenia",
+        "footer_suspend_reason_label": "Powód wstrzymania",
+        "footer_reason_placeholder": "Podaj powód — zapisze się w notatce statusu i trafi do powiadomienia dla firmy…",
+        "footer_confirm_reject": "Potwierdź odrzucenie",
+        "footer_confirm_suspend": "Potwierdź wstrzymanie",
+        "footer_cancel": "Anuluj"
       }
     },
     "pipeline": {
