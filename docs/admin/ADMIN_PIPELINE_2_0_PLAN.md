@@ -818,3 +818,78 @@ Po akceptacji:
 **Bez zmian:** `supabase/migrations/*`, `netlify/functions/*` (email + webhooks), RLS policies, RPC z 013/018/028.
 
 **Bez nowego namespace i18n:** wszystko pod istniejącym `legacy` namespace, klucze pod `admin.pipeline.*` (już zarejestrowane w P2-pipeline).
+
+---
+
+# Część II — Table plan (skala pod setki rekordów)
+
+**Dopisane:** runda `feat/admin-pipeline-2-table-plan`. Rozszerza plan powyżej o konkretny kształt tabeli operacyjnej, persystencję koszyka, decyzję skali i CSV. Spójne z sekcjami 1–14; tu doprecyzowuję rzeczy pod 500+ rekordów. **Wciąż docs-only — zero kodu.**
+
+## II.1. Tabela operacyjna — finalny zestaw kolumn
+
+Zamiast kolorowych kart → jedna gęsta tabela. Kolumny (lewa→prawa):
+
+| Kolumna | Źródło | Uwaga |
+|---|---|---|
+| ☑ zaznaczenie | UI state | bulk select (wysyłka / koszyk / CSV) |
+| Data | `s.sentAt \|\| s.sendDate` | sort domyślny: najnowsze |
+| Sieć | `retailersById.get(s.retailerId)` | zindeksowane (II.B audit) |
+| Dostawca | `companiesByLegacyKey` via `getSupplierCo` zindeksowane | |
+| Produkt | `offersById.get(s.offerId)` | tytuł/produkt + emoji kategorii |
+| Status panelu | `s.status` ∈ approved/sent/opened/read/read_manual | "w panelu kupca" |
+| Status e-maila | `hasRetailerEmailMarker(s)` | rozdzielone od statusu panelu (kluczowe!) |
+| Status odczytu | `isSeenOrCharged` / read / read_manual / unread_expired | |
+| Rozliczenie | `hasChargeMarker` / `hasRefundMarker` / `billingStatus` | charged / waiting / refunded |
+| Akcje | per-wiersz | otwórz drawer, moderuj, dodaj do koszyka |
+
+**Zasada:** "Status panelu" i "Status e-maila" to **dwie osobne kolumny** — bo `status='sent'` semantycznie miesza oba (Część I, finding 2). Admin musi widzieć na raz: w panelu TAK / e-mail NIE.
+
+## II.2. 4 zakładki (potwierdzenie sekcji 1) + subfiltry Mailing
+
+- `Do moderacji` · `Mailing` · `Tracking` · `Rozliczenia` (zgodnie z sekcją 1).
+- **Mailing** subfiltry (chipy): `W panelu bez e-maila` · `W koszyku e-mail` · `E-mail wysłany (dziś / ostatnio)`.
+- Liczniki przy chipach: "w panelu: 20 · w koszyku: 10 · wysłane dziś: 5".
+
+## II.3. Koszyk mailingu — wariant persystencji (bez migracji preferowany)
+
+Cel: admin wysyła **wszystkie** zaakceptowane do panelu kupca, ale do e-maila wybiera **część**, kompletuje przez czas, wysyła jeden mail okresowy. Po wysyłce propozycja **zostaje w panelu**, a e-mail poszedł tylko dla wybranych.
+
+Warianty (rekomendacja: **A**):
+
+- **A. JSONB w `legacy_sends.data` (BEZ migracji)** — `data.basketStatus: "in_basket" | "emailed"`, `data.basketMarkedAt`, `data.basketEmailSentAt`. Zapis przez istniejący `bulkUpsertLegacySends()` (już zapisuje `.data`). **Plus:** zero migracji, zero RLS, spójne z obecnymi markerami (`emailSentAt`). **Minus:** koszyk "globalny" per send (nie per-admin) — akceptowalne, bo admin-team działa wspólnie.
+- **B. Osobna tabela `mailing_basket`** — czyściej relacyjnie, ale **wymaga migracji + RLS + nowych RPC**. Odkładamy, chyba że pojawi się potrzeba koszyków per-admin / audytu historii koszyka.
+- **C. localStorage** — **ODPADA** jako rozwiązanie produkcyjne (ginie między urządzeniami/sesjami, brak współdzielenia w zespole, brak audytu).
+
+**Decyzja do potwierdzenia (Codex/Artur):** iść wariantem A. Jeśli audit/POC wykaże potrzebę per-admin lub historii → migracja do B w osobnym, świadomym kroku (nie w docs-only, nie w table-shell).
+
+## II.4. Skala — decyzja (domyka II.E audit)
+
+1. **Indeksacja Map (warunek konieczny, Branch table-shell):** `offersById`, `retailersById`, `companiesByLegacyKey`, `plansById` — resolve per-wiersz O(1). Czysta logika, zero DB.
+2. **Paginacja klient-side "Pokaż 50 / 100" (Branch table-shell):** slice na stronę, domyślnie 50. Odblokowuje 90% bólu.
+3. **Wirtualizacja / server-side `.range()`:** tylko jeśli wolumen > ~1000 lub szybki wzrost (Q2). Server-side dotyka `loadLegacySends` — osobny, świadomy krok poza table-shell.
+4. **Search:** po sieci / dostawcy / produkcie (string, diakrytyki-tolerant — ten sam wzorzec co Companies Branch 3).
+5. **Filtry:** status panelu, status e-maila (sent/not), odczyt (read/unread), rozliczenie (pending/settled), sieć, dostawca, data (zakres). AND-owane, jeden punkt filtrowania.
+6. **CSV export aktualnego widoku:** eksport przefiltrowanych wierszy (kolumny jak w tabeli). Klient-side (Blob), bez backendu.
+
+## II.5. Right drawer — reuse `AdminRightDrawer` (potwierdzenie sekcji 4)
+
+- Klik w wiersz → `AdminRightDrawer` (ten sam komponent co Companies B2, `src/components/admin/AdminRightDrawer.jsx`, framework-agnostic). **Nie** rozwijać kart pod spodem.
+- Subtaby drawera propozycji: Szczegóły (produkt/dostawca/sieć/statusy) · Historia (confirmHistory + tracking) · Akcje admina (moderacja, koszyk, ręczne potwierdzenie odczytu).
+- Reuse potwierdzony: drawer nie wie nic o domenie, przyjmuje propsy + children → Pipeline tylko go importuje (zgodnie z Companies B2 / sekcja 4 + 12).
+
+## II.6. Branche kodowe — mapowanie nazw z zadania na plan (sekcja 7)
+
+Zadanie B3 proponuje nazwy; mapuję je na istniejący split z sekcji 7 (ten sam podział, tylko nazewnictwo):
+
+| Zadanie B3 | = Plan sekcja 7 | Flaga (default false) |
+|---|---|---|
+| `feat/admin-pipeline-table-shell` | Branch 1: tabela + paginacja + search/filtry + **indeksacja Map** | `ADMIN_PIPELINE_2_0_TABLE` |
+| `feat/admin-pipeline-mailing-basket` | Branch 3: koszyk persystentny (wariant A JSONB) | `ADMIN_PIPELINE_2_0_BASKET` |
+| `feat/admin-pipeline-detail-drawer` | Branch 2: drawer szczegółów (reuse AdminRightDrawer) | `ADMIN_PIPELINE_2_0_DRAWER` |
+| `feat/admin-pipeline-tracking-settlements` | Branch 4: tracking + rozliczenia | `ADMIN_PIPELINE_2_0_TRACKING_SETTLEMENTS` |
+
+**Uwaga kolejności:** indeksacja Map (II.B) wchodzi do table-shell jako pierwsza rzecz — bez niej tabela i tak będzie się ścinać. CSV export → table-shell. **Każdy branch za swoją flagą, default false**, push do review bez merge, stary `PageAdminPipeline` jako fallback przy flagach false. **Nie startować żadnego z tych branchy bez review tego planu przez Codexa.**
+
+## II.7. Guardraile (potwierdzenie sekcji 8)
+
+Docs-only teraz. Branche kodowe później, każdy osobno: **bez** migracji (wariant A koszyka idzie w istniejący JSONB), **bez** zmian wysyłki maili / Netlify functions, **bez** zmian algorytmu FM, **bez** zmian statusów (enum bez zmian), **bez** zmian RLS. Jeśli audit POC wykaże konieczność migracji (koszyk wariant B) — opisać i zdecydować osobno, nie wciągać do table-shell.
