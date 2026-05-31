@@ -29,3 +29,16 @@ export const ADMIN_COMPANIES_2_0_LIST = true;
 // (gdy ADMIN_COMPANIES_2_0_LIST=false) używa starego CompanyPreviewModal
 // niezależnie od tej flagi.
 export const ADMIN_COMPANIES_2_0_DRAWER = false;
+
+// [Admin Companies 2.0 / Branch 3 — feat/admin-companies-contact-actions]
+// Pole wyszukiwania firm + pasek multi-filtrów (Kraj / Pakiet / Flagi dostępu /
+// AI status) nad listą firm w nowym tab-based renderze (ADMIN_COMPANIES_2_0_LIST).
+//
+// Default `false`: gdy wyłączone, lista renderuje się dokładnie jak dziś —
+// 5 tabów po statusie, bez paska search/filtrów. Flip na `true` dopiero po
+// smoke test prod (ten sam wzorzec co ADMIN_COMPANIES_2_0_DRAWER).
+//
+// Zakres Branch 3 to TYLKO szukanie + filtrowanie. Quick contact actions
+// (copy email/phone, mailto/tel) już istnieją z Branch 1 i są niezależne od
+// tej flagi. Wejście w wątek czatu z firmą to osobny Branch 4.
+export const ADMIN_COMPANIES_2_0_FILTERS = false;
