@@ -6,7 +6,7 @@ import {
   Package, ExternalLink, Sparkles, RefreshCw, Eye, Upload, ShieldCheck,
   Filter, Globe, Star, TrendingUp, CreditCard, ChevronDown, ChevronUp,
   RotateCcw, GripVertical, Heart, Wallet, Bell, Activity, Settings, Lock, Unlock,
-  MessageCircle, MessageSquare, Send as SendIcon
+  MessageCircle, MessageSquare, Send as SendIcon, Download
 } from "lucide-react";
 import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
@@ -66,7 +66,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -7283,6 +7283,319 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
   );
 }
 
+/* ── Admin Pipeline 2.0 / Branch 1 — operacyjna tabela (view-only) ─────────
+   Spec: docs/admin/ADMIN_PIPELINE_2_0_PLAN.md (Część II). Zastępuje kolorowe
+   karty jedną tabelą odporną na setki rekordów. Zakres TYLKO widok:
+   indeksacja Map → O(1) lookup, search, multi-filtry, paginacja 50/100, CSV.
+   Akcje (moderacja/koszyk/wysyłka/rozliczenia) zostają w starym widoku i wejdą
+   w kolejnych branchach Pipeline. Jedyna akcja tutaj: read-only podgląd oferty. */
+function PipelineTableV2({ sends, offers, retailers, companies }) {
+  const { t } = useTranslation("legacy");
+
+  // ── Indeksacja danych (raz na render) — O(1) lookup zamiast N² .find() ──
+  const offersById = useMemo(() => {
+    const m = new Map();
+    (offers || []).forEach(o => { if (o?.id != null) m.set(o.id, o); });
+    return m;
+  }, [offers]);
+  const retailersById = useMemo(() => {
+    const m = new Map();
+    (retailers || []).forEach(r => { if (r?.id != null) m.set(r.id, r); });
+    return m;
+  }, [retailers]);
+  // Firma dostawcy indeksowana pod WSZYSTKIMI kluczami z legacyKeyMatchesCompany
+  // (id / legacy_supplier_id / fmId / "sup-<fmId>"), żeby wynik był identyczny
+  // jak getSupplierCo, ale w O(1).
+  const companiesByLegacyKey = useMemo(() => {
+    const m = new Map();
+    (companies || []).forEach(c => {
+      [c?.id, c?.legacy_supplier_id, c?.fmId, c?.fmId ? "sup-" + c.fmId : null]
+        .filter(Boolean)
+        .forEach(k => { if (!m.has(k)) m.set(k, c); });
+    });
+    return m;
+  }, [companies]);
+  const plansById = useMemo(() => {
+    const m = new Map();
+    PRICING_PLANS.forEach(p => m.set(p.id, p));
+    return m;
+  }, []);
+
+  const supplierForSend = useCallback((s) => {
+    const o = offersById.get(s.offerId);
+    const sid = o?.supplierId;
+    if (!sid) return COMPANY_INIT;
+    return companiesByLegacyKey.get(sid) || COMPANY_INIT;
+  }, [offersById, companiesByLegacyKey]);
+
+  // ── Derywacja kolumn statusowych (panel / e-mail / odczyt / rozliczenie) ──
+  // Buyer-visible statuses. `approved` only means accepted by moderation;
+  // the buyer sees the proposal after it is explicitly sent to the panel.
+  const PANEL_STATUSES = ["sent", "opened", "read", "read_manual", "unread_expired", "refunded"];
+  const rowOf = useCallback((s) => {
+    const offer = offersById.get(s.offerId) || null;
+    const retailer = retailersById.get(s.retailerId) || null;
+    const supplier = supplierForSend(s);
+    const inPanel = PANEL_STATUSES.includes(s.status);
+    const emailSent = hasRetailerEmailMarker(s);
+    const isExpired = ["unread_expired", "refunded"].includes(s.status);
+    const isRead = ["opened", "read", "read_manual"].includes(s.status);
+    const charged = hasChargeMarker(s);
+    const refunded = hasRefundMarker(s);
+    const date = s.sentAt || s.sendDate || s.data?.sentAt || "";
+    const dateKey = String(date || "").slice(0, 10);
+    return {
+      send: s,
+      offer, retailer, supplier,
+      date, dateKey,
+      retailerName: retailer?.name || "",
+      supplierName: supplier?.name || "",
+      productName: offer?.title || offer?.product || "",
+      inPanel, emailSent, isExpired, isRead, charged, refunded,
+    };
+  }, [offersById, retailersById, supplierForSend]);
+
+  // ── State: search + filtry + paginacja ──
+  const [search, setSearch] = useState("");
+  const [fPanel, setFPanel] = useState("");      // "" | "in" | "out"
+  const [fEmail, setFEmail] = useState("");      // "" | "sent" | "unsent"
+  const [fRead, setFRead] = useState("");        // "" | "read" | "unread"
+  const [fSettle, setFSettle] = useState("");    // "" | "charged" | "waiting"
+  const [fRetailer, setFRetailer] = useState(""); // retailerId (string)
+  const [fSupplier, setFSupplier] = useState(""); // supplier key (string)
+  const [fDateFrom, setFDateFrom] = useState("");
+  const [fDateTo, setFDateTo] = useState("");
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(0);
+
+  const normalizeText = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+  const allRows = useMemo(() => (sends || []).map(rowOf), [sends, rowOf]);
+
+  // Opcje dropdownów (unikalne, z aktualnych danych)
+  const retailerOptions = useMemo(() => {
+    const seen = new Map();
+    allRows.forEach(r => { if (r.retailer && !seen.has(r.retailer.id)) seen.set(r.retailer.id, r.retailer.name || String(r.retailer.id)); });
+    return [...seen.entries()].map(([id, name]) => ({ id: String(id), name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allRows]);
+  const supplierOptions = useMemo(() => {
+    const seen = new Map();
+    allRows.forEach(r => { const key = r.supplier?.id || r.send.supplierId; if (key && !seen.has(String(key))) seen.set(String(key), r.supplier?.name || String(key)); });
+    return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allRows]);
+
+  const anyFilterActive = !!(search.trim() || fPanel || fEmail || fRead || fSettle || fRetailer || fSupplier || fDateFrom || fDateTo);
+  const clearFilters = () => {
+    setSearch(""); setFPanel(""); setFEmail(""); setFRead(""); setFSettle("");
+    setFRetailer(""); setFSupplier(""); setFDateFrom(""); setFDateTo("");
+  };
+
+  const filteredRows = useMemo(() => {
+    const q = normalizeText(search.trim());
+    return allRows.filter(r => {
+      if (q) {
+        const hay = normalizeText([r.retailerName, r.supplierName, r.productName].join(" "));
+        if (!hay.includes(q)) return false;
+      }
+      if (fPanel === "in" && !r.inPanel) return false;
+      if (fPanel === "out" && r.inPanel) return false;
+      if (fEmail === "sent" && !r.emailSent) return false;
+      if (fEmail === "unsent" && r.emailSent) return false;
+      if (fRead === "read" && !r.isRead) return false;
+      if (fRead === "unread" && r.isRead) return false;
+      if (fSettle === "charged" && !r.charged) return false;
+      if (fSettle === "waiting" && (!r.inPanel || r.charged || r.refunded)) return false;
+      if (fRetailer && String(r.retailer?.id) !== fRetailer) return false;
+      if (fSupplier && String(r.supplier?.id || r.send.supplierId) !== fSupplier) return false;
+      if (fDateFrom && (!r.dateKey || r.dateKey < fDateFrom)) return false;
+      if (fDateTo && (!r.dateKey || r.dateKey > fDateTo)) return false;
+      return true;
+    }).sort((a, b) => String(b.date).localeCompare(String(a.date))); // najnowsze u góry
+  }, [allRows, search, fPanel, fEmail, fRead, fSettle, fRetailer, fSupplier, fDateFrom, fDateTo]);
+
+  // Reset strony gdy zmieni się zestaw wyników / rozmiar strony
+  useEffect(() => { setPage(0); }, [search, fPanel, fEmail, fRead, fSettle, fRetailer, fSupplier, fDateFrom, fDateTo, pageSize]);
+
+  const total = filteredRows.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageStart = safePage * pageSize;
+  const pageRows = filteredRows.slice(pageStart, pageStart + pageSize);
+
+  const [previewOffer, setPreviewOffer] = useState(null);
+
+  // ── CSV export aktualnego (przefiltrowanego) widoku ──
+  const exportCsv = () => {
+    const headers = [
+      t("admin.pipeline.table.col_date"), t("admin.pipeline.table.col_retailer"),
+      t("admin.pipeline.table.col_supplier"), t("admin.pipeline.table.col_product"),
+      t("admin.pipeline.table.col_panel"), t("admin.pipeline.table.col_email"),
+      t("admin.pipeline.table.col_read"), t("admin.pipeline.table.col_settlement"),
+    ];
+    const esc = (v) => { const s = String(v ?? ""); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const panelTxt = (r) => r.inPanel ? t("admin.pipeline.table.panel_yes") : t("admin.pipeline.table.panel_no");
+    const emailTxt = (r) => r.emailSent ? t("admin.pipeline.table.email_sent") : t("admin.pipeline.table.email_not_sent");
+    const readTxt = (r) => r.isExpired ? t("admin.pipeline.table.read_expired") : r.isRead ? t("admin.pipeline.table.read_read") : r.inPanel ? t("admin.pipeline.table.read_unread") : t("admin.pipeline.table.read_na");
+    const settleTxt = (r) => r.refunded ? t("admin.pipeline.table.settle_refunded") : r.charged ? t("admin.pipeline.table.settle_charged") : r.inPanel ? t("admin.pipeline.table.settle_waiting") : t("admin.pipeline.table.settle_na");
+    const lines = [headers.map(esc).join(",")];
+    filteredRows.forEach(r => {
+      lines.push([r.date, r.retailerName, r.supplierName, r.productName, panelTxt(r), emailTxt(r), readTxt(r), settleTxt(r)].map(esc).join(","));
+    });
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "pipeline.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const selStyle = (active) => ({ padding:"7px 10px", border:`1px solid ${active?"#0d9488":"#e2e8f0"}`, borderRadius:7, fontSize:12, fontFamily:"inherit", background:"white", cursor:"pointer" });
+  const th = { textAlign:"left", padding:"8px 10px", fontSize:10, textTransform:"uppercase", letterSpacing:"0.04em", color:"#64748b", fontWeight:700, borderBottom:"1px solid #e2e8f0", whiteSpace:"nowrap", position:"sticky", top:0, background:"#f8fafc", zIndex:1 };
+  const td = { padding:"8px 10px", fontSize:12, color:"#334155", borderBottom:"1px solid #f1f5f9", verticalAlign:"middle" };
+  const pill = (txt, color, bg) => <span style={{ fontSize:10, fontWeight:700, color, background:bg, padding:"2px 7px", borderRadius:4, whiteSpace:"nowrap" }}>{txt}</span>;
+
+  return (
+    <div>
+      {previewOffer && <OfferPreviewModal offer={previewOffer} co={companiesByLegacyKey.get(previewOffer?.supplierId) || COMPANY_INIT} onClose={() => setPreviewOffer(null)} />}
+
+      {/* Pasek search + filtry */}
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 }}>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t("admin.pipeline.table.search_placeholder")}
+          aria-label={t("admin.pipeline.table.search_aria")}
+          style={{ flex:"1 1 220px", minWidth:180, padding:"7px 10px", border:"1px solid #e2e8f0", borderRadius:7, fontSize:12, fontFamily:"inherit", boxSizing:"border-box" }}
+        />
+        <select value={fRetailer} onChange={(e)=>setFRetailer(e.target.value)} aria-label={t("admin.pipeline.table.filter_retailer_all")} style={selStyle(!!fRetailer)}>
+          <option value="">{t("admin.pipeline.table.filter_retailer_all")}</option>
+          {retailerOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+        <select value={fSupplier} onChange={(e)=>setFSupplier(e.target.value)} aria-label={t("admin.pipeline.table.filter_supplier_all")} style={selStyle(!!fSupplier)}>
+          <option value="">{t("admin.pipeline.table.filter_supplier_all")}</option>
+          {supplierOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+        </select>
+        <select value={fPanel} onChange={(e)=>setFPanel(e.target.value)} aria-label={t("admin.pipeline.table.filter_panel_label")} style={selStyle(!!fPanel)}>
+          <option value="">{t("admin.pipeline.table.filter_panel_all")}</option>
+          <option value="in">{t("admin.pipeline.table.filter_panel_in")}</option>
+          <option value="out">{t("admin.pipeline.table.filter_panel_out")}</option>
+        </select>
+        <select value={fEmail} onChange={(e)=>setFEmail(e.target.value)} aria-label={t("admin.pipeline.table.filter_email_label")} style={selStyle(!!fEmail)}>
+          <option value="">{t("admin.pipeline.table.filter_email_all")}</option>
+          <option value="sent">{t("admin.pipeline.table.filter_email_sent")}</option>
+          <option value="unsent">{t("admin.pipeline.table.filter_email_unsent")}</option>
+        </select>
+        <select value={fRead} onChange={(e)=>setFRead(e.target.value)} aria-label={t("admin.pipeline.table.filter_read_label")} style={selStyle(!!fRead)}>
+          <option value="">{t("admin.pipeline.table.filter_read_all")}</option>
+          <option value="read">{t("admin.pipeline.table.filter_read_read")}</option>
+          <option value="unread">{t("admin.pipeline.table.filter_read_unread")}</option>
+        </select>
+        <select value={fSettle} onChange={(e)=>setFSettle(e.target.value)} aria-label={t("admin.pipeline.table.filter_settle_label")} style={selStyle(!!fSettle)}>
+          <option value="">{t("admin.pipeline.table.filter_settle_all")}</option>
+          <option value="charged">{t("admin.pipeline.table.filter_settle_charged")}</option>
+          <option value="waiting">{t("admin.pipeline.table.filter_settle_waiting")}</option>
+        </select>
+        <input type="date" value={fDateFrom} onChange={(e)=>setFDateFrom(e.target.value)} aria-label={t("admin.pipeline.table.filter_date_from")} title={t("admin.pipeline.table.filter_date_from")} style={selStyle(!!fDateFrom)} />
+        <input type="date" value={fDateTo} onChange={(e)=>setFDateTo(e.target.value)} aria-label={t("admin.pipeline.table.filter_date_to")} title={t("admin.pipeline.table.filter_date_to")} style={selStyle(!!fDateTo)} />
+      </div>
+
+      {/* Wiersz: licznik + akcje */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", marginBottom:10 }}>
+        <span style={{ fontSize:11, color:"#64748b" }}>{t("admin.pipeline.table.results_count", { shown: total, total: allRows.length })}</span>
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+          {anyFilterActive && <Btn sm outline onClick={clearFilters}>{t("admin.pipeline.table.clear_filters")}</Btn>}
+          <Btn sm outline onClick={exportCsv} disabled={total === 0}><Download size={11}/> {t("admin.pipeline.table.export_csv")}</Btn>
+        </div>
+      </div>
+
+      {/* Tabela */}
+      {total === 0 ? (
+        <Alrt type="info">{anyFilterActive ? t("admin.pipeline.table.empty_filtered") : t("admin.pipeline.table.empty_all")}</Alrt>
+      ) : (
+        <>
+          <div style={{ border:"1px solid #e2e8f0", borderRadius:10, overflow:"auto", maxHeight:"calc(100vh - 260px)" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontFamily:"inherit" }}>
+              <thead>
+                <tr>
+                  <th style={th}>{t("admin.pipeline.table.col_date")}</th>
+                  <th style={th}>{t("admin.pipeline.table.col_retailer")}</th>
+                  <th style={th}>{t("admin.pipeline.table.col_supplier")}</th>
+                  <th style={th}>{t("admin.pipeline.table.col_product")}</th>
+                  <th style={th}>{t("admin.pipeline.table.col_panel")}</th>
+                  <th style={th}>{t("admin.pipeline.table.col_email")}</th>
+                  <th style={th}>{t("admin.pipeline.table.col_read")}</th>
+                  <th style={th}>{t("admin.pipeline.table.col_settlement")}</th>
+                  <th style={{ ...th, textAlign:"right" }}>{t("admin.pipeline.table.col_actions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map(r => (
+                  <tr key={r.send.id}>
+                    <td style={{ ...td, whiteSpace:"nowrap", color:"#64748b" }}>{r.date || "—"}</td>
+                    <td style={{ ...td }}>{r.retailerName || "—"}</td>
+                    <td style={{ ...td }}>{r.supplierName || "—"}</td>
+                    <td style={{ ...td }}>
+                      <span style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
+                        {r.offer?.category && <span>{CEMOJI[r.offer.category] || "📦"}</span>}
+                        <span style={{ maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", display:"inline-block" }}>{r.productName || "—"}</span>
+                      </span>
+                    </td>
+                    <td style={td}>{r.inPanel ? pill(t("admin.pipeline.table.panel_yes"), "#0369a1", "#e0f2fe") : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.panel_no")}</span>}</td>
+                    <td style={td}>{r.emailSent ? pill(t("admin.pipeline.table.email_sent"), "#047857", "#d1fae5") : pill(t("admin.pipeline.table.email_not_sent"), "#92400e", "#fef3c7")}</td>
+                    <td style={td}>
+                      {r.isExpired
+                        ? pill(t("admin.pipeline.table.read_expired"), "#b91c1c", "#fee2e2")
+                        : r.isRead
+                        ? pill(t("admin.pipeline.table.read_read"), "#059669", "#d1fae5")
+                        : r.inPanel
+                        ? pill(t("admin.pipeline.table.read_unread"), "#ea580c", "#ffedd5")
+                        : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.read_na")}</span>}
+                    </td>
+                    <td style={td}>
+                      {r.refunded
+                        ? pill(t("admin.pipeline.table.settle_refunded"), "#64748b", "#f1f5f9")
+                        : r.charged
+                        ? pill(t("admin.pipeline.table.settle_charged"), "#059669", "#ecfdf5")
+                        : r.inPanel
+                        ? pill(t("admin.pipeline.table.settle_waiting"), "#ca8a04", "#fef9c3")
+                        : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.settle_na")}</span>}
+                    </td>
+                    <td style={{ ...td, textAlign:"right", whiteSpace:"nowrap" }}>
+                      <Btn sm outline onClick={() => setPreviewOffer(r.offer)} title={t("admin.pipeline.table.action_preview")} disabled={!r.offer}><Eye size={11}/></Btn>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Paginacja */}
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", marginTop:10 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:11, color:"#64748b" }}>{t("admin.pipeline.table.page_size_label")}</span>
+              {[50, 100].map(sz => (
+                <button key={sz} type="button" onClick={() => setPageSize(sz)}
+                  style={{ padding:"4px 10px", borderRadius:6, border:`1px solid ${pageSize===sz?"#0d9488":"#e2e8f0"}`, background:pageSize===sz?"rgba(13,148,136,0.06)":"white", color:pageSize===sz?"#0d9488":"#64748b", fontSize:11, fontWeight:pageSize===sz?700:500, cursor:"pointer", fontFamily:"inherit" }}>
+                  {sz}
+                </button>
+              ))}
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:11, color:"#64748b" }}>{t("admin.pipeline.table.page_status_format", { from: total === 0 ? 0 : pageStart + 1, to: Math.min(pageStart + pageSize, total), total })}</span>
+              <Btn sm outline onClick={() => setPage(p => Math.max(0, p - 1))} disabled={safePage <= 0}>{t("admin.pipeline.table.page_prev")}</Btn>
+              <Btn sm outline onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1}>{t("admin.pipeline.table.page_next")}</Btn>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── Admin Pipeline: tabs Moderacja / Wysłane+Tracking ──────────────────── */
 function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies }) {
   const { t } = useTranslation("legacy");
@@ -7354,6 +7667,21 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
     }
     return acc;
   }, {});
+
+  // [Admin Pipeline 2.0 / Branch 1] Nowy widok tabeli (za flagą). Stary render
+  // kart poniżej zostaje nietknięty jako fallback przy ADMIN_PIPELINE_2_0_TABLE
+  // = false. Flaga jest module-level const → kolejność hooków stabilna
+  // (early return po wszystkich useState/useEffect powyżej).
+  if (ADMIN_PIPELINE_2_0_TABLE) {
+    return (
+      <PipelineTableV2
+        sends={sends}
+        offers={offers}
+        retailers={retailers}
+        companies={companies}
+      />
+    );
+  }
 
   return (
     <div>

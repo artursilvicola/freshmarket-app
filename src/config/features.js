@@ -42,3 +42,23 @@ export const ADMIN_COMPANIES_2_0_DRAWER = false;
 // (copy email/phone, mailto/tel) już istnieją z Branch 1 i są niezależne od
 // tej flagi. Wejście w wątek czatu z firmą to osobny Branch 4.
 export const ADMIN_COMPANIES_2_0_FILTERS = false;
+
+// [Admin Pipeline 2.0 / Branch 1 — feat/admin-pipeline-table-shell]
+// Spec: docs/admin/ADMIN_PIPELINE_2_0_PLAN.md (Część II — Table plan).
+// Zastępuje kolorowe karty w PageAdminPipeline jedną operacyjną TABELĄ
+// odporną na setki rekordów: indeksacja danych przez Map (offersById /
+// retailersById / companiesByLegacyKey / plansById → O(1) lookup zamiast N²),
+// paginacja klient-side 50/100, search (sieć / dostawca / produkt), filtry
+// (status panelu / status e-maila / odczyt / rozliczenie / sieć / dostawca /
+// data) oraz CSV export aktualnego widoku.
+//
+// Default `false`: gdy wyłączone, PageAdminPipeline renderuje stary widok
+// kart (2 taby: Moderacja / Tracking) bez zmian. Flip na `true` dopiero po
+// smoke test prod.
+//
+// UWAGA zakres Branch 1 = TYLKO widok (tabela + szukanie/filtry/paginacja/CSV).
+// Akcje (moderacja, koszyk mailingu, wysyłka, rozliczenia) NIE są w tym
+// branchu — żyją dalej w starym widoku (fallback) i wejdą w kolejnych
+// branchach Pipeline (drawer szczegółów = Branch 2 itd.). Dlatego flagi NIE
+// wolno flipować na `true` zanim akcje nie trafią do tabeli/drawera.
+export const ADMIN_PIPELINE_2_0_TABLE = false;
