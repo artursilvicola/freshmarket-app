@@ -66,7 +66,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -8153,6 +8153,16 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   // jest rozwinięta i czeka na powód: null | "reject" | "suspend". Akcje bez
   // wymaganego powodu (approve/reactivate) wykonują się od razu.
   const [footerAction, setFooterAction] = useState(null);
+  // [Admin Companies 2.0 / Branch 3] Search + multi-filtry. Aktywne tylko gdy
+  // ADMIN_COMPANIES_2_0_FILTERS=true. Search po: nazwa firmy, osoba kontaktowa,
+  // e-mail, telefon, kraj, miasto. Filtry AND-owane: kraj / pakiet / preconnect /
+  // fm_b2b / ai_status. Wartość "" = filtr nieaktywny.
+  const [companySearch, setCompanySearch] = useState("");
+  const [filterCountry, setFilterCountry] = useState("");
+  const [filterPkg, setFilterPkg] = useState("");
+  const [filterPreconnect, setFilterPreconnect] = useState(""); // "" | "on" | "off"
+  const [filterFmB2b, setFilterFmB2b] = useState("");           // "" | "on" | "off"
+  const [filterAiStatus, setFilterAiStatus] = useState("");     // "" | pending|approved|edited|rejected
   const [statusNoteDraft, setStatusNoteDraft] = useState({}); // { [companyId]: "powód" }
   const [savingStatusId, setSavingStatusId] = useState(null);
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
@@ -8365,6 +8375,70 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         if (selectedTab === "rejected") return status === "rejected";
         return false;
       });
+
+  // [Admin Companies 2.0 / Branch 3] Search + multi-filtry. Jeden punkt
+  // filtrowania owijający visibleLimsByTab (taby/statusy zostają bez zmian —
+  // tabCounts liczone niezależnie po statusie). Aktywne tylko gdy flaga ON;
+  // przy OFF `visibleLimsForRender === visibleLimsByTab` (zero zmian zachowania).
+  const normalizeText = (s) => String(s || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, ""); // diakrytyki-tolerant
+  // Lista krajów do dropdownu (unikalne, z aktualnej listy firm), posortowana
+  // po lokalnej nazwie.
+  const filterCountryOptions = ADMIN_COMPANIES_2_0_FILTERS
+    ? [...new Set(allLims.map(l => l.country).filter(c => c && c !== "—"))]
+        .map(code => ({ code, label: getCountryName(code) || code }))
+        .sort((a, b) => a.label.localeCompare(b.label))
+    : [];
+  const filterPkgOptions = ADMIN_COMPANIES_2_0_FILTERS
+    ? [...new Set(allLims.map(l => l.pkg).filter(p => p && p !== "—"))].sort()
+    : [];
+  const anyFilterActive = !!(companySearch.trim() || filterCountry || filterPkg || filterPreconnect || filterFmB2b || filterAiStatus);
+  const clearAllFilters = () => {
+    setCompanySearch("");
+    setFilterCountry("");
+    setFilterPkg("");
+    setFilterPreconnect("");
+    setFilterFmB2b("");
+    setFilterAiStatus("");
+  };
+  const limMatchesFilters = (lim) => {
+    const co = (companies || []).find(c => c.id === lim.id) || {};
+    // Kontakt resolve'owany jak w wierszu (operator konta > kontakt biznesowy >
+    // pola firmy), żeby search po osobie/e-mailu/telefonie był spójny z UI.
+    const operator = pickCompanyAccountOperator(lim.id, profiles);
+    const business = pickCompanyBusinessContact(co);
+    const contactName = operator?.name || business?.name || "";
+    const contactEmail = operator?.email || business?.email || co?.email || "";
+    const contactPhone = operator?.phone || business?.phone || co?.phone || "";
+    const city = co?.city || "";
+    // Search (AND-owane po wszystkich polach jako jeden OR-owy haystack)
+    const q = normalizeText(companySearch.trim());
+    if (q) {
+      const hay = normalizeText([lim.name, contactName, contactEmail, contactPhone, getCountryName(lim.country) || lim.country, city].join(" "));
+      if (!hay.includes(q)) return false;
+    }
+    if (filterCountry && lim.country !== filterCountry) return false;
+    if (filterPkg && lim.pkg !== filterPkg) return false;
+    if (filterPreconnect) {
+      const on = co?.preconnect_enabled === true;
+      if (filterPreconnect === "on" && !on) return false;
+      if (filterPreconnect === "off" && on) return false;
+    }
+    if (filterFmB2b) {
+      const on = co?.fm_b2b_enabled === true;
+      if (filterFmB2b === "on" && !on) return false;
+      if (filterFmB2b === "off" && on) return false;
+    }
+    if (filterAiStatus) {
+      const ai = co?.ai_review_status || "pending";
+      if (ai !== filterAiStatus) return false;
+    }
+    return true;
+  };
+  const visibleLimsForRender = ADMIN_COMPANIES_2_0_FILTERS && anyFilterActive
+    ? visibleLimsByTab.filter(limMatchesFilters)
+    : visibleLimsByTab;
 
   // [Admin Companies 2.0 / Branch 1] Wydzielony expanded JSX —
   // share'owany między legacy renderem (ADMIN_COMPANIES_2_0_LIST=false)
@@ -8614,10 +8688,69 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
             })}
           </div>
         </div>
-        {visibleLimsByTab.length === 0 && (
-          <Alrt type="info">{t(emptyKey)}</Alrt>
+        {/* [Admin Companies 2.0 / Branch 3] Pasek search + multi-filtry.
+            Renderowany tylko gdy ADMIN_COMPANIES_2_0_FILTERS=true. Gęsty,
+            jednowierszowy (wrap na wąskich). AND-uje search + 5 filtrów. */}
+        {ADMIN_COMPANIES_2_0_FILTERS && (
+          <div style={{ marginBottom:12 }}>
+            <div style={{ display:"flex",gap:8,flexWrap:"wrap",alignItems:"center" }}>
+              <input
+                type="search"
+                value={companySearch}
+                onChange={(e) => setCompanySearch(e.target.value)}
+                placeholder={t("admin.firmy.search_placeholder")}
+                aria-label={t("admin.firmy.search_aria")}
+                style={{ flex:"1 1 240px",minWidth:200,padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box" }}
+              />
+              <select value={filterCountry} onChange={(e)=>setFilterCountry(e.target.value)} aria-label={t("admin.firmy.filter_country_label")}
+                style={{ padding:"7px 10px",border:`1px solid ${filterCountry?"#0d9488":"#e2e8f0"}`,borderRadius:7,fontSize:12,fontFamily:"inherit",background:"white",cursor:"pointer" }}>
+                <option value="">{t("admin.firmy.filter_country_all")}</option>
+                {filterCountryOptions.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+              </select>
+              <select value={filterPkg} onChange={(e)=>setFilterPkg(e.target.value)} aria-label={t("admin.firmy.filter_pkg_label")}
+                style={{ padding:"7px 10px",border:`1px solid ${filterPkg?"#0d9488":"#e2e8f0"}`,borderRadius:7,fontSize:12,fontFamily:"inherit",background:"white",cursor:"pointer" }}>
+                <option value="">{t("admin.firmy.filter_pkg_all")}</option>
+                {filterPkgOptions.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <select value={filterPreconnect} onChange={(e)=>setFilterPreconnect(e.target.value)} aria-label={t("admin.firmy.filter_preconnect_label")}
+                style={{ padding:"7px 10px",border:`1px solid ${filterPreconnect?"#0d9488":"#e2e8f0"}`,borderRadius:7,fontSize:12,fontFamily:"inherit",background:"white",cursor:"pointer" }}>
+                <option value="">{t("admin.firmy.filter_preconnect_all")}</option>
+                <option value="on">{t("admin.firmy.filter_preconnect_on")}</option>
+                <option value="off">{t("admin.firmy.filter_preconnect_off")}</option>
+              </select>
+              <select value={filterFmB2b} onChange={(e)=>setFilterFmB2b(e.target.value)} aria-label={t("admin.firmy.filter_fm_b2b_label")}
+                style={{ padding:"7px 10px",border:`1px solid ${filterFmB2b?"#0d9488":"#e2e8f0"}`,borderRadius:7,fontSize:12,fontFamily:"inherit",background:"white",cursor:"pointer" }}>
+                <option value="">{t("admin.firmy.filter_fm_b2b_all")}</option>
+                <option value="on">{t("admin.firmy.filter_fm_b2b_on")}</option>
+                <option value="off">{t("admin.firmy.filter_fm_b2b_off")}</option>
+              </select>
+              <select value={filterAiStatus} onChange={(e)=>setFilterAiStatus(e.target.value)} aria-label={t("admin.firmy.filter_ai_label")}
+                style={{ padding:"7px 10px",border:`1px solid ${filterAiStatus?"#0d9488":"#e2e8f0"}`,borderRadius:7,fontSize:12,fontFamily:"inherit",background:"white",cursor:"pointer" }}>
+                <option value="">{t("admin.firmy.filter_ai_all")}</option>
+                <option value="pending">{t("admin.firmy.review_labels.pending")}</option>
+                <option value="approved">{t("admin.firmy.review_labels.approved")}</option>
+                <option value="edited">{t("admin.firmy.review_labels.edited")}</option>
+                <option value="rejected">{t("admin.firmy.review_labels.rejected")}</option>
+              </select>
+            </div>
+            <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:8 }}>
+              <span style={{ fontSize:11,color:"#64748b" }}>
+                {t("admin.firmy.results_count", { shown: visibleLimsForRender.length, total: visibleLimsByTab.length })}
+              </span>
+              {anyFilterActive && (
+                <Btn sm outline onClick={clearAllFilters}>{t("admin.firmy.clear_filters")}</Btn>
+              )}
+            </div>
+          </div>
         )}
-        {visibleLimsByTab.map(lim => {
+        {visibleLimsForRender.length === 0 && (
+          <Alrt type="info">
+            {ADMIN_COMPANIES_2_0_FILTERS && anyFilterActive
+              ? t("admin.firmy.empty_filtered")
+              : t(emptyKey)}
+          </Alrt>
+        )}
+        {visibleLimsForRender.map(lim => {
           const isExpanded = expandedId === lim.id;
           const firmCo = (companies||[]).find(c => c.id === lim.id) || { id: lim.id };
           const firmSends = sends.filter(s => legacyKeyMatchesCompany(s.supplierId, firmCo));
