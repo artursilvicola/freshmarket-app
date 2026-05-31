@@ -10000,16 +10000,17 @@ function OfferPreviewModal({ offer, co, onClose }) {
 
 const ROLE_COLORS = { admin:"#7c3aed", supplier:"#0d9488", buyer:"#2563eb" };
 const ROLE_LABELS  = { admin:"Admin", supplier:"Dostawca", buyer:"Kupiec" };
+const SWITCHER_ROLE_FILTERS = new Set(["admin", "supplier", "buyer"]);
+const defaultAccountFilterRole = (acc) => SWITCHER_ROLE_FILTERS.has(acc?.role) ? acc.role : "all";
 
 function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, retailers }) {
   const { t } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
-  // [fix/admin-default-context-admin] Admin default is Admin, not All, to
-  // prevent accidental cross-role work. Gdy aktywne konto to admin, quick-filtr
-  // startuje na "admin" (admin widzi najpierw kontekst administracyjny i musi
-  // świadomie kliknąć "All"/"Suppliers"/"Buyers"). Dla nie-adminów bez zmian
-  // ("all"). To czysty UI default — bez localStorage, bez zmian uprawnień/RLS.
-  const [filterRole, setFilterRole] = useState(() => account?.role === "admin" ? "admin" : "all");
+  // Keep the quick filter on the current role; "All" must be an explicit admin choice.
+  const [filterRole, setFilterRole] = useState(() => defaultAccountFilterRole(account));
+  useEffect(() => {
+    setFilterRole(defaultAccountFilterRole(account));
+  }, [account?.id, account?.role]);
   // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej fazy.
   const ph = FM_PHASES[fmSettings.currentPhase-1] || FM_PHASES[FM_PHASES.length-1];
   // [P2-final-qa C2] Locale-aware FM_PHASES.label dla badge w switcher bar.
@@ -10085,7 +10086,7 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
                   {roleGroupHeader(roleKey, grp.length)}
                 </div>
                 {grp.map(acc=>(
-                  <button key={acc.id} onClick={()=>{onSwitch(acc);setOpen(false);setFilterRole(acc.role==="admin"?"admin":"all");}}
+                  <button key={acc.id} onClick={()=>{onSwitch(acc);setOpen(false);setFilterRole(defaultAccountFilterRole(acc));}}
                     style={{ width:"100%",padding:"9px 16px",borderBottom:"1px solid rgba(255,255,255,0.04)",background:account.id===acc.id?"rgba(255,255,255,0.06)":"transparent",cursor:"pointer",textAlign:"left",border:"none",display:"flex",alignItems:"center",gap:10,transition:"background 0.1s",opacity:(acc.role==="buyer"&&(retailers||[]).find(x=>x.id===acc.retailerId)?.active===false)?0.5:1 }}>
                     <div style={{ width:8,height:8,borderRadius:"50%",background:ROLE_COLORS[acc.role],flexShrink:0 }}/>
                     <div style={{ flex:1,minWidth:0 }}>
