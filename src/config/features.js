@@ -61,4 +61,4 @@ export const ADMIN_COMPANIES_2_0_FILTERS = false;
 // branchu — żyją dalej w starym widoku (fallback) i wejdą w kolejnych
 // branchach Pipeline (drawer szczegółów = Branch 2 itd.). Dlatego flagi NIE
 // wolno flipować na `true` zanim akcje nie trafią do tabeli/drawera.
-export const ADMIN_PIPELINE_2_0_TABLE = false;
+export const ADMIN_PIPELINE_2_0_TABLE = true;
