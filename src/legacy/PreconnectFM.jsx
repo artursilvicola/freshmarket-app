@@ -3282,6 +3282,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }
 
   function renderPage(){
+    // [fix/admin-dashboard-routes] Compatibility guard: gdyby admin trafił na
+    // pg==="dashboard" (stary stan / nieaktualny nav), NIE pokazuj dashboardu
+    // dostawcy — renderuj PageAdminDash. Supplier/buyer bez zmian.
+    if(pg==="dashboard" && role==="admin") return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers} retailers={retailers} hiddenRetailers={companyHiddenRetailers} setHiddenRetailers={setCompanyHiddenRetailers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
@@ -3331,12 +3335,20 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             <FreshMarketLogo variant="light" size={22} />
           </div>
           <nav style={{ flex:1,padding:"8px 8px",overflowY:"auto" }}>
-            {/* ── DASHBOARD (not for buyer — their main page is Propozycje) ── */}
-            {role!=="buyer" && (
-              <div onClick={()=>nav("dashboard")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="dashboard"?"white":"#64748b",background:navKey==="dashboard"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:4,cursor:"pointer",fontSize:13,fontWeight:navKey==="dashboard"?600:400,transition:"all 0.15s" }}>
-                <Home size={14}/><span>{t("shell.sidebar.dashboard")}</span>
-              </div>
-            )}
+            {/* ── DASHBOARD (not for buyer — their main page is Propozycje) ──
+                [fix/admin-dashboard-routes] Admin Dashboard MUSI iść do "a-dash"
+                (PageAdminDash), nie do "dashboard" (PageDashboard dostawcy).
+                Wcześniej wspólny item nawigował zawsze na "dashboard", więc
+                admin po kliknięciu Dashboard widział dashboard dostawcy. */}
+            {role!=="buyer" && (() => {
+              const dashKey = role==="admin" ? "a-dash" : "dashboard";
+              const dashActive = navKey===dashKey;
+              return (
+                <div onClick={()=>nav(dashKey)} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:dashActive?"white":"#64748b",background:dashActive?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:4,cursor:"pointer",fontSize:13,fontWeight:dashActive?600:400,transition:"all 0.15s" }}>
+                  <Home size={14}/><span>{t("shell.sidebar.dashboard")}</span>
+                </div>
+              );
+            })()}
 
             {/* ── SUPPLIER NAV ── */}
             {role==="supplier"&&<>
