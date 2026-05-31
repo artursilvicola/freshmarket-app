@@ -680,3 +680,52 @@ Jeśli Companies Branch 2 zrobi drawer inline w `PageAdminFirmy`, Pipeline 2.0 B
 ## Sign-off
 
 Audit gotowy do plan stage. Następny dokument: `ADMIN_PIPELINE_2_0_PLAN.md` z architekturą 4 tabów, koszykiem mailingu, tabelą + filtrami, planem 4-5 sekwencyjnych branchy kodowych.
+
+---
+
+# Część II — Table audit (skala pod setki rekordów)
+
+**Dopisane:** runda `feat/admin-pipeline-2-table-plan`. Rozszerza powyższy audit o twardą analizę skali (N² lookupy, brak wirtualizacji/paginacji, persystencja koszyka). Numery linii zweryfikowane na `main` = `990d76a` (deep-audit przez Explore subagent).
+
+## II.A. Potwierdzenie: ładowanie całości bez limitu
+
+- `loadLegacySends()` (PreconnectFM.jsx ~1916) ładuje **całą** tabelę `legacy_sends` — **brak** `.range()`, `.limit()`, `.head()`. Dev fallback: `SENDS_INIT` (14 rekordów).
+- Prop `sends` schodzi do `PageAdminPipeline` (~3301) jako pełna tablica. Każdy render mapuje wszystko naraz — **bez wirtualizacji**.
+- **Ryzyko (potwierdzone):** przy 500+ rekordach to jest pierwszy bottleneck — i pamięciowy (cała tabela w state), i renderowy (500+ kart/wierszy w DOM).
+
+## II.B. N² lookupy — kwantyfikacja (sedno problemu wydajności)
+
+Każdy wiersz/karta resolve'uje dane referencyjne przez `.find()` po pełnych tablicach — w pętli `.map()` po sendach. To jest O(sends × refs) na każdy render:
+
+| Linia | Operacja | Złożoność per render |
+|---|---|---|
+| 7330 | `getOffer(s.offerId, offers)` → `offers.find()` | O(N_sends × N_offers) |
+| 7331 | `getSupplierCo(s, offers, companies)` → zagnieżdżony `getOffer` + `companies.find()` | O(N_sends × (N_offers + N_companies)) |
+| 7332 | `getRetailerLive(s.retailerId)` → `retailers.find()` | O(N_sends × N_retailers) |
+| 7333 | `getPlanById(...)` → `PRICING_PLANS.find()` | O(N_sends × N_plans) |
+| 7429 | `getRetailerLive(+rid)` per grupa sieci | O(N_groups × N_retailers) |
+| 7447 | `getOffer(s.offerId, offers)` w `.map` moderacji | O(N_modSends × N_offers) |
+
+**Skala realna:** 500 sends × 200 offers × 50 retailers → dziesiątki tysięcy iteracji **na każdy re-render** (a re-render leci przy każdym toaście, zmianie taba, otwarciu modala).
+
+**Wniosek do planu:** zanim cokolwiek się wyrenderuje jako tabela, dane referencyjne muszą być zindeksowane **raz** w `Map` (`offersById`, `retailersById`, `companiesByLegacyKey`, `plansById`) i resolve per-send ma być O(1). To jest tani, bezpieczny refactor (czysta logika, zero DB) i powinien wejść w pierwszym branchu kodowym razem z tabelą.
+
+## II.C. Persystencja koszyka mailingu — stan ulotny
+
+- Wybór propozycji do maila (`selectedIds`) żyje **tylko** w stanie `EmailNewsletterModal` (~9396). Zamknięcie modala / wysyłka → stan znika.
+- Admin **nie może** kompletować maila przez cały dzień ("dodam te 10 teraz, dorzucę 5 jutro, wyślę w piątek"). Każdy mail = jednorazowy wybór od zera, per sieć, w modalu.
+- **Dobra wiadomość (potwierdzona):** `send.data` jest JSONB i jest zapisywalne przez `bulkUpsertLegacySends()` (zapisuje `.data`). Markery typu `emailSentAt` już tam żyją (7383–7390). Czyli trwały koszyk można zrobić **bez migracji** — np. `send.data.basketStatus` / `basketMarkedAt`. Wariant tabelowy opisany w planie (Część II PLAN).
+
+## II.D. Co potwierdza/uzupełnia findings z Części I
+
+- Findings 3 (ładowanie całości), 4 (karty mordercze), 5 (brak bulk select), 6 (brak filtrów), 7 (koszyk persistent) — **potwierdzone** na bieżącym `main`, z numerami linii powyżej.
+- **Nowy, nie ujęty wprost w Części I:** N² lookupy (II.B) to osobny bottleneck **niezależny** od wirtualizacji — nawet z paginacją 50/stronę, 50 wierszy × tysiące find = zauważalny lag. Indeksacja w `Map` jest warunkiem koniecznym, nie opcją.
+
+## II.E. Decyzja paginacja vs wirtualizacja — dane do rozstrzygnięcia
+
+Próg zależy od realnego wolumenu (Open question Q2 z Części I — wciąż otwarte):
+- **< ~200 rekordów na tab:** wystarczy paginacja klient-side "Pokaż 50 / 100" + indeksacja Map. Najprostsze, zero nowych zależności.
+- **200–1000:** paginacja klient-side nadal OK przy zindeksowanych lookupach, ale render listy warto ograniczyć (slice na stronę).
+- **> ~1000 lub szybki wzrost:** wirtualizacja wiersza (np. własny windowing bez nowej biblioteki, albo lekka lib) lub server-side pagination z `.range()` w `loadLegacySends`.
+
+**Rekomendacja audytu:** zacząć od **paginacji klient-side 50/100 + indeksacja Map** (Branch table-shell), bo to odblokowuje 90% bólu bez ryzyka. Wirtualizację/server-side trzymać jako rozszerzenie, jeśli wolumen przekroczy próg. Server-side pagination = jedyny wariant dotykający `loadLegacySends` (drobna zmiana, ale poza docs-only).
