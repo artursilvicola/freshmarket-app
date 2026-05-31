@@ -17,7 +17,7 @@
 export const ADMIN_COMPANIES_2_0_LIST = true;
 
 // [Admin Companies 2.0 / Branch 2 — feat/admin-companies-detail-drawer]
-// Sterownie right-side drawer'em z 5 subtabami (Podgląd / Czat / Pakiet /
+// Sterowanie right-side drawer'em z 5 subtabami (Podgląd / Czat / Pakiet /
 // Historia / Notatki) + footer status actions + Prev/Next nav.
 //
 // Default `false`: branch wprowadza reusable AdminRightDrawer + integrację

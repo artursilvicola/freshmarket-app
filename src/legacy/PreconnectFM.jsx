@@ -9121,8 +9121,8 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                                   <div style={{ overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{o?.title||o?.product||t("admin.firmy.sends_row_fallback_offer")} → {r?.name||t("admin.firmy.sends_row_fallback_retailer")}</div>
                                   {(s.sentAt || s.sendDate) && <div style={{ fontSize:10,color:"#94a3b8" }}>{s.sentAt || s.sendDate}</div>}
                                 </div>
-                                <span title={STATUS_TIPS[s.status]||""} style={{ cursor:"help",flexShrink:0 }}>
-                                  <Badge color={STATUS_MAP[s.status]?.[1]}>{STATUS_MAP[s.status]?.[0]||s.status}</Badge>
+                                <span title={t(`common.status_tips.${s.status}`, { defaultValue: STATUS_TIPS[s.status]||"" })} style={{ cursor:"help",flexShrink:0 }}>
+                                  <Badge color={STATUS_MAP[s.status]?.[1]}>{t(`common.status_map.${s.status}`, { defaultValue: STATUS_MAP[s.status]?.[0]||s.status })}</Badge>
                                 </span>
                               </div>
                             );
