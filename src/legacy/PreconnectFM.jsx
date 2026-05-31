@@ -8710,7 +8710,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
               <select value={filterPkg} onChange={(e)=>setFilterPkg(e.target.value)} aria-label={t("admin.firmy.filter_pkg_label")}
                 style={{ padding:"7px 10px",border:`1px solid ${filterPkg?"#0d9488":"#e2e8f0"}`,borderRadius:7,fontSize:12,fontFamily:"inherit",background:"white",cursor:"pointer" }}>
                 <option value="">{t("admin.firmy.filter_pkg_all")}</option>
-                {filterPkgOptions.map(p => <option key={p} value={p}>{p}</option>)}
+                {filterPkgOptions.map(p => <option key={p} value={p}>{getPlanLabel(p, { withPerSend:false }) || p}</option>)}
               </select>
               <select value={filterPreconnect} onChange={(e)=>setFilterPreconnect(e.target.value)} aria-label={t("admin.firmy.filter_preconnect_label")}
                 style={{ padding:"7px 10px",border:`1px solid ${filterPreconnect?"#0d9488":"#e2e8f0"}`,borderRadius:7,fontSize:12,fontFamily:"inherit",background:"white",cursor:"pointer" }}>
