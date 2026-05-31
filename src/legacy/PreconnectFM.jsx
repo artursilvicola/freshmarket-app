@@ -7402,6 +7402,41 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
     setFRetailer(""); setFSupplier(""); setFDateFrom(""); setFDateTo("");
   };
 
+  // [Branch table-polish] Liczniki podsumowania — liczone z allRows (O(n)),
+  // niezależnie od aktywnych filtrów. Spójne z derywacją kolumn (inPanel /
+  // emailSent / isRead / charged / refunded).
+  const summary = useMemo(() => {
+    let inPanel = 0, noEmail = 0, unread = 0, waiting = 0;
+    allRows.forEach(r => {
+      if (r.inPanel) {
+        inPanel += 1;
+        if (!r.emailSent) noEmail += 1;
+        if (!r.isRead && !r.isExpired) unread += 1;
+        if (!r.charged && !r.refunded) waiting += 1;
+      }
+    });
+    return { all: allRows.length, inPanel, noEmail, unread, waiting };
+  }, [allRows]);
+
+  // Mapowanie chip → zestaw filtrów (proste ustawienie istniejących stanów).
+  const applySummaryFilter = (key) => {
+    clearFilters();
+    if (key === "in_panel") { setFPanel("in"); }
+    else if (key === "no_email") { setFPanel("in"); setFEmail("unsent"); }
+    else if (key === "unread") { setFRead("unread"); }
+    else if (key === "waiting") { setFSettle("waiting"); }
+    // "all" → tylko clearFilters()
+  };
+  // Czy dany chip odpowiada aktualnemu zestawowi filtrów (do podświetlenia).
+  const summaryActive = (key) => {
+    if (key === "all") return !anyFilterActive;
+    if (key === "in_panel") return fPanel === "in" && !fEmail && !fRead && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "no_email") return fPanel === "in" && fEmail === "unsent" && !fRead && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "unread") return fRead === "unread" && !fPanel && !fEmail && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "waiting") return fSettle === "waiting" && !fPanel && !fEmail && !fRead && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    return false;
+  };
+
   const filteredRows = useMemo(() => {
     const q = normalizeText(search.trim());
     return allRows.filter(r => {
@@ -7469,9 +7504,38 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
   const td = { padding:"8px 10px", fontSize:12, color:"#334155", borderBottom:"1px solid #f1f5f9", verticalAlign:"middle" };
   const pill = (txt, color, bg) => <span style={{ fontSize:10, fontWeight:700, color, background:bg, padding:"2px 7px", borderRadius:4, whiteSpace:"nowrap" }}>{txt}</span>;
 
+  const summaryChip = (key, label, count, accent) => {
+    const active = summaryActive(key);
+    return (
+      <button
+        type="button"
+        onClick={() => applySummaryFilter(key)}
+        style={{
+          display:"inline-flex", alignItems:"center", gap:6, padding:"6px 12px",
+          borderRadius:8, cursor:"pointer", fontFamily:"inherit", fontSize:12,
+          border:`1px solid ${active ? accent : "#e2e8f0"}`,
+          background: active ? accent + "14" : "white",
+          color: active ? accent : "#475569", fontWeight: active ? 700 : 500,
+        }}
+      >
+        <span>{label}</span>
+        <span style={{ fontSize:11, fontWeight:700, color: active ? accent : "#64748b", background: active ? "white" : "#f1f5f9", borderRadius:9, padding:"1px 7px" }}>{count}</span>
+      </button>
+    );
+  };
+
   return (
     <div>
       {previewOffer && <OfferPreviewModal offer={previewOffer} co={companiesByLegacyKey.get(previewOffer?.supplierId) || COMPANY_INIT} onClose={() => setPreviewOffer(null)} />}
+
+      {/* [Branch table-polish] Pasek podsumowania — klik ustawia filtr */}
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 }}>
+        {summaryChip("all", t("admin.pipeline.table.summary_all"), summary.all, "#0d9488")}
+        {summaryChip("in_panel", t("admin.pipeline.table.summary_in_panel"), summary.inPanel, "#0369a1")}
+        {summaryChip("no_email", t("admin.pipeline.table.summary_no_email"), summary.noEmail, "#b45309")}
+        {summaryChip("unread", t("admin.pipeline.table.summary_unread"), summary.unread, "#ea580c")}
+        {summaryChip("waiting", t("admin.pipeline.table.summary_waiting"), summary.waiting, "#ca8a04")}
+      </div>
 
       {/* Pasek search + filtry */}
       <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 }}>
@@ -7529,8 +7593,8 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
         <Alrt type="info">{anyFilterActive ? t("admin.pipeline.table.empty_filtered") : t("admin.pipeline.table.empty_all")}</Alrt>
       ) : (
         <>
-          <div style={{ border:"1px solid #e2e8f0", borderRadius:10, overflow:"auto", maxHeight:"calc(100vh - 260px)" }}>
-            <table style={{ width:"100%", borderCollapse:"collapse", fontFamily:"inherit" }}>
+          <div style={{ border:"1px solid #e2e8f0", borderRadius:10, overflow:"auto", maxHeight:"calc(100vh - 300px)" }}>
+            <table style={{ width:"100%", minWidth:880, borderCollapse:"collapse", fontFamily:"inherit" }}>
               <thead>
                 <tr>
                   <th style={th}>{t("admin.pipeline.table.col_date")}</th>
@@ -7545,15 +7609,15 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
                 </tr>
               </thead>
               <tbody>
-                {pageRows.map(r => (
-                  <tr key={r.send.id}>
+                {pageRows.map((r, i) => (
+                  <tr key={r.send.id} style={{ background: i % 2 === 1 ? "#fafbfc" : "white" }}>
                     <td style={{ ...td, whiteSpace:"nowrap", color:"#64748b" }}>{r.date || "—"}</td>
-                    <td style={{ ...td }}>{r.retailerName || "—"}</td>
-                    <td style={{ ...td }}>{r.supplierName || "—"}</td>
-                    <td style={{ ...td }}>
-                      <span style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
-                        {r.offer?.category && <span>{CEMOJI[r.offer.category] || "📦"}</span>}
-                        <span style={{ maxWidth:220, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", display:"inline-block" }}>{r.productName || "—"}</span>
+                    <td style={{ ...td, fontWeight:600, color:"#0f172a", maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.retailerName || undefined}>{r.retailerName || "—"}</td>
+                    <td style={{ ...td, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.supplierName || undefined}>{r.supplierName || "—"}</td>
+                    <td style={{ ...td, maxWidth:300 }} title={r.productName || undefined}>
+                      <span style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        {r.offer?.category && <span style={{ flexShrink:0 }}>{CEMOJI[r.offer.category] || "📦"}</span>}
+                        <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.productName || "—"}</span>
                       </span>
                     </td>
                     <td style={td}>{r.inPanel ? pill(t("admin.pipeline.table.panel_yes"), "#0369a1", "#e0f2fe") : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.panel_no")}</span>}</td>
