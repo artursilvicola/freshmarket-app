@@ -7329,22 +7329,25 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
   }, [offersById, companiesByLegacyKey]);
 
   // ── Derywacja kolumn statusowych (panel / e-mail / odczyt / rozliczenie) ──
-  const PANEL_STATUSES = ["approved", "sent", "opened", "read", "read_manual"];
+  // Buyer-visible statuses. `approved` only means accepted by moderation;
+  // the buyer sees the proposal after it is explicitly sent to the panel.
+  const PANEL_STATUSES = ["sent", "opened", "read", "read_manual", "unread_expired", "refunded"];
   const rowOf = useCallback((s) => {
     const offer = offersById.get(s.offerId) || null;
     const retailer = retailersById.get(s.retailerId) || null;
     const supplier = supplierForSend(s);
     const inPanel = PANEL_STATUSES.includes(s.status);
     const emailSent = hasRetailerEmailMarker(s);
-    const isExpired = s.status === "unread_expired";
+    const isExpired = ["unread_expired", "refunded"].includes(s.status);
     const isRead = ["opened", "read", "read_manual"].includes(s.status);
     const charged = hasChargeMarker(s);
     const refunded = hasRefundMarker(s);
     const date = s.sentAt || s.sendDate || s.data?.sentAt || "";
+    const dateKey = String(date || "").slice(0, 10);
     return {
       send: s,
       offer, retailer, supplier,
-      date,
+      date, dateKey,
       retailerName: retailer?.name || "",
       supplierName: supplier?.name || "",
       productName: offer?.title || offer?.product || "",
@@ -7401,11 +7404,11 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
       if (fRead === "read" && !r.isRead) return false;
       if (fRead === "unread" && r.isRead) return false;
       if (fSettle === "charged" && !r.charged) return false;
-      if (fSettle === "waiting" && r.charged) return false;
+      if (fSettle === "waiting" && (!r.inPanel || r.charged || r.refunded)) return false;
       if (fRetailer && String(r.retailer?.id) !== fRetailer) return false;
       if (fSupplier && String(r.supplier?.id || r.send.supplierId) !== fSupplier) return false;
-      if (fDateFrom && (!r.date || r.date < fDateFrom)) return false;
-      if (fDateTo && (!r.date || r.date > fDateTo)) return false;
+      if (fDateFrom && (!r.dateKey || r.dateKey < fDateFrom)) return false;
+      if (fDateTo && (!r.dateKey || r.dateKey > fDateTo)) return false;
       return true;
     }).sort((a, b) => String(b.date).localeCompare(String(a.date))); // najnowsze u góry
   }, [allRows, search, fPanel, fEmail, fRead, fSettle, fRetailer, fSupplier, fDateFrom, fDateTo]);
