@@ -3687,9 +3687,13 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     const ts = new Date(s.statusChangedAt || s.createdAt || s.created_at || s.sentAt || 0).getTime();
     return ts >= cutoffMs;
   });
+  // [pipeline-supplier-flow] "sent" = dostarczona, czeka na odczyt. "opened" =
+  // kupiec otworzył maila (Resend) → liczone jako zobaczone, razem z read/
+  // read_manual. "unread_expired" (poprawny enum, nie "expired") + refunded =
+  // wygasłe/zwrot.
   const stWaiting = recentSends.filter(s => s.status === "sent").length;
-  const stSeen    = recentSends.filter(s => s.status === "read" || s.status === "read_manual").length;
-  const stExpired = recentSends.filter(s => s.status === "expired" || s.status === "refunded").length;
+  const stSeen    = recentSends.filter(s => ["opened", "read", "read_manual"].includes(s.status)).length;
+  const stExpired = recentSends.filter(s => ["unread_expired", "refunded"].includes(s.status)).length;
   const stClosed  = stSeen + stExpired;
   const stRatePct = stClosed > 0 ? Math.round((stSeen / stClosed) * 100) : null;
 
@@ -4300,7 +4304,9 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
   }
 
   const filtered = mySends.filter(s => {
-    if (tab === "sent")    return ["sent","read","read_manual"].includes(s.status);
+    // [pipeline-supplier-flow] "opened" (kupiec otworzył maila) należy do
+    // wysłanych — wcześniej był pomijany, więc otwarte maile znikały z historii.
+    if (tab === "sent")    return ["sent","opened","read","read_manual"].includes(s.status);
     if (tab === "pending") return ["pending_moderation","approved","queued"].includes(s.status);
     if (tab === "expired") return s.status === "unread_expired";
     return true;
@@ -4347,8 +4353,8 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
             <div style={{ display:"flex",gap:8,marginLeft:"auto",alignItems:"center" }}>
               <span style={{ fontSize:12,color:"#64748b",background:"#f8fafc",padding:"5px 12px",borderRadius:8,border:"1px solid #e2e8f0" }}>
                 {t("supplier.wysylki.sieci.stats_format", {
-                  sent: sends.filter(s=>["sent","read","read_manual"].includes(s.status)).length,
-                  read: sends.filter(s=>["read","read_manual"].includes(s.status)).length,
+                  sent: sends.filter(s=>["sent","opened","read","read_manual"].includes(s.status)).length,
+                  read: sends.filter(s=>["opened","read","read_manual"].includes(s.status)).length,
                 })}
               </span>
               <input
@@ -4456,7 +4462,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           <div style={{ display:"flex",gap:0,marginBottom:12,background:"white",border:"1px solid #e2e8f0",borderRadius:10,overflow:"hidden",width:"fit-content" }}>
             {[
               ["all", t("supplier.wysylki.history.tabs.all"), sends.length],
-              ["sent", t("supplier.wysylki.history.tabs.sent"), sends.filter(s=>["sent","read","read_manual"].includes(s.status)).length],
+              ["sent", t("supplier.wysylki.history.tabs.sent"), sends.filter(s=>["sent","opened","read","read_manual"].includes(s.status)).length],
               ["pending", t("supplier.wysylki.history.tabs.pending"), sends.filter(s=>["pending_moderation","approved","queued"].includes(s.status)).length],
               ["expired", t("supplier.wysylki.history.tabs.expired"), sends.filter(s=>s.status==="unread_expired").length],
             ].map(([k,l,n])=>(
@@ -5056,7 +5062,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
         <Btn dark onClick={()=>nav("offer-create")}><Plus size={13}/> {t("supplier.offers.add_button")}</Btn>
       </div>
       {myOffers.length===0&&<Alrt>{t("supplier.offers.empty")}</Alrt>}
-      {myOffers.map(o=>{ const sc=sends.filter(s=>s.offerId===o.id); const rc=sc.filter(s=>["read","read_manual"].includes(s.status)).length; const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o);
+      {myOffers.map(o=>{ const sc=sends.filter(s=>s.offerId===o.id); const rc=sc.filter(s=>["opened","read","read_manual"].includes(s.status)).length; const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o);
         // [B2B Round prod-rollout / supplier-delete-offer]
         // Usunąć można TYLKO propozycje które jeszcze nie zostały wysłane do żadnej sieci.
         // Po pierwszej wysyłce (legacy_send dla tej oferty) propozycja "żyje" w pipeline
@@ -7415,10 +7421,16 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
     const refunded = hasRefundMarker(s);
     const date = s.sentAt || s.sendDate || s.data?.sentAt || "";
     const dateKey = String(date || "").slice(0, 10);
-    // [mailing-basket] Kwalifikuje się do koszyka: widoczne w panelu kupca i
-    // e-mail jeszcze niewysłany. inBasket = marker administracyjny (osobny od
-    // statusu panelu i od emailSent).
-    const basketEligible = inPanel && !emailSent;
+    // [pipeline-supplier-flow] Kwalifikacja do koszyka e-maili: TYLKO status
+    // "sent" (świeżo w panelu kupca, jeszcze nie odczytane) i bez wysłanego
+    // e-maila. ŚWIADOMIE węziej niż inPanel — najpierw panel, potem miesięczny
+    // mail. Nie bierzemy:
+    //   - "approved" (to wysyłka do panelu, nie e-mail — admin nie może tego
+    //     mylić; backend send-retailer-batch technicznie dopuszcza approved, ale
+    //     UI nie pokazuje),
+    //   - opened/read/read_manual (kupiec już widział — mail po fakcie bez sensu),
+    //   - unread_expired/refunded (zamknięte).
+    const basketEligible = s.status === "sent" && !emailSent;
     const inBasket = !!s.inEmailBasket && basketEligible;
     // [moderation-mode] Tryb moderacji obejmuje cały przepływ przed wysłaniem
     // do panelu: do decyzji (pending_moderation/queued) ORAZ zatwierdzone
