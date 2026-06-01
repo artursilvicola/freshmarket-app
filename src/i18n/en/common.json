@@ -47,7 +47,10 @@
   "errors": {
     "no_role": {
       "title": "Account without a role",
-      "body": "Your account does not yet have a role assigned. Please contact the admin."
+      "body": "This account does not have a role assigned. Please contact the admin.",
+      "recovery_hint": "If you want to sign in with a different account, sign out and go to the login page.",
+      "sign_out_btn": "Sign out and go to login",
+      "refresh_btn": "Refresh profile"
     }
   },
   "config_error": {
