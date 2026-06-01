@@ -1708,6 +1708,13 @@
       "pkg_option_std_20": "Standard 20",
       "pkg_option_prem_10": "Premium 10",
       "pkg_option_prem_20": "Premium 20",
+      "pkg_save_btn": "Save package",
+      "pkg_saving_btn": "Saving...",
+      "pkg_unsaved_hint": "Package or limit changed. Click \"Save package\" to save it in the database.",
+      "toast_pkg_saved_format": "Package saved: {{pkgLabel}}, limit {{limit}} submissions.",
+      "toast_pkg_invalid_limit": "Submission limit must be a number equal to or greater than 0.",
+      "toast_pkg_limit_below_used_format": "Limit cannot be lower than submissions already used ({{used}}).",
+      "toast_pkg_save_error": "Could not save the package.",
       "ai_section_title": "AI description",
       "ai_btn_preview": "Preview",
       "ai_btn_edit": "Edit",
@@ -2483,7 +2490,11 @@
       "upload_ok_url_failed_format": "Upload OK, but URL write failed: {{detail}}",
       "upload_ok_insert_failed_format": "Upload OK, but insert failed: {{detail}}",
       "admin_invalid_email": "Invalid email",
-      "admin_missing_user_id": "Missing userId"
+      "admin_missing_user_id": "Missing userId",
+      "package_plan_required": "No package selected.",
+      "package_limit_invalid": "Submission limit must be a number equal to or greater than 0.",
+      "package_plan_inactive": "The selected package does not exist or is inactive.",
+      "package_limit_below_used_format": "Limit cannot be lower than submissions already used ({{used}})."
     }
   },
   "shell": {

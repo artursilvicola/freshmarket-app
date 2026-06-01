@@ -1708,6 +1708,13 @@
       "pkg_option_std_20": "Standard 20",
       "pkg_option_prem_10": "Premium 10",
       "pkg_option_prem_20": "Premium 20",
+      "pkg_save_btn": "Zapisz pakiet",
+      "pkg_saving_btn": "Zapisuję...",
+      "pkg_unsaved_hint": "Zmieniono pakiet lub limit. Kliknij \"Zapisz pakiet\", aby zapisać zmianę w bazie.",
+      "toast_pkg_saved_format": "Pakiet zapisany: {{pkgLabel}}, limit {{limit}} wysyłek.",
+      "toast_pkg_invalid_limit": "Limit wysyłek musi być liczbą 0 lub większą.",
+      "toast_pkg_limit_below_used_format": "Limit nie może być mniejszy niż już wykorzystane wysyłki ({{used}}).",
+      "toast_pkg_save_error": "Nie udało się zapisać pakietu.",
       "ai_section_title": "Opis AI",
       "ai_btn_preview": "Podgląd",
       "ai_btn_edit": "Edytuj",
@@ -2483,7 +2490,11 @@
       "upload_ok_url_failed_format": "Upload OK, ale zapis URL: {{detail}}",
       "upload_ok_insert_failed_format": "Upload OK, ale insert: {{detail}}",
       "admin_invalid_email": "Niepoprawny email",
-      "admin_missing_user_id": "Brak userId"
+      "admin_missing_user_id": "Brak userId",
+      "package_plan_required": "Brak wybranego pakietu.",
+      "package_limit_invalid": "Limit wysyłek musi być liczbą 0 lub większą.",
+      "package_plan_inactive": "Wybrany pakiet nie istnieje albo jest nieaktywny.",
+      "package_limit_below_used_format": "Limit nie może być mniejszy niż już wykorzystane wysyłki ({{used}})."
     }
   },
   "shell": {

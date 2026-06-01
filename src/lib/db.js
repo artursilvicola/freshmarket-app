@@ -626,6 +626,103 @@ export async function getPackages(companyId) {
   return data;
 }
 
+// Admin manual package override. The admin company panel edits the real
+// active package rows because company_capacity is computed from packages,
+// not from companies.pkg_plan alone.
+export async function adminSetCompanyPackage(companyId, { planId, qtyTotal }) {
+  if (!companyId) throw new Error(i18n.t("legacy:errors.db.company_id_required"));
+  const nextPlanId = normalizeText(planId);
+  if (!nextPlanId) throw new Error(i18n.t("legacy:errors.db.package_plan_required"));
+  const nextQty = Number.parseInt(String(qtyTotal), 10);
+  if (!Number.isFinite(nextQty) || nextQty < 0) {
+    throw new Error(i18n.t("legacy:errors.db.package_limit_invalid"));
+  }
+
+  const { data: plan, error: planError } = await supabase
+    .from("package_plans")
+    .select("id, qty, price_eur")
+    .eq("id", nextPlanId)
+    .eq("active", true)
+    .maybeSingle();
+  if (planError) throw planError;
+  if (!plan) throw new Error(i18n.t("legacy:errors.db.package_plan_inactive"));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const yearEnd = `${new Date().getFullYear()}-12-31`;
+  const { data: activePackages, error: packagesError } = await supabase
+    .from("packages")
+    .select("id, qty_total, qty_used, expires_at, purchased_at")
+    .eq("company_id", companyId)
+    .gte("expires_at", today)
+    .order("purchased_at", { ascending: false });
+  if (packagesError) throw packagesError;
+
+  const packages = activePackages || [];
+  const usedTotal = packages.reduce((sum, pkg) => sum + Number(pkg.qty_used || 0), 0);
+  if (nextQty < usedTotal) {
+    throw new Error(i18n.t("legacy:errors.db.package_limit_below_used_format", { used: usedTotal }));
+  }
+
+  const expiryDates = packages
+    .map((pkg) => pkg.expires_at)
+    .filter(Boolean)
+    .sort();
+  const expiresAt = expiryDates[expiryDates.length - 1] || yearEnd;
+
+  if (packages.length > 0) {
+    const [primary, ...others] = packages;
+    const otherUsedTotal = others.reduce((sum, pkg) => sum + Number(pkg.qty_used || 0), 0);
+
+    for (const pkg of others) {
+      const used = Number(pkg.qty_used || 0);
+      if (Number(pkg.qty_total || 0) !== used) {
+        const { error } = await supabase
+          .from("packages")
+          .update({ qty_total: used })
+          .eq("id", pkg.id);
+        if (error) throw error;
+      }
+    }
+
+    const { error: updatePackageError } = await supabase
+      .from("packages")
+      .update({
+        plan: nextPlanId,
+        qty_total: nextQty - otherUsedTotal,
+        expires_at: expiresAt,
+      })
+      .eq("id", primary.id);
+    if (updatePackageError) throw updatePackageError;
+  } else {
+    const { error: insertPackageError } = await supabase
+      .from("packages")
+      .insert({
+        company_id: companyId,
+        plan: nextPlanId,
+        qty_total: nextQty,
+        qty_used: 0,
+        price_paid: 0,
+        currency: "EUR",
+        expires_at: expiresAt,
+      });
+    if (insertPackageError) throw insertPackageError;
+  }
+
+  const { error: companyError } = await supabase
+    .from("companies")
+    .update({ pkg_plan: nextPlanId, pkg_expiry: expiresAt })
+    .eq("id", companyId);
+  if (companyError) throw companyError;
+
+  const { data: capacity, error: capacityError } = await supabase
+    .from("company_capacity")
+    .select("*")
+    .eq("id", companyId)
+    .maybeSingle();
+  if (capacityError) throw capacityError;
+  return capacity;
+}
+
 // [B2B Round prod-rollout / faza 2] Katalog dostępnych planów pakietów,
 // zastępuje hardcoded PRICING_PLANS w PreconnectFM.jsx. Czyta z tabeli
 // package_plans (seed w migracji 023).

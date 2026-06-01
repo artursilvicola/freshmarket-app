@@ -45,6 +45,7 @@ import {
   saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
   // [B2B Round prod-rollout / faza 2] Real packages/capacity from DB
   getAllCompanyCapacity as dbGetAllCompanyCapacity,
+  adminSetCompanyPackage as dbAdminSetCompanyPackage,
   // [B2B Round prod-rollout / faza 3] PayU integration
   createPayuOrder as dbCreatePayuOrder,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
@@ -3264,7 +3265,54 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       setAiLoad(false);
     }
   }
-  function updateLimit(id,changes){ setLimits(prev=>prev.map(l=>l.id===id?{...l,...changes}:l)); }
+  async function updateLimit(id, changes) {
+    const currentCapacity = (dbCapacity || []).find((row) => row.id === id);
+    const currentLegacy = (limits || []).find((row) => row.id === id) || {};
+    const nextPkg = changes.pkg || changes.pkg_plan || currentCapacity?.pkg_plan || currentLegacy.pkg || "std_5";
+    const planDefault = getPlanById(nextPkg)?.qty;
+    const currentMax = Number(currentCapacity?.qty_total ?? currentLegacy.max ?? planDefault ?? 0);
+    const nextMax = changes.max != null ? Number(changes.max) : Number(planDefault ?? currentMax);
+    const used = Number(currentCapacity?.qty_used ?? currentLegacy.used ?? 0);
+
+    if (!Number.isFinite(nextMax) || nextMax < 0) {
+      fl(t("admin.firmy.toast_pkg_invalid_limit"), "warning");
+      return false;
+    }
+    if (nextMax < used) {
+      fl(t("admin.firmy.toast_pkg_limit_below_used_format", { used }), "warning");
+      return false;
+    }
+
+    try {
+      const savedCapacity = await dbAdminSetCompanyPackage(id, {
+        planId: nextPkg,
+        qtyTotal: Math.trunc(nextMax),
+      });
+      setLimits(prev => prev.map(l => l.id === id ? {
+        ...l,
+        pkg: nextPkg,
+        max: Math.trunc(nextMax),
+        pkgExpiry: savedCapacity?.pkg_expiry || l.pkgExpiry,
+      } : l));
+      setCompanies(prev => prev.map(c => c.id === id ? {
+        ...c,
+        pkg: nextPkg,
+        pkg_plan: nextPkg,
+        pkgExpiry: savedCapacity?.pkg_expiry || c.pkgExpiry,
+        pkg_expiry: savedCapacity?.pkg_expiry || c.pkg_expiry,
+      } : c));
+      await refreshCapacity();
+      fl(t("admin.firmy.toast_pkg_saved_format", {
+        pkgLabel: getPlanLabel(nextPkg, { withPerSend: false }),
+        limit: Math.trunc(nextMax),
+      }));
+      return true;
+    } catch (e) {
+      console.warn("[adminSetCompanyPackage]", e);
+      fl(e?.message || t("admin.firmy.toast_pkg_save_error"), "warning");
+      return false;
+    }
+  }
   function toggleStar(offerId){ setBuyer(b=>({ ...b, starred: b.starred?.includes(offerId) ? b.starred.filter(x=>x!==offerId) : [...(b.starred||[]),offerId] })); }
 
   // ── Navigation ─────────────────────────────────────────────────────────
@@ -8859,6 +8907,8 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   const [filterAiStatus, setFilterAiStatus] = useState("");     // "" | pending|approved|edited|rejected
   const [statusNoteDraft, setStatusNoteDraft] = useState({}); // { [companyId]: "powód" }
   const [savingStatusId, setSavingStatusId] = useState(null);
+  const [packageDrafts, setPackageDrafts] = useState({});
+  const [savingPackageId, setSavingPackageId] = useState(null);
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
   // opisów AI: trwająca regeneracja, edycja inline, podgląd profilu kupca.
   const [aiLoadingId, setAiLoadingId] = useState(null);
@@ -8877,6 +8927,57 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
       "pkg_plan" in patch
     )) {
       refreshCapacity();
+    }
+  }
+
+  function packageDraftFor(lim) {
+    const draft = packageDrafts[lim.id] || {};
+    return {
+      pkg: draft.pkg ?? lim.pkg ?? "std_5",
+      max: draft.max ?? lim.max ?? 0,
+    };
+  }
+
+  function setPackageDraft(lim, patch) {
+    setPackageDrafts((prev) => {
+      const current = {
+        pkg: prev[lim.id]?.pkg ?? lim.pkg ?? "std_5",
+        max: prev[lim.id]?.max ?? lim.max ?? 0,
+      };
+      const next = { ...current, ...patch };
+      if (patch.pkg && patch.max == null) {
+        const planQty = getPlanById(patch.pkg)?.qty;
+        if (planQty != null) next.max = Math.max(Number(lim.used || 0), Number(planQty));
+      }
+      return { ...prev, [lim.id]: next };
+    });
+  }
+
+  function packageDraftDirty(lim) {
+    const draft = packageDrafts[lim.id];
+    if (!draft) return false;
+    const nextPkg = draft.pkg ?? lim.pkg ?? "std_5";
+    const nextMax = Number(draft.max ?? lim.max ?? 0);
+    return nextPkg !== (lim.pkg ?? "std_5") || nextMax !== Number(lim.max ?? 0);
+  }
+
+  async function savePackageDraft(lim) {
+    const draft = packageDraftFor(lim);
+    setSavingPackageId(lim.id);
+    try {
+      const ok = await updateLimit(lim.id, {
+        pkg: draft.pkg,
+        max: Number(draft.max),
+      });
+      if (ok) {
+        setPackageDrafts((prev) => {
+          const next = { ...prev };
+          delete next[lim.id];
+          return next;
+        });
+      }
+    } finally {
+      setSavingPackageId(null);
     }
   }
 
@@ -9141,6 +9242,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   // zastąpi to drawerem; w Branch 1 musi zostać widoczne inline, bo bez
   // status actions admin nie może approve/reject/suspend firmy.
   function renderExpandedDetails(firmCo, lim, used, pct, firmSends) {
+    const packageDraft = packageDraftFor(lim);
+    const isPackageDirty = packageDraftDirty(lim);
+    const isSavingPackage = savingPackageId === lim.id;
     return (
       <div style={{ padding:"0 16px 16px",borderTop:"1px solid #f1f5f9" }}>
         {/* [B2B Round supplier-onboarding-access-and-communication]
@@ -9220,20 +9324,26 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12 }}>
           <div>
             <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_limit_label")}</label>
-            <input type="number" value={lim.max} onChange={e=>updateLimit(lim.id,{max:+e.target.value})}
+            <input type="number" value={packageDraft.max} onChange={e=>setPackageDraft(lim,{max:e.target.value})}
               style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}/>
           </div>
           <div>
             <label style={{ fontSize:10,color:"#94a3b8",display:"block",marginBottom:3 }}>{t("admin.firmy.pkg_select_label")}</label>
-            <select value={lim.pkg} onChange={e=>updateLimit(lim.id,{pkg:e.target.value})}
+            <select value={packageDraft.pkg} onChange={e=>setPackageDraft(lim,{pkg:e.target.value})}
               style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" }}>
-              <option value="std_5">{t("admin.firmy.pkg_option_std_5")}</option>
-              <option value="std_10">{t("admin.firmy.pkg_option_std_10")}</option>
-              <option value="std_20">{t("admin.firmy.pkg_option_std_20")}</option>
-              <option value="prem_10">{t("admin.firmy.pkg_option_prem_10")}</option>
-              <option value="prem_20">{t("admin.firmy.pkg_option_prem_20")}</option>
+              {PKG_OPTS.map((plan) => (
+                <option key={plan.id} value={plan.id}>{getPlanLabel(plan.id, { withPerSend: false })}</option>
+              ))}
             </select>
           </div>
+        </div>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,margin:"-4px 0 12px" }}>
+          <div style={{ fontSize:11,color:isPackageDirty?"#d97706":"#94a3b8" }}>
+            {isPackageDirty ? t("admin.firmy.pkg_unsaved_hint") : ""}
+          </div>
+          <Btn sm primary onClick={()=>savePackageDraft(lim)} disabled={!isPackageDirty || isSavingPackage}>
+            {isSavingPackage ? t("admin.firmy.pkg_saving_btn") : t("admin.firmy.pkg_save_btn")}
+          </Btn>
         </div>
         {/* [B2B Round adaptive-company-profile-ai] AI review block ─ */}
         {firmCo?.name && setCompanies && (() => {
@@ -9528,7 +9638,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 {/* Right column: package badge + usage + actions */}
                 <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0 }}>
                   <div style={{ textAlign:"right" }}>
-                    <div style={{ fontSize:10,color:"#94a3b8" }}>{lim.pkg} · {lim.pkgExpiry}</div>
+                    <div style={{ fontSize:10,color:"#94a3b8" }}>{getPlanLabel(lim.pkg, { withPerSend: false })} · {lim.pkgExpiry}</div>
                     <div style={{ fontWeight:700,fontSize:14,color: pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>
                       {used}/{lim.max} <span style={{ fontSize:10,color:"#94a3b8",fontWeight:400 }}>{t("admin.firmy.list_used_unit")}</span>
                     </div>
@@ -9821,7 +9931,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
                         <div>
                           <div style={{ fontSize:10, color:"#94a3b8", marginBottom:3 }}>{t("admin.firmy.pkg_select_label")}</div>
-                          <div style={{ fontSize:13, fontWeight:600, color:"#0f172a" }}>{drawerLim?.pkg || "—"}</div>
+                          <div style={{ fontSize:13, fontWeight:600, color:"#0f172a" }}>{drawerLim?.pkg ? getPlanLabel(drawerLim.pkg, { withPerSend: false }) : "—"}</div>
                         </div>
                         <div>
                           <div style={{ fontSize:10, color:"#94a3b8", marginBottom:3 }}>{t("admin.firmy.pkg_limit_label")}</div>
@@ -10028,7 +10138,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                   })()}
                 </div>
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
-                  {lim.country} · {t("admin.firmy.list_pkg_label")} {lim.pkg} · {t("admin.firmy.list_valid_until_label")} {lim.pkgExpiry}
+                  {lim.country} · {t("admin.firmy.list_pkg_label")} {getPlanLabel(lim.pkg, { withPerSend: false })} · {t("admin.firmy.list_valid_until_label")} {lim.pkgExpiry}
                   {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>{t("admin.firmy.list_preconnect_off")}</span>}
                   {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>{t("admin.firmy.list_fm_b2b")}</span>}
                 </div>
