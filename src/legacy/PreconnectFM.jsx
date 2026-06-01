@@ -7730,7 +7730,7 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
 
   return (
     <div>
-      {previewOffer && <OfferPreviewModal offer={previewOffer} co={companiesByLegacyKey.get(previewOffer?.supplierId) || COMPANY_INIT} onClose={() => setPreviewOffer(null)} />}
+      {previewOffer && <OfferPreviewModal offer={previewOffer} co={companiesByLegacyKey.get(previewOffer?.supplierId) || COMPANY_INIT} onClose={() => setPreviewOffer(null)} adminFull />}
 
       {/* [moderation-mode] Przełącznik trybów: Do moderacji / Wysłane-mailing.
           Tryb moderacji pierwszy gdy jest cokolwiek w przepływie moderacji. */}
@@ -8148,7 +8148,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
 
   return (
     <div>
-      {previewOffer&&<OfferPreviewModal offer={previewOffer} co={(companies||[]).find(c=>c.id===previewOffer?.supplierId)||COMPANY_INIT} onClose={()=>setPreviewOffer(null)}/>}
+      {previewOffer&&<OfferPreviewModal offer={previewOffer} co={(companies||[]).find(c=>c.id===previewOffer?.supplierId)||COMPANY_INIT} onClose={()=>setPreviewOffer(null)} adminFull/>}
       {emailPreview&&<EmailNewsletterModal
         retailer={emailPreview.retailer}
         sends={emailPreview.sends}
@@ -10797,17 +10797,55 @@ function CompanyPreviewModal(props) {
   );
 }
 
-function OfferPreviewModal({ offer, co, onClose }) {
+function OfferPreviewModal({ offer, co, onClose, adminFull=false }) {
   const { t } = useTranslation("legacy");
   if(!offer) return null;
   const allCerts=[...(offer.certs||[]),offer.customCert].filter(Boolean);
   const allPack=[...(offer.packaging||[]),offer.customPackaging].filter(Boolean);
   const ct=co?.contacts?.[0];
+  const full = (key) => t(`admin.pipeline.full_preview.${key}`);
+  const txt = (v) => v === true ? full("yes") : v === false ? full("no") : v;
+  const nonEmpty = (v) => {
+    if (Array.isArray(v)) return v.length > 0;
+    return v != null && v !== "";
+  };
+  const kvItems = (items) => items.filter(([,v]) => nonEmpty(v));
+  const AdminKV = ({ items }) => {
+    const filtered = kvItems(items);
+    if (!filtered.length) return null;
+    return (
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:8 }}>
+        {filtered.map(([label,value],idx)=>(
+          <div key={`${label}-${idx}`} style={{ padding:"8px 10px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:7 }}>
+            <div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.03em",marginBottom:2 }}>{label}</div>
+            <div style={{ fontSize:12,fontWeight:650,color:"#0f172a",whiteSpace:"pre-line" }}>{Array.isArray(value)?value.join(", "):txt(value)}</div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+  const AdminSection = ({ title, children, tone="#0d9488" }) => {
+    if (!children) return null;
+    return (
+      <div style={{ marginTop:12,border:"1px solid #e2e8f0",borderRadius:9,overflow:"hidden" }}>
+        <div style={{ padding:"8px 12px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.05em",color:tone }}>{title}</div>
+        <div style={{ padding:12,background:"white" }}>{children}</div>
+      </div>
+    );
+  };
+  const photoUrl = (p) => typeof p === "string" ? p : p?.url;
+  const photos = (offer.photos||[]).map(photoUrl).filter(Boolean);
+  const volumeRange = offer.volumeMin&&offer.volumeMax ? `${offer.volumeMin}-${offer.volumeMax} ${offer.volumeUnit||""}` : (offer.volume&&offer.volumeUnit?`${offer.volume} ${offer.volumeUnit}`:offer.volume);
+  const priceLine = offer.priceOffer ? `${offer.priceOffer} ${offer.currency||"EUR"}/${offer.priceUnit||""}` : null;
+  const priceWindow = offer.priceFrom&&offer.priceTo ? `${offer.priceFrom} - ${offer.priceTo}` : null;
+  const deliveryDays = Array.isArray(offer.deliveryDays) ? offer.deliveryDays : [];
+  const publicTitle = getPublicOfferTitle(offer) || offer.title || offer.product;
+  const internalTitle = getInternalOfferTitle(offer);
   return (
-    <Modal title={t("common.offer_preview.modal_title")} onClose={onClose} wide>
+    <Modal title={adminFull ? full("modal_title") : t("common.offer_preview.modal_title")} onClose={onClose} wide>
       {offer.tier==="premium"&&<div style={{ background:"#fffbeb",border:"1px solid #fbbf24",borderRadius:7,padding:"6px 12px",marginBottom:10,fontSize:12,fontWeight:600,color:"#92400e",display:"flex",gap:5,alignItems:"center" }}><Star size={12} fill="#d97706" color="#d97706"/> {t("common.offer_preview.premium_badge")}</div>}
       <div style={{ background:"#f0fdf4",borderRadius:10,padding:14,marginBottom:14,display:"flex",gap:12 }}>
-        {offer.photos?.length?<img src={offer.photos[0]} alt="" style={{ width:110,height:80,objectFit:"cover",borderRadius:7,flexShrink:0,border:"2px solid #bbf7d0" }}/>:<div style={{ width:110,height:80,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:34 }}>{CEMOJI[offer.category]||"📦"}</div>}
+        {photos.length?<img src={photos[0]} alt="" style={{ width:110,height:80,objectFit:"cover",borderRadius:7,flexShrink:0,border:"2px solid #bbf7d0" }}/>:<div style={{ width:110,height:80,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:34 }}>{CEMOJI[offer.category]||"📦"}</div>}
         <div style={{ flex:1 }}>
           <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>{allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}{offer.origin&&<Badge>{FLAGS[offer.origin]||"🌐"} {getCountryName(offer.origin)}</Badge>}</div>
           <h3 style={{ margin:"0 0 8px",fontSize:15 }}>{offer.title||offer.product}</h3>
@@ -10818,9 +10856,149 @@ function OfferPreviewModal({ offer, co, onClose }) {
           ].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"6px 10px",background:"white",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12 }}>{v}</div></div>)}</div>
         </div>
       </div>
-      <p style={{ color:"#475569",lineHeight:1.7,marginBottom:12,fontSize:13,whiteSpace:"pre-line" }}>{renderDesc(offer.description)}</p>
-      {allPack.length>0&&<div style={{ marginBottom:10 }}><strong style={{ fontSize:11,color:"#64748b" }}>{t("common.offer_preview.packaging_label")}</strong><div style={{ display:"flex",gap:4,marginTop:3,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p}>{p}</Badge>)}</div></div>}
-      {co&&<div style={{ padding:12,background:"#f8fafc",borderRadius:8,display:"flex",gap:10,fontSize:12 }}><CompanyLogo company={co} size={38}/><div style={{ flex:1 }}><div style={{ fontWeight:700 }}>{co.name}</div><div style={{ color:"#64748b" }}>{FLAGS[co.country]||"🌐"} {co.city}</div></div>{ct&&<div><div><Phone size={11} style={{ verticalAlign:"middle" }}/> {ct.phone}</div><div><Mail size={11} style={{ verticalAlign:"middle" }}/> {ct.email}</div></div>}</div>}
+      {!adminFull ? (
+        <>
+          <p style={{ color:"#475569",lineHeight:1.7,marginBottom:12,fontSize:13,whiteSpace:"pre-line" }}>{renderDesc(offer.description)}</p>
+          {allPack.length>0&&<div style={{ marginBottom:10 }}><strong style={{ fontSize:11,color:"#64748b" }}>{t("common.offer_preview.packaging_label")}</strong><div style={{ display:"flex",gap:4,marginTop:3,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p}>{p}</Badge>)}</div></div>}
+          {co&&<div style={{ padding:12,background:"#f8fafc",borderRadius:8,display:"flex",gap:10,fontSize:12 }}><CompanyLogo company={co} size={38}/><div style={{ flex:1 }}><div style={{ fontWeight:700 }}>{co.name}</div><div style={{ color:"#64748b" }}>{FLAGS[co.country]||"🌐"} {co.city}</div></div>{ct&&<div><div><Phone size={11} style={{ verticalAlign:"middle" }}/> {ct.phone}</div><div><Mail size={11} style={{ verticalAlign:"middle" }}/> {ct.email}</div></div>}</div>}
+        </>
+      ) : (
+        <>
+          <Alrt type="info">{full("notice")}</Alrt>
+          <AdminSection title={full("section_internal")} tone="#7c3aed">
+            <AdminKV items={[
+              [full("internal_title"), internalTitle],
+              [full("buyer_title"), publicTitle],
+              [full("status"), t(`common.status_map.${offer.status}`, { defaultValue: offer.status })],
+              [full("tier"), offer.tier],
+            ]}/>
+          </AdminSection>
+          <AdminSection title={full("section_identification")}>
+            <AdminKV items={[
+              [full("product"), offer.product],
+              [full("variety"), offer.variety],
+              [full("category"), offer.category],
+              [full("subcategory"), offer.subcategory],
+              [full("origin"), offer.origin ? `${FLAGS[offer.origin]||"🌐"} ${getCountryName(offer.origin)}` : null],
+              [full("region"), offer.region],
+              [full("offer_type"), offer.offerType],
+              [full("positioning"), offer.positioning],
+            ]}/>
+          </AdminSection>
+          <AdminSection title={full("section_quality")} tone="#2563eb">
+            <AdminKV items={[
+              [full("size"), offer.size],
+              [full("quality_class"), offer.qualityClass],
+              [full("brand"), offer.brand],
+              [full("sale_mode"), offer.saleMode],
+              [full("bio"), offer.isBio ? full("yes") : null],
+              [full("brix"), offer.brix],
+              [full("color_spec"), offer.colorSpec],
+              [full("stem_length"), offer.stemLength],
+              [full("opening_phase"), offer.openingPhase],
+              [full("bouquet_count"), offer.bouquetCount],
+              [full("vase_life"), offer.vaseLife],
+              [full("flower_color"), offer.flowerColor],
+            ]}/>
+            {offer.qualitySpec&&<div style={{ marginTop:10,padding:"10px 12px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,lineHeight:1.65,color:"#334155" }}><strong>{full("quality_spec")}:</strong> {offer.qualitySpec}</div>}
+          </AdminSection>
+          <AdminSection title={full("section_availability")}>
+            <AdminKV items={[
+              [full("from"), offer.from],
+              [full("to"), offer.to],
+              [full("availability_model"), offer.availabilityModel],
+              [full("volume"), volumeRange],
+              [full("volume_min"), offer.volumeMin ? `${offer.volumeMin} ${offer.volumeUnit||""}` : null],
+              [full("volume_max"), offer.volumeMax ? `${offer.volumeMax} ${offer.volumeUnit||""}` : null],
+              [full("moq"), offer.moq || offer.minOrder],
+              [full("lead_time"), offer.leadTime],
+              [full("promo_volume"), offer.promoVolumePct || offer.promoVolume],
+              [full("delivery_days"), deliveryDays],
+            ]}/>
+          </AdminSection>
+          <AdminSection title={full("section_packaging")} tone="#d97706">
+            {allPack.length>0&&<div style={{ display:"flex",gap:5,flexWrap:"wrap",marginBottom:10 }}>{allPack.map(p=><Badge key={p} color="#d97706" bg="#fef3c7">{p}</Badge>)}</div>}
+            <AdminKV items={[
+              [full("packaging_desc"), offer.packagingDesc],
+              [full("net_weight"), offer.netWeight],
+              [full("units_per_carton"), offer.unitsPerCarton],
+              [full("ean"), offer.ean],
+              [full("pallet_type"), offer.palletType],
+              [full("pallet_height"), offer.palletHeight],
+              [full("cartons_per_layer"), offer.cartonsPerLayer],
+              [full("layers_per_pallet"), offer.layersPerPallet],
+              [full("units_per_pallet"), offer.unitsPerPallet],
+              [full("srp"), offer.srp],
+            ]}/>
+          </AdminSection>
+          <AdminSection title={full("section_logistics")} tone="#1d4ed8">
+            <AdminKV items={[
+              [full("delivery_model"), offer.deliveryModel],
+              [full("loading_point"), offer.loadingPoint],
+              [full("delivery_regions"), offer.deliveryRegions],
+              [full("cold_chain"), offer.coldChain],
+              [full("temp_transport"), offer.tempTransport],
+            ]}/>
+          </AdminSection>
+          <AdminSection title={full("section_certs")} tone="#059669">
+            {allCerts.length>0&&<div style={{ display:"flex",gap:5,flexWrap:"wrap",marginBottom:10 }}>{allCerts.map(c=><Badge key={c} color="#059669">{c}</Badge>)}</div>}
+            <AdminKV items={[
+              [full("traceability"), offer.traceability],
+              [full("cert_number"), offer.certNumber],
+              [full("cert_valid"), offer.certValid],
+              [full("current_tests"), offer.currentTests],
+            ]}/>
+          </AdminSection>
+          <AdminSection title={full("section_commercial")} tone="#92400e">
+            <AdminKV items={[
+              [full("price_offer"), priceLine],
+              [full("incoterm"), offer.incoterm],
+              [full("price_window"), priceWindow],
+              [full("promo_price"), offer.promoPrice],
+              [full("contract_program"), offer.contractProgram],
+              [full("samples"), offer.samplesAvail],
+            ]}/>
+          </AdminSection>
+          <AdminSection title={full("section_benefits")} tone="#047857">
+            <AdminKV items={[
+              [full("benefit1"), offer.benefit1],
+              [full("benefit2"), offer.benefit2],
+              [full("benefit3"), offer.benefit3],
+              [full("shop_benefit"), offer.shopBenefit],
+            ]}/>
+            {offer.description&&<div style={{ marginTop:10,padding:"10px 12px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,lineHeight:1.65,color:"#334155",whiteSpace:"pre-line" }}><strong>{full("description")}:</strong><br/>{renderDesc(offer.description)}</div>}
+          </AdminSection>
+          <AdminSection title={full("section_risk")} tone="#dc2626">
+            <AdminKV items={[
+              [full("risk_mitigation"), offer.riskMitigation],
+              [full("risk_proof"), offer.riskProof],
+              [full("risk_now"), offer.riskNow],
+            ]}/>
+          </AdminSection>
+          <AdminSection title={full("section_photos")} tone="#0d9488">
+            {photos.length>0 ? (
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10 }}>
+                {photos.map((p,i)=>(
+                  <a key={`${p}-${i}`} href={p} target="_blank" rel="noreferrer" style={{ display:"block",border:"1px solid #e2e8f0",borderRadius:8,overflow:"hidden",background:"#f8fafc",textDecoration:"none" }}>
+                    <img src={p} alt="" loading="lazy" style={{ width:"100%",height:120,objectFit:"contain",background:"white",display:"block" }}/>
+                    <div style={{ padding:"5px 8px",fontSize:10,color:"#64748b",fontWeight:700 }}>{i===0 ? full("photo_main") : full("photo_item_format").replace("{{n}}", String(i+1))}</div>
+                  </a>
+                ))}
+              </div>
+            ) : <div style={{ color:"#94a3b8",fontSize:12 }}>{full("photos_empty")}</div>}
+          </AdminSection>
+          {co&&<AdminSection title={full("section_supplier")} tone="#0f766e">
+            <div style={{ padding:12,background:"#f8fafc",borderRadius:8,display:"flex",gap:10,fontSize:12 }}>
+              <CompanyLogo company={co} size={42}/>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:800,fontSize:13 }}>{co.name}</div>
+                <div style={{ color:"#64748b" }}>{FLAGS[co.country]||"🌐"} {co.city}</div>
+                {(co.contacts||[]).length>0&&<div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:8,marginTop:8 }}>{(co.contacts||[]).map((c,i)=><div key={i} style={{ padding:"8px 10px",background:"white",border:"1px solid #e2e8f0",borderRadius:7 }}><div style={{ fontWeight:700 }}>{c.name||"—"}</div>{c.role&&<div style={{ color:"#64748b" }}>{c.role}</div>}{c.phone&&<div><Phone size={11} style={{ verticalAlign:"middle" }}/> {c.phone}</div>}{c.email&&<div><Mail size={11} style={{ verticalAlign:"middle" }}/> {c.email}</div>}</div>)}</div>}
+              </div>
+            </div>
+          </AdminSection>}
+        </>
+      )}
     </Modal>
   );
 }
