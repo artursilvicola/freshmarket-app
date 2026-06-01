@@ -66,7 +66,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -7295,14 +7295,49 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
   );
 }
 
+// [Admin Pipeline 2.0 / mailing-basket] Data następnej wysyłki mailingu =
+// DRUGI WTOREK miesiąca. Jeśli drugi wtorek bieżącego miesiąca już minął
+// (lub jest dziś, ale chcemy następny cykl po wysyłce), bierzemy drugi wtorek
+// kolejnego miesiąca. `from` pozwala testować deterministycznie.
+// Przykład: from=2026-06-01 → 2026-06-09 (drugi wtorek czerwca).
+function secondTuesdayOfMonth(year, month0) {
+  // month0: 0=styczeń. Pierwszy wtorek: dzień (1 + (2 - dow + 7) % 7), dow 1-go.
+  const firstDow = new Date(year, month0, 1).getDay(); // 0=nd..2=wt
+  const firstTue = 1 + ((2 - firstDow + 7) % 7);
+  return new Date(year, month0, firstTue + 7);
+}
+function nextMailingDate(from = new Date()) {
+  const y = from.getFullYear();
+  const m = from.getMonth();
+  // Porównujemy po dacie kalendarzowej (bez godzin), żeby "dziś == drugi wtorek"
+  // liczyło się jako nadchodzący mailing (admin może jeszcze dziś wysłać).
+  const today = new Date(y, m, from.getDate());
+  const thisMonth = secondTuesdayOfMonth(y, m);
+  if (thisMonth >= today) return thisMonth;
+  // minął → drugi wtorek następnego miesiąca
+  const ny = m === 11 ? y + 1 : y;
+  const nm = m === 11 ? 0 : m + 1;
+  return secondTuesdayOfMonth(ny, nm);
+}
+function formatMailingDate(d, lang) {
+  // Lokalna nazwa dnia + data. PL: "wtorek, 9 czerwca 2026".
+  try {
+    const locale = lang === "en" ? "en-GB" : "pl-PL";
+    return new Intl.DateTimeFormat(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d);
+  } catch (e) {
+    return d.toISOString().slice(0, 10);
+  }
+}
+
 /* ── Admin Pipeline 2.0 / Branch 1 — operacyjna tabela (view-only) ─────────
    Spec: docs/admin/ADMIN_PIPELINE_2_0_PLAN.md (Część II). Zastępuje kolorowe
    karty jedną tabelą odporną na setki rekordów. Zakres TYLKO widok:
    indeksacja Map → O(1) lookup, search, multi-filtry, paginacja 50/100, CSV.
-   Akcje (moderacja/koszyk/wysyłka/rozliczenia) zostają w starym widoku i wejdą
-   w kolejnych branchach Pipeline. Jedyna akcja tutaj: read-only podgląd oferty. */
-function PipelineTableV2({ sends, offers, retailers, companies }) {
-  const { t } = useTranslation("legacy");
+   [mailing-basket] Dochodzi: checkboxy koszyka + chip "W koszyku" + pasek daty
+   następnej wysyłki + grupy per sieć (za flagą ADMIN_PIPELINE_2_0_MAILING_BASKET).
+   Akcje moderacji/rozliczeń zostają w starym widoku / kolejnych branchach. */
+function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, onSendRetailerEmail }) {
+  const { t, i18n } = useTranslation("legacy");
 
   // ── Indeksacja danych (raz na render) — O(1) lookup zamiast N² .find() ──
   const offersById = useMemo(() => {
@@ -7356,6 +7391,11 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
     const refunded = hasRefundMarker(s);
     const date = s.sentAt || s.sendDate || s.data?.sentAt || "";
     const dateKey = String(date || "").slice(0, 10);
+    // [mailing-basket] Kwalifikuje się do koszyka: widoczne w panelu kupca i
+    // e-mail jeszcze niewysłany. inBasket = marker administracyjny (osobny od
+    // statusu panelu i od emailSent).
+    const basketEligible = inPanel && !emailSent;
+    const inBasket = !!s.inEmailBasket && basketEligible;
     return {
       send: s,
       offer, retailer, supplier,
@@ -7364,6 +7404,7 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
       supplierName: supplier?.name || "",
       productName: offer?.title || offer?.product || "",
       inPanel, emailSent, isExpired, isRead, charged, refunded,
+      basketEligible, inBasket,
     };
   }, [offersById, retailersById, supplierForSend]);
 
@@ -7373,6 +7414,7 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
   const [fEmail, setFEmail] = useState("");      // "" | "sent" | "unsent"
   const [fRead, setFRead] = useState("");        // "" | "read" | "unread"
   const [fSettle, setFSettle] = useState("");    // "" | "charged" | "waiting"
+  const [fBasket, setFBasket] = useState("");    // "" | "in" (w koszyku e-mail)
   const [fRetailer, setFRetailer] = useState(""); // retailerId (string)
   const [fSupplier, setFSupplier] = useState(""); // supplier key (string)
   const [fDateFrom, setFDateFrom] = useState("");
@@ -7396,18 +7438,21 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
     return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [allRows]);
 
-  const anyFilterActive = !!(search.trim() || fPanel || fEmail || fRead || fSettle || fRetailer || fSupplier || fDateFrom || fDateTo);
+  const basketOn = ADMIN_PIPELINE_2_0_MAILING_BASKET && typeof onToggleBasket === "function";
+
+  const anyFilterActive = !!(search.trim() || fPanel || fEmail || fRead || fSettle || (basketOn && fBasket) || fRetailer || fSupplier || fDateFrom || fDateTo);
   const clearFilters = () => {
-    setSearch(""); setFPanel(""); setFEmail(""); setFRead(""); setFSettle("");
+    setSearch(""); setFPanel(""); setFEmail(""); setFRead(""); setFSettle(""); setFBasket("");
     setFRetailer(""); setFSupplier(""); setFDateFrom(""); setFDateTo("");
   };
 
   // [Branch table-polish] Liczniki podsumowania — liczone z allRows (O(n)),
   // niezależnie od aktywnych filtrów. Spójne z derywacją kolumn (inPanel /
-  // emailSent / isRead / charged / refunded).
+  // emailSent / isRead / charged / refunded). [mailing-basket] +inBasket.
   const summary = useMemo(() => {
-    let inPanel = 0, noEmail = 0, unread = 0, waiting = 0;
+    let inPanel = 0, noEmail = 0, unread = 0, waiting = 0, inBasket = 0;
     allRows.forEach(r => {
+      if (r.inBasket) inBasket += 1;
       if (r.inPanel) {
         inPanel += 1;
         if (!r.emailSent) noEmail += 1;
@@ -7415,7 +7460,7 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
         if (!r.charged && !r.refunded) waiting += 1;
       }
     });
-    return { all: allRows.length, inPanel, noEmail, unread, waiting };
+    return { all: allRows.length, inPanel, noEmail, unread, waiting, inBasket };
   }, [allRows]);
 
   // Mapowanie chip → zestaw filtrów (proste ustawienie istniejących stanów).
@@ -7425,15 +7470,17 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
     else if (key === "no_email") { setFPanel("in"); setFEmail("unsent"); }
     else if (key === "unread") { setFPanel("in"); setFRead("unread"); }
     else if (key === "waiting") { setFSettle("waiting"); }
+    else if (key === "in_basket") { setFBasket("in"); }
     // "all" → tylko clearFilters()
   };
   // Czy dany chip odpowiada aktualnemu zestawowi filtrów (do podświetlenia).
   const summaryActive = (key) => {
     if (key === "all") return !anyFilterActive;
-    if (key === "in_panel") return fPanel === "in" && !fEmail && !fRead && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
-    if (key === "no_email") return fPanel === "in" && fEmail === "unsent" && !fRead && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
-    if (key === "unread") return fPanel === "in" && fRead === "unread" && !fEmail && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
-    if (key === "waiting") return fSettle === "waiting" && !fPanel && !fEmail && !fRead && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "in_panel") return fPanel === "in" && !fEmail && !fRead && !fSettle && !fBasket && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "no_email") return fPanel === "in" && fEmail === "unsent" && !fRead && !fSettle && !fBasket && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "unread") return fPanel === "in" && fRead === "unread" && !fEmail && !fSettle && !fBasket && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "waiting") return fSettle === "waiting" && !fPanel && !fEmail && !fRead && !fBasket && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "in_basket") return fBasket === "in" && !fPanel && !fEmail && !fRead && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
     return false;
   };
 
@@ -7452,16 +7499,34 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
       if (fRead === "unread" && r.isRead) return false;
       if (fSettle === "charged" && !r.charged) return false;
       if (fSettle === "waiting" && (!r.inPanel || r.charged || r.refunded)) return false;
+      if (basketOn && fBasket === "in" && !r.inBasket) return false;
       if (fRetailer && String(r.retailer?.id) !== fRetailer) return false;
       if (fSupplier && String(r.supplier?.id || r.send.supplierId) !== fSupplier) return false;
       if (fDateFrom && (!r.dateKey || r.dateKey < fDateFrom)) return false;
       if (fDateTo && (!r.dateKey || r.dateKey > fDateTo)) return false;
       return true;
     }).sort((a, b) => String(b.date).localeCompare(String(a.date))); // najnowsze u góry
-  }, [allRows, search, fPanel, fEmail, fRead, fSettle, fRetailer, fSupplier, fDateFrom, fDateTo]);
+  }, [allRows, search, fPanel, fEmail, fRead, fSettle, fBasket, basketOn, fRetailer, fSupplier, fDateFrom, fDateTo]);
 
   // Reset strony gdy zmieni się zestaw wyników / rozmiar strony
-  useEffect(() => { setPage(0); }, [search, fPanel, fEmail, fRead, fSettle, fRetailer, fSupplier, fDateFrom, fDateTo, pageSize]);
+  useEffect(() => { setPage(0); }, [search, fPanel, fEmail, fRead, fSettle, fBasket, fRetailer, fSupplier, fDateFrom, fDateTo, pageSize]);
+
+  // [mailing-basket] Grupy per sieć: ile w panelu / w koszyku / wysłane e-mailem.
+  const retailerGroups = useMemo(() => {
+    if (!basketOn) return [];
+    const m = new Map();
+    allRows.forEach(r => {
+      if (!r.retailer) return;
+      const id = r.retailer.id;
+      if (!m.has(id)) m.set(id, { id, name: r.retailerName || String(id), inPanel: 0, inBasket: 0, emailed: 0 });
+      const g = m.get(id);
+      if (r.inPanel) g.inPanel += 1;
+      if (r.inBasket) g.inBasket += 1;
+      if (r.emailSent) g.emailed += 1;
+    });
+    // pokazuj tylko sieci, które mają cokolwiek w panelu lub w koszyku
+    return [...m.values()].filter(g => g.inPanel > 0 || g.inBasket > 0).sort((a, b) => b.inBasket - a.inBasket || a.name.localeCompare(b.name));
+  }, [allRows, basketOn]);
 
   const total = filteredRows.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -7524,9 +7589,41 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
     );
   };
 
+  const lang = (i18n.language || "pl").slice(0, 2);
+  const nextMail = basketOn ? nextMailingDate() : null;
+
   return (
     <div>
       {previewOffer && <OfferPreviewModal offer={previewOffer} co={companiesByLegacyKey.get(previewOffer?.supplierId) || COMPANY_INIT} onClose={() => setPreviewOffer(null)} />}
+
+      {/* [mailing-basket] Pasek daty następnej wysyłki (drugi wtorek miesiąca) */}
+      {basketOn && nextMail && (
+        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"#ecfeff", border:"1px solid #a5f3fc", borderRadius:8, marginBottom:10, fontSize:12, color:"#155e75" }}>
+          <Calendar size={14}/>
+          <span><strong>{t("admin.pipeline.table.next_mailing_label")}</strong> {formatMailingDate(nextMail, lang)}</span>
+        </div>
+      )}
+
+      {/* [mailing-basket] Grupy per sieć: w panelu / w koszyku / wysłane + akcja */}
+      {basketOn && retailerGroups.length > 0 && (
+        <div style={{ border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 12px", marginBottom:10, background:"white" }}>
+          <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#64748b", marginBottom:8 }}>{t("admin.pipeline.table.basket_groups_title")}</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {retailerGroups.map(g => (
+              <div key={g.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", padding:"6px 8px", borderRadius:7, background:"#f8fafc" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", minWidth:0 }}>
+                  <span style={{ fontWeight:700, fontSize:13, color:"#0f172a" }}>{g.name}</span>
+                  <span style={{ fontSize:11, color:"#64748b" }}>{t("admin.pipeline.table.basket_group_counts", { panel: g.inPanel, basket: g.inBasket, emailed: g.emailed })}</span>
+                </div>
+                <Btn sm outline onClick={() => onSendRetailerEmail?.(g.id)} disabled={g.inBasket === 0} title={g.inBasket === 0 ? t("admin.pipeline.table.basket_empty_hint") : undefined}>
+                  <Mail size={11}/> {t("admin.pipeline.table.basket_send_email")}
+                </Btn>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize:10, color:"#94a3b8", marginTop:8 }}>{t("admin.pipeline.table.basket_manual_hint")}</div>
+        </div>
+      )}
 
       {/* [Branch table-polish] Pasek podsumowania — klik ustawia filtr */}
       <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 }}>
@@ -7535,6 +7632,7 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
         {summaryChip("no_email", t("admin.pipeline.table.summary_no_email"), summary.noEmail, "#b45309")}
         {summaryChip("unread", t("admin.pipeline.table.summary_unread"), summary.unread, "#ea580c")}
         {summaryChip("waiting", t("admin.pipeline.table.summary_waiting"), summary.waiting, "#ca8a04")}
+        {basketOn && summaryChip("in_basket", t("admin.pipeline.table.summary_in_basket"), summary.inBasket, "#7c3aed")}
       </div>
 
       {/* Pasek search + filtry */}
@@ -7597,6 +7695,7 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
             <table style={{ width:"100%", minWidth:880, borderCollapse:"collapse", fontFamily:"inherit" }}>
               <thead>
                 <tr>
+                  {basketOn && <th style={{ ...th, textAlign:"center", width:36 }} title={t("admin.pipeline.table.col_basket")}><Mail size={12}/></th>}
                   <th style={th}>{t("admin.pipeline.table.col_date")}</th>
                   <th style={th}>{t("admin.pipeline.table.col_retailer")}</th>
                   <th style={th}>{t("admin.pipeline.table.col_supplier")}</th>
@@ -7611,6 +7710,22 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
               <tbody>
                 {pageRows.map((r, i) => (
                   <tr key={r.send.id} style={{ background: i % 2 === 1 ? "#fafbfc" : "white" }}>
+                    {basketOn && (
+                      <td style={{ ...td, textAlign:"center" }}>
+                        {r.basketEligible ? (
+                          <input
+                            type="checkbox"
+                            checked={r.inBasket}
+                            onChange={(e) => onToggleBasket?.(r.send.id, e.target.checked)}
+                            aria-label={t("admin.pipeline.table.basket_checkbox_aria")}
+                            title={t("admin.pipeline.table.basket_checkbox_aria")}
+                            style={{ cursor:"pointer" }}
+                          />
+                        ) : (
+                          <span style={{ color:"#cbd5e1" }} title={t("admin.pipeline.table.basket_not_eligible")}>—</span>
+                        )}
+                      </td>
+                    )}
                     <td style={{ ...td, whiteSpace:"nowrap", color:"#64748b" }}>{r.date || "—"}</td>
                     <td style={{ ...td, fontWeight:600, color:"#0f172a", maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.retailerName || undefined}>{r.retailerName || "—"}</td>
                     <td style={{ ...td, maxWidth:160, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={r.supplierName || undefined}>{r.supplierName || "—"}</td>
@@ -7701,6 +7816,56 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
   const [historyId,setHistoryId]=useState(null);
   const [emailPreview,setEmailPreview]=useState(null); // { retailerId, sends[] }
 
+  // [mailing-basket] Toggle markera koszyka na obiekcie sendu (top-level
+  // inEmailBasket). Wzorzec jak updateSendPos/updateSendDate — setSends
+  // serializuje cały send do data JSONB (bulkUpsertLegacySends), więc marker
+  // round-trippuje bez migracji. Tylko propozycje widoczne w panelu kupca i bez
+  // wysłanego e-maila mają sens w koszyku (guard też w UI checkboxa).
+  function onToggleBasket(sendId, value) {
+    setSends(prev => prev.map(s => s.id === sendId ? { ...s, inEmailBasket: !!value } : s));
+  }
+  // [mailing-basket] Otwórz EmailNewsletterModal dla JEDNEJ sieci, zawężony do
+  // propozycji z koszyka tej sieci (i nadal kwalifikujących się do wysyłki).
+  // Modal sam filtruje canEmailRetailerSend — my dodatkowo ograniczamy do
+  // koszyka. Wysyłka pozostaje ręczna (admin klika w modalu "Wyślij").
+  function openRetailerEmailFromBasket(retailerId) {
+    const retailer = getRetailerLive(retailerId) || (retailers||[]).find(r => r.id === retailerId) || null;
+    if (!retailer) return;
+    const basketSends = (sends || []).filter(s =>
+      s.retailerId === retailerId && s.inEmailBasket && canEmailRetailerSend(s)
+    );
+    setEmailPreview({ retailer, sends: basketSends });
+  }
+  // [mailing-basket] Wspólny onSent dla obu ścieżek (stary widok + tabela).
+  // Po wysyłce: status="sent" + emailSentAt (osobny stan od panelu) ORAZ
+  // wyczyść marker koszyka (inEmailBasket=false), bo propozycja już wysłana —
+  // nie powinna dłużej wisieć w koszyku. setSends zsync'uje DB (backend i tak
+  // już zapisał status/markery).
+  function handleEmailSent(markedIds, sentAt, result) {
+    if (!markedIds || !markedIds.length) return;
+    const idSet = new Set(markedIds.map(Number));
+    setSends?.(prev => prev.map(s => idSet.has(Number(s.id))
+      ? {
+          ...s,
+          status: "sent",
+          sentAt: s.sentAt || sentAt,
+          daysLeft: s.daysLeft || 14,
+          emailSentAt: sentAt,
+          inEmailBasket: false,
+          resendBuyerEmails: result?.buyers_succeeded || s.resendBuyerEmails || [],
+          data: {
+            ...(s.data || {}),
+            status: "sent",
+            sentAt: s.sentAt || sentAt,
+            daysLeft: s.daysLeft || 14,
+            emailSentAt: sentAt,
+            resendBuyerEmails: result?.buyers_succeeded || s.data?.resendBuyerEmails || [],
+          },
+        }
+      : s
+    ));
+  }
+
     // otworzył maila przez Resend webhook (ale jeszcze nie kliknął w aplikacji).
     // Admin widzi w tab "Wysłane & Tracking" wszystkie statusy post-wysyłki.
   const ap=sends.filter(s=>s.status==="approved").length;
@@ -7750,12 +7915,27 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
   // (early return po wszystkich useState/useEffect powyżej).
   if (ADMIN_PIPELINE_2_0_TABLE) {
     return (
-      <PipelineTableV2
-        sends={sends}
-        offers={offers}
-        retailers={retailers}
-        companies={companies}
-      />
+      <>
+        {emailPreview && (
+          <EmailNewsletterModal
+            retailer={emailPreview.retailer}
+            sends={emailPreview.sends}
+            offers={offers}
+            companies={companies}
+            fl={fl}
+            onClose={() => setEmailPreview(null)}
+            onSent={handleEmailSent}
+          />
+        )}
+        <PipelineTableV2
+          sends={sends}
+          offers={offers}
+          retailers={retailers}
+          companies={companies}
+          onToggleBasket={onToggleBasket}
+          onSendRetailerEmail={openRetailerEmailFromBasket}
+        />
+      </>
     );
   }
 
@@ -7769,33 +7949,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
         companies={companies}
         fl={fl}
         onClose={()=>setEmailPreview(null)}
-        onSent={(markedIds, sentAt, result) => {
-          // Round pipeline-retailer-email-mvp: po sukcesie aktualizujemy
-          // lokalny state — pipelina przeładuje wybór i pozycje wysłanych
-          // przejdą do statusu "sent". setSends sam zsync'uje DB przez
-          // bulkUpsertLegacySends (ale i tak backend już to zrobił).
-          if (!markedIds || !markedIds.length) return;
-          const idSet = new Set(markedIds.map(Number));
-          setSends?.(prev => prev.map(s => idSet.has(Number(s.id))
-            ? {
-                ...s,
-                status: "sent",
-                sentAt: s.sentAt || sentAt,
-                daysLeft: s.daysLeft || 14,
-                emailSentAt: sentAt,
-                resendBuyerEmails: result?.buyers_succeeded || s.resendBuyerEmails || [],
-                data: {
-                  ...(s.data || {}),
-                  status: "sent",
-                  sentAt: s.sentAt || sentAt,
-                  daysLeft: s.daysLeft || 14,
-                  emailSentAt: sentAt,
-                  resendBuyerEmails: result?.buyers_succeeded || s.data?.resendBuyerEmails || [],
-                },
-              }
-            : s
-          ));
-        }}
+        onSent={handleEmailSent}
       />}
       {histSend&&<Modal title={t("admin.pipeline.history_modal_title_format", { product: getOffer(histSend.offerId,offers)?.product })} onClose={()=>setHistoryId(null)}>
         {(histSend.confirmHistory||[]).length===0?<div style={{ color:"#94a3b8",textAlign:"center",padding:16 }}>{t("admin.pipeline.history_empty")}</div>:(histSend.confirmHistory||[]).map((h,i)=>(
