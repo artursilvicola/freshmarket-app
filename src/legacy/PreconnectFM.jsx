@@ -2749,13 +2749,33 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     } catch(e){}
   }, [refundNotifs, previewFor]);
 
-  // pkgMax = limit for current supplier account
-  const myLimit = limits.find(l=>l.id===account.id) || {
+  // pkgMax = limit for current supplier account.
+  // Prefer company_capacity because it is computed from real package rows.
+  // Falling back to legacy limits is only for the first render before DB data lands.
+  const supplierCapacity = account.role === "supplier"
+    ? (dbCapacity || []).find(row =>
+        String(row.id) === String(co?.id) ||
+        String(row.id) === String(account.id) ||
+        (currentUser?.company_id && String(row.id) === String(currentUser.company_id))
+      )
+    : null;
+  const legacyLimit = limits.find(l=>l.id===account.id) || limits.find(l=>l.id===mySupplierKey);
+  const fallbackPkg = co?.pkg || account.pkg || "std_5";
+  const fallbackPlan = getPlanById(fallbackPkg) || getPlanById("std_5");
+  const myLimit = supplierCapacity ? {
+    id: supplierCapacity.id,
+    name: supplierCapacity.name || account.name,
+    pkg: supplierCapacity.pkg_plan || fallbackPkg,
+    max: Number(supplierCapacity.qty_total || 0),
+    used: Number(supplierCapacity.qty_used || 0),
+    pkgExpiry: supplierCapacity.pkg_expiry ? String(supplierCapacity.pkg_expiry).slice(0, 10) : (co?.pkgExpiry || "2026-12-31"),
+    email: account.email || ""
+  } : (legacyLimit || {
     id: account.id, name: account.name,
-    pkg: account.pkg==="Premium" ? "prem_10" : "std_10",
-    max: account.pkg==="Premium" ? 10 : 5,
-    used: 0, pkgExpiry: "2026-12-31", email: account.email||""
-  };
+    pkg: fallbackPkg,
+    max: Number(fallbackPlan?.qty || 0),
+    used: 0, pkgExpiry: co?.pkgExpiry || "2026-12-31", email: account.email||""
+  });
   // [B2B Round 5.2] mySupplierKey is what `offers.supplierId` and `sends.supplierId`
   // contain for THIS supplier — Round 5 changed saveOffer/sendToChain to use
   // legacySupplierId (sup-codex-silvicola) so RLS supplier_legacy_id check passes.
@@ -2763,7 +2783,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // alias, freshly saved offers/sends are invisible to their own creator.
   // For non-supplier roles legacySupplierId is null → falls back to account.id.
   const pkgUsed = sends.filter(s=>s.supplierId===mySupplierKey&&!["rejected","refunded","queued"].includes(s.status)).length;
-  const pkgMax  = myLimit.max;
+  const pkgMax  = Number(myLimit.max || 0);
+  const pkgPlan = myLimit.pkg || co?.pkg || "std_5";
   const rem     = Math.max(0, pkgMax - pkgUsed);
 
   const fl  = (m,t) => { setFlash({m, t:t||"success"}); setTimeout(()=>setFlash(null), 3800); };
@@ -2908,7 +2929,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       month: "2026-05",
       pos: sends.filter(s => s.retailerId === rId).length + 1,
       status: "pending_moderation",
-      price: getPlanById(co?.pkg)?.perSend || getPlanById(COMPANY_INIT.pkg)?.perSend || 40,
+      price: getPlanById(pkgPlan)?.perSend || getPlanById(COMPANY_INIT.pkg)?.perSend || 40,
       sendDate: new Date().toISOString().slice(0, 10),
       daysLeft: 14,
       confirmHistory: [],
@@ -3338,12 +3359,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="dashboard" && role==="admin") return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers} retailers={retailers} hiddenRetailers={companyHiddenRetailers} setHiddenRetailers={setCompanyHiddenRetailers}/>;
-    if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
+    if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} pkgPlan={pkgPlan} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
     if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey} setOffers={setOffers} fl={fl}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
-    if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} retailers={retailers} accountId={mySupplierKey}/>;
+    if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} pkgPlan={pkgPlan} retailers={retailers} accountId={mySupplierKey}/>;
     if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
@@ -4319,7 +4340,7 @@ function HelpStripDashboard() {
 
 
 /* ── Wysyłki: unified hub (replaces Retail Chains + Preconnect + Send) ──── */
-function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies }) {
+function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -4332,7 +4353,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
   const [search, setSearch] = useState("");
 
   const ao = offers.filter(o => o.status==="active" && (!o.supplierId || o.supplierId===accountId));
-  const pct = Math.min(100, Math.round(pkgUsed / pkgMax * 100));
+  const pct = pkgMax > 0 ? Math.min(100, Math.round(pkgUsed / pkgMax * 100)) : 0;
 
   // [B2B Round prod-rollout / UX] Modal potwierdzenia kosztu — supplier widzi
   // "Pobierzemy 1 wysyłkę. Zostanie X/Y" przed faktyczną wysyłką. Buduje
@@ -4383,7 +4404,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
       {/* Package status bar — always visible */}
       <div style={{ display:"flex",gap:10,alignItems:"center",padding:"10px 16px",background:"linear-gradient(90deg,#0f172a,#1e3a5f)",borderRadius:10,marginBottom:18,flexWrap:"wrap" }}>
         <div style={{ flex:1,minWidth:160 }}>
-          <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",marginBottom:3 }}>{getPlanLabel(co?.pkg)||getPlanLabel(COMPANY_INIT.pkg)||t("supplier.wysylki.pkg_bar.fallback_label")}</div>
+          <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",marginBottom:3 }}>{getPlanLabel(pkgPlan || co?.pkg)||getPlanLabel(COMPANY_INIT.pkg)||t("supplier.wysylki.pkg_bar.fallback_label")}</div>
           <div style={{ display:"flex",alignItems:"center",gap:10 }}>
             <div style={{ flex:1,background:"rgba(255,255,255,0.12)",borderRadius:3,height:6,overflow:"hidden",maxWidth:180 }}>
               <div style={{ height:"100%",borderRadius:3,width:`${pct}%`,background:pct>=90?"#f59e0b":"#0d9488" }}/>
@@ -5841,7 +5862,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
 }
 
 /* ── Finanse: tabs Saldo / Historia / Pakiety ─────────────────────────── */
-function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, orders, pkgMax, pkgUsed, retailers, accountId }) {
+function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, orders, pkgMax, pkgUsed, pkgPlan, retailers, accountId }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -5854,8 +5875,10 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
   const expired=allExpired.filter(hasRefundMarker);
   const refundedExpired = expired;
   const pendingRefunds = allExpired.filter(s => !hasRefundMarker(s));
-  const pkgOpt=PKG_OPTS.find(p=>p.id===co.pkg)||PKG_OPTS[2];
-  const pct=Math.min(100,Math.round(confirmed.length/pkgOpt.max*100));
+  const pkgOpt=PKG_OPTS.find(p=>p.id===(pkgPlan || co.pkg))||PKG_OPTS[2];
+  const activePkgMax = Number(pkgMax || pkgOpt.max || 0);
+  const activePkgUsed = Number(pkgUsed || 0);
+  const pct=activePkgMax>0?Math.min(100,Math.round(activePkgUsed/activePkgMax*100)):0;
   const totalEarned=confirmed.reduce((sum, s) => sum + getChargeAmount(s, pkgOpt.perSend), 0);
   const totalRefunds=refundedExpired.reduce((sum, s) => sum + getRefundAmount(s), 0);
 
@@ -5872,7 +5895,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           <div style={{ flex:1,minWidth:160 }}>
             <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{t("supplier.finance.wallet.balance_label")}</div>
             <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{wallet.balance}<span style={{ fontSize:16,fontWeight:400,marginLeft:4 }}>EUR</span></div>
-            <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>{t("supplier.finance.wallet.funds_info_format", { perSend: getPlanById(co.pkg)?.perSend||40 })}</div>
+            <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>{t("supplier.finance.wallet.funds_info_format", { perSend: pkgOpt.perSend||40 })}</div>
             <div style={{ marginTop:14 }}><Btn onClick={()=>nav("wysylki")} style={{ background:"rgba(255,255,255,0.12)",color:"white",border:"1px solid rgba(255,255,255,0.2)" }}><Send size={13}/> {t("supplier.finance.wallet.send_button")}</Btn></div>
           </div>
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",alignItems:"center" }}>
@@ -5913,7 +5936,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
             </div>
             <div style={{ flex:1,minWidth:200 }}>
               <div style={{ display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5 }}>
-                <span style={{ color:"#64748b" }}>{t("supplier.finance.active_pkg.used_format", { used: confirmed.length, max: pkgOpt.max })}</span>
+                <span style={{ color:"#64748b" }}>{t("supplier.finance.active_pkg.used_format", { used: activePkgUsed, max: activePkgMax })}</span>
                 <span style={{ fontWeight:600,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{pct}%</span>
               </div>
               <div style={{ background:"#e2e8f0",borderRadius:4,height:8,overflow:"hidden" }}><div style={{ height:"100%",background:pct>=90?"#dc2626":pct>=70?"#d97706":"#0d9488",borderRadius:4,width:`${pct}%` }}/></div>
