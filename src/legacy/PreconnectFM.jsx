@@ -686,7 +686,9 @@ function Modal({ title, onClose, children, wide }) {
   return <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16 }} onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:16,maxWidth:wide?820:500,width:"100%",maxHeight:"92vh",overflow:"auto" }}><div style={{ padding:"16px 20px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"white",zIndex:1 }}><strong style={{ fontSize:15 }}>{title}</strong><button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",padding:4 }}><X size={18}/></button></div><div style={{ padding:20 }}>{children}</div></div></div>;
 }
 function TrackingBar({ daysLeft, status }) {
-  const isRead=["read","read_manual"].includes(status);
+  // [pipeline-supplier-flow] "opened" (kupiec otworzył maila) = potwierdzone,
+  // spójnie z resztą widoków dostawcy.
+  const isRead=["opened","read","read_manual"].includes(status);
   const pct=Math.max(0,Math.min(100,((14-(daysLeft||0))/14)*100));
   const color=isRead?"#059669":(daysLeft||0)<=3?"#dc2626":(daysLeft||0)<=7?"#f59e0b":"#3b82f6";
   return <div style={{ marginTop:5 }}><div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>Tracking 14 dni</span><span style={{ color }}>{isRead?"✅ Potwierdzona":(daysLeft||0)>0?`${daysLeft} dni`:"⚠ Wygasła"}</span></div><div style={{ background:"#e2e8f0",borderRadius:3,height:4,overflow:"hidden" }}><div style={{ height:"100%",borderRadius:3,width:`${isRead?100:pct}%`,background:color }}/></div></div>;
@@ -3687,9 +3689,13 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     const ts = new Date(s.statusChangedAt || s.createdAt || s.created_at || s.sentAt || 0).getTime();
     return ts >= cutoffMs;
   });
+  // [pipeline-supplier-flow] "sent" = dostarczona, czeka na odczyt. "opened" =
+  // kupiec otworzył maila (Resend) → liczone jako zobaczone, razem z read/
+  // read_manual. "unread_expired" (poprawny enum, nie "expired") + refunded =
+  // wygasłe/zwrot.
   const stWaiting = recentSends.filter(s => s.status === "sent").length;
-  const stSeen    = recentSends.filter(s => s.status === "read" || s.status === "read_manual").length;
-  const stExpired = recentSends.filter(s => s.status === "expired" || s.status === "refunded").length;
+  const stSeen    = recentSends.filter(s => ["opened", "read", "read_manual"].includes(s.status)).length;
+  const stExpired = recentSends.filter(s => ["unread_expired", "refunded"].includes(s.status)).length;
   const stClosed  = stSeen + stExpired;
   const stRatePct = stClosed > 0 ? Math.round((stSeen / stClosed) * 100) : null;
 
@@ -3753,11 +3759,13 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     const ts = new Date(s.statusChangedAt || s.createdAt || s.created_at || s.sentAt || 0).getTime();
     if (!ts) continue;
     const ofTitle = offerById.get(s.offerId)?.title || offerById.get(s.offerId)?.product || "";
-    if (s.status === "read" || s.status === "read_manual") {
+    // [pipeline-supplier-flow] "opened" (kupiec otworzył maila) = zobaczone,
+    // razem z read/read_manual. Wygasłe: poprawny enum "unread_expired".
+    if (["opened", "read", "read_manual"].includes(s.status)) {
       events.push({ ts, dot: "#059669", type: "buyer_viewed", title: ofTitle, sub: t("supplier.dashboard.activity.buyer_viewed.sub") });
     } else if (s.status === "sent") {
       events.push({ ts, dot: "#2563eb", type: "sent", title: ofTitle, sub: t("supplier.dashboard.activity.sent.sub") });
-    } else if (s.status === "expired" || s.status === "refunded") {
+    } else if (["unread_expired", "refunded"].includes(s.status)) {
       events.push({ ts, dot: "#94a3b8", type: "expired", title: ofTitle, sub: t("supplier.dashboard.activity.expired.sub") });
     }
   }
@@ -4300,7 +4308,9 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
   }
 
   const filtered = mySends.filter(s => {
-    if (tab === "sent")    return ["sent","read","read_manual"].includes(s.status);
+    // [pipeline-supplier-flow] "opened" (kupiec otworzył maila) należy do
+    // wysłanych — wcześniej był pomijany, więc otwarte maile znikały z historii.
+    if (tab === "sent")    return ["sent","opened","read","read_manual"].includes(s.status);
     if (tab === "pending") return ["pending_moderation","approved","queued"].includes(s.status);
     if (tab === "expired") return s.status === "unread_expired";
     return true;
@@ -4347,8 +4357,8 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
             <div style={{ display:"flex",gap:8,marginLeft:"auto",alignItems:"center" }}>
               <span style={{ fontSize:12,color:"#64748b",background:"#f8fafc",padding:"5px 12px",borderRadius:8,border:"1px solid #e2e8f0" }}>
                 {t("supplier.wysylki.sieci.stats_format", {
-                  sent: sends.filter(s=>["sent","read","read_manual"].includes(s.status)).length,
-                  read: sends.filter(s=>["read","read_manual"].includes(s.status)).length,
+                  sent: sends.filter(s=>["sent","opened","read","read_manual"].includes(s.status)).length,
+                  read: sends.filter(s=>["opened","read","read_manual"].includes(s.status)).length,
                 })}
               </span>
               <input
@@ -4361,7 +4371,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12 }}>
             {filteredRetailers.map(r => {
               const rSends = sends.filter(s => s.retailerId === r.id && !["queued","pending_moderation","rejected"].includes(s.status));
-              const rRead  = rSends.filter(s => ["read","read_manual"].includes(s.status)).length;
+              const rRead  = rSends.filter(s => ["opened","read","read_manual"].includes(s.status)).length;
               const hasSent = rSends.length > 0;
               return (
                 <div key={r.id} style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:12,padding:16,display:"flex",flexDirection:"column",gap:10 }}>
@@ -4456,7 +4466,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           <div style={{ display:"flex",gap:0,marginBottom:12,background:"white",border:"1px solid #e2e8f0",borderRadius:10,overflow:"hidden",width:"fit-content" }}>
             {[
               ["all", t("supplier.wysylki.history.tabs.all"), sends.length],
-              ["sent", t("supplier.wysylki.history.tabs.sent"), sends.filter(s=>["sent","read","read_manual"].includes(s.status)).length],
+              ["sent", t("supplier.wysylki.history.tabs.sent"), sends.filter(s=>["sent","opened","read","read_manual"].includes(s.status)).length],
               ["pending", t("supplier.wysylki.history.tabs.pending"), sends.filter(s=>["pending_moderation","approved","queued"].includes(s.status)).length],
               ["expired", t("supplier.wysylki.history.tabs.expired"), sends.filter(s=>s.status==="unread_expired").length],
             ].map(([k,l,n])=>(
@@ -4476,7 +4486,10 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           {filtered.map(s => {
             const o = getOffer(s.offerId, []); const r = getRetailerLive(s.retailerId);
             const sc = STATUS_MAP[s.status];
-            const isRead = ["read","read_manual"].includes(s.status);
+            // [pipeline-supplier-flow] "opened" = odczytane (kupiec otworzyl maila)
+            // — wiersz ma wygladac jak odczytany (zielony border, bez countdownu),
+            // spojnie z badge "Odczytana".
+            const isRead = ["opened","read","read_manual"].includes(s.status);
             const isExpired = s.status === "unread_expired";
             return (
               <div key={s.id} style={{ display:"flex",gap:12,padding:"12px 16px",background:"white",borderRadius:10,border:`1px solid ${isExpired?"#fca5a5":isRead?"#bbf7d0":"#e2e8f0"}`,marginBottom:8,alignItems:"center" }}>
@@ -5056,7 +5069,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
         <Btn dark onClick={()=>nav("offer-create")}><Plus size={13}/> {t("supplier.offers.add_button")}</Btn>
       </div>
       {myOffers.length===0&&<Alrt>{t("supplier.offers.empty")}</Alrt>}
-      {myOffers.map(o=>{ const sc=sends.filter(s=>s.offerId===o.id); const rc=sc.filter(s=>["read","read_manual"].includes(s.status)).length; const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o);
+      {myOffers.map(o=>{ const sc=sends.filter(s=>s.offerId===o.id); const rc=sc.filter(s=>["opened","read","read_manual"].includes(s.status)).length; const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o);
         // [B2B Round prod-rollout / supplier-delete-offer]
         // Usunąć można TYLKO propozycje które jeszcze nie zostały wysłane do żadnej sieci.
         // Po pierwszej wysyłce (legacy_send dla tej oferty) propozycja "żyje" w pipeline
@@ -7415,10 +7428,16 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
     const refunded = hasRefundMarker(s);
     const date = s.sentAt || s.sendDate || s.data?.sentAt || "";
     const dateKey = String(date || "").slice(0, 10);
-    // [mailing-basket] Kwalifikuje się do koszyka: widoczne w panelu kupca i
-    // e-mail jeszcze niewysłany. inBasket = marker administracyjny (osobny od
-    // statusu panelu i od emailSent).
-    const basketEligible = inPanel && !emailSent;
+    // [pipeline-supplier-flow] Kwalifikacja do koszyka e-maili: TYLKO status
+    // "sent" (świeżo w panelu kupca, jeszcze nie odczytane) i bez wysłanego
+    // e-maila. ŚWIADOMIE węziej niż inPanel — najpierw panel, potem miesięczny
+    // mail. Nie bierzemy:
+    //   - "approved" (to wysyłka do panelu, nie e-mail — admin nie może tego
+    //     mylić; backend send-retailer-batch technicznie dopuszcza approved, ale
+    //     UI nie pokazuje),
+    //   - opened/read/read_manual (kupiec już widział — mail po fakcie bez sensu),
+    //   - unread_expired/refunded (zamknięte).
+    const basketEligible = s.status === "sent" && !emailSent;
     const inBasket = !!s.inEmailBasket && basketEligible;
     // [moderation-mode] Tryb moderacji obejmuje cały przepływ przed wysłaniem
     // do panelu: do decyzji (pending_moderation/queued) ORAZ zatwierdzone
