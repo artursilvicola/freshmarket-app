@@ -79,4 +79,4 @@ export const ADMIN_PIPELINE_2_0_TABLE = true;
 // Default `false`: gdy wyłączone, tabela Pipeline nie pokazuje checkboxów,
 // chipa koszyka, paska daty ani grup per sieć — działa jak w table-shell/polish.
 // Flip na `true` dopiero po review + smoke test prod.
-export const ADMIN_PIPELINE_2_0_MAILING_BASKET = false;
+export const ADMIN_PIPELINE_2_0_MAILING_BASKET = true;
