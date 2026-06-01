@@ -686,7 +686,9 @@ function Modal({ title, onClose, children, wide }) {
   return <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16 }} onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:16,maxWidth:wide?820:500,width:"100%",maxHeight:"92vh",overflow:"auto" }}><div style={{ padding:"16px 20px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"white",zIndex:1 }}><strong style={{ fontSize:15 }}>{title}</strong><button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",padding:4 }}><X size={18}/></button></div><div style={{ padding:20 }}>{children}</div></div></div>;
 }
 function TrackingBar({ daysLeft, status }) {
-  const isRead=["read","read_manual"].includes(status);
+  // [pipeline-supplier-flow] "opened" (kupiec otworzył maila) = potwierdzone,
+  // spójnie z resztą widoków dostawcy.
+  const isRead=["opened","read","read_manual"].includes(status);
   const pct=Math.max(0,Math.min(100,((14-(daysLeft||0))/14)*100));
   const color=isRead?"#059669":(daysLeft||0)<=3?"#dc2626":(daysLeft||0)<=7?"#f59e0b":"#3b82f6";
   return <div style={{ marginTop:5 }}><div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>Tracking 14 dni</span><span style={{ color }}>{isRead?"✅ Potwierdzona":(daysLeft||0)>0?`${daysLeft} dni`:"⚠ Wygasła"}</span></div><div style={{ background:"#e2e8f0",borderRadius:3,height:4,overflow:"hidden" }}><div style={{ height:"100%",borderRadius:3,width:`${isRead?100:pct}%`,background:color }}/></div></div>;
@@ -3757,11 +3759,13 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     const ts = new Date(s.statusChangedAt || s.createdAt || s.created_at || s.sentAt || 0).getTime();
     if (!ts) continue;
     const ofTitle = offerById.get(s.offerId)?.title || offerById.get(s.offerId)?.product || "";
-    if (s.status === "read" || s.status === "read_manual") {
+    // [pipeline-supplier-flow] "opened" (kupiec otworzył maila) = zobaczone,
+    // razem z read/read_manual. Wygasłe: poprawny enum "unread_expired".
+    if (["opened", "read", "read_manual"].includes(s.status)) {
       events.push({ ts, dot: "#059669", type: "buyer_viewed", title: ofTitle, sub: t("supplier.dashboard.activity.buyer_viewed.sub") });
     } else if (s.status === "sent") {
       events.push({ ts, dot: "#2563eb", type: "sent", title: ofTitle, sub: t("supplier.dashboard.activity.sent.sub") });
-    } else if (s.status === "expired" || s.status === "refunded") {
+    } else if (["unread_expired", "refunded"].includes(s.status)) {
       events.push({ ts, dot: "#94a3b8", type: "expired", title: ofTitle, sub: t("supplier.dashboard.activity.expired.sub") });
     }
   }
@@ -4367,7 +4371,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12 }}>
             {filteredRetailers.map(r => {
               const rSends = sends.filter(s => s.retailerId === r.id && !["queued","pending_moderation","rejected"].includes(s.status));
-              const rRead  = rSends.filter(s => ["read","read_manual"].includes(s.status)).length;
+              const rRead  = rSends.filter(s => ["opened","read","read_manual"].includes(s.status)).length;
               const hasSent = rSends.length > 0;
               return (
                 <div key={r.id} style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:12,padding:16,display:"flex",flexDirection:"column",gap:10 }}>
@@ -4482,7 +4486,10 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, rem, wallet, sendToChain,
           {filtered.map(s => {
             const o = getOffer(s.offerId, []); const r = getRetailerLive(s.retailerId);
             const sc = STATUS_MAP[s.status];
-            const isRead = ["read","read_manual"].includes(s.status);
+            // [pipeline-supplier-flow] "opened" = odczytane (kupiec otworzyl maila)
+            // — wiersz ma wygladac jak odczytany (zielony border, bez countdownu),
+            // spojnie z badge "Odczytana".
+            const isRead = ["opened","read","read_manual"].includes(s.status);
             const isExpired = s.status === "unread_expired";
             return (
               <div key={s.id} style={{ display:"flex",gap:12,padding:"12px 16px",background:"white",borderRadius:10,border:`1px solid ${isExpired?"#fca5a5":isRead?"#bbf7d0":"#e2e8f0"}`,marginBottom:8,alignItems:"center" }}>

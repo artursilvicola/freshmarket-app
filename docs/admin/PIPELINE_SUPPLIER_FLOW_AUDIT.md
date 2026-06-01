@@ -47,13 +47,25 @@ Status `opened` (kupiec otworzył maila przez Resend) był **poprawnie** obsłu�
 |---|---|---|---|
 | 3691 | PageDashboard — `stSeen` (zobaczone 30d) | `["read","read_manual"]` | `["opened","read","read_manual"]` |
 | 3692 | PageDashboard — `stExpired` | `s.status==="expired"` (zły enum!) `\|\| "refunded"` | `["unread_expired","refunded"]` |
+| 3760 | PageDashboard — activity feed „kupiec zobaczył" | `read \|\| read_manual` | `["opened","read","read_manual"]` |
+| 3764 | PageDashboard — activity feed „wygasła" | `"expired" \|\| "refunded"` (zły enum!) | `["unread_expired","refunded"]` |
 | 4303 | PageWysylki — tab „Wysłane" filtr | `["sent","read","read_manual"]` | `["sent","opened","read","read_manual"]` |
 | 4350 | PageWysylki — sieci stats `sent` | `["sent","read","read_manual"]` | `+opened` |
 | 4351 | PageWysylki — sieci stats `read` | `["read","read_manual"]` | `+opened` |
+| 4370 | PageWysylki — karta sieci `rRead` (odczyty per sieć) | `["read","read_manual"]` | `+opened` |
 | 4459 | PageWysylki — history tab „Wysłane" licznik | `["sent","read","read_manual"]` | `+opened` |
+| 4485 | PageWysylki — wiersz historii `isRead` (border + countdown) | `["read","read_manual"]` | `+opened` |
 | 5059 | PageOffers — KPI „odczytane" przy ofercie | `["read","read_manual"]` | `+opened` |
 
-**Bug uboczny (linia 3692):** użyto literału `"expired"`, którego nie ma w enumie (poprawny: `unread_expired`) — licznik wygasłych na dashboardzie praktycznie nie działał. Naprawione.
+**Bug uboczny `"expired"` (linie 3692, 3764):** użyto literału `"expired"`, którego nie ma w enumie (poprawny: `unread_expired`) — licznik i event wygasłych na dashboardzie praktycznie nie działały. Naprawione w obu.
+
+| 689 | `TrackingBar` (współdzielony pasek 14 dni) `isRead` | `["read","read_manual"]` | `+opened` |
+
+**Wiersz historii (4485):** `isRead` steruje borderem (zielony vs pomarańczowy) i countdownem `daysLeft` (linia 4508). Bez `opened` wiersz pokazywał badge „Odczytana", ale pomarańczowy border + odliczanie jak dla nieodczytanej — mylące. Po fixie spójne.
+
+**Świadomie NIE zmienione:**
+- `TrackingBar` (689) — naprawione (`+opened`), bo to widok dostawcy.
+- `PageAdminDash` `confirmed`/`revenue` (linia ~7185) `["read","read_manual"]` — **zostawione**. To liczenie PRZYCHODU admina (€40 za potwierdzony odczyt), semantyka rozliczeniowa, nie „widoczność u dostawcy". `opened` (otwarcie maila) jest słabsze niż `read` (otwarcie oferty w aplikacji), a rozliczenie wiąże się z realnym odczytem. Zmiana wpłynęłaby na liczby przychodu — poza zakresem tego brancha.
 
 ---
 
