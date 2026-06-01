@@ -7867,8 +7867,8 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
                         <Btn sm outline onClick={() => setPreviewOffer(r.offer)} title={t("admin.pipeline.table.action_preview")} disabled={!r.offer}><Eye size={11}/></Btn>
                         {isMod && onModerate && r.needsDecisionRow && (
                           <>
-                            <Btn sm onClick={() => onModerate(r.send.id, "approve")} title={t("admin.pipeline.table.mod_approve")} style={{ background:"#059669", color:"white", border:"none" }}><CheckCircle size={11}/></Btn>
-                            <Btn sm onClick={() => onModerate(r.send.id, "reject")} title={t("admin.pipeline.table.mod_reject")} style={{ background:"#dc2626", color:"white", border:"none" }}><X size={11}/></Btn>
+                            <Btn sm onClick={() => onModerate(r.send.id, "approve")} title={t("admin.pipeline.table.mod_approve")} style={{ background:"#059669", color:"white", border:"none", display:"inline-flex", alignItems:"center", gap:5, padding:"4px 10px" }}><CheckCircle size={11}/> {t("admin.pipeline.table.mod_approve")}</Btn>
+                            <Btn sm onClick={() => onModerate(r.send.id, "reject")} title={t("admin.pipeline.table.mod_reject")} style={{ background:"#dc2626", color:"white", border:"none", display:"inline-flex", alignItems:"center", gap:5, padding:"4px 10px" }}><X size={11}/> {t("admin.pipeline.table.mod_reject")}</Btn>
                           </>
                         )}
                       </div>
