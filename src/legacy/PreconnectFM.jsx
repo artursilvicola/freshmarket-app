@@ -7336,8 +7336,22 @@ function formatMailingDate(d, lang) {
    [mailing-basket] Dochodzi: checkboxy koszyka + chip "W koszyku" + pasek daty
    następnej wysyłki + grupy per sieć (za flagą ADMIN_PIPELINE_2_0_MAILING_BASKET).
    Akcje moderacji/rozliczeń zostają w starym widoku / kolejnych branchach. */
-function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, onSendRetailerEmail }) {
+function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, onSendRetailerEmail, onModerate }) {
   const { t, i18n } = useTranslation("legacy");
+
+  // [moderation-mode] Dwa tryby Pipeline:
+  //  - "mod" = DO MODERACJI: propozycje czekające na decyzję (pending_moderation
+  //    / queued) — pełny podgląd + Zatwierdź / Odrzuć.
+  //  - "track" = WYSŁANE / MAILING / TRACKING: propozycje po zatwierdzeniu
+  //    (panel kupca / e-mail / odczyt / rozliczenie / koszyk).
+  // Statusy moderacyjne = czekające na akcję admina. "approved" to już po
+  // zatwierdzeniu (czeka na wysyłkę do panelu) — zostaje w trybie track jako
+  // "w przygotowaniu", żeby moderacja pokazywała tylko realne decyzje.
+  const MOD_STATUSES = ["pending_moderation", "queued"];
+  const pendingModCount = (sends || []).filter(s => MOD_STATUSES.includes(s.status)).length;
+  // Default: jeśli są rzeczy do moderacji → otwórz tryb moderacji (pierwszy,
+  // najważniejszy etap pracy admina). Inaczej tryb track.
+  const [mode, setMode] = useState(pendingModCount > 0 ? "mod" : "track");
 
   // ── Indeksacja danych (raz na render) — O(1) lookup zamiast N² .find() ──
   const offersById = useMemo(() => {
@@ -7396,15 +7410,20 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
     // statusu panelu i od emailSent).
     const basketEligible = inPanel && !emailSent;
     const inBasket = !!s.inEmailBasket && basketEligible;
+    // [moderation-mode] Czeka na decyzję admina (pending_moderation / queued).
+    const needsModeration = ["pending_moderation", "queued"].includes(s.status);
+    const isApprovedPending = s.status === "approved"; // zaakceptowane, czeka na wysyłkę do panelu
     return {
       send: s,
       offer, retailer, supplier,
+      status: s.status,
       date, dateKey,
       retailerName: retailer?.name || "",
       supplierName: supplier?.name || "",
       productName: offer?.title || offer?.product || "",
       inPanel, emailSent, isExpired, isRead, charged, refunded,
       basketEligible, inBasket,
+      needsModeration, isApprovedPending,
     };
   }, [offersById, retailersById, supplierForSend]);
 
@@ -7484,9 +7503,17 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
     return false;
   };
 
+  // [moderation-mode] Partycja po trybie: "mod" = tylko czekające na decyzję,
+  // "track" = reszta (po zatwierdzeniu / wysłane / tracking). Filtry/search
+  // działają na wierszach JUŻ zawężonych do trybu.
+  const modeRows = useMemo(
+    () => allRows.filter(r => mode === "mod" ? r.needsModeration : !r.needsModeration),
+    [allRows, mode]
+  );
+
   const filteredRows = useMemo(() => {
     const q = normalizeText(search.trim());
-    return allRows.filter(r => {
+    return modeRows.filter(r => {
       if (q) {
         const hay = normalizeText([r.retailerName, r.supplierName, r.productName].join(" "));
         if (!hay.includes(q)) return false;
@@ -7506,10 +7533,15 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
       if (fDateTo && (!r.dateKey || r.dateKey > fDateTo)) return false;
       return true;
     }).sort((a, b) => String(b.date).localeCompare(String(a.date))); // najnowsze u góry
-  }, [allRows, search, fPanel, fEmail, fRead, fSettle, fBasket, basketOn, fRetailer, fSupplier, fDateFrom, fDateTo]);
+  }, [modeRows, search, fPanel, fEmail, fRead, fSettle, fBasket, basketOn, fRetailer, fSupplier, fDateFrom, fDateTo]);
 
-  // Reset strony gdy zmieni się zestaw wyników / rozmiar strony
-  useEffect(() => { setPage(0); }, [search, fPanel, fEmail, fRead, fSettle, fBasket, fRetailer, fSupplier, fDateFrom, fDateTo, pageSize]);
+  // Reset strony gdy zmieni się zestaw wyników / rozmiar strony / tryb
+  useEffect(() => { setPage(0); }, [mode, search, fPanel, fEmail, fRead, fSettle, fBasket, fRetailer, fSupplier, fDateFrom, fDateTo, pageSize]);
+  // [moderation-mode] Wchodząc w tryb moderacji wyczyść filtry statusowe (panel/
+  // email/odczyt/rozliczenie/koszyk) — w mod nie mają sensu i ukrywają wiersze.
+  useEffect(() => {
+    if (mode === "mod") { setFPanel(""); setFEmail(""); setFRead(""); setFSettle(""); setFBasket(""); }
+  }, [mode]);
 
   // [mailing-basket] Grupy per sieć: ile w panelu / w koszyku / wysłane e-mailem.
   const retailerGroups = useMemo(() => {
@@ -7590,14 +7622,43 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
   };
 
   const lang = (i18n.language || "pl").slice(0, 2);
-  const nextMail = basketOn ? nextMailingDate() : null;
+  const isMod = mode === "mod";
+  const nextMail = (basketOn && !isMod) ? nextMailingDate() : null;
 
   return (
     <div>
       {previewOffer && <OfferPreviewModal offer={previewOffer} co={companiesByLegacyKey.get(previewOffer?.supplierId) || COMPANY_INIT} onClose={() => setPreviewOffer(null)} />}
 
+      {/* [moderation-mode] Przełącznik trybów: Do moderacji / Wysłane-mailing.
+          Tryb moderacji pierwszy gdy są propozycje do decyzji. */}
+      <div style={{ display:"flex", gap:4, marginBottom:12, background:"#f1f5f9", borderRadius:10, padding:4, width:"fit-content" }}>
+        {[
+          ["mod", t("admin.pipeline.table.mode_moderation"), pendingModCount],
+          ["track", t("admin.pipeline.table.mode_tracking"), null],
+        ].map(([key, label, badge]) => {
+          const active = mode === key;
+          return (
+            <button key={key} type="button" onClick={() => setMode(key)}
+              style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"7px 16px", borderRadius:8, border:"none", background: active ? "white" : "transparent", fontWeight: active ? 600 : 400, fontSize:12, cursor:"pointer", fontFamily:"inherit", color: active ? "#1e293b" : "#64748b", boxShadow: active ? "0 1px 3px rgba(0,0,0,0.08)" : "none", whiteSpace:"nowrap" }}>
+              {label}
+              {badge != null && badge > 0 && (
+                <span style={{ background:"#d97706", color:"white", borderRadius:10, fontSize:10, fontWeight:700, padding:"1px 7px" }}>{badge}</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* [moderation-mode] Hint w trybie moderacji */}
+      {isMod && (
+        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, marginBottom:10, fontSize:12, color:"#92400e" }}>
+          <Info size={14}/>
+          <span>{pendingModCount > 0 ? t("admin.pipeline.table.mod_hint") : t("admin.pipeline.table.mod_empty_hint")}</span>
+        </div>
+      )}
+
       {/* [mailing-basket] Pasek daty następnej wysyłki (drugi wtorek miesiąca) */}
-      {basketOn && nextMail && (
+      {basketOn && !isMod && nextMail && (
         <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"#ecfeff", border:"1px solid #a5f3fc", borderRadius:8, marginBottom:10, fontSize:12, color:"#155e75" }}>
           <Calendar size={14}/>
           <span><strong>{t("admin.pipeline.table.next_mailing_label")}</strong> {formatMailingDate(nextMail, lang)}</span>
@@ -7605,7 +7666,7 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
       )}
 
       {/* [mailing-basket] Grupy per sieć: w panelu / w koszyku / wysłane + akcja */}
-      {basketOn && retailerGroups.length > 0 && (
+      {basketOn && !isMod && retailerGroups.length > 0 && (
         <div style={{ border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 12px", marginBottom:10, background:"white" }}>
           <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#64748b", marginBottom:8 }}>{t("admin.pipeline.table.basket_groups_title")}</div>
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -7625,15 +7686,18 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
         </div>
       )}
 
-      {/* [Branch table-polish] Pasek podsumowania — klik ustawia filtr */}
-      <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 }}>
-        {summaryChip("all", t("admin.pipeline.table.summary_all"), summary.all, "#0d9488")}
-        {summaryChip("in_panel", t("admin.pipeline.table.summary_in_panel"), summary.inPanel, "#0369a1")}
-        {summaryChip("no_email", t("admin.pipeline.table.summary_no_email"), summary.noEmail, "#b45309")}
-        {summaryChip("unread", t("admin.pipeline.table.summary_unread"), summary.unread, "#ea580c")}
-        {summaryChip("waiting", t("admin.pipeline.table.summary_waiting"), summary.waiting, "#ca8a04")}
-        {basketOn && summaryChip("in_basket", t("admin.pipeline.table.summary_in_basket"), summary.inBasket, "#7c3aed")}
-      </div>
+      {/* [Branch table-polish] Pasek podsumowania — klik ustawia filtr.
+          [moderation-mode] Chipy statusowe mają sens tylko w trybie track. */}
+      {!isMod && (
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 }}>
+          {summaryChip("all", t("admin.pipeline.table.summary_all"), summary.all, "#0d9488")}
+          {summaryChip("in_panel", t("admin.pipeline.table.summary_in_panel"), summary.inPanel, "#0369a1")}
+          {summaryChip("no_email", t("admin.pipeline.table.summary_no_email"), summary.noEmail, "#b45309")}
+          {summaryChip("unread", t("admin.pipeline.table.summary_unread"), summary.unread, "#ea580c")}
+          {summaryChip("waiting", t("admin.pipeline.table.summary_waiting"), summary.waiting, "#ca8a04")}
+          {basketOn && summaryChip("in_basket", t("admin.pipeline.table.summary_in_basket"), summary.inBasket, "#7c3aed")}
+        </div>
+      )}
 
       {/* Pasek search + filtry */}
       <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center", marginBottom:10 }}>
@@ -7653,26 +7717,30 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
           <option value="">{t("admin.pipeline.table.filter_supplier_all")}</option>
           {supplierOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
-        <select value={fPanel} onChange={(e)=>setFPanel(e.target.value)} aria-label={t("admin.pipeline.table.filter_panel_label")} style={selStyle(!!fPanel)}>
-          <option value="">{t("admin.pipeline.table.filter_panel_all")}</option>
-          <option value="in">{t("admin.pipeline.table.filter_panel_in")}</option>
-          <option value="out">{t("admin.pipeline.table.filter_panel_out")}</option>
-        </select>
-        <select value={fEmail} onChange={(e)=>setFEmail(e.target.value)} aria-label={t("admin.pipeline.table.filter_email_label")} style={selStyle(!!fEmail)}>
-          <option value="">{t("admin.pipeline.table.filter_email_all")}</option>
-          <option value="sent">{t("admin.pipeline.table.filter_email_sent")}</option>
-          <option value="unsent">{t("admin.pipeline.table.filter_email_unsent")}</option>
-        </select>
-        <select value={fRead} onChange={(e)=>setFRead(e.target.value)} aria-label={t("admin.pipeline.table.filter_read_label")} style={selStyle(!!fRead)}>
-          <option value="">{t("admin.pipeline.table.filter_read_all")}</option>
-          <option value="read">{t("admin.pipeline.table.filter_read_read")}</option>
-          <option value="unread">{t("admin.pipeline.table.filter_read_unread")}</option>
-        </select>
-        <select value={fSettle} onChange={(e)=>setFSettle(e.target.value)} aria-label={t("admin.pipeline.table.filter_settle_label")} style={selStyle(!!fSettle)}>
-          <option value="">{t("admin.pipeline.table.filter_settle_all")}</option>
-          <option value="charged">{t("admin.pipeline.table.filter_settle_charged")}</option>
-          <option value="waiting">{t("admin.pipeline.table.filter_settle_waiting")}</option>
-        </select>
+        {!isMod && (
+          <>
+            <select value={fPanel} onChange={(e)=>setFPanel(e.target.value)} aria-label={t("admin.pipeline.table.filter_panel_label")} style={selStyle(!!fPanel)}>
+              <option value="">{t("admin.pipeline.table.filter_panel_all")}</option>
+              <option value="in">{t("admin.pipeline.table.filter_panel_in")}</option>
+              <option value="out">{t("admin.pipeline.table.filter_panel_out")}</option>
+            </select>
+            <select value={fEmail} onChange={(e)=>setFEmail(e.target.value)} aria-label={t("admin.pipeline.table.filter_email_label")} style={selStyle(!!fEmail)}>
+              <option value="">{t("admin.pipeline.table.filter_email_all")}</option>
+              <option value="sent">{t("admin.pipeline.table.filter_email_sent")}</option>
+              <option value="unsent">{t("admin.pipeline.table.filter_email_unsent")}</option>
+            </select>
+            <select value={fRead} onChange={(e)=>setFRead(e.target.value)} aria-label={t("admin.pipeline.table.filter_read_label")} style={selStyle(!!fRead)}>
+              <option value="">{t("admin.pipeline.table.filter_read_all")}</option>
+              <option value="read">{t("admin.pipeline.table.filter_read_read")}</option>
+              <option value="unread">{t("admin.pipeline.table.filter_read_unread")}</option>
+            </select>
+            <select value={fSettle} onChange={(e)=>setFSettle(e.target.value)} aria-label={t("admin.pipeline.table.filter_settle_label")} style={selStyle(!!fSettle)}>
+              <option value="">{t("admin.pipeline.table.filter_settle_all")}</option>
+              <option value="charged">{t("admin.pipeline.table.filter_settle_charged")}</option>
+              <option value="waiting">{t("admin.pipeline.table.filter_settle_waiting")}</option>
+            </select>
+          </>
+        )}
         <input type="date" value={fDateFrom} onChange={(e)=>setFDateFrom(e.target.value)} aria-label={t("admin.pipeline.table.filter_date_from")} title={t("admin.pipeline.table.filter_date_from")} style={selStyle(!!fDateFrom)} />
         <input type="date" value={fDateTo} onChange={(e)=>setFDateTo(e.target.value)} aria-label={t("admin.pipeline.table.filter_date_to")} title={t("admin.pipeline.table.filter_date_to")} style={selStyle(!!fDateTo)} />
       </div>
@@ -7688,29 +7756,35 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
 
       {/* Tabela */}
       {total === 0 ? (
-        <Alrt type="info">{anyFilterActive ? t("admin.pipeline.table.empty_filtered") : t("admin.pipeline.table.empty_all")}</Alrt>
+        <Alrt type="info">{anyFilterActive ? t("admin.pipeline.table.empty_filtered") : isMod ? t("admin.pipeline.table.mod_empty_table") : t("admin.pipeline.table.empty_all")}</Alrt>
       ) : (
         <>
           <div style={{ border:"1px solid #e2e8f0", borderRadius:10, overflow:"auto", maxHeight:"calc(100vh - 300px)" }}>
             <table style={{ width:"100%", minWidth:880, borderCollapse:"collapse", fontFamily:"inherit" }}>
               <thead>
                 <tr>
-                  {basketOn && <th style={{ ...th, textAlign:"center", width:36 }} title={t("admin.pipeline.table.col_basket")}><Mail size={12}/></th>}
+                  {basketOn && !isMod && <th style={{ ...th, textAlign:"center", width:36 }} title={t("admin.pipeline.table.col_basket")}><Mail size={12}/></th>}
                   <th style={th}>{t("admin.pipeline.table.col_date")}</th>
                   <th style={th}>{t("admin.pipeline.table.col_retailer")}</th>
                   <th style={th}>{t("admin.pipeline.table.col_supplier")}</th>
                   <th style={th}>{t("admin.pipeline.table.col_product")}</th>
-                  <th style={th}>{t("admin.pipeline.table.col_panel")}</th>
-                  <th style={th}>{t("admin.pipeline.table.col_email")}</th>
-                  <th style={th}>{t("admin.pipeline.table.col_read")}</th>
-                  <th style={th}>{t("admin.pipeline.table.col_settlement")}</th>
+                  {isMod ? (
+                    <th style={th}>{t("admin.pipeline.table.col_mod_status")}</th>
+                  ) : (
+                    <>
+                      <th style={th}>{t("admin.pipeline.table.col_panel")}</th>
+                      <th style={th}>{t("admin.pipeline.table.col_email")}</th>
+                      <th style={th}>{t("admin.pipeline.table.col_read")}</th>
+                      <th style={th}>{t("admin.pipeline.table.col_settlement")}</th>
+                    </>
+                  )}
                   <th style={{ ...th, textAlign:"right" }}>{t("admin.pipeline.table.col_actions")}</th>
                 </tr>
               </thead>
               <tbody>
                 {pageRows.map((r, i) => (
                   <tr key={r.send.id} style={{ background: i % 2 === 1 ? "#fafbfc" : "white" }}>
-                    {basketOn && (
+                    {basketOn && !isMod && (
                       <td style={{ ...td, textAlign:"center" }}>
                         {r.basketEligible ? (
                           <input
@@ -7735,28 +7809,46 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
                         <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.productName || "—"}</span>
                       </span>
                     </td>
-                    <td style={td}>{r.inPanel ? pill(t("admin.pipeline.table.panel_yes"), "#0369a1", "#e0f2fe") : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.panel_no")}</span>}</td>
-                    <td style={td}>{r.emailSent ? pill(t("admin.pipeline.table.email_sent"), "#047857", "#d1fae5") : pill(t("admin.pipeline.table.email_not_sent"), "#92400e", "#fef3c7")}</td>
-                    <td style={td}>
-                      {r.isExpired
-                        ? pill(t("admin.pipeline.table.read_expired"), "#b91c1c", "#fee2e2")
-                        : r.isRead
-                        ? pill(t("admin.pipeline.table.read_read"), "#059669", "#d1fae5")
-                        : r.inPanel
-                        ? pill(t("admin.pipeline.table.read_unread"), "#ea580c", "#ffedd5")
-                        : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.read_na")}</span>}
-                    </td>
-                    <td style={td}>
-                      {r.refunded
-                        ? pill(t("admin.pipeline.table.settle_refunded"), "#64748b", "#f1f5f9")
-                        : r.charged
-                        ? pill(t("admin.pipeline.table.settle_charged"), "#059669", "#ecfdf5")
-                        : r.inPanel
-                        ? pill(t("admin.pipeline.table.settle_waiting"), "#ca8a04", "#fef9c3")
-                        : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.settle_na")}</span>}
-                    </td>
+                    {isMod ? (
+                      <td style={td}>
+                        {r.status === "queued"
+                          ? pill(t("admin.pipeline.table.mod_status_queued"), "#0369a1", "#e0f2fe")
+                          : pill(t("admin.pipeline.table.mod_status_pending"), "#ca8a04", "#fef9c3")}
+                      </td>
+                    ) : (
+                      <>
+                        <td style={td}>{r.inPanel ? pill(t("admin.pipeline.table.panel_yes"), "#0369a1", "#e0f2fe") : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.panel_no")}</span>}</td>
+                        <td style={td}>{r.emailSent ? pill(t("admin.pipeline.table.email_sent"), "#047857", "#d1fae5") : pill(t("admin.pipeline.table.email_not_sent"), "#92400e", "#fef3c7")}</td>
+                        <td style={td}>
+                          {r.isExpired
+                            ? pill(t("admin.pipeline.table.read_expired"), "#b91c1c", "#fee2e2")
+                            : r.isRead
+                            ? pill(t("admin.pipeline.table.read_read"), "#059669", "#d1fae5")
+                            : r.inPanel
+                            ? pill(t("admin.pipeline.table.read_unread"), "#ea580c", "#ffedd5")
+                            : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.read_na")}</span>}
+                        </td>
+                        <td style={td}>
+                          {r.refunded
+                            ? pill(t("admin.pipeline.table.settle_refunded"), "#64748b", "#f1f5f9")
+                            : r.charged
+                            ? pill(t("admin.pipeline.table.settle_charged"), "#059669", "#ecfdf5")
+                            : r.inPanel
+                            ? pill(t("admin.pipeline.table.settle_waiting"), "#ca8a04", "#fef9c3")
+                            : <span style={{ color:"#cbd5e1" }}>{t("admin.pipeline.table.settle_na")}</span>}
+                        </td>
+                      </>
+                    )}
                     <td style={{ ...td, textAlign:"right", whiteSpace:"nowrap" }}>
-                      <Btn sm outline onClick={() => setPreviewOffer(r.offer)} title={t("admin.pipeline.table.action_preview")} disabled={!r.offer}><Eye size={11}/></Btn>
+                      <div style={{ display:"inline-flex", gap:5, justifyContent:"flex-end" }}>
+                        <Btn sm outline onClick={() => setPreviewOffer(r.offer)} title={t("admin.pipeline.table.action_preview")} disabled={!r.offer}><Eye size={11}/></Btn>
+                        {isMod && onModerate && (
+                          <>
+                            <Btn sm onClick={() => onModerate(r.send.id, "approve")} title={t("admin.pipeline.table.mod_approve")} style={{ background:"#059669", color:"white", border:"none" }}><CheckCircle size={11}/></Btn>
+                            <Btn sm onClick={() => onModerate(r.send.id, "reject")} title={t("admin.pipeline.table.mod_reject")} style={{ background:"#dc2626", color:"white", border:"none" }}><X size={11}/></Btn>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -7934,6 +8026,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
           companies={companies}
           onToggleBasket={onToggleBasket}
           onSendRetailerEmail={openRetailerEmailFromBasket}
+          onModerate={moderate}
         />
       </>
     );
