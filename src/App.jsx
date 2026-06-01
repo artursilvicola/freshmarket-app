@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
@@ -79,9 +80,15 @@ export default function App() {
 
 /** Po zalogowaniu kieruje do właściwego panelu wg roli z profilu. */
 function RoleRedirect() {
-  const { user, role, loading } = useAuth();
+  const { user, role, loading, signOut, refreshProfile } = useAuth();
   // [B2B Round prod-rollout / i18n MVP — Krok 9 P1] Tłumaczenia shell.
   const { t } = useTranslation("common");
+  // [fix/auth-no-role-recovery] Stan recovery dla ekranu "Konto bez roli".
+  // useState MUSI być przed early returns (rules of hooks).
+  const [signingOut, setSigningOut] = useState(false);
+  const [loggedOut, setLoggedOut] = useState(false);
+
+  if (loggedOut) return <Navigate to="/login" replace />;
 
   if (loading) {
     return (
@@ -96,13 +103,47 @@ function RoleRedirect() {
   if (role === "supplier") return <Navigate to="/dostawca" replace />;
   if (role === "buyer") return <Navigate to="/kupiec" replace />;
 
-  // Brak roli — coś poszło nie tak z profilem
+  // [fix/auth-no-role-recovery] Brak roli, ale sesja istnieje — to ślepa
+  // uliczka bez wyjścia. Dajemy recovery: wyloguj → /login (priorytet) oraz
+  // odśwież profil (gdyby rola dopiero co została przypisana w DB).
+  async function handleSignOut() {
+    setSigningOut(true);
+    try {
+      await signOut?.();
+    } catch (e) {
+      // nawet przy błędzie kierujemy do /login — user musi mieć wyjście
+    }
+    setLoggedOut(true);
+  }
   return (
-    <div style={{ padding: 40, textAlign: "center" }}>
+    <div style={{ padding: 40, textAlign: "center", maxWidth: 480, margin: "0 auto" }}>
       <h2>{t("errors.no_role.title")}</h2>
       <p style={{ color: "#64748b" }}>
         {t("errors.no_role.body")}
       </p>
+      <p style={{ color: "#64748b", marginTop: 8 }}>
+        {t("errors.no_role.recovery_hint")}
+      </p>
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 20 }}>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={signingOut}
+          style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#0d9488", color: "white", fontSize: 14, fontWeight: 600, cursor: signingOut ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: signingOut ? 0.6 : 1 }}
+        >
+          {signingOut ? t("loading") : t("errors.no_role.sign_out_btn")}
+        </button>
+        {refreshProfile && (
+          <button
+            type="button"
+            onClick={() => refreshProfile()}
+            disabled={signingOut}
+            style={{ padding: "9px 18px", borderRadius: 8, border: "1px solid #e2e8f0", background: "white", color: "#475569", fontSize: 14, fontWeight: 500, cursor: signingOut ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+          >
+            {t("errors.no_role.refresh_btn")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

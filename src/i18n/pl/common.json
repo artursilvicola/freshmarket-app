@@ -47,7 +47,10 @@
   "errors": {
     "no_role": {
       "title": "Konto bez roli",
-      "body": "Twoje konto nie ma jeszcze przypisanej roli. Skontaktuj się z administratorem."
+      "body": "To konto nie ma przypisanej roli. Skontaktuj się z administratorem.",
+      "recovery_hint": "Jeśli chcesz zalogować się innym kontem, wyloguj się i przejdź do logowania.",
+      "sign_out_btn": "Wyloguj i przejdź do logowania",
+      "refresh_btn": "Odśwież profil"
     }
   },
   "config_error": {
