@@ -62,3 +62,21 @@ export const ADMIN_COMPANIES_2_0_FILTERS = false;
 // branchach Pipeline (drawer szczegółów = Branch 2 itd.). Dlatego flagi NIE
 // wolno flipować na `true` zanim akcje nie trafią do tabeli/drawera.
 export const ADMIN_PIPELINE_2_0_TABLE = true;
+
+// [Admin Pipeline 2.0 / Branch — feat/admin-pipeline-mailing-basket]
+// Spec: docs/admin/ADMIN_PIPELINE_2_0_PLAN.md (Część II — koszyk wariant A JSONB).
+// Koszyk mailingu: admin wybiera (checkbox w tabeli Pipeline) które propozycje
+// — już widoczne w panelu kupca, ale jeszcze bez wysłanego e-maila — trafią do
+// miesięcznego e-maila danej sieci. Rozdziela DWA stany: "w panelu kupca"
+// (status legacy_sends) vs "w koszyku e-mail" (s.inEmailBasket, marker
+// administracyjny). Pokazuje datę następnej wysyłki (drugi wtorek miesiąca),
+// grupy per sieć i ręczny przycisk "Wyślij e-mail do tej sieci".
+//
+// Bez migracji: marker trzymany na obiekcie sendu (top-level inEmailBasket),
+// który round-trippuje przez data JSONB (bulkUpsertLegacySends zapisuje cały
+// send jako data). Wysyłka = ręczna (admin klika), zero auto-wysyłki/cron.
+//
+// Default `false`: gdy wyłączone, tabela Pipeline nie pokazuje checkboxów,
+// chipa koszyka, paska daty ani grup per sieć — działa jak w table-shell/polish.
+// Flip na `true` dopiero po review + smoke test prod.
+export const ADMIN_PIPELINE_2_0_MAILING_BASKET = false;
