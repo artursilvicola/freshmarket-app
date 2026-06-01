@@ -7336,22 +7336,32 @@ function formatMailingDate(d, lang) {
    [mailing-basket] Dochodzi: checkboxy koszyka + chip "W koszyku" + pasek daty
    następnej wysyłki + grupy per sieć (za flagą ADMIN_PIPELINE_2_0_MAILING_BASKET).
    Akcje moderacji/rozliczeń zostają w starym widoku / kolejnych branchach. */
-function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, onSendRetailerEmail, onModerate }) {
+function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved }) {
   const { t, i18n } = useTranslation("legacy");
 
   // [moderation-mode] Dwa tryby Pipeline:
-  //  - "mod" = DO MODERACJI: propozycje czekające na decyzję (pending_moderation
-  //    / queued) — pełny podgląd + Zatwierdź / Odrzuć.
-  //  - "track" = WYSŁANE / MAILING / TRACKING: propozycje po zatwierdzeniu
-  //    (panel kupca / e-mail / odczyt / rozliczenie / koszyk).
-  // Statusy moderacyjne = czekające na akcję admina. "approved" to już po
-  // zatwierdzeniu (czeka na wysyłkę do panelu) — zostaje w trybie track jako
-  // "w przygotowaniu", żeby moderacja pokazywała tylko realne decyzje.
-  const MOD_STATUSES = ["pending_moderation", "queued"];
-  const pendingModCount = (sends || []).filter(s => MOD_STATUSES.includes(s.status)).length;
-  // Default: jeśli są rzeczy do moderacji → otwórz tryb moderacji (pierwszy,
-  // najważniejszy etap pracy admina). Inaczej tryb track.
-  const [mode, setMode] = useState(pendingModCount > 0 ? "mod" : "track");
+  //  - "mod" = DO MODERACJI: cały przepływ przed wysłaniem do panelu kupca:
+  //    pending_moderation / queued (czeka na decyzję → Zatwierdź/Odrzuć)
+  //    ORAZ approved (zatwierdzone, gotowe do wysłania do panelu → globalny
+  //    przycisk "Wyślij zatwierdzone do panelu kupca").
+  //  - "track" = WYSŁANE / MAILING / TRACKING: propozycje po wysłaniu do panelu
+  //    (sent/opened/read/...) — panel kupca / e-mail / odczyt / rozliczenie / koszyk.
+  // KLUCZOWE rozróżnienie: "approved" != "w panelu kupca". approved jest
+  // zaakceptowane, ale kupiec zobaczy je dopiero po sendApproved (approved→sent).
+  const needsDecision = (s) => ["pending_moderation", "queued"].includes(s?.status);
+  const pendingDecisionCount = (sends || []).filter(needsDecision).length;
+  const approvedCount = (sends || []).filter(s => s.status === "approved").length;
+  const modCount = pendingDecisionCount + approvedCount;
+  // Default: jeśli jest cokolwiek w przepływie moderacji (do decyzji LUB
+  // zatwierdzone do wysłania) → otwórz tryb moderacji. Inaczej track.
+  const [mode, setMode] = useState(modCount > 0 ? "mod" : "track");
+  // [moderation-mode fix] Auto-switch działa też gdy dane dojdą PO pierwszym
+  // renderze (np. z bazy), ale tylko dopóki admin sam nie wybrał trybu ręcznie.
+  const modeTouchedRef = useRef(false);
+  useEffect(() => {
+    if (!modeTouchedRef.current && modCount > 0) setMode("mod");
+  }, [modCount]);
+  const selectMode = (key) => { modeTouchedRef.current = true; setMode(key); };
 
   // ── Indeksacja danych (raz na render) — O(1) lookup zamiast N² .find() ──
   const offersById = useMemo(() => {
@@ -7410,9 +7420,12 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
     // statusu panelu i od emailSent).
     const basketEligible = inPanel && !emailSent;
     const inBasket = !!s.inEmailBasket && basketEligible;
-    // [moderation-mode] Czeka na decyzję admina (pending_moderation / queued).
-    const needsModeration = ["pending_moderation", "queued"].includes(s.status);
-    const isApprovedPending = s.status === "approved"; // zaakceptowane, czeka na wysyłkę do panelu
+    // [moderation-mode] Tryb moderacji obejmuje cały przepływ przed wysłaniem
+    // do panelu: do decyzji (pending_moderation/queued) ORAZ zatwierdzone
+    // (approved, czeka na sendApproved → sent).
+    const needsDecisionRow = ["pending_moderation", "queued"].includes(s.status);
+    const isApprovedPending = s.status === "approved"; // zatwierdzone, gotowe do panelu
+    const inModeration = needsDecisionRow || isApprovedPending;
     return {
       send: s,
       offer, retailer, supplier,
@@ -7423,7 +7436,7 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
       productName: offer?.title || offer?.product || "",
       inPanel, emailSent, isExpired, isRead, charged, refunded,
       basketEligible, inBasket,
-      needsModeration, isApprovedPending,
+      needsDecisionRow, isApprovedPending, inModeration,
     };
   }, [offersById, retailersById, supplierForSend]);
 
@@ -7507,7 +7520,7 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
   // "track" = reszta (po zatwierdzeniu / wysłane / tracking). Filtry/search
   // działają na wierszach JUŻ zawężonych do trybu.
   const modeRows = useMemo(
-    () => allRows.filter(r => mode === "mod" ? r.needsModeration : !r.needsModeration),
+    () => allRows.filter(r => mode === "mod" ? r.inModeration : !r.inModeration),
     [allRows, mode]
   );
 
@@ -7630,15 +7643,15 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
       {previewOffer && <OfferPreviewModal offer={previewOffer} co={companiesByLegacyKey.get(previewOffer?.supplierId) || COMPANY_INIT} onClose={() => setPreviewOffer(null)} />}
 
       {/* [moderation-mode] Przełącznik trybów: Do moderacji / Wysłane-mailing.
-          Tryb moderacji pierwszy gdy są propozycje do decyzji. */}
+          Tryb moderacji pierwszy gdy jest cokolwiek w przepływie moderacji. */}
       <div style={{ display:"flex", gap:4, marginBottom:12, background:"#f1f5f9", borderRadius:10, padding:4, width:"fit-content" }}>
         {[
-          ["mod", t("admin.pipeline.table.mode_moderation"), pendingModCount],
+          ["mod", t("admin.pipeline.table.mode_moderation"), modCount],
           ["track", t("admin.pipeline.table.mode_tracking"), null],
         ].map(([key, label, badge]) => {
           const active = mode === key;
           return (
-            <button key={key} type="button" onClick={() => setMode(key)}
+            <button key={key} type="button" onClick={() => selectMode(key)}
               style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"7px 16px", borderRadius:8, border:"none", background: active ? "white" : "transparent", fontWeight: active ? 600 : 400, fontSize:12, cursor:"pointer", fontFamily:"inherit", color: active ? "#1e293b" : "#64748b", boxShadow: active ? "0 1px 3px rgba(0,0,0,0.08)" : "none", whiteSpace:"nowrap" }}>
               {label}
               {badge != null && badge > 0 && (
@@ -7649,11 +7662,19 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
         })}
       </div>
 
-      {/* [moderation-mode] Hint w trybie moderacji */}
+      {/* [moderation-mode] Panel trybu moderacji: hint + krok "Wyślij zatwierdzone
+          do panelu kupca" (approved → sent przez istniejące sendApproved). */}
       {isMod && (
-        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, marginBottom:10, fontSize:12, color:"#92400e" }}>
-          <Info size={14}/>
-          <span>{pendingModCount > 0 ? t("admin.pipeline.table.mod_hint") : t("admin.pipeline.table.mod_empty_hint")}</span>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", padding:"8px 12px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, marginBottom:10, fontSize:12, color:"#92400e" }}>
+          <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
+            <Info size={14}/>
+            {modCount > 0 ? t("admin.pipeline.table.mod_hint") : t("admin.pipeline.table.mod_empty_hint")}
+          </span>
+          {onSendApproved && approvedCount > 0 && (
+            <Btn sm onClick={() => onSendApproved()} style={{ background:"#0d9488", color:"white", border:"none", flexShrink:0 }}>
+              <Send size={11}/> {t("admin.pipeline.table.mod_send_approved", { count: approvedCount })}
+            </Btn>
+          )}
         </div>
       )}
 
@@ -7811,7 +7832,9 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
                     </td>
                     {isMod ? (
                       <td style={td}>
-                        {r.status === "queued"
+                        {r.isApprovedPending
+                          ? pill(t("admin.pipeline.table.mod_status_approved"), "#047857", "#d1fae5")
+                          : r.status === "queued"
                           ? pill(t("admin.pipeline.table.mod_status_queued"), "#0369a1", "#e0f2fe")
                           : pill(t("admin.pipeline.table.mod_status_pending"), "#ca8a04", "#fef9c3")}
                       </td>
@@ -7842,7 +7865,7 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
                     <td style={{ ...td, textAlign:"right", whiteSpace:"nowrap" }}>
                       <div style={{ display:"inline-flex", gap:5, justifyContent:"flex-end" }}>
                         <Btn sm outline onClick={() => setPreviewOffer(r.offer)} title={t("admin.pipeline.table.action_preview")} disabled={!r.offer}><Eye size={11}/></Btn>
-                        {isMod && onModerate && (
+                        {isMod && onModerate && r.needsDecisionRow && (
                           <>
                             <Btn sm onClick={() => onModerate(r.send.id, "approve")} title={t("admin.pipeline.table.mod_approve")} style={{ background:"#059669", color:"white", border:"none" }}><CheckCircle size={11}/></Btn>
                             <Btn sm onClick={() => onModerate(r.send.id, "reject")} title={t("admin.pipeline.table.mod_reject")} style={{ background:"#dc2626", color:"white", border:"none" }}><X size={11}/></Btn>
@@ -8027,6 +8050,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
           onToggleBasket={onToggleBasket}
           onSendRetailerEmail={openRetailerEmailFromBasket}
           onModerate={moderate}
+          onSendApproved={sendApproved}
         />
       </>
     );
