@@ -7423,7 +7423,7 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
     clearFilters();
     if (key === "in_panel") { setFPanel("in"); }
     else if (key === "no_email") { setFPanel("in"); setFEmail("unsent"); }
-    else if (key === "unread") { setFRead("unread"); }
+    else if (key === "unread") { setFPanel("in"); setFRead("unread"); }
     else if (key === "waiting") { setFSettle("waiting"); }
     // "all" → tylko clearFilters()
   };
@@ -7432,7 +7432,7 @@ function PipelineTableV2({ sends, offers, retailers, companies }) {
     if (key === "all") return !anyFilterActive;
     if (key === "in_panel") return fPanel === "in" && !fEmail && !fRead && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
     if (key === "no_email") return fPanel === "in" && fEmail === "unsent" && !fRead && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
-    if (key === "unread") return fRead === "unread" && !fPanel && !fEmail && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
+    if (key === "unread") return fPanel === "in" && fRead === "unread" && !fEmail && !fSettle && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
     if (key === "waiting") return fSettle === "waiting" && !fPanel && !fEmail && !fRead && !search.trim() && !fRetailer && !fSupplier && !fDateFrom && !fDateTo;
     return false;
   };
