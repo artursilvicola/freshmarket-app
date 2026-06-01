@@ -8036,8 +8036,14 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
   function openRetailerEmailFromBasket(retailerId) {
     const retailer = getRetailerLive(retailerId) || (retailers||[]).find(r => r.id === retailerId) || null;
     if (!retailer) return;
+    // [pre-prod-audit] Defense-in-depth: koszyk e-maili bierze TYLKO status
+    // "sent" (w panelu kupca) i bez wysłanego e-maila. canEmailRetailerSend
+    // technicznie dopuszcza też "approved" — dlatego dokładamy jawny guard
+    // status==="sent", żeby e-mail NIGDY nie poszedł za propozycję, która nie
+    // jest jeszcze w panelu kupca. (W UI checkbox koszyka i tak pojawia się
+    // tylko dla sent, ale trzymamy spójność na ścieżce wysyłki.)
     const basketSends = (sends || []).filter(s =>
-      s.retailerId === retailerId && s.inEmailBasket && canEmailRetailerSend(s)
+      s.retailerId === retailerId && s.inEmailBasket && s.status === "sent" && canEmailRetailerSend(s)
     );
     setEmailPreview({ retailer, sends: basketSends });
   }
