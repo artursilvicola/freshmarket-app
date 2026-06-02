@@ -5214,11 +5214,83 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
 function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
   // [Krok P2-4 Commit 1] Bilingual via supplier.offers.*
   const { t } = useTranslation("legacy");
-  const myOffers = (offers||[]).filter(o=>!o.supplierId||o.supplierId===accountId);
+  const myOffers = useMemo(() => (offers||[]).filter(o=>!o.supplierId||o.supplierId===accountId), [offers, accountId]);
   // [B2B Round prod-rollout / supplier-delete-offer]
   // Lokalny modal potwierdzający usunięcie. Pokazuje nazwę propozycji,
   // wymaga jawnego "Tak, usuń" — to operacja nieodwracalna (DELETE w DB).
   const [confirmDelete, setConfirmDelete] = useState(null); // null | offer
+  const [offerSearch, setOfferSearch] = useState("");
+  const [offerStatusFilter, setOfferStatusFilter] = useState("all");
+  const [offerCategoryFilter, setOfferCategoryFilter] = useState("all");
+  const [offerCountryFilter, setOfferCountryFilter] = useState("all");
+  const [offerSort, setOfferSort] = useState("newest");
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(0);
+  const normalizeOfferText = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const offerTime = (o) => {
+    const ts = new Date(o?.updatedAt || o?.updated_at || o?.createdAt || o?.created_at || 0).getTime();
+    return Number.isFinite(ts) ? ts : 0;
+  };
+  const offerRows = useMemo(() => myOffers.map((o, index) => {
+    const offerSends = (sends || []).filter(s => s.offerId === o.id);
+    const readCount = offerSends.filter(s => ["opened", "read", "read_manual"].includes(s.status)).length;
+    const privateTitle = getInternalOfferTitle(o);
+    const publicTitle = getPublicOfferTitle(o);
+    const isReady = o.status === "active";
+    const searchText = normalizeOfferText([
+      privateTitle, publicTitle, o.product, o.variety, o.category, o.origin,
+      getCountryName(o.origin), o.region, o.volume, o.volumeUnit
+    ].filter(Boolean).join(" "));
+    return { offer: o, index, sends: offerSends, readCount, privateTitle, publicTitle, isReady, searchText, time: offerTime(o) };
+  }), [myOffers, sends]);
+  const offerStats = useMemo(() => ({
+    all: offerRows.length,
+    ready: offerRows.filter(r => r.isReady).length,
+    draft: offerRows.filter(r => !r.isReady).length,
+    sent: offerRows.filter(r => r.sends.length > 0).length,
+    unsent: offerRows.filter(r => r.sends.length === 0).length,
+    read: offerRows.filter(r => r.readCount > 0).length,
+  }), [offerRows]);
+  const offerCategories = useMemo(() => [...new Set(offerRows.map(r => r.offer.category).filter(Boolean))], [offerRows]);
+  const offerCountries = useMemo(() => [...new Set(offerRows.map(r => r.offer.origin).filter(Boolean))]
+    .sort((a, b) => getCountryName(a).localeCompare(getCountryName(b))), [offerRows]);
+  const filteredOffers = useMemo(() => {
+    const q = normalizeOfferText(offerSearch);
+    const rows = offerRows.filter(r => {
+      if (q && !r.searchText.includes(q)) return false;
+      if (offerCategoryFilter !== "all" && r.offer.category !== offerCategoryFilter) return false;
+      if (offerCountryFilter !== "all" && r.offer.origin !== offerCountryFilter) return false;
+      if (offerStatusFilter === "ready" && !r.isReady) return false;
+      if (offerStatusFilter === "draft" && r.isReady) return false;
+      if (offerStatusFilter === "sent" && r.sends.length === 0) return false;
+      if (offerStatusFilter === "unsent" && r.sends.length > 0) return false;
+      if (offerStatusFilter === "read" && r.readCount === 0) return false;
+      return true;
+    });
+    const sorted = [...rows];
+    sorted.sort((a, b) => {
+      if (offerSort === "name") return String(a.publicTitle || "").localeCompare(String(b.publicTitle || ""));
+      if (offerSort === "sent") return (b.sends.length - a.sends.length) || (b.time - a.time) || (a.index - b.index);
+      if (offerSort === "read") return (b.readCount - a.readCount) || (b.time - a.time) || (a.index - b.index);
+      if (offerSort === "status") return Number(b.isReady) - Number(a.isReady) || (b.time - a.time) || (a.index - b.index);
+      return (b.time - a.time) || (a.index - b.index);
+    });
+    return sorted;
+  }, [offerRows, offerSearch, offerCategoryFilter, offerCountryFilter, offerStatusFilter, offerSort]);
+  useEffect(() => { setPage(0); }, [offerSearch, offerStatusFilter, offerCategoryFilter, offerCountryFilter, offerSort, pageSize]);
+  const totalOffers = filteredOffers.length;
+  const pageCount = Math.max(1, Math.ceil(totalOffers / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageStart = safePage * pageSize;
+  const pageOffers = filteredOffers.slice(pageStart, pageStart + pageSize);
+  const filtersActive = Boolean(offerSearch || offerStatusFilter !== "all" || offerCategoryFilter !== "all" || offerCountryFilter !== "all" || offerSort !== "newest");
+  const clearOfferFilters = () => {
+    setOfferSearch("");
+    setOfferStatusFilter("all");
+    setOfferCategoryFilter("all");
+    setOfferCountryFilter("all");
+    setOfferSort("newest");
+  };
   function handleDelete(offer) {
     if (!offer) return;
     setOffers?.(prev => prev.filter(o => o.id !== offer.id));
@@ -5238,8 +5310,54 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
       <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:14 }}>
         <Btn dark onClick={()=>nav("offer-create")}><Plus size={13}/> {t("supplier.offers.add_button")}</Btn>
       </div>
+      {myOffers.length > 0 && (
+        <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:12,marginBottom:12 }}>
+          <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:10 }}>
+            {[
+              ["all", t("supplier.offers.filters.summary_all"), offerStats.all],
+              ["ready", t("supplier.offers.filters.summary_ready"), offerStats.ready],
+              ["draft", t("supplier.offers.filters.summary_draft"), offerStats.draft],
+              ["sent", t("supplier.offers.filters.summary_sent"), offerStats.sent],
+              ["unsent", t("supplier.offers.filters.summary_unsent"), offerStats.unsent],
+              ["read", t("supplier.offers.filters.summary_read"), offerStats.read],
+            ].map(([key, label, count]) => (
+              <button key={key} type="button" onClick={() => setOfferStatusFilter(key)}
+                style={{ padding:"7px 12px",borderRadius:8,border:`1px solid ${offerStatusFilter===key?"#0d9488":"#e2e8f0"}`,background:offerStatusFilter===key?"rgba(13,148,136,0.08)":"#fff",color:offerStatusFilter===key?"#0d9488":"#475569",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit" }}>
+                {label} <span style={{ marginLeft:5,color:offerStatusFilter===key?"#0f766e":"#94a3b8" }}>{count}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ display:"grid",gridTemplateColumns:"minmax(220px,1.8fr) repeat(4,minmax(150px,1fr)) auto",gap:8,alignItems:"center" }}>
+            <input value={offerSearch} onChange={e=>setOfferSearch(e.target.value)} placeholder={t("supplier.offers.filters.search_placeholder")}
+              style={{ padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",minWidth:0 }}/>
+            <select value={offerCategoryFilter} onChange={e=>setOfferCategoryFilter(e.target.value)}
+              style={{ padding:"9px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",minWidth:0 }}>
+              <option value="all">{t("supplier.offers.filters.category_all")}</option>
+              {offerCategories.map(cat => <option key={cat} value={cat}>{CEMOJI[cat]||"📦"} {cat}</option>)}
+            </select>
+            <select value={offerCountryFilter} onChange={e=>setOfferCountryFilter(e.target.value)}
+              style={{ padding:"9px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",minWidth:0 }}>
+              <option value="all">{t("supplier.offers.filters.country_all")}</option>
+              {offerCountries.map(code => <option key={code} value={code}>{FLAGS[code]||""} {getCountryName(code)}</option>)}
+            </select>
+            <select value={offerSort} onChange={e=>setOfferSort(e.target.value)}
+              style={{ padding:"9px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",minWidth:0 }}>
+              <option value="newest">{t("supplier.offers.filters.sort_newest")}</option>
+              <option value="name">{t("supplier.offers.filters.sort_name")}</option>
+              <option value="sent">{t("supplier.offers.filters.sort_sent")}</option>
+              <option value="read">{t("supplier.offers.filters.sort_read")}</option>
+              <option value="status">{t("supplier.offers.filters.sort_status")}</option>
+            </select>
+            <div style={{ fontSize:12,color:"#64748b",whiteSpace:"nowrap" }}>
+              {t("supplier.offers.filters.results_format", { count: totalOffers, total: myOffers.length })}
+            </div>
+            {filtersActive ? <Btn sm outline onClick={clearOfferFilters}>{t("supplier.offers.filters.clear")}</Btn> : <span />}
+          </div>
+        </div>
+      )}
       {myOffers.length===0&&<Alrt>{t("supplier.offers.empty")}</Alrt>}
-      {myOffers.map(o=>{ const sc=sends.filter(s=>s.offerId===o.id); const rc=sc.filter(s=>["opened","read","read_manual"].includes(s.status)).length; const priv=getInternalOfferTitle(o); const pub=getPublicOfferTitle(o);
+      {myOffers.length>0 && totalOffers===0&&<Alrt>{t("supplier.offers.filters.empty_filtered")}</Alrt>}
+      {pageOffers.map(({ offer:o, sends:sc, readCount:rc, privateTitle:priv, publicTitle:pub })=>{
         // [B2B Round prod-rollout / supplier-delete-offer]
         // Usunąć można TYLKO propozycje które jeszcze nie zostały wysłane do żadnej sieci.
         // Po pierwszej wysyłce (legacy_send dla tej oferty) propozycja "żyje" w pipeline
@@ -5285,6 +5403,27 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
           </div>
         </div>
       );})}
+
+      {myOffers.length > 0 && totalOffers > 0 && (
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,margin:"12px 0 18px",flexWrap:"wrap" }}>
+          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+            <span style={{ fontSize:12,color:"#64748b" }}>{t("supplier.offers.filters.per_page")}</span>
+            {[25,50,100].map(sz => (
+              <button key={sz} type="button" onClick={()=>setPageSize(sz)}
+                style={{ padding:"5px 10px",borderRadius:7,border:`1px solid ${pageSize===sz?"#0d9488":"#e2e8f0"}`,background:pageSize===sz?"rgba(13,148,136,0.08)":"white",color:pageSize===sz?"#0d9488":"#64748b",fontSize:12,fontWeight:pageSize===sz?700:500,cursor:"pointer",fontFamily:"inherit" }}>
+                {sz}
+              </button>
+            ))}
+          </div>
+          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+            <span style={{ fontSize:12,color:"#64748b" }}>
+              {t("supplier.offers.filters.page_status_format", { from: totalOffers === 0 ? 0 : pageStart + 1, to: Math.min(pageStart + pageSize, totalOffers), total: totalOffers })}
+            </span>
+            <Btn sm outline onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={safePage<=0}>{t("supplier.offers.filters.page_prev")}</Btn>
+            <Btn sm outline onClick={()=>setPage(p=>Math.min(pageCount-1,p+1))} disabled={safePage>=pageCount-1}>{t("supplier.offers.filters.page_next")}</Btn>
+          </div>
+        </div>
+      )}
 
       {/* Modal potwierdzający usunięcie */}
       {confirmDelete && (
