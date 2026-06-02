@@ -218,6 +218,40 @@ export async function saveCompanyContacts(companyId, contacts = []) {
   return saved;
 }
 
+export async function saveCompanyCerts(companyId, certs = []) {
+  if (!companyId) throw new Error(i18n.t("legacy:errors.db.company_id_required"));
+
+  const rows = (Array.isArray(certs) ? certs : [])
+    .map((cert) => {
+      const type = normalizeText(
+        typeof cert === "string"
+          ? cert
+          : cert?.type || cert?.name
+      );
+      if (!type) return null;
+      return {
+        company_id: companyId,
+        type,
+      };
+    })
+    .filter(Boolean);
+
+  const { error: deleteError } = await supabase
+    .from("company_certs")
+    .delete()
+    .eq("company_id", companyId);
+  if (deleteError) throw deleteError;
+
+  if (!rows.length) return [];
+
+  const { data, error } = await supabase
+    .from("company_certs")
+    .insert(rows)
+    .select();
+  if (error) throw error;
+  return data || [];
+}
+
 // ===================================================================
 // RETAILERS
 // ===================================================================
