@@ -6601,22 +6601,23 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
     onSeenList(candidates, "app_list");
   }, [seenListKey, onSeenList]); // eslint-disable-line react-hooks/exhaustive-deps
   const getDisplayCo = (s) => getSupplierCo(s, offers, companies);
-  const [filters,setFilters]=useState({ category:"",country:"",cert:"",volumeMin:"",packaging:"",starred:initialFilter?.starred||false,verified:false,withPhotos:false,companyType:"" });
+  const isSavedView = initialFilter?.starred;
+  const [filters,setFilters]=useState({ category:"",country:"",cert:"",volumeMin:"",packaging:"",starred:isSavedView||false,verified:false,withPhotos:false,companyType:"" });
+  const effectiveFilters = isSavedView ? { ...filters, starred: true } : filters;
   const visible=mySends.filter(s=>!["queued","pending_moderation","approved","rejected"].includes(s.status));
   const sorted=[...visible].sort((a,b)=>{ const oa=getOffer(a.offerId,offers); const ob=getOffer(b.offerId,offers); const tA=oa?.tier==="premium"?0:1; const tB=ob?.tier==="premium"?0:1; if(tA!==tB) return tA-tB; return (a.pos||99)-(b.pos||99); });
   const filtered=sorted.filter(s=>{
     const o=getOffer(s.offerId,offers); if(!o) return false;
-    if(!applyFilters([o],filters,buyer.starred||[]).length) return false;
+    if(!applyFilters([o],effectiveFilters,buyer.starred||[]).length) return false;
     const dCo=getDisplayCo(s);
     const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
-    if(filters.verified && allCerts.length===0) return false;
-    if(filters.withPhotos && (o.photos||[]).length===0) return false;
-    if(filters.companyType && !(dCo?.types||[]).includes(filters.companyType)) return false;
+    if(effectiveFilters.verified && allCerts.length===0) return false;
+    if(effectiveFilters.withPhotos && (o.photos||[]).length===0) return false;
+    if(effectiveFilters.companyType && !(dCo?.types||[]).includes(effectiveFilters.companyType)) return false;
     return true;
   });
   const premiumCount=filtered.filter(s=>getOffer(s.offerId,offers)?.tier==="premium").length;
   const starredCount=(buyer.starred||[]).length;
-  const isSavedView = initialFilter?.starred;
   return (
     <div>
       <div style={{ marginBottom:14 }}>
@@ -6640,7 +6641,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
           { key:"verified", label:t("buyer.offers.filters.verified"), icon:"✓", color:"#059669" },
           { key:"withPhotos", label:t("buyer.offers.filters.with_photos"), icon:"📷", color:"#0d9488" },
           { key:"starred", label:t("buyer.offers.filters.starred"), icon:"♥", color:"#dc2626" },
-        ].map(q => (
+        ].filter(q => !(isSavedView && q.key === "starred")).map(q => (
           <button key={q.key} onClick={()=>setFilters(f=>({...f,[q.key]:!f[q.key]}))}
             style={{ padding:"6px 12px",fontSize:12,fontWeight:filters[q.key]?700:500,borderRadius:20,
               border:`1.5px solid ${filters[q.key]?q.color:"#e2e8f0"}`,
@@ -6656,9 +6657,9 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
         </select>
       </div>
 
-      <OfferFilters filters={filters} setFilters={setFilters} showStarred/>
-      {filters.starred&&starredCount===0&&<Alrt type="warning">{t("buyer.offers.empty_starred")}</Alrt>}
-      {filtered.length===0&&!filters.starred&&<Alrt>{t("buyer.offers.empty_no_match")}</Alrt>}
+      <OfferFilters filters={filters} setFilters={setFilters} showStarred={!isSavedView}/>
+      {effectiveFilters.starred&&starredCount===0&&<Alrt type="warning">{t("buyer.offers.empty_starred")}</Alrt>}
+      {filtered.length===0&&!effectiveFilters.starred&&<Alrt>{t("buyer.offers.empty_no_match")}</Alrt>}
       {filtered.map(s=>{ const o=getOffer(s.offerId,offers); if(!o) return null;
         const dCo=getDisplayCo(s);
         const isPremium=o.tier==="premium"; const isStarred=(buyer.starred||[]).includes(o.id); const isNew=["sent","opened"].includes(s.status);
