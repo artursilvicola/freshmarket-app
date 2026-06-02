@@ -4961,7 +4961,9 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
                 <label key={r.id} style={{ display:"flex",alignItems:"center",gap:8,padding:"9px 10px",border:`1px solid ${hidden ? "#f59e0b" : "#e2e8f0"}`,background:hidden ? "#fffbeb" : "white",borderRadius:8,cursor:"pointer",fontSize:12 }}>
                   <input type="checkbox" checked={hidden} onChange={() => toggleHiddenRetailer(r.id)} style={{ accentColor:"#d97706" }}/>
                   <span style={{ flex:1,minWidth:0,display:"flex",alignItems:"center",gap:6,overflow:"hidden" }}>
-                    <span title={getCountryName(r.country)} style={{ flexShrink:0 }}>{FLAGS[r.country] || "🌐"}</span>
+                    <span title={getCountryName(r.country)} style={{ flexShrink:0,fontSize:11,color:"#64748b",fontWeight:700,whiteSpace:"nowrap" }}>
+                      {FLAGS[r.country] || "🌐"} {getCountryName(r.country)}
+                    </span>
                     <span style={{ minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{r.name}</span>
                   </span>
                   <span style={{ fontSize:10,color:hidden ? "#92400e" : "#059669",fontWeight:700 }}>
