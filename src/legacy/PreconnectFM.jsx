@@ -47,6 +47,7 @@ import {
   // [B2B Round prod-rollout / faza 2] Real packages/capacity from DB
   getAllCompanyCapacity as dbGetAllCompanyCapacity,
   adminSetCompanyPackage as dbAdminSetCompanyPackage,
+  getStarred as dbGetStarred, toggleStar as dbToggleStar,
   // [B2B Round prod-rollout / faza 3] PayU integration
   createPayuOrder as dbCreatePayuOrder,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
@@ -2303,6 +2304,23 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     }
     return { ...BUYER_INIT, starred };
   })();
+  useEffect(() => {
+    let canceled = false;
+    if (account.role !== "buyer" || !account.id) return undefined;
+    (async () => {
+      try {
+        const starred = await dbGetStarred(account.id);
+        if (canceled) return;
+        setBuyerUiState(prev => ({
+          ...prev,
+          [account.id]: { ...(prev[account.id] || {}), starred: starred || [] },
+        }));
+      } catch (e) {
+        console.warn("[load buyer starred]", e?.message || e);
+      }
+    })();
+    return () => { canceled = true; };
+  }, [account.id, account.role]);
   const REFUND_NOTIFS_SEED = [
     { id:10, supplierId:"sup-s5", msg:"Brokuły → Carrefour nie zostały przeczytane w 14 dni. Zwrot 40 EUR wrócił na Twoje konto.", amount:40, dismissed:false }
   ];
@@ -3354,7 +3372,21 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return false;
     }
   }
-  function toggleStar(offerId){ setBuyer(b=>({ ...b, starred: b.starred?.includes(offerId) ? b.starred.filter(x=>x!==offerId) : [...(b.starred||[]),offerId] })); }
+  async function toggleStar(sendId){
+    if (account.role !== "buyer" || !account.id || sendId == null) return;
+    const id = String(sendId);
+    const prev = (buyer.starred || []).map(String);
+    const currentlyStarred = prev.includes(id);
+    const next = currentlyStarred ? prev.filter(x => x !== id) : [...prev, id];
+
+    setBuyer(b => ({ ...b, starred: next }));
+    try {
+      await dbToggleStar(account.id, sendId, currentlyStarred);
+    } catch (e) {
+      console.warn("[save buyer starred]", e?.message || e);
+      setBuyer(b => ({ ...b, starred: prev }));
+    }
+  }
 
   // ── Navigation ─────────────────────────────────────────────────────────
   // [P2-final-qa post-review C2 follow-up] Sidebar items są teraz inline w JSX
@@ -6756,11 +6788,14 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
   const isSavedView = initialFilter?.starred;
   const [filters,setFilters]=useState({ category:"",country:"",cert:"",volumeMin:"",packaging:"",starred:isSavedView||false,verified:false,withPhotos:false,companyType:"" });
   const effectiveFilters = isSavedView ? { ...filters, starred: true } : filters;
+  const starredSet = useMemo(() => new Set((buyer.starred || []).map(String)), [buyer.starred]);
+  const offerFilters = effectiveFilters.starred ? { ...effectiveFilters, starred: false } : effectiveFilters;
   const visible=mySends.filter(s=>!["queued","pending_moderation","approved","rejected"].includes(s.status));
   const sorted=[...visible].sort((a,b)=>{ const oa=getOffer(a.offerId,offers); const ob=getOffer(b.offerId,offers); const tA=oa?.tier==="premium"?0:1; const tB=ob?.tier==="premium"?0:1; if(tA!==tB) return tA-tB; return (a.pos||99)-(b.pos||99); });
   const filtered=sorted.filter(s=>{
     const o=getOffer(s.offerId,offers); if(!o) return false;
-    if(!applyFilters([o],effectiveFilters,buyer.starred||[]).length) return false;
+    if(effectiveFilters.starred && !starredSet.has(String(s.id))) return false;
+    if(!applyFilters([o],offerFilters,[]).length) return false;
     const dCo=getDisplayCo(s);
     const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
     if(effectiveFilters.verified && allCerts.length===0) return false;
@@ -6769,7 +6804,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
     return true;
   });
   const premiumCount=filtered.filter(s=>getOffer(s.offerId,offers)?.tier==="premium").length;
-  const starredCount=(buyer.starred||[]).length;
+  const starredCount=visible.filter(s=>starredSet.has(String(s.id))).length;
   return (
     <div>
       <div style={{ marginBottom:14 }}>
@@ -6814,7 +6849,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
       {filtered.length===0&&!effectiveFilters.starred&&<Alrt>{t("buyer.offers.empty_no_match")}</Alrt>}
       {filtered.map(s=>{ const o=getOffer(s.offerId,offers); if(!o) return null;
         const dCo=getDisplayCo(s);
-        const isPremium=o.tier==="premium"; const isStarred=(buyer.starred||[]).includes(o.id); const isNew=["sent","opened"].includes(s.status);
+        const isPremium=o.tier==="premium"; const isStarred=starredSet.has(String(s.id)); const isNew=["sent","opened"].includes(s.status);
         const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
         const hasVerification = allCerts.length>0;
         const hasPhotos = (o.photos||[]).length>0;
@@ -6843,7 +6878,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
               </div>
               {/* Save + open buttons */}
               <div style={{ display:"flex",gap:6,flexShrink:0,alignItems:"center" }}>
-                <button onClick={()=>toggleStar(o.id)} title={isStarred ? t("buyer.offers.card.star_remove") : t("buyer.offers.card.star_add")}
+                <button onClick={()=>toggleStar(s.id)} title={isStarred ? t("buyer.offers.card.star_remove") : t("buyer.offers.card.star_add")}
                   style={{ width:36,height:36,borderRadius:8,border:`1.5px solid ${isStarred?"#dc2626":"#e2e8f0"}`,background:isStarred?"#fef2f2":"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit",transition:"all 0.15s" }}>
                   <Heart size={15} color={isStarred?"#dc2626":"#94a3b8"} fill={isStarred?"#dc2626":"none"}/>
                 </button>
@@ -7217,7 +7252,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
   const o=getOffer(send.offerId,offers); if(!o) return null;
   const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
   const allPack=[...(o.packaging||[]),o.customPackaging].filter(Boolean);
-  const isStarred=(buyer.starred||[]).includes(o.id);
+  const isStarred=(buyer.starred||[]).map(String).includes(String(send.id));
   const vol = o.volumeMin&&o.volumeMax ? `${o.volumeMin}–${o.volumeMax} ${o.volumeUnit||""}` : o.volume ? `${o.volume} ${o.volumeUnit||""}` : "—";
 
   /* helper: sekcja z opcjonalnym rozwinięciem */
@@ -7255,7 +7290,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
       <div style={{ marginBottom:14,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
         <Btn outline sm onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> {t("buyer.detail.top.back_to_offers")}</Btn>
         <label style={{ display:"flex",alignItems:"center",gap:7,padding:"6px 12px",background:isStarred?"#f0fdf4":"#f8fafc",border:`1.5px solid ${isStarred?"#059669":"#e2e8f0"}`,borderRadius:8,cursor:"pointer",userSelect:"none" }}>
-          <input type="checkbox" checked={isStarred} onChange={()=>toggleStar(o.id)} style={{ width:15,height:15,cursor:"pointer",accentColor:"#059669" }}/>
+          <input type="checkbox" checked={isStarred} onChange={()=>toggleStar(send.id)} style={{ width:15,height:15,cursor:"pointer",accentColor:"#059669" }}/>
           <span style={{ fontSize:13,fontWeight:isStarred?600:400,color:isStarred?"#059669":"#64748b" }}>{isStarred ? t("buyer.detail.top.save_saved") : t("buyer.detail.top.save_unsaved")}</span>
         </label>
       </div>

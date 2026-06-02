@@ -845,26 +845,42 @@ export async function getMyPayuOrders(companyId, limit = 20) {
 export async function getStarred(userId) {
   const { data, error } = await supabase
     .from("buyer_starred")
-    .select("send_id")
+    .select("legacy_send_id, send_id")
     .eq("buyer_user_id", userId);
   if (error) throw error;
-  return (data || []).map((r) => r.send_id);
+  return (data || [])
+    .map((r) => r.legacy_send_id ?? r.send_id)
+    .filter((v) => v != null)
+    .map((v) => String(v));
 }
 
 export async function toggleStar(userId, sendId, currentlyStarred) {
+  const legacySendId = Number(sendId);
+  if (!Number.isFinite(legacySendId)) {
+    throw new Error("toggleStar wymaga numeric legacy send id");
+  }
+
   if (currentlyStarred) {
     const { error } = await supabase
       .from("buyer_starred")
       .delete()
       .eq("buyer_user_id", userId)
-      .eq("send_id", sendId);
+      .eq("legacy_send_id", legacySendId);
     if (error) throw error;
-  } else {
-    const { error } = await supabase
-      .from("buyer_starred")
-      .insert({ buyer_user_id: userId, send_id: sendId });
-    if (error) throw error;
+    return;
   }
+
+  const { error: deleteError } = await supabase
+    .from("buyer_starred")
+    .delete()
+    .eq("buyer_user_id", userId)
+    .eq("legacy_send_id", legacySendId);
+  if (deleteError) throw deleteError;
+
+  const { error } = await supabase
+    .from("buyer_starred")
+    .insert({ buyer_user_id: userId, legacy_send_id: legacySendId });
+  if (error) throw error;
 }
 
 // ===================================================================
