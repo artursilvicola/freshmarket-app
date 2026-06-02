@@ -30,6 +30,7 @@ import {
   markFmMessageRead as dbMarkFmMessageRead,
   generateCompanyDescriptionAI as dbGenerateCompanyDescriptionAI,
   suggestAdminChatReplyAI as dbSuggestAdminChatReplyAI,
+  analyzeModerationOfferAI as dbAnalyzeModerationOfferAI,
   // [B2B Round pipeline-retailer-email-mvp] Wysyłka zbiorcza przez admina
   sendRetailerBatch as dbSendRetailerBatch,
   // [B2B Round supplier-onboarding-access-and-communication]
@@ -2873,9 +2874,15 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // This makes "Propozycja opublikowana!" honest — if you see it, it's in DB.
   async function saveOffer(d, st) {
     const supplierKey = account.legacySupplierId || account.id;
-    const isUpdate = d.id && offers.find(o => o.id === d.id);
+    const existingOffer = d.id ? offers.find(o => o.id === d.id) : null;
+    if (existingOffer?.status === "active") {
+      fl(t("supplier.offer_form.locked.saved_offer_error"), "warning");
+      nav("offers");
+      return;
+    }
+    const isUpdate = !!existingOffer;
     const newOffer = isUpdate
-      ? { ...offers.find(o => o.id === d.id), ...d, status: st }
+      ? { ...existingOffer, ...d, status: st }
       : { ...d, id: genUniqueLegacyId(offers), supplierId: supplierKey, status: st };
     let savedOffer = null;
     try {
@@ -3373,7 +3380,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
-    if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies}/>;
+    if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
@@ -5225,6 +5232,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
         // Po pierwszej wysyłce (legacy_send dla tej oferty) propozycja "żyje" w pipeline
         // — jej usunięcie zostawiłoby sierocone send'y u admina i kupców.
         const canDelete = sc.length === 0;
+        const isPublished = o.status === "active";
         return (
         <div key={o.id} style={{ display:"flex",gap:12,padding:"14px 16px",background:"white",borderRadius:10,border:"1px solid #e2e8f0",marginBottom:8,alignItems:"center" }}>
           <span style={{ fontSize:24 }}>{CEMOJI[o.category]}</span>
@@ -5245,7 +5253,13 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
           </div>
           <div style={{ display:"flex",gap:14,flexShrink:0 }}>{[[t("supplier.offers.card.kpi_retailers"),sc.length,"#3b82f6"],[t("supplier.offers.card.kpi_read"),rc,"#059669"]].map(([l,v,cl])=><div key={l} style={{ textAlign:"center" }}><div style={{ fontSize:15,fontWeight:700,color:cl }}>{v}</div><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div></div>)}</div>
           <div style={{ display:"flex",gap:5,flexShrink:0 }}>
-            <Btn sm outline onClick={()=>nav("offer-edit",o.id)}><Edit size={11}/> {t("supplier.offers.card.btn_edit")}</Btn>
+            {!isPublished ? (
+              <Btn sm outline onClick={()=>nav("offer-edit",o.id)}><Edit size={11}/> {t("supplier.offers.card.btn_edit")}</Btn>
+            ) : (
+              <Btn sm outline disabled title={t("supplier.offers.card.btn_edit_locked_tooltip")} style={{ borderColor:"#e2e8f0",color:"#cbd5e1",cursor:"not-allowed" }}>
+                <Lock size={11}/> {t("supplier.offers.card.btn_edit_locked")}
+              </Btn>
+            )}
             <Btn sm outline onClick={()=>nav("offer-copy",o.id)} title={t("supplier.offers.card.btn_duplicate_tooltip")} style={{ borderColor:"#7c3aed",color:"#7c3aed" }}><Layers size={11}/> {t("supplier.offers.card.btn_duplicate")}</Btn>
             {o.status==="active"&&<Btn sm style={{ background:"rgba(13,148,136,0.08)",color:"#0d9488" }} onClick={()=>nav("wysylki",o.id)}><Send size={11}/> {t("supplier.offers.card.btn_send")}</Btn>}
             {/* [B2B Round prod-rollout / supplier-delete-offer]
@@ -5434,6 +5448,20 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
       ))}
     </div>
   );
+
+  if (offer?.id && offer.status === "active") {
+    return (
+      <div style={{ maxWidth:760 }}>
+        <Card title={t("supplier.offer_form.locked.title")} icon={Lock}>
+          <p style={{ fontSize:13, color:"#475569", lineHeight:1.6 }}>{t("supplier.offer_form.locked.body")}</p>
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end", flexWrap:"wrap" }}>
+            <Btn outline onClick={()=>nav("offers")}><ArrowLeft size={13}/> {t("supplier.offer_form.locked.back_btn")}</Btn>
+            <Btn onClick={()=>nav("offer-copy", offer.id)} style={{ background:"#7c3aed", color:"white", border:"none" }}><Layers size={13}/> {t("supplier.offer_form.locked.duplicate_btn")}</Btn>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth:760 }}>
@@ -7501,7 +7529,22 @@ function formatMailingDate(d, lang) {
    [mailing-basket] Dochodzi: checkboxy koszyka + chip "W koszyku" + pasek daty
    następnej wysyłki + grupy per sieć (za flagą ADMIN_PIPELINE_2_0_MAILING_BASKET).
    Akcje moderacji/rozliczeń zostają w starym widoku / kolejnych branchach. */
-function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved }) {
+function normalizeModerationAiAnalysis(input = {}) {
+  const list = (value) => Array.isArray(value)
+    ? value.map(v => String(v || "").trim()).filter(Boolean).slice(0, 8)
+    : [];
+  const score = Math.max(1, Math.min(5, Number(input?.score) || 3));
+  return {
+    score,
+    missing: list(input.missing),
+    suggestions: list(input.suggestions),
+    strengths: list(input.strengths),
+    checklist: list(input.checklist),
+    messageDraft: String(input.messageDraft || "").trim(),
+  };
+}
+
+function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved, onAnalyzeModerationOffer, onSendModerationMessage }) {
   const { t, i18n } = useTranslation("legacy");
 
   // [moderation-mode] Dwa tryby Pipeline:
@@ -7751,6 +7794,77 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
   const pageRows = filteredRows.slice(pageStart, pageStart + pageSize);
 
   const [previewOffer, setPreviewOffer] = useState(null);
+  const [aiModal, setAiModal] = useState(null);
+  const [aiBusyId, setAiBusyId] = useState(null);
+  const [messageModal, setMessageModal] = useState(null);
+  const [messageSendingId, setMessageSendingId] = useState(null);
+
+  const analysisForRow = (row) => normalizeModerationAiAnalysis(row?.send?.moderationAi || row?.send?.data?.moderationAi || {});
+  const hasAnalysis = (analysis) => !!(
+    analysis?.missing?.length ||
+    analysis?.suggestions?.length ||
+    analysis?.strengths?.length ||
+    analysis?.checklist?.length ||
+    analysis?.messageDraft
+  );
+  const messageDraftForRow = (row) => {
+    const analysis = analysisForRow(row);
+    return analysis.messageDraft || t("admin.pipeline.table.message_prefill_empty", {
+      product: row?.productName || row?.offer?.title || row?.offer?.product || "",
+    });
+  };
+  async function runAiReview(row) {
+    if (!row || !onAnalyzeModerationOffer) return;
+    setAiBusyId(row.send.id);
+    setAiModal(prev => ({
+      row,
+      analysis: prev?.row?.send?.id === row.send.id ? prev.analysis : analysisForRow(row),
+      loading: true,
+      error: null,
+    }));
+    try {
+      const analysis = normalizeModerationAiAnalysis(await onAnalyzeModerationOffer(row));
+      setAiModal({ row, analysis, loading: false, error: null });
+    } catch (e) {
+      setAiModal(prev => ({
+        row,
+        analysis: prev?.analysis || analysisForRow(row),
+        loading: false,
+        error: e?.message || t("admin.pipeline.table.ai_offer_missing_error"),
+      }));
+    } finally {
+      setAiBusyId(null);
+    }
+  }
+  function openAiReview(row) {
+    const analysis = analysisForRow(row);
+    setAiModal({ row, analysis, loading: !hasAnalysis(analysis), error: null });
+    if (!hasAnalysis(analysis)) void runAiReview(row);
+  }
+  async function sendMessageFromModal() {
+    const text = String(messageModal?.text || "").trim();
+    if (!text) return;
+    const row = messageModal.row;
+    setMessageSendingId(row.send.id);
+    try {
+      const sent = await onSendModerationMessage?.(row, text);
+      if (sent) setMessageModal(null);
+    } finally {
+      setMessageSendingId(null);
+    }
+  }
+  const renderAnalysisList = (title, items) => (
+    <div style={{ marginTop:10 }}>
+      <div style={{ fontSize:11, fontWeight:800, color:"#334155", textTransform:"uppercase", letterSpacing:"0.04em", marginBottom:5 }}>{title}</div>
+      {items?.length ? (
+        <ul style={{ margin:"0 0 0 18px", padding:0, color:"#334155", fontSize:13, lineHeight:1.55 }}>
+          {items.map((item, idx) => <li key={`${title}-${idx}`}>{item}</li>)}
+        </ul>
+      ) : (
+        <div style={{ fontSize:12, color:"#94a3b8" }}>—</div>
+      )}
+    </div>
+  );
 
   // ── CSV export aktualnego (przefiltrowanego) widoku ──
   const exportCsv = () => {
@@ -7812,6 +7926,80 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
   return (
     <div>
       {previewOffer && <OfferPreviewModal offer={previewOffer} co={companiesByLegacyKey.get(previewOffer?.supplierId) || COMPANY_INIT} onClose={() => setPreviewOffer(null)} adminFull />}
+      {aiModal && (
+        <Modal title={t("admin.pipeline.table.ai_modal_title")} onClose={() => setAiModal(null)} wide>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:10 }}>
+            {t("admin.pipeline.table.ai_modal_subtitle_format", {
+              product: aiModal.row?.productName || "—",
+              supplier: aiModal.row?.supplierName || "—",
+            })}
+          </div>
+          {aiModal.loading ? (
+            <Alrt type="info">{t("admin.pipeline.table.ai_loading")}</Alrt>
+          ) : (
+            <>
+              {aiModal.error && <Alrt type="warning">{t("admin.pipeline.table.ai_error_format", { message: aiModal.error })}</Alrt>}
+              {!hasAnalysis(aiModal.analysis) && !aiModal.error ? (
+                <Alrt type="info">{t("admin.pipeline.table.ai_empty")}</Alrt>
+              ) : (
+                <div>
+                  <div style={{ display:"inline-flex", alignItems:"center", gap:8, padding:"6px 10px", borderRadius:8, background:"#f0fdfa", color:"#0f766e", fontWeight:800, fontSize:13 }}>
+                    <Bot size={15}/>
+                    {t("admin.pipeline.table.ai_score_format", { score: aiModal.analysis?.score || 3 })}
+                  </div>
+                  {renderAnalysisList(t("admin.pipeline.table.ai_section_missing"), aiModal.analysis?.missing || [])}
+                  {renderAnalysisList(t("admin.pipeline.table.ai_section_suggestions"), aiModal.analysis?.suggestions || [])}
+                  {renderAnalysisList(t("admin.pipeline.table.ai_section_strengths"), aiModal.analysis?.strengths || [])}
+                  {aiModal.analysis?.messageDraft && (
+                    <div style={{ marginTop:12, padding:10, border:"1px solid #e2e8f0", borderRadius:8, background:"#f8fafc" }}>
+                      <div style={{ fontSize:11, fontWeight:800, color:"#334155", textTransform:"uppercase", letterSpacing:"0.04em", marginBottom:5 }}>{t("admin.pipeline.table.ai_message_draft_label")}</div>
+                      <div style={{ whiteSpace:"pre-wrap", fontSize:13, color:"#334155", lineHeight:1.55 }}>{aiModal.analysis.messageDraft}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginTop:14, flexWrap:"wrap" }}>
+                <Btn outline onClick={() => void runAiReview(aiModal.row)} disabled={aiBusyId === aiModal.row?.send?.id}>
+                  <Bot size={13}/> {t("admin.pipeline.table.ai_run")}
+                </Btn>
+                <Btn
+                  onClick={() => {
+                    setMessageModal({ row: aiModal.row, text: messageDraftForRow(aiModal.row) });
+                    setAiModal(null);
+                  }}
+                  disabled={!aiModal.row}
+                >
+                  <MessageCircle size={13}/> {t("admin.pipeline.table.ai_use_message")}
+                </Btn>
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
+      {messageModal && (
+        <Modal title={t("admin.pipeline.table.message_modal_title")} onClose={() => setMessageModal(null)}>
+          <div style={{ fontSize:12, color:"#64748b", marginBottom:10 }}>
+            {t("admin.pipeline.table.message_modal_desc_format", {
+              product: messageModal.row?.productName || "—",
+            })}
+          </div>
+          <label style={{ fontSize:12, fontWeight:700, color:"#334155", display:"block", marginBottom:5 }}>
+            {t("admin.pipeline.table.message_text_label")}
+          </label>
+          <textarea
+            value={messageModal.text || ""}
+            onChange={(e) => setMessageModal(prev => ({ ...prev, text: e.target.value }))}
+            rows={8}
+            style={{ width:"100%", boxSizing:"border-box", border:"1px solid #e2e8f0", borderRadius:8, padding:"10px 12px", fontFamily:"inherit", fontSize:13, lineHeight:1.5, resize:"vertical" }}
+          />
+          <div style={{ display:"flex", justifyContent:"flex-end", gap:8, marginTop:12 }}>
+            <Btn outline onClick={() => setMessageModal(null)}>{t("admin.common.cancel")}</Btn>
+            <Btn onClick={() => void sendMessageFromModal()} disabled={!String(messageModal.text || "").trim() || messageSendingId === messageModal.row?.send?.id}>
+              <SendIcon size={13}/> {messageSendingId === messageModal.row?.send?.id ? t("admin.pipeline.table.message_sending") : t("admin.pipeline.table.message_send")}
+            </Btn>
+          </div>
+        </Modal>
+      )}
 
       {/* [moderation-mode] Przełącznik trybów: Do moderacji / Wysłane-mailing.
           Tryb moderacji pierwszy gdy jest cokolwiek w przepływie moderacji. */}
@@ -8038,6 +8226,12 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
                         <Btn sm outline onClick={() => setPreviewOffer(r.offer)} title={t("admin.pipeline.table.action_preview")} disabled={!r.offer}><Eye size={11}/></Btn>
                         {isMod && onModerate && r.needsDecisionRow && (
                           <>
+                            <Btn sm outline onClick={() => void openAiReview(r)} disabled={!r.offer || aiBusyId === r.send.id} title={t("admin.pipeline.table.mod_ai_btn")} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"4px 10px" }}>
+                              <Bot size={11}/> {t("admin.pipeline.table.mod_ai_btn")}
+                            </Btn>
+                            <Btn sm outline onClick={() => setMessageModal({ row:r, text: messageDraftForRow(r) })} disabled={!r.supplier?.id && !r.offer?.supplierId && !r.send?.supplierId} title={t("admin.pipeline.table.mod_message_btn")} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"4px 10px" }}>
+                              <MessageCircle size={11}/> {t("admin.pipeline.table.mod_message_btn")}
+                            </Btn>
                             <Btn sm onClick={() => onModerate(r.send.id, "approve")} title={t("admin.pipeline.table.mod_approve")} style={{ background:"#059669", color:"white", border:"none", display:"inline-flex", alignItems:"center", gap:5, padding:"4px 10px" }}><CheckCircle size={11}/> {t("admin.pipeline.table.mod_approve")}</Btn>
                             <Btn sm onClick={() => onModerate(r.send.id, "reject")} title={t("admin.pipeline.table.mod_reject")} style={{ background:"#dc2626", color:"white", border:"none", display:"inline-flex", alignItems:"center", gap:5, padding:"4px 10px" }}><X size={11}/> {t("admin.pipeline.table.mod_reject")}</Btn>
                           </>
@@ -8074,8 +8268,8 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
 }
 
 /* ── Admin Pipeline: tabs Moderacja / Wysłane+Tracking ──────────────────── */
-function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies }) {
-  const { t } = useTranslation("legacy");
+function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies, onSendSupplierMessage }) {
+  const { t, i18n } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -8155,6 +8349,59 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
     // otworzył maila przez Resend webhook (ale jeszcze nie kliknął w aplikacji).
     // Admin widzi w tab "Wysłane & Tracking" wszystkie statusy post-wysyłki.
   const ap=sends.filter(s=>s.status==="approved").length;
+  async function analyzeModerationOffer(row) {
+    if (!row?.offer) throw new Error(t("admin.pipeline.table.ai_offer_missing_error"));
+    const result = await dbAnalyzeModerationOfferAI({
+      locale: i18n.language,
+      send: row.send,
+      offer: row.offer,
+      supplier: row.supplier,
+      retailer: row.retailer,
+    });
+    const analysis = normalizeModerationAiAnalysis(result?.analysis);
+    const stamp = new Date().toISOString();
+    const updated = {
+      ...row.send,
+      moderationAi: analysis,
+      moderationAiAt: stamp,
+      data: { ...(row.send.data || {}), moderationAi: analysis, moderationAiAt: stamp },
+    };
+    await upsertLegacySend(updated);
+    setSends?.(prev => prev.map(s => s.id === row.send.id ? updated : s));
+    fl?.(t("admin.pipeline.table.ai_saved"), "success");
+    return analysis;
+  }
+
+  async function sendModerationMessage(row, text) {
+    const body = String(text || "").trim();
+    if (!body) {
+      fl?.(t("admin.pipeline.table.message_empty_error"), "warning");
+      return null;
+    }
+    const supplierId = row?.supplier?.id || row?.offer?.supplierId || row?.send?.supplierId;
+    if (!supplierId) {
+      fl?.(t("admin.pipeline.table.message_supplier_missing_error"), "error");
+      return null;
+    }
+    const msg = await onSendSupplierMessage?.(supplierId, "supplier", body);
+    if (!msg) return null;
+    const stamp = new Date().toISOString();
+    const updated = {
+      ...row.send,
+      moderationMessageAt: stamp,
+      moderationMessageText: body,
+      data: { ...(row.send.data || {}), moderationMessageAt: stamp, moderationMessageText: body },
+    };
+    try {
+      await upsertLegacySend(updated);
+      setSends?.(prev => prev.map(s => s.id === row.send.id ? updated : s));
+    } catch (e) {
+      console.warn("[sendModerationMessage:marker]", e);
+    }
+    fl?.(t("admin.pipeline.table.message_sent"), "success");
+    return msg;
+  }
+
   const emailablePanelSends = sentSends.filter(canEmailRetailerSend);
 
   // Group mod by retailer
@@ -8222,6 +8469,8 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
           onSendRetailerEmail={openRetailerEmailFromBasket}
           onModerate={moderate}
           onSendApproved={sendApproved}
+          onAnalyzeModerationOffer={analyzeModerationOffer}
+          onSendModerationMessage={sendModerationMessage}
         />
       </>
     );
