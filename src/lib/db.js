@@ -1681,6 +1681,24 @@ export async function suggestAdminChatReplyAI({ participant, thread }) {
   return json;
 }
 
+export async function analyzeModerationOfferAI(payload) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_admin_session"));
+
+  const res = await fetch("/.netlify/functions/ai-moderation-offer-review", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload || {}),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error || i18n.t("legacy:errors.db.ai_moderation_review_failed"));
+  return json;
+}
+
 // ===================================================================
 // COMPANIES — bulk upsert (do migracji COMPANIES_DB seed → Supabase)
 // ===================================================================

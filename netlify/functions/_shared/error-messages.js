@@ -52,6 +52,7 @@ const MESSAGES = {
     only_supplier_buy_pkg: "Tylko dostawca może kupować pakiety",
     only_admin_or_supplier_ai_desc: "Ta funkcja jest dostępna tylko dla admina lub dostawcy.",
     only_admin_ai_chat: "Ta funkcja jest dostępna tylko dla administratora.",
+    ai_moderation_review_failed: "Nie udało się przeanalizować propozycji przez AI.",
     no_offer_write_perm: "Brak uprawnień do zapisu propozycji",
 
     // ── Walidacja body ──
@@ -147,6 +148,7 @@ const MESSAGES = {
     only_supplier_buy_pkg: "Only a supplier can purchase packages",
     only_admin_or_supplier_ai_desc: "This function is available only to administrators or suppliers.",
     only_admin_ai_chat: "This function is available only to administrators.",
+    ai_moderation_review_failed: "Could not analyse the submission with AI.",
     no_offer_write_perm: "No permission to write submission",
 
     // ── Walidacja body ──
