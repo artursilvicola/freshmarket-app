@@ -12,7 +12,7 @@ import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
   loadLegacySends, upsertLegacySend, bulkUpsertLegacySends, deleteLegacySend,
   // [B2B Round 2.1] Replace localStorage for FM 2026 state
-  getCompanies as dbGetCompanies, updateCompany as dbUpdateCompany, bulkUpsertCompanies, saveCompanyContacts as dbSaveCompanyContacts,
+  getCompanies as dbGetCompanies, updateCompany as dbUpdateCompany, bulkUpsertCompanies, saveCompanyContacts as dbSaveCompanyContacts, saveCompanyCerts as dbSaveCompanyCerts,
   getRetailers as dbGetRetailers, bulkUpsertRetailers,
   createBuyerAccount as dbCreateBuyerAccount,
   adminUpdateBuyerAccount as dbAdminUpdateBuyerAccount, updateOwnBuyerProfile as dbUpdateOwnBuyerProfile,
@@ -4697,6 +4697,34 @@ function materialIsPdf(url) {
   return /\.pdf(\?|$)/i.test(url);
 }
 
+const COMPANY_CERT_PRESETS = ["GlobalGAP", "GRASP", "BRC", "IFS"];
+function getCompanyCertName(cert) {
+  if (!cert) return "";
+  if (typeof cert === "string") return cert.trim();
+  return String(cert.type || cert.name || "").trim();
+}
+function normalizeCompanyCertList(certs = []) {
+  const seen = new Set();
+  return (Array.isArray(certs) ? certs : [])
+    .map((cert) => {
+      const name = getCompanyCertName(cert);
+      if (!name) return null;
+      const key = name.toLowerCase();
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return typeof cert === "object" && cert
+        ? { ...cert, type: name }
+        : { type: name };
+    })
+    .filter(Boolean);
+}
+function parseCompanyCertNames(value) {
+  return String(value || "")
+    .split(/[,;\n]+/)
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers, retailers = [], hiddenRetailers = [], setHiddenRetailers }) {
   const { t } = useTranslation("legacy");
   const [c,setC]=useState({...co, contacts:Array.isArray(co.contacts)?co.contacts:[]}); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
@@ -4738,6 +4766,21 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
     }))
     .filter(ct=>ct.name || ct.position || ct.phone || ct.email);
   const contacts = Array.isArray(c.contacts) ? c.contacts : [];
+  const companyCerts = normalizeCompanyCertList(c.certs || []);
+  const companyCertNames = companyCerts.map(getCompanyCertName).filter(Boolean);
+  const customCompanyCertNames = companyCertNames.filter(name => !COMPANY_CERT_PRESETS.includes(name));
+  const setCompanyCertNames = (names) => {
+    const existingByName = new Map(companyCerts.map(cert => [getCompanyCertName(cert).toLowerCase(), cert]));
+    const nextCerts = normalizeCompanyCertList(names.map(name => {
+      const existing = existingByName.get(String(name).trim().toLowerCase());
+      return existing || { type: name };
+    }));
+    u("certs", nextCerts);
+  };
+  const setCustomCompanyCerts = (value) => {
+    const selectedPresets = companyCertNames.filter(name => COMPANY_CERT_PRESETS.includes(name));
+    setCompanyCertNames([...selectedPresets, ...parseCompanyCertNames(value)]);
+  };
   useEffect(() => {
     const id = c.id || companyId;
     setHiddenRetailerDraft((hiddenRetailers || [])
@@ -4814,13 +4857,15 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
   const saveProfile=async()=>{
     if(!c.logo){fl(t("supplier.company.toasts.logo_required"),"warning");return;}
     const nextContacts = normalizeContacts(contacts);
+    const nextCerts = normalizeCompanyCertList(c.certs || []);
     const id = c.id || companyId;
     const next = {
       ...c,
       id:id||c.id,
       contacts:nextContacts,
+      certs:nextCerts,
       ai_review_status:"approved",
-      completeness:calcCompleteness({...c, contacts:nextContacts}),
+      completeness:calcCompleteness({...c, contacts:nextContacts, certs:nextCerts}),
     };
     const companyPatch = {
       name: next.name,
@@ -4845,7 +4890,8 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
     try {
       if (id) await dbUpdateCompany(id, companyPatch);
       const savedContacts = id ? await dbSaveCompanyContacts(id, nextContacts) : nextContacts;
-      const savedProfile = {...next, contacts:savedContacts, completeness:calcCompleteness({...next, contacts:savedContacts})};
+      const savedCerts = id ? await dbSaveCompanyCerts(id, nextCerts) : nextCerts;
+      const savedProfile = {...next, contacts:savedContacts, certs:savedCerts, completeness:calcCompleteness({...next, contacts:savedContacts, certs:savedCerts})};
       setCo(savedProfile);
       fl(t("supplier.company.toasts.saved"));
     } catch(e) {
@@ -4860,17 +4906,6 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
   return (
     <div style={{ maxWidth:840 }}>
       {showPreview&&<CompanyPreviewModal co={c} offers={offers} role="supplier" onClose={()=>setShowPreview(false)}/>}
-      {/* AI banner */}
-      <div style={{ background:"#eff6ff",border:"1px solid #93c5fd",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",gap:10,alignItems:"flex-start" }}>
-        <Bot size={18} color="#3b82f6" style={{ flexShrink:0,marginTop:1 }}/>
-        <div style={{ flex:1,fontSize:13,color:"#1e40af" }}>
-          <strong>{t("supplier.company.ai_banner.strong")}</strong>{t("supplier.company.ai_banner.body")}
-        </div>
-        <div style={{ display:"flex",gap:6 }}>
-          <Btn sm onClick={()=>setAiModal(true)} style={{ background:"#3b82f6",color:"white",border:"none" }}><Sparkles size={12}/> {t("supplier.company.ai_banner.generate_btn")}</Btn>
-          <Btn sm outline onClick={()=>setShowPreview(true)}><Eye size={12}/> {t("supplier.company.ai_banner.preview_btn")}</Btn>
-        </div>
-      </div>
       {aiModal&&<div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center" }} onClick={()=>!aiLoad&&setAiModal(false)}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:14,padding:24,maxWidth:420,width:"90%" }}><h3 style={{ marginBottom:14 }}>{t("supplier.company.ai_modal.title")}</h3><div style={{ fontSize:12,color:"#64748b",marginBottom:12 }}>{t("supplier.company.ai_modal.description")}</div><Inp label={t("supplier.company.ai_modal.website_label")} value={c.website} onChange={e=>u("website",e.target.value)}/>{aiLoad&&<Alrt type="success"><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.company.ai_modal.analyzing")}</Alrt>}<div style={{ display:"flex",gap:8 }}><Btn primary onClick={()=>void runAI(c, patch => setC(prev=>({ ...prev, ...patch })))} disabled={aiLoad} full style={{ background:"#3b82f6" }}>{t("supplier.company.ai_modal.generate_btn")}</Btn><Btn outline onClick={()=>setAiModal(false)} disabled={aiLoad}>{t("supplier.company.ai_modal.cancel")}</Btn></div></div></div>}
       {/* Completeness */}
       <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 16px",marginBottom:14 }}>
@@ -4879,18 +4914,20 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
       </div>
       {/* Logo */}
       <Card title={t("supplier.company.logo.card_title")} icon={Award}>
-        <div style={{ display:"flex",gap:14,alignItems:"flex-start" }}>
-          <div style={{ width:76,height:76,borderRadius:10,border:`2px dashed ${c.logo?"#0d9488":"#dc2626"}`,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:c.logo?"white":"#fef2f2" }}>{c.logo?<img src={c.logo} alt="" style={{ width:"100%",height:"100%",objectFit:"contain" }}/>:<Building2 size={24} color="#dc2626"/>}</div>
-          <div style={{ flex:1 }}>
-            <SimplePhotoUploader
-              bucket="company-logos"
-              pathPrefix={c.id || ""}
-              value={c.logo || null}
-              onChange={(newUrl) => u("logo", newUrl)}
-              multi={false}
-              label={c.logo ? t("supplier.company.logo.upload_change") : t("supplier.company.logo.upload_new")}
-            />
-            {!c.logo && <div style={{ fontSize:11,color:"#dc2626",marginTop:6 }}>{t("supplier.company.logo.required_for_publish")}</div>}
+        <div style={{ display:"flex",gap:14,alignItems:"center",flexWrap:"wrap" }}>
+          <div style={{ width:64,height:64,borderRadius:10,border:`1px solid ${c.logo?"#cbd5e1":"#fecaca"}`,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:c.logo?"white":"#fef2f2" }}>{c.logo?<img src={c.logo} alt="" style={{ width:"100%",height:"100%",objectFit:"contain",padding:4,boxSizing:"border-box" }}/>:<Building2 size={22} color="#dc2626"/>}</div>
+          <div style={{ flex:"1 1 260px",maxWidth:360 }}>
+            <div style={{ transform:"scale(0.92)",transformOrigin:"top left",width:"108%" }}>
+              <SimplePhotoUploader
+                bucket="company-logos"
+                pathPrefix={c.id || ""}
+                value={c.logo || null}
+                onChange={(newUrl) => u("logo", newUrl)}
+                multi={false}
+                label={c.logo ? t("supplier.company.logo.upload_change") : t("supplier.company.logo.upload_new")}
+              />
+            </div>
+            {!c.logo && <div style={{ fontSize:11,color:"#dc2626",marginTop:2 }}>{t("supplier.company.logo.required_for_publish")}</div>}
           </div>
         </div>
       </Card>
@@ -4923,7 +4960,10 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
               return (
                 <label key={r.id} style={{ display:"flex",alignItems:"center",gap:8,padding:"9px 10px",border:`1px solid ${hidden ? "#f59e0b" : "#e2e8f0"}`,background:hidden ? "#fffbeb" : "white",borderRadius:8,cursor:"pointer",fontSize:12 }}>
                   <input type="checkbox" checked={hidden} onChange={() => toggleHiddenRetailer(r.id)} style={{ accentColor:"#d97706" }}/>
-                  <span style={{ flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{r.name}</span>
+                  <span style={{ flex:1,minWidth:0,display:"flex",alignItems:"center",gap:6,overflow:"hidden" }}>
+                    <span title={getCountryName(r.country)} style={{ flexShrink:0 }}>{FLAGS[r.country] || "🌐"}</span>
+                    <span style={{ minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{r.name}</span>
+                  </span>
                   <span style={{ fontSize:10,color:hidden ? "#92400e" : "#059669",fontWeight:700 }}>
                     {hidden ? t("supplier.company.visibility.hidden_badge") : t("supplier.company.visibility.visible_badge")}
                   </span>
@@ -4945,6 +4985,16 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           ? <span style={{ fontSize:11,color:"#0d9488",background:"#ccfbf1",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>{t("supplier.company.desc.edited_badge")}</span>
           : <span style={{ fontSize:11,color:"#92400e",background:"#fef3c7",padding:"3px 8px",borderRadius:4,fontWeight:600 }}>{t("supplier.company.desc.review_badge")}</span>
       }>
+        <div style={{ background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 12px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap" }}>
+          <Bot size={17} color="#3b82f6" style={{ flexShrink:0,marginTop:1 }}/>
+          <div style={{ flex:"1 1 280px",fontSize:12,color:"#1e40af",lineHeight:1.45 }}>
+            <strong>{t("supplier.company.ai_banner.strong")}</strong>{t("supplier.company.ai_banner.body")}
+          </div>
+          <div style={{ display:"flex",gap:6,marginLeft:"auto" }}>
+            <Btn sm onClick={()=>setAiModal(true)} style={{ background:"#3b82f6",color:"white",border:"none" }}><Sparkles size={12}/> {t("supplier.company.ai_banner.generate_btn")}</Btn>
+            <Btn sm outline onClick={()=>setShowPreview(true)}><Eye size={12}/> {t("supplier.company.ai_banner.preview_btn")}</Btn>
+          </div>
+        </div>
         <Inp
           label={t("supplier.company.desc.short_label")}
           ta
@@ -5073,7 +5123,36 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           style={{ minHeight: 80 }}
         />
       </Card>
-      {(c.certs||[]).length>0&&<Card title={t("supplier.company.certs.card_title")} icon={ShieldCheck}>{c.certs.map((ct,i)=><div key={i} style={{ display:"flex",gap:10,padding:"8px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:6,fontSize:13,border:"1px solid #bbf7d0" }}><ShieldCheck size={13} color="#059669"/><strong style={{ color:"#0d9488" }}>{ct.type}</strong><span style={{ color:"#64748b" }}>{t("supplier.company.certs.number_prefix_format", { number: ct.number })}</span><span style={{ marginLeft:"auto",color:"#059669" }}>{t("supplier.company.certs.valid_prefix_format", { date: ct.valid })}</span></div>)}</Card>}
+      <Card title={t("supplier.company.certs.card_title")} icon={ShieldCheck}>
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:10,lineHeight:1.5 }}>{t("supplier.company.certs.info")}</div>
+        <div style={{ marginBottom:12 }}>
+          <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.company.certs.popular_label")}</label>
+          <TagToggle
+            items={COMPANY_CERT_PRESETS.map(name => [name, name])}
+            active={companyCertNames}
+            onChange={(nextPresetNames) => {
+              const customNames = companyCertNames.filter(name => !COMPANY_CERT_PRESETS.includes(name));
+              setCompanyCertNames([...nextPresetNames, ...customNames]);
+            }}
+          />
+        </div>
+        <Inp
+          label={t("supplier.company.certs.custom_label")}
+          value={customCompanyCertNames.join(", ")}
+          onChange={e=>setCustomCompanyCerts(e.target.value)}
+          placeholder={t("supplier.company.certs.custom_placeholder")}
+          hint={t("supplier.company.certs.custom_hint")}
+        />
+        {companyCertNames.length > 0 && (
+          <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginTop:4 }}>
+            {companyCertNames.map(name => (
+              <span key={name} style={{ display:"inline-flex",alignItems:"center",gap:5,fontSize:12,padding:"4px 9px",background:"#f0fdf4",border:"1px solid #bbf7d0",color:"#0d9488",borderRadius:999,fontWeight:600 }}>
+                <ShieldCheck size={12}/> {name}
+              </span>
+            ))}
+          </div>
+        )}
+      </Card>
       <Card title={t("supplier.company.contacts.card_title")} icon={Users} actions={<Btn sm outline onClick={()=>addContact()}><Plus size={12}/> {t("supplier.company.contacts.add_btn")}</Btn>}>
         {contacts.length===0 ? (
           <div style={{ padding:"14px 16px",background:"#f8fafc",border:"1px dashed #cbd5e1",borderRadius:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12 }}>
@@ -6763,7 +6842,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
               {co.products&&<div style={{fontSize:12,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{co.products}</div>}
               {(co.certs||[]).length>0&&(
                 <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                  {(co.certs||[]).slice(0,3).map(cert=><span key={cert.type} style={{fontSize:10,padding:"2px 7px",borderRadius:10,background:"#fef3c7",color:"#92400e",fontWeight:600}}><Award size={9} style={{verticalAlign:"middle",marginRight:2}}/>{cert.type}</span>)}
+                  {(co.certs||[]).slice(0,3).map(cert=>{ const certName = getCompanyCertName(cert); return certName ? <span key={certName} style={{fontSize:10,padding:"2px 7px",borderRadius:10,background:"#fef3c7",color:"#92400e",fontWeight:600}}><Award size={9} style={{verticalAlign:"middle",marginRight:2}}/>{certName}</span> : null; })}
                   {(co.certs||[]).length>3&&<span style={{fontSize:10,color:"#94a3b8"}}>+{co.certs.length-3}</span>}
                 </div>
               )}
@@ -10656,14 +10735,17 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
           )}
           {hasCerts && (
             <ProfileSection title={t("common.company_preview.section_certs")} icon={ShieldCheck}>
-              {certs.map((ct,i)=>(
-                <div key={i} style={{ display:"flex",gap:10,padding:"7px 12px",background:"#f0fdf4",borderRadius:7,marginBottom:5,fontSize:13,border:"1px solid #bbf7d0" }}>
-                  <ShieldCheck size={13} color="#059669"/>
-                  <strong style={{ color:"#0d9488" }}>{ct.type}</strong>
-                  {ct.number && <span style={{ color:"#64748b" }}>{t("common.company_preview.cert_number_prefix_format", { number: ct.number })}</span>}
-                  {ct.valid && <span style={{ marginLeft:"auto",color:"#059669" }}>{t("common.company_preview.cert_valid_prefix_format", { date: ct.valid })}</span>}
-                </div>
-              ))}
+              <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+                {certs.map((ct,i)=>{
+                  const certName = getCompanyCertName(ct);
+                  if (!certName) return null;
+                  return (
+                    <span key={`${certName}-${i}`} style={{ display:"inline-flex",alignItems:"center",gap:5,padding:"5px 10px",background:"#f0fdf4",borderRadius:999,fontSize:12,border:"1px solid #bbf7d0",color:"#0d9488",fontWeight:700 }}>
+                      <ShieldCheck size={12} color="#059669"/> {certName}
+                    </span>
+                  );
+                })}
+              </div>
             </ProfileSection>
           )}
           {hasMaterials && (

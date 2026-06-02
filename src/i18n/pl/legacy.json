@@ -1166,6 +1166,11 @@
       },
       "certs": {
         "card_title": "Certyfikaty",
+        "info": "Wybierz certyfikaty, ktĂłre chcesz pokazaÄ‡ kupcom. W profilu pokazujemy tylko nazwy certyfikatĂłw.",
+        "popular_label": "Typowe certyfikaty",
+        "custom_label": "Inne certyfikaty",
+        "custom_placeholder": "np. BIO, IFS Food, HACCP",
+        "custom_hint": "JeĹ›li masz wiÄ™cej niĹĽ jeden, wpisz je po przecinku.",
         "number_prefix_format": "Nr: {{number}}",
         "valid_prefix_format": "do {{date}}"
       },

@@ -1166,6 +1166,11 @@
       },
       "certs": {
         "card_title": "Certifications",
+        "info": "Select the certifications you want to show to buyers. The profile displays certification names only.",
+        "popular_label": "Common certifications",
+        "custom_label": "Other certifications",
+        "custom_placeholder": "e.g. Organic, IFS Food, HACCP",
+        "custom_hint": "If you have more than one, separate them with commas.",
         "number_prefix_format": "No.: {{number}}",
         "valid_prefix_format": "until {{date}}"
       },
