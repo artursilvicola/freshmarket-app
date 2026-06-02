@@ -2871,7 +2871,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // [B2B Round 5] Hot-path actions: per-action awaited save with error toast.
   // Sequence: build new state -> await dbUpsert -> on success update React state +
   // success toast + nav; on failure show error toast and DO NOT update state.
-  // This makes "Propozycja opublikowana!" honest — if you see it, it's in DB.
+  // This makes "Propozycja zapisana jako gotowa" honest — if you see it, it's in DB.
   async function saveOffer(d, st) {
     const supplierKey = account.legacySupplierId || account.id;
     const existingOffer = d.id ? offers.find(o => o.id === d.id) : null;
@@ -5247,18 +5247,13 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
               <span style={{ fontSize:priv?11:14,fontWeight:priv?400:700,color:priv?"#64748b":"#1e293b" }}>{pub}</span>
               {priv&&<span style={{ fontSize:9,fontWeight:700,color:"#0d9488",background:"rgba(13,148,136,0.08)",padding:"1px 6px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.03em" }}>{t("supplier.offers.card.for_buyer_badge")}</span>}
               <Badge color={o.status==="active"?"#16a34a":"#64748b"}>{o.status==="active"?t("supplier.offers.card.status_published"):t("supplier.offers.card.status_draft")}</Badge>
-              {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">{t("supplier.offers.card.premium_badge")}</Badge>}
             </div>
             <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · {o.volume} {o.volumeUnit}</div>
           </div>
           <div style={{ display:"flex",gap:14,flexShrink:0 }}>{[[t("supplier.offers.card.kpi_retailers"),sc.length,"#3b82f6"],[t("supplier.offers.card.kpi_read"),rc,"#059669"]].map(([l,v,cl])=><div key={l} style={{ textAlign:"center" }}><div style={{ fontSize:15,fontWeight:700,color:cl }}>{v}</div><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div></div>)}</div>
           <div style={{ display:"flex",gap:5,flexShrink:0 }}>
-            {!isPublished ? (
+            {!isPublished && (
               <Btn sm outline onClick={()=>nav("offer-edit",o.id)}><Edit size={11}/> {t("supplier.offers.card.btn_edit")}</Btn>
-            ) : (
-              <Btn sm outline disabled title={t("supplier.offers.card.btn_edit_locked_tooltip")} style={{ borderColor:"#e2e8f0",color:"#cbd5e1",cursor:"not-allowed" }}>
-                <Lock size={11}/> {t("supplier.offers.card.btn_edit_locked")}
-              </Btn>
             )}
             <Btn sm outline onClick={()=>nav("offer-copy",o.id)} title={t("supplier.offers.card.btn_duplicate_tooltip")} style={{ borderColor:"#7c3aed",color:"#7c3aed" }}><Layers size={11}/> {t("supplier.offers.card.btn_duplicate")}</Btn>
             {o.status==="active"&&<Btn sm style={{ background:"rgba(13,148,136,0.08)",color:"#0d9488" }} onClick={()=>nav("wysylki",o.id)}><Send size={11}/> {t("supplier.offers.card.btn_send")}</Btn>}

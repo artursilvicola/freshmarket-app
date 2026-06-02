@@ -321,14 +321,14 @@
       "card": {
         "only_you_badge": "Tylko Ty",
         "for_buyer_badge": "Dla kupca",
-        "status_published": "Opublikowana",
+        "status_published": "Gotowa do wysłania",
         "status_draft": "Szkic",
         "premium_badge": "Premium",
         "kpi_retailers": "Sieci",
         "kpi_read": "Przecz.",
         "btn_edit": "Edytuj",
-        "btn_edit_locked": "Zablokowana",
-        "btn_edit_locked_tooltip": "Opublikowanej propozycji nie można edytować. Zduplikuj ją i utwórz nową wersję.",
+        "btn_edit_locked": "Edycja zablokowana",
+        "btn_edit_locked_tooltip": "Gotowej propozycji nie można edytować. Zduplikuj ją i utwórz nową wersję.",
         "btn_duplicate": "Duplikuj",
         "btn_duplicate_tooltip": "Duplikuj propozycję — przyspiesza dodawanie podobnych produktów",
         "btn_send": "Wyślij",
@@ -361,7 +361,7 @@
         "next": "Dalej",
         "preview": "Podgląd",
         "save_draft": "Zapisz szkic",
-        "publish": "Opublikuj propozycję"
+        "publish": "Zapisz jako gotową"
       },
       "steps": {
         "1": {
@@ -722,7 +722,7 @@
         },
         "actions": {
           "card_title": "C. Możliwe działania kupca",
-          "info_alert_html": "<strong>Uwaga:</strong> akcje są po stronie kupca. To kupiec decyduje, co zrobić po obejrzeniu Twojej propozycji. Może poprosić o próbkę, zapytać o aktualną cenę i wolumen, poprosić o specyfikację, umówić rozmowę, zapytać o program sezonowy albo umówić spotkanie na Fresh Market. Może też skontaktować się z Tobą bezpośrednio, korzystając z danych kontaktowych podanych w profilu."
+          "info_alert_html": "<strong>Zapisz szkic</strong>, jeśli chcesz jeszcze edytować propozycję. <strong>Zapisz jako gotową</strong>, gdy to jest wersja ostateczna. Gotowej propozycji nie edytujesz — możesz ją zduplikować i przygotować nową wersję. Gotowa propozycja nadal nie jest wysłana do sieci; wyślesz ją później w zakładce Wysyłki, a administrator sprawdzi ją przed przekazaniem kupcowi."
         },
         "title_card": {
           "card_title": "Nazwa propozycji dla kupca",
@@ -736,17 +736,17 @@
         }
       },
       "save_flash": {
-        "published": "Propozycja opublikowana!",
+        "published": "Propozycja zapisana jako gotowa do wysłania.",
         "draft_saved": "Szkic zapisany.",
         "error_prefix": "Błąd zapisu propozycji: {{message}}",
         "error_fallback": "spróbuj ponownie"
       },
       "locked": {
-        "title": "Opublikowana propozycja jest zablokowana",
-        "body": "Tej propozycji nie można już edytować, ponieważ została opublikowana. Możesz ją zduplikować i przygotować nową wersję.",
+        "title": "Gotowa propozycja jest zablokowana",
+        "body": "Tej propozycji nie można już edytować, ponieważ została zapisana jako gotowa do wysłania. Jeśli chcesz coś poprawić, zduplikuj ją i przygotuj nową wersję.",
         "back_btn": "Wróć do propozycji",
         "duplicate_btn": "Duplikuj i edytuj nową",
-        "saved_offer_error": "Opublikowanej propozycji nie można edytować. Zduplikuj ją i utwórz nową wersję."
+        "saved_offer_error": "Gotowej propozycji nie można edytować. Zduplikuj ją i utwórz nową wersję."
       }
     },
     "wysylki": {
