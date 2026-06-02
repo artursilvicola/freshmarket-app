@@ -1227,8 +1227,8 @@
       },
       "subscription_card_title": "Subskrypcja mailingowa",
       "subscription_consent_label": "Zgoda na mailing Preconnect",
-      "subscription_consent_hint": "Raz w miesiącu, w pierwszy wtorek. Zgodę można wycofać w każdej chwili.",
-      "subscription_active_notice": "Subskrypcja aktywna · Następny mailing: 6 maja 2026",
+      "subscription_consent_hint": "Mailing PreConnect wysyłamy raz w miesiącu, w pierwszy wtorek miesiąca. Zgodę można wycofać w każdej chwili.",
+      "subscription_active_notice": "Subskrypcja aktywna · Następny mailing: {{date}}",
       "save_button": "Zapisz",
       "saved_flash": "Profil zapisany."
     },

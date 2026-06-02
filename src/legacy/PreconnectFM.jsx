@@ -550,6 +550,19 @@ function effectiveNextSend(rawNextSend) {
   return rawNextSend;
 }
 
+function firstTuesdayOfMonth(year, monthIdx) {
+  const first = new Date(year, monthIdx, 1);
+  const offset = (2 - first.getDay() + 7) % 7;
+  return new Date(year, monthIdx, 1 + offset);
+}
+
+function getNextBuyerSubscriptionMailingDate(from = new Date()) {
+  const nextMonth = from.getMonth() + 1;
+  const year = nextMonth > 11 ? from.getFullYear() + 1 : from.getFullYear();
+  const monthIdx = nextMonth > 11 ? 0 : nextMonth;
+  return firstTuesdayOfMonth(year, monthIdx);
+}
+
 // Format daty po polsku: "2026-06-02" → "2 czerwca 2026 (wt.)"
 function formatPolishDate(isoDate) {
   if (!isoDate) return "";
@@ -6898,7 +6911,8 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
 
 function PageBuyerProfile({ buyer, setBuyer, fl }) {
   // [Krok P2-2] Bilingual via legacy.buyer.profile namespace
-  const { t } = useTranslation("legacy");
+  const { t, i18n } = useTranslation("legacy");
+  const nextMailingDateLabel = formatMailingDate(getNextBuyerSubscriptionMailingDate(), i18n.language);
   const [b,setB]=useState({...buyer}); const u=(k,v)=>setB(p=>({...p,[k]:v}));
   return (
     <div style={{ maxWidth:560 }}>
@@ -6914,7 +6928,7 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
         </Row>
         <Inp label={t("buyer.profile.labels.phone")} value={b.phone} onChange={e=>u("phone",e.target.value)}/>
       </Card>
-      <Card title={t("buyer.profile.subscription_card_title")} icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{t("buyer.profile.subscription_consent_label")}</div><div style={{ fontSize:12,color:"#64748b" }}>{t("buyer.profile.subscription_consent_hint")}</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>{t("buyer.profile.subscription_active_notice")}</div>}</Card>
+      <Card title={t("buyer.profile.subscription_card_title")} icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{t("buyer.profile.subscription_consent_label")}</div><div style={{ fontSize:12,color:"#64748b" }}>{t("buyer.profile.subscription_consent_hint")}</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>{t("buyer.profile.subscription_active_notice", { date: nextMailingDateLabel })}</div>}</Card>
       <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl(t("buyer.profile.saved_flash")); }}>{t("buyer.profile.save_button")}</Btn></div>
       <ChangePasswordSection fl={fl}/>
     </div>

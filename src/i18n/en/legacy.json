@@ -1227,8 +1227,8 @@
       },
       "subscription_card_title": "Email subscription",
       "subscription_consent_label": "Consent to PreConnect mailing",
-      "subscription_consent_hint": "Once a month, on the first Tuesday. You can withdraw consent at any time.",
-      "subscription_active_notice": "Subscription active · Next mailing: 6 May 2026",
+      "subscription_consent_hint": "PreConnect mailing is sent once a month, on the first Tuesday of the month. You can withdraw consent at any time.",
+      "subscription_active_notice": "Subscription active · Next mailing: {{date}}",
       "save_button": "Save",
       "saved_flash": "Profile saved."
     },
