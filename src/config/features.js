@@ -94,4 +94,4 @@ export const ADMIN_PIPELINE_2_0_MAILING_BASKET = true;
 //
 // Default `false`: gdy wyłączone, panel dostawcy pokazuje stare EUR/portfel
 // (zero zmian). Flip na `true` dopiero po review + smoke test prod.
-export const CREDITS_UI_SUPPLIER = false;
+export const CREDITS_UI_SUPPLIER = true;
