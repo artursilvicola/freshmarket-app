@@ -10054,10 +10054,13 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
           <div style={{ background:"#e2e8f0",borderRadius:4,height:6,overflow:"hidden" }}>
             <div style={{ height:"100%",borderRadius:4,width:`${Math.min(100,pct)}%`,background:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}/>
           </div>
-          {/* [admin-credits-settlement] Rozliczenie kredytów tej firmy (qty, zero EUR). */}
+          {/* [admin-credits-settlement] Rozliczenie kredytów tej firmy (qty, zero EUR).
+              SPÓJNOŚĆ z blokiem zbiorczym Pipeline: used = qty_used (lim.used) =
+              kredyty finalnie zużyte (seen-billing), NIE liczba wysłanych
+              propozycji (param `used` to szerszy licznik dla paska %). */}
           {(() => {
             const bought = Number(lim.max || 0);
-            const usedC = Number(used || 0);
+            const usedC = Number(lim.used || 0);
             const remaining = Math.max(0, bought - usedC);
             const returned = (firmSends || []).filter(s => s.status === "unread_expired").length;
             const awaiting = (firmSends || []).filter(s => ["sent","opened"].includes(s.status) && !isSeenOrCharged(s)).length;
