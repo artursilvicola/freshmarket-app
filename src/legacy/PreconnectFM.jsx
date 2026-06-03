@@ -3971,7 +3971,9 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
 
       {refunds.length > 0 && (() => {
         const totalAmount = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-        const totalSuffix = totalAmount
+        // [credits-ui] Gdy flaga ON → bez sufiksu EUR (label już mówi "zwrot
+        // kredytu/kredytów", a count to liczba kredytów).
+        const totalSuffix = (!CREDITS_UI_SUPPLIER && totalAmount)
           ? t("supplier.dashboard.refunds_strip.total_suffix_format", { total: totalAmount })
           : "";
         return (
@@ -4151,7 +4153,8 @@ function ActivityCard({ events }) {
   // body_no_title). Components z <strong>/<em> zachowują wizualne wyróżnienie.
   function renderBody(e) {
     if (e.type === "refund") {
-      return e.amount
+      // [credits-ui] Gdy flaga ON → wariant bez kwoty EUR ("Zwrot kredytu").
+      return (e.amount && !CREDITS_UI_SUPPLIER)
         ? <Trans i18nKey="supplier.dashboard.activity.refund.body_with_amount" ns="legacy" values={{ amount: e.amount }} components={{ strong: <strong /> }} />
         : <Trans i18nKey="supplier.dashboard.activity.refund.body_no_amount" ns="legacy" components={{ strong: <strong /> }} />;
     }
@@ -4636,7 +4639,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
                   <span style={{ fontSize:11,color:"#d97706",background:"#fffbeb",padding:"2px 8px",borderRadius:6,border:"1px solid #fde68a" }}>{t("supplier.wysylki.history.days_left_format", { count: s.daysLeft })}</span>
                 )}
                 {isExpired && (
-                  <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"2px 8px",borderRadius:6,fontWeight:600 }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.refund_done") : `+${getPlanById(co?.pkg)?.perSend||40}€`}</span>
+                  <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"2px 8px",borderRadius:6,fontWeight:600 }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.refund" + pluralSuffixPL(1) + "_format", { count: 1 }) : `+${getPlanById(co?.pkg)?.perSend||40}€`}</span>
                 )}
               </div>
             );
@@ -6197,13 +6200,16 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
       {tab==="saldo"&&<>
         <div style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:14,padding:"22px 26px",marginBottom:16,display:"flex",gap:24,alignItems:"stretch",flexWrap:"wrap" }}>
           <div style={{ flex:1,minWidth:160 }}>
-            {CREDITS_UI_SUPPLIER ? (
+            {CREDITS_UI_SUPPLIER ? (() => {
+              const remCredits = Math.max(0, pkgMax - pkgUsed);
+              return (
               <>
                 <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{t("supplier.finance.credits.balance_label")}</div>
-                <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{Math.max(0, pkgMax - pkgUsed)}<span style={{ fontSize:16,fontWeight:400,marginLeft:4 }}>{t("supplier.finance.credits.balance_unit")}</span></div>
+                <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{t("supplier.finance.credits.amount" + pluralSuffixPL(remCredits) + "_format", { count: remCredits })}</div>
                 <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>{t("supplier.finance.credits.funds_info")}</div>
               </>
-            ) : (
+              );
+            })() : (
               <>
                 <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{t("supplier.finance.wallet.balance_label")}</div>
                 <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{wallet.balance}<span style={{ fontSize:16,fontWeight:400,marginLeft:4 }}>EUR</span></div>
@@ -6232,9 +6238,10 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
             // [credits-ui] "Efektywny koszt" (EUR) ukryty w panelu dostawcy gdy
             // flaga ON — przeniesiony do admin/księgowości (plan Etap 2/3).
             !CREDITS_UI_SUPPLIER && [t("supplier.finance.kpi.effective_cost_label"), t("supplier.finance.kpi.effective_cost_value_format", { amount: totalEarned-totalRefunds }), t("supplier.finance.kpi.effective_cost_sub"), "#7c3aed"],
-            // Zwroty: gdy flaga ON → komunikat kredytowy zamiast +EUR.
+            // Zwroty: gdy flaga ON → liczba zwróconych kredytów (realny count,
+            // plural), nie zawsze "+1". Sub: w toku → "kredyt wraca".
             CREDITS_UI_SUPPLIER
-              ? [t("supplier.finance.kpi.refunds_label"), t("supplier.finance.credits.refund_done"), pendingRefunds.length>0?t("supplier.finance.credits.refund_pending"):t("supplier.finance.kpi.refunds_sub_done"), "#059669"]
+              ? [t("supplier.finance.kpi.refunds_label"), t("supplier.finance.credits.refund" + pluralSuffixPL(refundedExpired.length) + "_format", { count: refundedExpired.length }), pendingRefunds.length>0?t("supplier.finance.credits.refund_pending"):t("supplier.finance.kpi.refunds_sub_done"), "#059669"]
               : [t("supplier.finance.kpi.refunds_label"), t("supplier.finance.kpi.refunds_value_format", { amount: totalRefunds }), pendingRefunds.length>0?t("supplier.finance.kpi.refunds_sub_pending"):t("supplier.finance.kpi.refunds_sub_done"), "#059669"],
             [t("supplier.finance.kpi.open_rate_label"), allSent.length?Math.round(confirmed.length/allSent.length*100)+"%":"0%", t("supplier.finance.kpi.open_rate_sub"), confirmed.length/Math.max(1,allSent.length)>=0.5?"#059669":"#d97706"],
           ].filter(Boolean).map(([l,v,sub,c])=>(
