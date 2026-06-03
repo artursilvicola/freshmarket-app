@@ -98,6 +98,8 @@
     },
     "offer_preview": {
       "modal_title": "Podgląd propozycji – widok kupca",
+      "full_modal_title": "Pełny podgląd propozycji",
+      "full_notice": "To są pełne dane zapisanej propozycji. Kupiec widzi krótszy, uporządkowany widok.",
       "premium_badge": "Premium",
       "kv_volume": "Wolumen",
       "kv_min": "Min.",
