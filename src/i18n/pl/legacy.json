@@ -872,6 +872,17 @@
         "historia": "Historia wysyłek",
         "pakiety": "Cennik i pakiety"
       },
+      "credits": {
+        "balance_label": "Kredyty PreConnect",
+        "balance_unit": "kredytów",
+        "funds_info": "1 kredyt = 1 wysyłka do jednej sieci",
+        "of_total_format": "{{rem}} z {{max}} kredytów dostępnych",
+        "cost_info": "Zużywa 1 kredyt",
+        "cost_modal": "1 wysyłka = 1 kredyt",
+        "refund_done": "+1 kredyt",
+        "refund_pending": "Kredyt wraca do konta",
+        "bar_format": "Kredyty PreConnect: {{rem}} z {{max}}"
+      },
       "wallet": {
         "balance_label": "Saldo portfela",
         "funds_info_format": "Środki na kolejne wysyłki — {{perSend}} EUR/szt.",

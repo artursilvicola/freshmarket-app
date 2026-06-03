@@ -80,3 +80,18 @@ export const ADMIN_PIPELINE_2_0_TABLE = true;
 // chipa koszyka, paska daty ani grup per sieć — działa jak w table-shell/polish.
 // Flip na `true` dopiero po review + smoke test prod.
 export const ADMIN_PIPELINE_2_0_MAILING_BASKET = true;
+
+// [Kredyty PreConnect / Etap 2 — feat/preconnect-credits-ui-copy]
+// Spec: docs/billing/PRECONNECT_CREDITS_PLAN.md.
+// Prezentacja w panelu DOSTAWCY: zamiast operacyjnego "saldo EUR / portfel"
+// główną jednostką są "Kredyty PreConnect" (1 kredyt = 1 wysyłka do 1 sieci).
+// Czyste display/copy — pokazuje qty_remaining (pkgMax - pkgUsed) zamiast
+// wallet.balance, zamienia EUR→kredyty w Finanse/Wysyłki/Dashboard. EUR zostaje
+// TYLKO przy zakupie pakietu / PayU / historii płatności.
+//
+// Bez zmian: algorytmu zużycia kredytów, qty_used, wallet_tx, RPC, PayU,
+// migracji, statusów, historii EUR. Tylko warstwa prezentacji.
+//
+// Default `false`: gdy wyłączone, panel dostawcy pokazuje stare EUR/portfel
+// (zero zmian). Flip na `true` dopiero po review + smoke test prod.
+export const CREDITS_UI_SUPPLIER = false;

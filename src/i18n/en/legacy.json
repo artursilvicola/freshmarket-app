@@ -872,6 +872,17 @@
         "historia": "Submission history",
         "pakiety": "Pricing and packages"
       },
+      "credits": {
+        "balance_label": "PreConnect Credits",
+        "balance_unit": "credits",
+        "funds_info": "1 credit = 1 submission to one retailer",
+        "of_total_format": "{{rem}} of {{max}} credits available",
+        "cost_info": "Uses 1 credit",
+        "cost_modal": "1 submission = 1 credit",
+        "refund_done": "+1 credit",
+        "refund_pending": "Credit returns to your account",
+        "bar_format": "PreConnect Credits: {{rem}} of {{max}}"
+      },
       "wallet": {
         "balance_label": "Wallet balance",
         "funds_info_format": "Funds for further submissions — {{perSend}} EUR each",
