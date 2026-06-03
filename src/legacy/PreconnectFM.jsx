@@ -2900,7 +2900,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     ));
     // 4. Update company pkg reference in companies SSOT
     setCo(prev => ({ ...prev, pkg: planId }));
-    fl(t("shell.app_toasts.package_purchased_format", { qty: plan.qty }));
+    fl(t(CREDITS_UI_SUPPLIER ? "shell.app_toasts.package_purchased_credits_format" : "shell.app_toasts.package_purchased_format", { qty: plan.qty }));
   }
 
   // ── Actions ────────────────────────────────────────────────────────────
@@ -6376,9 +6376,12 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   // [P2-5 i18n] Plurals: PL "wysyłka"/"wysyłek" matches qty===1?singular:plural.
   // Helper zwraca przetłumaczony pkg label dla obu tier'ów z plural variant.
   const pkgLabel = (tier, qty) => {
-    const k = tier === "PREMIUM"
-      ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_premium_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_premium_other")
-      : (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_standard_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_standard_other");
+    const t2 = tier === "PREMIUM" ? "premium" : "standard";
+    const k = CREDITS_UI_SUPPLIER
+      ? "supplier.finance.pakiety.payment_modal.summary_pkg_credits_" + t2 + pluralSuffixPL(qty) + "_format"
+      : (tier === "PREMIUM"
+        ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_premium_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_premium_other")
+        : (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_standard_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_standard_other"));
     return t(k, { qty });
   };
   const ctaPkgLabel = (tier, qty) => {
@@ -6389,9 +6392,12 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
     return t(k, { qty });
   };
   const successPkgLabel = (tier, qty) => {
-    const k = tier === "PREMIUM"
-      ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_premium_one" : "supplier.finance.pakiety.payment_modal.pkg_label_premium_other")
-      : (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_standard_one" : "supplier.finance.pakiety.payment_modal.pkg_label_standard_other");
+    const t2 = tier === "PREMIUM" ? "premium" : "standard";
+    const k = CREDITS_UI_SUPPLIER
+      ? "supplier.finance.pakiety.payment_modal.pkg_label_credits_" + t2 + pluralSuffixPL(qty) + "_format"
+      : (tier === "PREMIUM"
+        ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_premium_one" : "supplier.finance.pakiety.payment_modal.pkg_label_premium_other")
+        : (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_standard_one" : "supplier.finance.pakiety.payment_modal.pkg_label_standard_other"));
     return t(k, { qty });
   };
   const tableQtyLabel = (qty) => CREDITS_UI_SUPPLIER
@@ -6431,10 +6437,10 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 </div>
                 <h3 style={{ margin:"0 0 8px",fontSize:18,color:"#0f172a" }}>{t("supplier.finance.pakiety.payment_modal.success_title")}</h3>
                 <p style={{ color:"#64748b",fontSize:13,margin:"0 0 16px",lineHeight:1.6 }}>
-                  <Trans i18nKey="supplier.finance.pakiety.payment_modal.success_body_html" ns="legacy" values={{ pkgLabel: successPkgLabel(sel.tier, sel.qty), qty: sel.qty }} components={{ strong: <strong />, br: <br /> }}/>
+                  <Trans i18nKey={CREDITS_UI_SUPPLIER ? "supplier.finance.pakiety.payment_modal.success_body_credits_html" : "supplier.finance.pakiety.payment_modal.success_body_html"} ns="legacy" values={{ pkgLabel: successPkgLabel(sel.tier, sel.qty), qty: sel.qty }} components={{ strong: <strong />, br: <br /> }}/>
                 </p>
                 <div style={{ padding:"10px 16px",background:"#f0fdf4",borderRadius:8,fontSize:13,color:"#047857",border:"1px solid #bbf7d0" }}>
-                  <Trans i18nKey="supplier.finance.pakiety.payment_modal.success_state_html" ns="legacy" values={{ total: pkgMax + sel.qty }} components={{ strong: <strong /> }}/>
+                  <Trans i18nKey={CREDITS_UI_SUPPLIER ? "supplier.finance.pakiety.payment_modal.success_state_credits_html" : "supplier.finance.pakiety.payment_modal.success_state_html"} ns="legacy" values={{ total: pkgMax + sel.qty }} components={{ strong: <strong /> }}/>
                 </div>
               </div>
             ):(
@@ -6451,7 +6457,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 </div>
                 <div style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_pkg_label")}</span><span style={{ fontWeight:600 }}>{pkgLabel(sel.tier, sel.qty)}</span></div>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_per_send_label")}</span><span>{t("supplier.finance.pakiety.payment_modal.summary_per_send_format", { perSend: sel.perSend })}</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.pakiety.payment_modal.summary_per_credit_label") : t("supplier.finance.pakiety.payment_modal.summary_per_send_label")}</span><span>{t("supplier.finance.pakiety.payment_modal.summary_per_send_format", { perSend: sel.perSend })}</span></div>
                   {sel.discount>0&&<div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_discount_label")}</span><span style={{ color:"#059669",fontWeight:600 }}>{t("supplier.finance.pakiety.payment_modal.summary_discount_value_format", { percent: sel.discount })}</span></div>}
                   <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:10,marginTop:4,display:"flex",justifyContent:"space-between" }}>
                     <span style={{ fontWeight:700,fontSize:15 }}>{t("supplier.finance.pakiety.payment_modal.summary_net_label")}</span>
