@@ -98,6 +98,8 @@
     },
     "offer_preview": {
       "modal_title": "Proposal preview – buyer view",
+      "full_modal_title": "Full proposal preview",
+      "full_notice": "These are the full saved proposal details. The buyer sees a shorter, organized view.",
       "premium_badge": "Premium",
       "kv_volume": "Volume",
       "kv_min": "Min.",

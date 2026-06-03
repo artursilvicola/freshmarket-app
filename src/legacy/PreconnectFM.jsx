@@ -5499,6 +5499,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl, co }) {
           offer={previewOffer}
           co={co || COMPANY_INIT}
           onClose={() => setPreviewOffer(null)}
+          supplierFull
         />
       )}
     </div>
@@ -11325,7 +11326,7 @@ function CompanyPreviewModal(props) {
   );
 }
 
-function OfferPreviewModal({ offer, co, onClose, adminFull=false }) {
+function OfferPreviewModal({ offer, co, onClose, adminFull=false, supplierFull=false }) {
   const { t } = useTranslation("legacy");
   if(!offer) return null;
   const allCerts=[...(offer.certs||[]),offer.customCert].filter(Boolean);
@@ -11369,8 +11370,15 @@ function OfferPreviewModal({ offer, co, onClose, adminFull=false }) {
   const deliveryDays = Array.isArray(offer.deliveryDays) ? offer.deliveryDays : [];
   const publicTitle = getPublicOfferTitle(offer) || offer.title || offer.product;
   const internalTitle = getInternalOfferTitle(offer);
+  const fullPreview = adminFull || supplierFull;
+  const modalTitle = adminFull
+    ? full("modal_title")
+    : supplierFull
+      ? t("common.offer_preview.full_modal_title")
+      : t("common.offer_preview.modal_title");
+  const fullNotice = adminFull ? full("notice") : t("common.offer_preview.full_notice");
   return (
-    <Modal title={adminFull ? full("modal_title") : t("common.offer_preview.modal_title")} onClose={onClose} wide>
+    <Modal title={modalTitle} onClose={onClose} wide>
       {offer.tier==="premium"&&<div style={{ background:"#fffbeb",border:"1px solid #fbbf24",borderRadius:7,padding:"6px 12px",marginBottom:10,fontSize:12,fontWeight:600,color:"#92400e",display:"flex",gap:5,alignItems:"center" }}><Star size={12} fill="#d97706" color="#d97706"/> {t("common.offer_preview.premium_badge")}</div>}
       <div style={{ background:"#f0fdf4",borderRadius:10,padding:14,marginBottom:14,display:"flex",gap:12 }}>
         {photos.length?<img src={photos[0]} alt="" style={{ width:110,height:80,objectFit:"cover",borderRadius:7,flexShrink:0,border:"2px solid #bbf7d0" }}/>:<div style={{ width:110,height:80,borderRadius:7,background:"#e2e8f0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:34 }}>{CEMOJI[offer.category]||"📦"}</div>}
@@ -11384,7 +11392,7 @@ function OfferPreviewModal({ offer, co, onClose, adminFull=false }) {
           ].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"6px 10px",background:"white",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12 }}>{v}</div></div>)}</div>
         </div>
       </div>
-      {!adminFull ? (
+      {!fullPreview ? (
         <>
           <p style={{ color:"#475569",lineHeight:1.7,marginBottom:12,fontSize:13,whiteSpace:"pre-line" }}>{renderDesc(offer.description)}</p>
           {allPack.length>0&&<div style={{ marginBottom:10 }}><strong style={{ fontSize:11,color:"#64748b" }}>{t("common.offer_preview.packaging_label")}</strong><div style={{ display:"flex",gap:4,marginTop:3,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p}>{p}</Badge>)}</div></div>}
@@ -11392,7 +11400,7 @@ function OfferPreviewModal({ offer, co, onClose, adminFull=false }) {
         </>
       ) : (
         <>
-          <Alrt type="info">{full("notice")}</Alrt>
+          <Alrt type="info">{fullNotice}</Alrt>
           <AdminSection title={full("section_internal")} tone="#7c3aed">
             <AdminKV items={[
               [full("internal_title"), internalTitle],
