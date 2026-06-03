@@ -627,7 +627,12 @@ function getPlanLabel(id, { withPerSend = true } = {}) {
   if (!p) return id || "";
   const tier = p.tier === "PREMIUM" ? "premium" : "standard";
   const suffix = packagePluralSuffix(p.qty);
-  const prefix = withPerSend ? "label_with_price" : "label";
+  // [credits-ui] Gdy flaga ON, etykieta pakietu mówi o KREDYTACH ("20 kredytów")
+  // zamiast "20 wysyłek". Wariant with_price (z EUR/szt.) — tylko gdy flaga OFF;
+  // przy ON cenę za 1 kredyt pokazuje sam cennik osobno (kolumna), nie etykieta.
+  const prefix = (withPerSend && !CREDITS_UI_SUPPLIER) ? "label_with_price"
+               : CREDITS_UI_SUPPLIER ? "label_credits"
+               : "label";
   return i18n.t(`legacy:shell.package.${prefix}_${tier}${suffix}_format`, {
     qty: p.qty,
     perSend: p.perSend,
@@ -2895,7 +2900,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     ));
     // 4. Update company pkg reference in companies SSOT
     setCo(prev => ({ ...prev, pkg: planId }));
-    fl(t("shell.app_toasts.package_purchased_format", { qty: plan.qty }));
+    fl(t(CREDITS_UI_SUPPLIER ? "shell.app_toasts.package_purchased_credits_format" : "shell.app_toasts.package_purchased_format", { qty: plan.qty }));
   }
 
   // ── Actions ────────────────────────────────────────────────────────────
@@ -6371,24 +6376,33 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   // [P2-5 i18n] Plurals: PL "wysyłka"/"wysyłek" matches qty===1?singular:plural.
   // Helper zwraca przetłumaczony pkg label dla obu tier'ów z plural variant.
   const pkgLabel = (tier, qty) => {
-    const k = tier === "PREMIUM"
-      ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_premium_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_premium_other")
-      : (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_standard_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_standard_other");
+    const t2 = tier === "PREMIUM" ? "premium" : "standard";
+    const k = CREDITS_UI_SUPPLIER
+      ? "supplier.finance.pakiety.payment_modal.summary_pkg_credits_" + t2 + pluralSuffixPL(qty) + "_format"
+      : (tier === "PREMIUM"
+        ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_premium_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_premium_other")
+        : (qty === 1 ? "supplier.finance.pakiety.payment_modal.summary_pkg_standard_one" : "supplier.finance.pakiety.payment_modal.summary_pkg_standard_other"));
     return t(k, { qty });
   };
   const ctaPkgLabel = (tier, qty) => {
-    const k = tier === "PREMIUM"
-      ? (qty === 1 ? "supplier.finance.pakiety.cta.pkg_premium_one_format" : "supplier.finance.pakiety.cta.pkg_premium_other_format")
-      : (qty === 1 ? "supplier.finance.pakiety.cta.pkg_standard_one_format" : "supplier.finance.pakiety.cta.pkg_standard_other_format");
+    const t2 = tier === "PREMIUM" ? "premium" : "standard";
+    const k = CREDITS_UI_SUPPLIER
+      ? "supplier.finance.pakiety.cta.pkg_credits_" + t2 + pluralSuffixPL(qty) + "_format"
+      : "supplier.finance.pakiety.cta.pkg_" + t2 + (qty === 1 ? "_one" : "_other") + "_format";
     return t(k, { qty });
   };
   const successPkgLabel = (tier, qty) => {
-    const k = tier === "PREMIUM"
-      ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_premium_one" : "supplier.finance.pakiety.payment_modal.pkg_label_premium_other")
-      : (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_standard_one" : "supplier.finance.pakiety.payment_modal.pkg_label_standard_other");
+    const t2 = tier === "PREMIUM" ? "premium" : "standard";
+    const k = CREDITS_UI_SUPPLIER
+      ? "supplier.finance.pakiety.payment_modal.pkg_label_credits_" + t2 + pluralSuffixPL(qty) + "_format"
+      : (tier === "PREMIUM"
+        ? (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_premium_one" : "supplier.finance.pakiety.payment_modal.pkg_label_premium_other")
+        : (qty === 1 ? "supplier.finance.pakiety.payment_modal.pkg_label_standard_one" : "supplier.finance.pakiety.payment_modal.pkg_label_standard_other"));
     return t(k, { qty });
   };
-  const tableQtyLabel = (qty) => t(qty === 1 ? "supplier.finance.pakiety.table.qty_one" : "supplier.finance.pakiety.table.qty_other", { count: qty });
+  const tableQtyLabel = (qty) => CREDITS_UI_SUPPLIER
+    ? t("supplier.finance.pakiety.table.qty_credits" + pluralSuffixPL(qty), { count: qty })
+    : t(qty === 1 ? "supplier.finance.pakiety.table.qty_one" : "supplier.finance.pakiety.table.qty_other", { count: qty });
 
   // [B2B Round prod-rollout / faza 3] Realne PayU zamiast mocka buyPackage().
   // Wywołuje Netlify function create-payu-order, dostaje redirectUri do
@@ -6423,10 +6437,10 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 </div>
                 <h3 style={{ margin:"0 0 8px",fontSize:18,color:"#0f172a" }}>{t("supplier.finance.pakiety.payment_modal.success_title")}</h3>
                 <p style={{ color:"#64748b",fontSize:13,margin:"0 0 16px",lineHeight:1.6 }}>
-                  <Trans i18nKey="supplier.finance.pakiety.payment_modal.success_body_html" ns="legacy" values={{ pkgLabel: successPkgLabel(sel.tier, sel.qty), qty: sel.qty }} components={{ strong: <strong />, br: <br /> }}/>
+                  <Trans i18nKey={CREDITS_UI_SUPPLIER ? "supplier.finance.pakiety.payment_modal.success_body_credits_html" : "supplier.finance.pakiety.payment_modal.success_body_html"} ns="legacy" values={{ pkgLabel: successPkgLabel(sel.tier, sel.qty), qty: sel.qty }} components={{ strong: <strong />, br: <br /> }}/>
                 </p>
                 <div style={{ padding:"10px 16px",background:"#f0fdf4",borderRadius:8,fontSize:13,color:"#047857",border:"1px solid #bbf7d0" }}>
-                  <Trans i18nKey="supplier.finance.pakiety.payment_modal.success_state_html" ns="legacy" values={{ total: pkgMax + sel.qty }} components={{ strong: <strong /> }}/>
+                  <Trans i18nKey={CREDITS_UI_SUPPLIER ? "supplier.finance.pakiety.payment_modal.success_state_credits_html" : "supplier.finance.pakiety.payment_modal.success_state_html"} ns="legacy" values={{ total: pkgMax + sel.qty }} components={{ strong: <strong /> }}/>
                 </div>
               </div>
             ):(
@@ -6443,7 +6457,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 </div>
                 <div style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_pkg_label")}</span><span style={{ fontWeight:600 }}>{pkgLabel(sel.tier, sel.qty)}</span></div>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_per_send_label")}</span><span>{t("supplier.finance.pakiety.payment_modal.summary_per_send_format", { perSend: sel.perSend })}</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.pakiety.payment_modal.summary_per_credit_label") : t("supplier.finance.pakiety.payment_modal.summary_per_send_label")}</span><span>{t("supplier.finance.pakiety.payment_modal.summary_per_send_format", { perSend: sel.perSend })}</span></div>
                   {sel.discount>0&&<div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_discount_label")}</span><span style={{ color:"#059669",fontWeight:600 }}>{t("supplier.finance.pakiety.payment_modal.summary_discount_value_format", { percent: sel.discount })}</span></div>}
                   <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:10,marginTop:4,display:"flex",justifyContent:"space-between" }}>
                     <span style={{ fontWeight:700,fontSize:15 }}>{t("supplier.finance.pakiety.payment_modal.summary_net_label")}</span>
@@ -6572,7 +6586,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
             <thead><tr style={{ background:"#f8fafc" }}>{[
               t("supplier.finance.pakiety.table.header_package"),
               t("supplier.finance.pakiety.table.header_price"),
-              t("supplier.finance.pakiety.table.header_per_send"),
+              CREDITS_UI_SUPPLIER ? t("supplier.finance.pakiety.table.header_per_credit") : t("supplier.finance.pakiety.table.header_per_send"),
               t("supplier.finance.pakiety.table.header_discount"),
               "",
             ].map((h,i)=><th key={i} style={{ padding:"9px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"1px solid #e2e8f0" }}>{h}</th>)}</tr></thead>
@@ -6601,7 +6615,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
             <thead><tr style={{ background:"#fffbeb" }}>{[
               t("supplier.finance.pakiety.table.header_package"),
               t("supplier.finance.pakiety.table.header_price"),
-              t("supplier.finance.pakiety.table.header_per_send"),
+              CREDITS_UI_SUPPLIER ? t("supplier.finance.pakiety.table.header_per_credit") : t("supplier.finance.pakiety.table.header_per_send"),
               t("supplier.finance.pakiety.table.header_discount"),
               "",
             ].map((h,i)=><th key={i} style={{ padding:"9px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#92400e",borderBottom:"1px solid #fde68a" }}>{h}</th>)}</tr></thead>
@@ -6619,13 +6633,18 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
         </div>
       </div>
 
+      {/* [credits-ui] Dopisek wyjaśniający jednostkę kredytu pod cennikiem. */}
+      {CREDITS_UI_SUPPLIER && (
+        <div style={{ fontSize:12,color:"#64748b",marginBottom:16,marginTop:-8 }}>{t("supplier.finance.pakiety.table.credit_hint")}</div>
+      )}
+
       {/* CTA */}
       <div style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:12,padding:"16px 20px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:24 }}>
         <div style={{ flex:1,color:"white" }}>
           <div style={{ fontWeight:700,fontSize:15 }}>{ctaPkgLabel(sel.tier, sel.qty)}</div>
           <div style={{ fontSize:12,opacity:0.6,marginTop:2 }}>{sel.discount>0
-            ? t("supplier.finance.pakiety.cta.sub_with_discount_format", { price: sel.price, perSend: sel.perSend, discount: sel.discount })
-            : t("supplier.finance.pakiety.cta.sub_format", { price: sel.price, perSend: sel.perSend })}</div>
+            ? t(CREDITS_UI_SUPPLIER ? "supplier.finance.pakiety.cta.sub_credits_with_discount_format" : "supplier.finance.pakiety.cta.sub_with_discount_format", { price: sel.price, perSend: sel.perSend, discount: sel.discount })
+            : t(CREDITS_UI_SUPPLIER ? "supplier.finance.pakiety.cta.sub_credits_format" : "supplier.finance.pakiety.cta.sub_format", { price: sel.price, perSend: sel.perSend })}</div>
         </div>
         <Btn onClick={()=>setShowModal(true)} style={{ background:sel.tier==="PREMIUM"?"#d97706":"#0d9488",color:"white",border:"none",flexShrink:0,fontWeight:700 }}>
           <CreditCard size={13}/> {t("supplier.finance.pakiety.cta.order_button")}
@@ -6643,7 +6662,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
               <div style={{ flex:1 }}>
                 <div style={{ fontWeight:600,fontSize:13 }}>{getOrderPlanLabel(ord)}</div>
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
-                  {ord.date} · {ord.paymentMethod==="karta"?t("supplier.finance.pakiety.order_history.method_card"):ord.paymentMethod==="przelew"?t("supplier.finance.pakiety.order_history.method_bank"):t("supplier.finance.pakiety.order_history.method_wallet")} · {t("supplier.finance.pakiety.order_history.qty_added_format", { qty: ord.qty })}
+                  {ord.date} · {ord.paymentMethod==="karta"?t("supplier.finance.pakiety.order_history.method_card"):ord.paymentMethod==="przelew"?t("supplier.finance.pakiety.order_history.method_bank"):t("supplier.finance.pakiety.order_history.method_wallet")} · {CREDITS_UI_SUPPLIER ? t("supplier.finance.pakiety.order_history.qty_added_credits" + pluralSuffixPL(Number(ord.qty)||0) + "_format", { qty: ord.qty }) : t("supplier.finance.pakiety.order_history.qty_added_format", { qty: ord.qty })}
                 </div>
               </div>
               <div style={{ textAlign:"right" }}>
