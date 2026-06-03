@@ -1,7 +1,9 @@
 # Regulamin korzystania z platformy Fresh Market B2B PreConnect
 
-**Wersja 1.0** · Obowiązuje od: 24 maja 2026
+**Wersja 1.1** · Obowiązuje od: 3 czerwca 2026 (poprzednio: wersja 1.0 z 24 maja 2026)
 **Administrator:** KJOW Sp. z o.o. z siedzibą w Pruszkowie
+
+> **Zmiany w wersji 1.1:** doprecyzowano definicję **Kredytu PreConnect** (§1.11) jako niepieniężnej jednostki rozliczeniowej, która nie podlega wypłacie; doprecyzowano zasady zużycia i zwrotu Kredytu przy braku odczytu w 14 dni (§6.2–6.4); termin mailingu zbiorczego ujednolicono na **drugi wtorek miesiąca** (§6.6); doprecyzowano relację Pakiet/EUR/Kredyty (§8.1–8.2).
 
 ---
 
@@ -17,8 +19,15 @@ W regulaminie używamy następujących pojęć:
 6. **Sieć** — sieć handlowa, hurtownia lub firma dystrybucyjna reprezentowana przez Kupca.
 7. **PreConnect** — moduł całorocznej wysyłki propozycji asortymentowych od Dostawców do Sieci handlowych.
 8. **Spotkania B2B FM** — moduł umawiania spotkań biznesowych podczas wydarzenia Fresh Market 2026 (24 września 2026, Warszawa).
-9. **Pakiet** — wybrany przez Dostawcę plan taryfowy określający liczbę dostępnych wysyłek propozycji oraz dostęp do Spotkań B2B FM.
+9. **Pakiet** — wybrany przez Dostawcę plan taryfowy określający liczbę przyznanych Kredytów PreConnect oraz dostęp do Spotkań B2B FM.
 10. **Propozycja asortymentowa** — informacja handlowa o produkcie lub grupie produktów, przygotowana przez Dostawcę i wysyłana do Sieci przez moduł PreConnect.
+11. **Kredyt PreConnect (Kredyt)** — wewnętrzna, niepieniężna jednostka rozliczeniowa Serwisu uprawniająca do jednej (1) wysyłki Propozycji asortymentowej do jednej (1) Sieci handlowej. Kredyt:
+    - **nie jest środkiem pieniężnym, pieniądzem elektronicznym ani instrumentem płatniczym** w rozumieniu obowiązujących przepisów,
+    - **nie podlega wymianie na gotówkę ani wypłacie** w jakiejkolwiek formie,
+    - jest przyznawany Dostawcy wyłącznie w ramach zakupionego Pakietu i służy wyłącznie do korzystania z modułu PreConnect,
+    - jest ważny w okresie ważności Pakietu, w ramach którego został przyznany (domyślnie 12 miesięcy od dnia aktywacji),
+    - nie jest zbywalny ani przenoszalny pomiędzy kontami Dostawców.
+    Cena Pakietu wyrażona w EUR dotyczy **zakupu Pakietu**, a nie wartości pieniężnej pojedynczego Kredytu; Kredyt nie posiada wartości pieniężnej poza kontekstem usługi PreConnect.
 
 ---
 
@@ -69,14 +78,14 @@ Do korzystania z Serwisu wymagane jest:
 ## § 6. PreConnect — wysyłka propozycji asortymentowych
 
 1. Dostawca może tworzyć Propozycje asortymentowe w panelu Serwisu i wysyłać je do wybranych Sieci handlowych.
-2. Każda wysyłka Propozycji do Sieci powoduje pobranie **1 kredytu** z aktywnego Pakietu Dostawcy.
-3. **Zasada „14 dni":** jeśli Kupiec nie otworzy Propozycji w ciągu 14 dni od daty wysłania, kredyt automatycznie wraca na konto Dostawcy.
-4. Otwarcie Propozycji przez Kupca skutkuje **finalnym rozliczeniem kredytu** (system seen-billing).
+2. Wysłanie Propozycji do panelu Kupca rezerwuje **1 Kredyt PreConnect** z aktywnego Pakietu Dostawcy. Kredyt zostaje **finalnie zużyty dopiero w momencie otwarcia (odczytania) Propozycji przez Kupca** (model rozliczenia „seen-billing").
+3. **Zasada „14 dni":** jeśli Kupiec nie otworzy Propozycji w ciągu 14 dni od daty wysłania, Propozycja wygasa, a zarezerwowany Kredyt **wraca do puli dostępnych Kredytów** Dostawcy (kredyt nie zostaje zużyty, ponieważ nie doszło do odczytania Propozycji). W panelu komunikowane jako „Zwrot +1 kredyt" / „Kredyt wraca do konta".
+4. Otwarcie Propozycji przez Kupca skutkuje **finalnym zużyciem Kredytu**; zużyty Kredyt nie podlega zwrotowi.
 5. Każda Propozycja przechodzi **moderację Administratora** przed wysłaniem do Kupca. Operator zastrzega sobie prawo do odrzucenia Propozycji, w szczególności gdy:
    - treść jest sprzeczna z prawem, dobrymi obyczajami lub zasadami uczciwego obrotu,
    - Propozycja zawiera treści wprowadzające w błąd,
    - kategoria produktu nie odpowiada profilowi działalności wybranej Sieci.
-6. **Wysyłki realizowane są w pierwszy wtorek każdego miesiąca** — wszystkie Propozycje zatwierdzone w danym miesiącu trafiają do Sieci w jednym mailingu zbiorczym.
+6. **Wysyłki mailingowe realizowane są w drugi wtorek każdego miesiąca** — wszystkie Propozycje zatwierdzone i wybrane do mailingu w danym miesiącu trafiają do Sieci w jednym mailingu zbiorczym. Operator może zmienić termin mailingu, informując o tym w panelu; aktualna najbliższa data jest zawsze widoczna w panelu Pipeline.
 7. Dostawca może w każdej chwili **usunąć własną Propozycję** — pod warunkiem, że nie została jeszcze wysłana do żadnej Sieci. Po pierwszej wysyłce usunięcie jest niemożliwe (Propozycja żyje w pipeline procesowym Operatora).
 8. Profil Dostawcy w katalogu firm jest domyślnie widoczny dla zalogowanych Kupców reprezentujących aktywne Sieci. Dostawca może w panelu ukryć profil przed wybranymi Sieciami; ukrycie profilu w katalogu nie wpływa na Propozycje już wysłane do danej Sieci ani na rozliczenia wysyłek.
 
@@ -103,10 +112,11 @@ Do korzystania z Serwisu wymagane jest:
 
 ## § 8. Pakiety i płatności
 
-1. Dostawca wybiera Pakiet z listy dostępnej w panelu **Finanse**. Aktualne Pakiety i ceny są publikowane w Serwisie.
-2. Płatność realizowana jest przez **PayU S.A.** (operator płatności).
-3. Po zaksięgowaniu płatności Pakiet aktywuje się automatycznie. Faktura VAT wystawiana jest w ciągu 7 dni roboczych od dnia płatności na dane firmy podane w profilu Dostawcy.
-4. **Brak płatności blokuje dostęp do modułów PreConnect i Spotkań B2B FM.** Dostęp do panelu pozostaje (możliwość uzupełnienia profilu, dodawania szkiców).
+1. Dostawca wybiera Pakiet z listy dostępnej w panelu **Finanse**. Aktualne Pakiety i ceny są publikowane w Serwisie. Każdy Pakiet przyznaje określoną liczbę **Kredytów PreConnect** (np. 5, 10, 20 lub 50 Kredytów); im większy Pakiet, tym niższa cena przypadająca na 1 Kredyt.
+2. Cena Pakietu jest wyrażona w **EUR** i dotyczy **zakupu Pakietu**. Po aktywacji Pakietu Dostawca operuje w panelu wyłącznie **Kredytami** (a nie saldem pieniężnym); kwoty w EUR są prezentowane jedynie przy zakupie Pakietu, w historii płatności oraz na fakturach.
+3. Płatność realizowana jest przez **PayU S.A.** (operator płatności).
+4. Po zaksięgowaniu płatności Pakiet aktywuje się automatycznie. Faktura VAT wystawiana jest w ciągu 7 dni roboczych od dnia płatności na dane firmy podane w profilu Dostawcy.
+5. **Brak płatności blokuje dostęp do modułów PreConnect i Spotkań B2B FM.** Dostęp do panelu pozostaje (możliwość uzupełnienia profilu, dodawania szkiców).
 
 ---
 
