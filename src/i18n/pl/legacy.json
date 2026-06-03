@@ -1982,6 +1982,18 @@
       "track_alert_pending_html_many": "<strong>{{count}}</strong> propozycji czeka na potwierdzenie odczytu (14 dni).",
       "track_alert_pending_html_other": "<strong>{{count}}</strong> propozycji czeka na potwierdzenie odczytu (14 dni).",
       "track_alert_done": "Wszystkie dostarczone propozycje mają potwierdzenie.",
+      "credits_settle": {
+        "title": "Rozliczenie kredytów PreConnect",
+        "bought": "Kupione",
+        "used": "Wykorzystane",
+        "remaining": "Pozostało",
+        "returned": "Zwroty",
+        "awaiting": "Czeka na odczyt",
+        "hint": "Kredyt jest finalnie zużyty dopiero po odczycie propozycji przez kupca. „Zwroty” = kredyty zachowane za brak odczytu w 14 dni. „Czeka na odczyt” = propozycje w panelu kupca, jeszcze nieodczytane. To widok operacyjny (kredyty), nie finansowy.",
+        "show_per_company": "Pokaż per firma ({{count}})",
+        "hide_per_company": "Ukryj rozbicie",
+        "col_company": "Firma"
+      },
       "settle_card_title": "Rozliczenia dostawców (przychód EUR)",
       "settle_settled_label": "Rozliczone (szt.)",
       "settle_settled_amount_format": "przychód: {{amount}} EUR",

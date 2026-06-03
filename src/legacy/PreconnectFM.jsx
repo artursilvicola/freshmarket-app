@@ -935,6 +935,63 @@ function getChargeAmount(send, fallback = 0) {
   const amount = Number(raw);
   return Number.isFinite(amount) ? amount : 0;
 }
+
+// [admin-credits-settlement] Operacyjne rozliczenie KREDYTÓW (qty) per firma +
+// suma zbiorcza. Liczone WYŁĄCZNIE z istniejących danych (company_capacity =
+// dbCapacity dla kupionych/wykorzystanych/pozostałych; legacy_sends dla zwrotów
+// i czekających na odczyt). Zero EUR — to jest widok operacyjny kredytowy, nie
+// finansowy. Bez migracji, bez zmian logiki naliczania.
+//
+// Pojęcia (semantyka seen-billing: kredyt finalnie zużyty dopiero przy odczycie):
+//   - bought    = qty_total   (kupione kredyty w aktywnych pakietach)
+//   - used       = qty_used    (kredyty finalnie zużyte = odczytane przez kupca)
+//   - remaining  = qty_total - qty_used (pozostałe dostępne)
+//   - returned   = liczba propozycji unread_expired (kredyt zachowany/zwrócony,
+//                  bo brak odczytu w 14 dni — kredyt nie został finalnie zużyty)
+//   - awaiting   = liczba propozycji w panelu kupca (sent/opened) jeszcze
+//                  nieodczytanych (kredyt zarezerwowany, czeka na rozstrzygnięcie)
+function computeCreditsSettlement(dbCapacity, sends, companies, offers) {
+  const caps = Array.isArray(dbCapacity) ? dbCapacity : [];
+  const allSends = Array.isArray(sends) ? sends : [];
+  // Index sendów per firma: dopasowanie supplierId -> firma jak w UI.
+  const perCompany = new Map();
+  const ensure = (id, name) => {
+    const key = String(id);
+    if (!perCompany.has(key)) {
+      perCompany.set(key, { id: key, name: name || key, bought: 0, used: 0, remaining: 0, returned: 0, awaiting: 0 });
+    }
+    return perCompany.get(key);
+  };
+  // 1) Kredyty z pojemności (company_capacity).
+  caps.forEach(c => {
+    const total = Number(c.qty_total || 0);
+    const used = Number(c.qty_used || 0);
+    const row = ensure(c.id, c.name);
+    row.bought += total;
+    row.used += used;
+    row.remaining += Math.max(0, total - used);
+  });
+  // 2) Zwroty + czekające z sendów, grupowane po firmie dostawcy.
+  allSends.forEach(s => {
+    const co = (companies || []).find(c => legacyKeyMatchesCompany(s.supplierId, c));
+    const id = co?.id || s.supplierId || "unknown";
+    const name = co?.name || (caps.find(x => String(x.id) === String(id))?.name) || String(id);
+    const row = ensure(id, name);
+    if (s.status === "unread_expired") row.returned += 1;
+    else if (["sent", "opened"].includes(s.status) && !isSeenOrCharged(s)) row.awaiting += 1;
+  });
+  const rows = [...perCompany.values()]
+    .filter(r => r.bought > 0 || r.used > 0 || r.returned > 0 || r.awaiting > 0)
+    .sort((a, b) => b.bought - a.bought || a.name.localeCompare(b.name));
+  const totals = rows.reduce((acc, r) => ({
+    bought: acc.bought + r.bought,
+    used: acc.used + r.used,
+    remaining: acc.remaining + r.remaining,
+    returned: acc.returned + r.returned,
+    awaiting: acc.awaiting + r.awaiting,
+  }), { bought: 0, used: 0, remaining: 0, returned: 0, awaiting: 0 });
+  return { rows, totals };
+}
 const FM_CHAINS=[
   {id:"ch1",name:"ARHELAN",country:"PL",cat:"owoce, warzywa"},{id:"ch2",name:"AUCHAN",country:"PL/FR",cat:"owoce, warzywa"},
   {id:"ch3",name:"ALBERT owoce",country:"CZ",cat:"owoce"},{id:"ch4",name:"ALBERT warzywa",country:"CZ",cat:"warzywa"},
@@ -3430,7 +3487,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
-    if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} onSendSupplierMessage={sendAdminReply}/>;
+    if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
@@ -7796,7 +7853,7 @@ function normalizeModerationAiAnalysis(input = {}) {
   };
 }
 
-function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved, onAnalyzeModerationOffer, onSendModerationMessage }) {
+function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved, onAnalyzeModerationOffer, onSendModerationMessage }) {
   const { t, i18n } = useTranslation("legacy");
 
   // [moderation-mode] Dwa tryby Pipeline:
@@ -7919,6 +7976,8 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
   const [fDateTo, setFDateTo] = useState("");
   const [pageSize, setPageSize] = useState(50);
   const [page, setPage] = useState(0);
+  // [admin-credits-settlement] Rozwinięcie tabeli per-firma w bloku rozliczenia kredytów.
+  const [creditsExpanded, setCreditsExpanded] = useState(false);
 
   const normalizeText = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
@@ -8038,6 +8097,13 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
     // pokazuj tylko sieci, które mają cokolwiek w panelu lub w koszyku
     return [...m.values()].filter(g => g.inPanel > 0 || g.inBasket > 0).sort((a, b) => b.inBasket - a.inBasket || a.name.localeCompare(b.name));
   }, [allRows, basketOn]);
+
+  // [admin-credits-settlement] Rozliczenie kredytów (qty) — totals + per firma.
+  // Z dbCapacity (kupione/wykorzystane/pozostało) + sends (zwroty/czeka). Bez EUR.
+  const creditsSettlement = useMemo(
+    () => computeCreditsSettlement(dbCapacity, sends, companies, offers),
+    [dbCapacity, sends, companies, offers]
+  );
 
   const total = filteredRows.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -8297,6 +8363,68 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
         </div>
       )}
 
+      {/* [admin-credits-settlement] Rozliczenie kredytów PreConnect (tylko tryb track).
+          Operacyjny widok qty (zero EUR). Totals + rozwijana tabela per firma. */}
+      {!isMod && (creditsSettlement.totals.bought > 0 || creditsSettlement.rows.length > 0) && (() => {
+        const tt = creditsSettlement.totals;
+        const stat = (label, value, color, bg) => (
+          <div style={{ padding:"8px 12px", background:bg, border:`1px solid ${color}33`, borderRadius:8, minWidth:120 }}>
+            <div style={{ fontSize:10, color, textTransform:"uppercase", fontWeight:800, letterSpacing:"0.03em" }}>{label}</div>
+            <div style={{ fontSize:20, fontWeight:900, color }}>{value}</div>
+          </div>
+        );
+        const cell = { padding:"6px 10px", fontSize:12, borderBottom:"1px solid #f1f5f9", textAlign:"right", whiteSpace:"nowrap" };
+        const hcell = { ...cell, fontSize:10, textTransform:"uppercase", color:"#64748b", fontWeight:700, borderBottom:"1px solid #e2e8f0" };
+        return (
+          <div style={{ border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 12px", marginBottom:10, background:"white" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", marginBottom:8 }}>
+              <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#64748b", display:"inline-flex", alignItems:"center", gap:6 }}>
+                <CreditCard size={13}/> {t("admin.pipeline.credits_settle.title")}
+              </div>
+              {creditsSettlement.rows.length > 0 && (
+                <button type="button" onClick={() => setCreditsExpanded(v => !v)} style={{ background:"transparent", border:"1px solid #e2e8f0", borderRadius:6, padding:"3px 10px", fontSize:11, cursor:"pointer", color:"#475569", fontFamily:"inherit" }}>
+                  {creditsExpanded ? t("admin.pipeline.credits_settle.hide_per_company") : t("admin.pipeline.credits_settle.show_per_company", { count: creditsSettlement.rows.length })}
+                </button>
+              )}
+            </div>
+            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              {stat(t("admin.pipeline.credits_settle.bought"), tt.bought, "#0d9488", "#f0fdfa")}
+              {stat(t("admin.pipeline.credits_settle.used"), tt.used, "#2563eb", "#eff6ff")}
+              {stat(t("admin.pipeline.credits_settle.remaining"), tt.remaining, "#059669", "#ecfdf5")}
+              {stat(t("admin.pipeline.credits_settle.returned"), tt.returned, "#7c3aed", "#f5f3ff")}
+              {stat(t("admin.pipeline.credits_settle.awaiting"), tt.awaiting, "#ea580c", "#fff7ed")}
+            </div>
+            <div style={{ fontSize:10, color:"#94a3b8", marginTop:8 }}>{t("admin.pipeline.credits_settle.hint")}</div>
+            {creditsExpanded && creditsSettlement.rows.length > 0 && (
+              <div style={{ overflowX:"auto", marginTop:10 }}>
+                <table style={{ width:"100%", minWidth:560, borderCollapse:"collapse", fontFamily:"inherit" }}>
+                  <thead><tr>
+                    <th style={{ ...hcell, textAlign:"left" }}>{t("admin.pipeline.credits_settle.col_company")}</th>
+                    <th style={hcell}>{t("admin.pipeline.credits_settle.bought")}</th>
+                    <th style={hcell}>{t("admin.pipeline.credits_settle.used")}</th>
+                    <th style={hcell}>{t("admin.pipeline.credits_settle.remaining")}</th>
+                    <th style={hcell}>{t("admin.pipeline.credits_settle.returned")}</th>
+                    <th style={hcell}>{t("admin.pipeline.credits_settle.awaiting")}</th>
+                  </tr></thead>
+                  <tbody>
+                    {creditsSettlement.rows.map(r => (
+                      <tr key={r.id}>
+                        <td style={{ ...cell, textAlign:"left", fontWeight:600, color:"#0f172a", maxWidth:200, overflow:"hidden", textOverflow:"ellipsis" }} title={r.name}>{r.name}</td>
+                        <td style={cell}>{r.bought}</td>
+                        <td style={cell}>{r.used}</td>
+                        <td style={{ ...cell, color: r.remaining<=0?"#dc2626":"#059669", fontWeight:700 }}>{r.remaining}</td>
+                        <td style={cell}>{r.returned || "—"}</td>
+                        <td style={{ ...cell, color: r.awaiting>0?"#ea580c":"#94a3b8" }}>{r.awaiting || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* [mailing-basket] Grupy per sieć: w panelu / w koszyku / wysłane + akcja */}
       {basketOn && !isMod && retailerGroups.length > 0 && (
         <div style={{ border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 12px", marginBottom:10, background:"white" }}>
@@ -8520,7 +8648,7 @@ function PipelineTableV2({ sends, offers, retailers, companies, onToggleBasket, 
 }
 
 /* ── Admin Pipeline: tabs Moderacja / Wysłane+Tracking ──────────────────── */
-function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies, onSendSupplierMessage }) {
+function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies, dbCapacity, onSendSupplierMessage }) {
   const { t, i18n } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -8717,6 +8845,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
           offers={offers}
           retailers={retailers}
           companies={companies}
+          dbCapacity={dbCapacity}
           onToggleBasket={onToggleBasket}
           onSendRetailerEmail={openRetailerEmailFromBasket}
           onModerate={moderate}
@@ -9925,6 +10054,29 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
           <div style={{ background:"#e2e8f0",borderRadius:4,height:6,overflow:"hidden" }}>
             <div style={{ height:"100%",borderRadius:4,width:`${Math.min(100,pct)}%`,background:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}/>
           </div>
+          {/* [admin-credits-settlement] Rozliczenie kredytów tej firmy (qty, zero EUR). */}
+          {(() => {
+            const bought = Number(lim.max || 0);
+            const usedC = Number(used || 0);
+            const remaining = Math.max(0, bought - usedC);
+            const returned = (firmSends || []).filter(s => s.status === "unread_expired").length;
+            const awaiting = (firmSends || []).filter(s => ["sent","opened"].includes(s.status) && !isSeenOrCharged(s)).length;
+            const chip = (label, value, color) => (
+              <div style={{ textAlign:"center", minWidth:60 }}>
+                <div style={{ fontSize:15, fontWeight:800, color }}>{value}</div>
+                <div style={{ fontSize:9, color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.03em" }}>{label}</div>
+              </div>
+            );
+            return (
+              <div style={{ display:"flex", gap:10, flexWrap:"wrap", justifyContent:"space-between", marginTop:10, paddingTop:10, borderTop:"1px solid #e2e8f0" }}>
+                {chip(t("admin.pipeline.credits_settle.bought"), bought, "#0d9488")}
+                {chip(t("admin.pipeline.credits_settle.used"), usedC, "#2563eb")}
+                {chip(t("admin.pipeline.credits_settle.remaining"), remaining, remaining<=0?"#dc2626":"#059669")}
+                {chip(t("admin.pipeline.credits_settle.returned"), returned, "#7c3aed")}
+                {chip(t("admin.pipeline.credits_settle.awaiting"), awaiting, awaiting>0?"#ea580c":"#94a3b8")}
+              </div>
+            );
+          })()}
         </div>
         <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12 }}>
           <div>
