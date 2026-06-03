@@ -4466,14 +4466,14 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
             <div style={{ flex:1,background:"rgba(255,255,255,0.12)",borderRadius:3,height:6,overflow:"hidden",maxWidth:180 }}>
               <div style={{ height:"100%",borderRadius:3,width:`${pct}%`,background:pct>=90?"#f59e0b":"#0d9488" }}/>
             </div>
-            <span style={{ fontSize:12,color:"rgba(255,255,255,0.6)" }}>{t("supplier.wysylki.pkg_bar.usage_format", { used: pkgUsed, max: pkgMax })}</span>
+            <span style={{ fontSize:12,color:"rgba(255,255,255,0.6)" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.usage_format", { used: pkgUsed, max: pkgMax }) : t("supplier.wysylki.pkg_bar.usage_format", { used: pkgUsed, max: pkgMax })}</span>
           </div>
         </div>
         {CREDITS_UI_SUPPLIER
           ? <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><CreditCard size={12}/>{t("supplier.finance.credits.bar_format", { rem: Math.max(0, rem), max: pkgMax })}</div>
           : (wallet.balance > 0 && <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><Wallet size={12}/>{t("supplier.wysylki.pkg_bar.wallet_balance_format", { balance: wallet.balance })}</div>)}
         {rem <= 0
-          ? <span style={{ fontSize:11,background:"rgba(239,68,68,0.2)",color:"#fca5a5",padding:"3px 10px",borderRadius:8 }}>{t("supplier.wysylki.pkg_bar.no_credits_badge")}</span>
+          ? <span style={{ fontSize:11,background:"rgba(239,68,68,0.2)",color:"#fca5a5",padding:"3px 10px",borderRadius:8 }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.no_credits") : t("supplier.wysylki.pkg_bar.no_credits_badge")}</span>
           : null}
       </div>
 
@@ -6220,7 +6220,13 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           </div>
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",alignItems:"center" }}>
             {[
-              [t("supplier.finance.wallet.stats.total_sent_label"), allSent.length, t("supplier.finance.wallet.stats.total_sent_unit"), "rgba(255,255,255,0.07)", "white"],
+              // [credits-ui] Gdy flaga ON pierwszy kafel pokazuje REALNIE zużyte
+              // kredyty (activePkgUsed = qty_used, charge przy odczycie), NIE
+              // liczbę wszystkich wysyłek (allSent) — żeby "użytych kredytów" nie
+              // mieszało się z liczbą propozycji w lifecycle.
+              CREDITS_UI_SUPPLIER
+                ? [t("supplier.finance.credits.stat_used_label"), activePkgUsed, t("supplier.finance.credits.stat_used_unit"), "rgba(255,255,255,0.07)", "white"]
+                : [t("supplier.finance.wallet.stats.total_sent_label"), allSent.length, t("supplier.finance.wallet.stats.total_sent_unit"), "rgba(255,255,255,0.07)", "white"],
               [t("supplier.finance.wallet.stats.seen_label"), confirmed.length, t("supplier.finance.wallet.stats.seen_unit"), "rgba(5,150,105,0.22)", "#6ee7b7"],
               [t("supplier.finance.wallet.stats.refunds_label"), refundedExpired.length, t("supplier.finance.wallet.stats.refunds_unit"), "rgba(239,68,68,0.18)", "#fca5a5"],
             ].map(([l,v,u,bg,c])=>(
@@ -6258,13 +6264,14 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
             <div style={{ padding:"12px 20px",background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,color:"white",flexShrink:0 }}>
               <div style={{ fontSize:10,opacity:0.6,marginBottom:2 }}>{t("supplier.finance.active_pkg.pkg_badge")}</div>
               <div style={{ fontSize:14,fontWeight:700 }}>{getPlanLabel(pkgOpt.id, { withPerSend:false })}</div>
-              <div style={{ fontSize:11,opacity:0.6,marginTop:2 }}>{t("supplier.finance.active_pkg.per_send_format", { perSend: pkgOpt.perSend })}</div>
+              {!CREDITS_UI_SUPPLIER && <div style={{ fontSize:11,opacity:0.6,marginTop:2 }}>{t("supplier.finance.active_pkg.per_send_format", { perSend: pkgOpt.perSend })}</div>}
             </div>
             <div style={{ flex:1,minWidth:200 }}>
               <div style={{ display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5 }}>
-                <span style={{ color:"#64748b" }}>{t("supplier.finance.active_pkg.used_format", { used: activePkgUsed, max: activePkgMax })}</span>
+                <span style={{ color:"#64748b" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.used_format", { used: activePkgUsed, max: activePkgMax }) : t("supplier.finance.active_pkg.used_format", { used: activePkgUsed, max: activePkgMax })}</span>
                 <span style={{ fontWeight:600,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{pct}%</span>
               </div>
+              {CREDITS_UI_SUPPLIER && <div style={{ fontSize:10,color:"#94a3b8",marginBottom:6 }}>{t("supplier.finance.credits.used_hint")}</div>}
               <div style={{ background:"#e2e8f0",borderRadius:4,height:8,overflow:"hidden" }}><div style={{ height:"100%",background:pct>=90?"#dc2626":pct>=70?"#d97706":"#0d9488",borderRadius:4,width:`${pct}%` }}/></div>
               <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10 }}>
                 {[
@@ -6278,12 +6285,14 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
         </Card>
 
         {expired.length>0&&<Card title={t("supplier.finance.refunds_done.card_title")} icon={RotateCcw} style={{ borderLeft:"3px solid #059669" }}>
-          <Alrt type="success"><Trans i18nKey="supplier.finance.refunds_done.alert_html" ns="legacy" values={{ count: expired.length, total: totalRefunds }} components={{ strong: <strong /> }}/></Alrt>
+          {CREDITS_UI_SUPPLIER
+            ? <Alrt type="success"><Trans i18nKey={"supplier.finance.credits.refund_alert" + pluralSuffixPL(expired.length) + "_html"} ns="legacy" values={{ count: expired.length }} components={{ strong: <strong /> }}/></Alrt>
+            : <Alrt type="success"><Trans i18nKey="supplier.finance.refunds_done.alert_html" ns="legacy" values={{ count: expired.length, total: totalRefunds }} components={{ strong: <strong /> }}/></Alrt>}
           {expired.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); return (
             <div key={s.id} style={{ display:"flex",gap:10,alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:13 }}>
               <RotateCcw size={12} color="#059669"/>
               <div style={{ flex:1 }}>{CEMOJI[o?.category]} <strong>{o?.title||o?.product}</strong>{" -> "}{r?.name}</div>
-              <strong style={{ color:"#059669" }}>{t("supplier.finance.refunds_done.row_amount_format", { amount: getRefundAmount(s) })}</strong>
+              <strong style={{ color:"#059669" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.refund" + pluralSuffixPL(1) + "_format", { count: 1 }) : t("supplier.finance.refunds_done.row_amount_format", { amount: getRefundAmount(s) })}</strong>
             </div>
           );})}
         </Card>}
@@ -6320,7 +6329,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
               t("supplier.finance.history.headers.tier"),
               t("supplier.finance.history.headers.date"),
               t("supplier.finance.history.headers.status"),
-              t("supplier.finance.history.headers.amount"),
+              CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.col_settlement") : t("supplier.finance.history.headers.amount"),
             ].map(h=><th key={h} style={{ padding:"10px 14px",textAlign:"left",fontSize:11,textTransform:"uppercase",color:"#64748b",borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap" }}>{h}</th>)}</tr></thead>
             <tbody>
               {allSent.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); const sc=STATUS_MAP[s.status]; const isConf=isSeenOrCharged(s); const amount=getChargeAmount(s, pkgOpt.perSend); return (
@@ -6333,7 +6342,9 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
                     <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
                     {(s.status==="pending_moderation"||s.status==="queued")&&<Info size={11} color={sc?.[1]} style={{verticalAlign:"middle"}}/>}
                   </span></td>
-                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.history.refund_done_format", { amount: getRefundAmount(s) })}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.history.refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.history.amount_eur_format", { amount })}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.history.awaiting")}</span>}</td>
+                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{CREDITS_UI_SUPPLIER
+                    ? (s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.credits.hist_refund_done")}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.credits.hist_refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.credits.hist_used")}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.credits.hist_awaiting")}</span>)
+                    : (s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.history.refund_done_format", { amount: getRefundAmount(s) })}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.history.refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.history.amount_eur_format", { amount })}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.history.awaiting")}</span>)}</td>
                 </tr>
               );})}
               {allSent.length===0&&<tr><td colSpan={6} style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>{t("supplier.finance.history.empty")}</td></tr>}
