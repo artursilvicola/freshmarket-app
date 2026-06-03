@@ -3412,7 +3412,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers} retailers={retailers} hiddenRetailers={companyHiddenRetailers} setHiddenRetailers={setCompanyHiddenRetailers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} pkgPlan={pkgPlan} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
-    if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey} setOffers={setOffers} fl={fl}/>;
+    if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey} setOffers={setOffers} fl={fl} co={co}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
@@ -5243,7 +5243,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
 }
 
 /* ── Offers ────────────────────────────────────────────────────────────── */
-function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
+function PageOffers({ offers, sends, nav, accountId, setOffers, fl, co }) {
   // [Krok P2-4 Commit 1] Bilingual via supplier.offers.*
   const { t } = useTranslation("legacy");
   const myOffers = useMemo(() => (offers||[]).filter(o=>!o.supplierId||o.supplierId===accountId), [offers, accountId]);
@@ -5251,6 +5251,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
   // Lokalny modal potwierdzający usunięcie. Pokazuje nazwę propozycji,
   // wymaga jawnego "Tak, usuń" — to operacja nieodwracalna (DELETE w DB).
   const [confirmDelete, setConfirmDelete] = useState(null); // null | offer
+  const [previewOffer, setPreviewOffer] = useState(null);
   const [offerSearch, setOfferSearch] = useState("");
   const [offerStatusFilter, setOfferStatusFilter] = useState("all");
   const [offerCategoryFilter, setOfferCategoryFilter] = useState("all");
@@ -5418,6 +5419,9 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
             {!isPublished && (
               <Btn sm outline onClick={()=>nav("offer-edit",o.id)}><Edit size={11}/> {t("supplier.offers.card.btn_edit")}</Btn>
             )}
+            {isPublished && (
+              <Btn sm outline onClick={()=>setPreviewOffer(o)}><Eye size={11}/> {t("supplier.offers.card.btn_preview")}</Btn>
+            )}
             <Btn sm outline onClick={()=>nav("offer-copy",o.id)} title={t("supplier.offers.card.btn_duplicate_tooltip")} style={{ borderColor:"#7c3aed",color:"#7c3aed" }}><Layers size={11}/> {t("supplier.offers.card.btn_duplicate")}</Btn>
             {o.status==="active"&&<Btn sm style={{ background:"rgba(13,148,136,0.08)",color:"#0d9488" }} onClick={()=>nav("wysylki",o.id)}><Send size={11}/> {t("supplier.offers.card.btn_send")}</Btn>}
             {/* [B2B Round prod-rollout / supplier-delete-offer]
@@ -5489,6 +5493,13 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl }) {
             </div>
           </div>
         </div>
+      )}
+      {previewOffer && (
+        <OfferPreviewModal
+          offer={previewOffer}
+          co={co || COMPANY_INIT}
+          onClose={() => setPreviewOffer(null)}
+        />
       )}
     </div>
   );

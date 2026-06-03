@@ -352,6 +352,7 @@
         "btn_edit": "Edytuj",
         "btn_edit_locked": "Edycja zablokowana",
         "btn_edit_locked_tooltip": "Gotowej propozycji nie można edytować. Zduplikuj ją i utwórz nową wersję.",
+        "btn_preview": "Podgląd",
         "btn_duplicate": "Duplikuj",
         "btn_duplicate_tooltip": "Duplikuj propozycję — przyspiesza dodawanie podobnych produktów",
         "btn_send": "Wyślij",

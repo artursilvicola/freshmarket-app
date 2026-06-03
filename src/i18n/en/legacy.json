@@ -352,6 +352,7 @@
         "btn_edit": "Edit",
         "btn_edit_locked": "Editing locked",
         "btn_edit_locked_tooltip": "A ready proposal cannot be edited. Duplicate it and create a new version.",
+        "btn_preview": "Preview",
         "btn_duplicate": "Duplicate",
         "btn_duplicate_tooltip": "Duplicate proposal — speeds up adding similar products",
         "btn_send": "Submit",
