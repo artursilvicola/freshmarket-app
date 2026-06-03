@@ -69,7 +69,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -3481,7 +3481,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               {[[Send,t("shell.sidebar.supplier_wysylki"),"wysylki"],[Tag,t("shell.sidebar.supplier_my_offers"),"offers"],[CreditCard,t("shell.sidebar.supplier_finance"),"finanse"],[Building2,t("shell.sidebar.supplier_your_company"),"company"],[User,t("shell.sidebar.supplier_my_profile"),"profile"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
-                  {key==="finanse"&&wallet.balance>0&&<span style={{ marginLeft:"auto",background:"#059669",color:"white",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 6px" }}>{wallet.balance}€</span>}
+                  {key==="finanse" && (CREDITS_UI_SUPPLIER
+                    ? (rem>0&&<span style={{ marginLeft:"auto",background:"#0d9488",color:"white",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 6px" }}>{rem}</span>)
+                    : (wallet.balance>0&&<span style={{ marginLeft:"auto",background:"#059669",color:"white",borderRadius:10,fontSize:10,fontWeight:700,padding:"1px 6px" }}>{wallet.balance}€</span>))}
                 </div>
               ))}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
@@ -3969,7 +3971,9 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
 
       {refunds.length > 0 && (() => {
         const totalAmount = refunds.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-        const totalSuffix = totalAmount
+        // [credits-ui] Gdy flaga ON → bez sufiksu EUR (label już mówi "zwrot
+        // kredytu/kredytów", a count to liczba kredytów).
+        const totalSuffix = (!CREDITS_UI_SUPPLIER && totalAmount)
           ? t("supplier.dashboard.refunds_strip.total_suffix_format", { total: totalAmount })
           : "";
         return (
@@ -4149,7 +4153,8 @@ function ActivityCard({ events }) {
   // body_no_title). Components z <strong>/<em> zachowują wizualne wyróżnienie.
   function renderBody(e) {
     if (e.type === "refund") {
-      return e.amount
+      // [credits-ui] Gdy flaga ON → wariant bez kwoty EUR ("Zwrot kredytu").
+      return (e.amount && !CREDITS_UI_SUPPLIER)
         ? <Trans i18nKey="supplier.dashboard.activity.refund.body_with_amount" ns="legacy" values={{ amount: e.amount }} components={{ strong: <strong /> }} />
         : <Trans i18nKey="supplier.dashboard.activity.refund.body_no_amount" ns="legacy" components={{ strong: <strong /> }} />;
     }
@@ -4464,7 +4469,9 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
             <span style={{ fontSize:12,color:"rgba(255,255,255,0.6)" }}>{t("supplier.wysylki.pkg_bar.usage_format", { used: pkgUsed, max: pkgMax })}</span>
           </div>
         </div>
-        {wallet.balance > 0 && <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><Wallet size={12}/>{t("supplier.wysylki.pkg_bar.wallet_balance_format", { balance: wallet.balance })}</div>}
+        {CREDITS_UI_SUPPLIER
+          ? <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><CreditCard size={12}/>{t("supplier.finance.credits.bar_format", { rem: Math.max(0, rem), max: pkgMax })}</div>
+          : (wallet.balance > 0 && <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><Wallet size={12}/>{t("supplier.wysylki.pkg_bar.wallet_balance_format", { balance: wallet.balance })}</div>)}
         {rem <= 0
           ? <span style={{ fontSize:11,background:"rgba(239,68,68,0.2)",color:"#fca5a5",padding:"3px 10px",borderRadius:8 }}>{t("supplier.wysylki.pkg_bar.no_credits_badge")}</span>
           : null}
@@ -4574,7 +4581,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
               <Btn primary onClick={doSend} disabled={!so||!sr}>
                 <Send size={13}/> {t("supplier.wysylki.new.send_button")}
               </Btn>
-              <span style={{ fontSize:12,color:"#94a3b8" }}>{t("supplier.wysylki.new.cost_info_format", { cost: getPlanById(co?.pkg)?.perSend||40 })}</span>
+              <span style={{ fontSize:12,color:"#94a3b8" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.cost_info") : t("supplier.wysylki.new.cost_info_format", { cost: getPlanById(co?.pkg)?.perSend||40 })}</span>
             </div>
           </Card>
         </div>
@@ -4632,7 +4639,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
                   <span style={{ fontSize:11,color:"#d97706",background:"#fffbeb",padding:"2px 8px",borderRadius:6,border:"1px solid #fde68a" }}>{t("supplier.wysylki.history.days_left_format", { count: s.daysLeft })}</span>
                 )}
                 {isExpired && (
-                  <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"2px 8px",borderRadius:6,fontWeight:600 }}>+{getPlanById(co?.pkg)?.perSend||40}€</span>
+                  <span style={{ fontSize:11,color:"#059669",background:"#d1fae5",padding:"2px 8px",borderRadius:6,fontWeight:600 }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.refund" + pluralSuffixPL(1) + "_format", { count: 1 }) : `+${getPlanById(co?.pkg)?.perSend||40}€`}</span>
                 )}
               </div>
             );
@@ -4673,7 +4680,7 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
                   <span style={{ color:"#64748b" }}>{t("supplier.wysylki.confirm_modal.row_cost")}</span>
-                  <strong style={{ color:"#1e293b" }}>{t("supplier.wysylki.confirm_modal.cost_value_format", { perSend: perSendCost })}</strong>
+                  <strong style={{ color:"#1e293b" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.cost_modal") : t("supplier.wysylki.confirm_modal.cost_value_format", { perSend: perSendCost })}</strong>
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13,borderTop:"1px solid #e2e8f0" }}>
                   <span style={{ color:"#64748b" }}>{t("supplier.wysylki.confirm_modal.row_remaining")}</span>
@@ -6193,9 +6200,22 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
       {tab==="saldo"&&<>
         <div style={{ background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:14,padding:"22px 26px",marginBottom:16,display:"flex",gap:24,alignItems:"stretch",flexWrap:"wrap" }}>
           <div style={{ flex:1,minWidth:160 }}>
-            <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{t("supplier.finance.wallet.balance_label")}</div>
-            <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{wallet.balance}<span style={{ fontSize:16,fontWeight:400,marginLeft:4 }}>EUR</span></div>
-            <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>{t("supplier.finance.wallet.funds_info_format", { perSend: pkgOpt.perSend||40 })}</div>
+            {CREDITS_UI_SUPPLIER ? (() => {
+              const remCredits = Math.max(0, pkgMax - pkgUsed);
+              return (
+              <>
+                <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{t("supplier.finance.credits.balance_label")}</div>
+                <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{t("supplier.finance.credits.amount" + pluralSuffixPL(remCredits) + "_format", { count: remCredits })}</div>
+                <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>{t("supplier.finance.credits.funds_info")}</div>
+              </>
+              );
+            })() : (
+              <>
+                <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{t("supplier.finance.wallet.balance_label")}</div>
+                <div style={{ fontSize:40,fontWeight:800,color:"white",lineHeight:1 }}>{wallet.balance}<span style={{ fontSize:16,fontWeight:400,marginLeft:4 }}>EUR</span></div>
+                <div style={{ fontSize:12,color:"rgba(255,255,255,0.45)",marginTop:6 }}>{t("supplier.finance.wallet.funds_info_format", { perSend: pkgOpt.perSend||40 })}</div>
+              </>
+            )}
             <div style={{ marginTop:14 }}><Btn onClick={()=>nav("wysylki")} style={{ background:"rgba(255,255,255,0.12)",color:"white",border:"1px solid rgba(255,255,255,0.2)" }}><Send size={13}/> {t("supplier.finance.wallet.send_button")}</Btn></div>
           </div>
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",alignItems:"center" }}>
@@ -6215,10 +6235,16 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
 
         <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:16 }}>
           {[
-            [t("supplier.finance.kpi.effective_cost_label"), t("supplier.finance.kpi.effective_cost_value_format", { amount: totalEarned-totalRefunds }), t("supplier.finance.kpi.effective_cost_sub"), "#7c3aed"],
-            [t("supplier.finance.kpi.refunds_label"), t("supplier.finance.kpi.refunds_value_format", { amount: totalRefunds }), pendingRefunds.length>0?t("supplier.finance.kpi.refunds_sub_pending"):t("supplier.finance.kpi.refunds_sub_done"), "#059669"],
+            // [credits-ui] "Efektywny koszt" (EUR) ukryty w panelu dostawcy gdy
+            // flaga ON — przeniesiony do admin/księgowości (plan Etap 2/3).
+            !CREDITS_UI_SUPPLIER && [t("supplier.finance.kpi.effective_cost_label"), t("supplier.finance.kpi.effective_cost_value_format", { amount: totalEarned-totalRefunds }), t("supplier.finance.kpi.effective_cost_sub"), "#7c3aed"],
+            // Zwroty: gdy flaga ON → liczba zwróconych kredytów (realny count,
+            // plural), nie zawsze "+1". Sub: w toku → "kredyt wraca".
+            CREDITS_UI_SUPPLIER
+              ? [t("supplier.finance.kpi.refunds_label"), t("supplier.finance.credits.refund" + pluralSuffixPL(refundedExpired.length) + "_format", { count: refundedExpired.length }), pendingRefunds.length>0?t("supplier.finance.credits.refund_pending"):t("supplier.finance.kpi.refunds_sub_done"), "#059669"]
+              : [t("supplier.finance.kpi.refunds_label"), t("supplier.finance.kpi.refunds_value_format", { amount: totalRefunds }), pendingRefunds.length>0?t("supplier.finance.kpi.refunds_sub_pending"):t("supplier.finance.kpi.refunds_sub_done"), "#059669"],
             [t("supplier.finance.kpi.open_rate_label"), allSent.length?Math.round(confirmed.length/allSent.length*100)+"%":"0%", t("supplier.finance.kpi.open_rate_sub"), confirmed.length/Math.max(1,allSent.length)>=0.5?"#059669":"#d97706"],
-          ].map(([l,v,sub,c])=>(
+          ].filter(Boolean).map(([l,v,sub,c])=>(
             <div key={l} style={{ padding:"12px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10 }}>
               <div style={{ fontSize:11,color:"#94a3b8",marginBottom:3 }}>{l}</div>
               <div style={{ fontSize:20,fontWeight:800,color:c }}>{v}</div>
@@ -11596,8 +11622,9 @@ function AccountSwitcherBar({ account, accounts, onSwitch, wallet, fmSettings, r
           </div>
         )}
 
-        {/* Wallet badge (suppliers) */}
-        {account.role==="supplier"&&wallet.balance>0&&(
+        {/* Wallet badge (suppliers) — [credits-ui] gdy flaga ON ukrywamy EUR
+            w top barze; kredyty są pokazane w Finanse/Wysyłki/Dashboard. */}
+        {!CREDITS_UI_SUPPLIER && account.role==="supplier"&&wallet.balance>0&&(
           <div style={{ padding:"3px 10px",borderRadius:16,background:"rgba(5,150,105,0.18)",border:"1px solid rgba(5,150,105,0.35)",fontSize:11,color:"#6ee7b7",display:"flex",gap:4,alignItems:"center" }}>
             <Wallet size={10}/>{wallet.balance} EUR
           </div>
