@@ -895,6 +895,7 @@
         "stat_used_few_format": "{{count}} used credits",
         "stat_used_many_format": "{{count}} used credits",
         "stat_used_other_format": "{{count}} used credits",
+        "stat_used_label": "Used",
         "stat_used_unit": "used credits",
         "col_settlement": "Settlement",
         "hist_used": "Used 1 credit",

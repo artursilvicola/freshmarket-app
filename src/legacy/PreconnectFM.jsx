@@ -6220,7 +6220,13 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           </div>
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",alignItems:"center" }}>
             {[
-              [t("supplier.finance.wallet.stats.total_sent_label"), allSent.length, CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.stat_used_unit") : t("supplier.finance.wallet.stats.total_sent_unit"), "rgba(255,255,255,0.07)", "white"],
+              // [credits-ui] Gdy flaga ON pierwszy kafel pokazuje REALNIE zużyte
+              // kredyty (activePkgUsed = qty_used, charge przy odczycie), NIE
+              // liczbę wszystkich wysyłek (allSent) — żeby "użytych kredytów" nie
+              // mieszało się z liczbą propozycji w lifecycle.
+              CREDITS_UI_SUPPLIER
+                ? [t("supplier.finance.credits.stat_used_label"), activePkgUsed, t("supplier.finance.credits.stat_used_unit"), "rgba(255,255,255,0.07)", "white"]
+                : [t("supplier.finance.wallet.stats.total_sent_label"), allSent.length, t("supplier.finance.wallet.stats.total_sent_unit"), "rgba(255,255,255,0.07)", "white"],
               [t("supplier.finance.wallet.stats.seen_label"), confirmed.length, t("supplier.finance.wallet.stats.seen_unit"), "rgba(5,150,105,0.22)", "#6ee7b7"],
               [t("supplier.finance.wallet.stats.refunds_label"), refundedExpired.length, t("supplier.finance.wallet.stats.refunds_unit"), "rgba(239,68,68,0.18)", "#fca5a5"],
             ].map(([l,v,u,bg,c])=>(

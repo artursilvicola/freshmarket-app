@@ -895,6 +895,7 @@
         "stat_used_few_format": "{{count}} użyte kredyty",
         "stat_used_many_format": "{{count}} użytych kredytów",
         "stat_used_other_format": "{{count}} użytych kredytów",
+        "stat_used_label": "Wykorzystano",
         "stat_used_unit": "użytych kredytów",
         "col_settlement": "Rozliczenie",
         "hist_used": "Zużyto 1 kredyt",
