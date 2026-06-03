@@ -1982,6 +1982,18 @@
       "track_alert_pending_html_many": "<strong>{{count}}</strong> proposals awaiting read confirmation (14 days).",
       "track_alert_pending_html_other": "<strong>{{count}}</strong> proposals awaiting read confirmation (14 days).",
       "track_alert_done": "All delivered proposals are confirmed.",
+      "credits_settle": {
+        "title": "PreConnect credits settlement",
+        "bought": "Bought",
+        "used": "Used",
+        "remaining": "Remaining",
+        "returned": "Returns",
+        "awaiting": "Awaiting read",
+        "hint": "A credit is finally consumed only after the buyer reads the proposal. “Returns” = credits kept due to no read within 14 days. “Awaiting read” = proposals in the buyer panel, not yet read. This is an operational view (credits), not financial.",
+        "show_per_company": "Show per company ({{count}})",
+        "hide_per_company": "Hide breakdown",
+        "col_company": "Company"
+      },
       "settle_card_title": "Supplier settlements (revenue EUR)",
       "settle_settled_label": "Settled (items)",
       "settle_settled_amount_format": "revenue: {{amount}} EUR",
