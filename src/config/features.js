@@ -107,4 +107,4 @@ export const CREDITS_UI_SUPPLIER = true;
 // Wymaga migracji 039 (retailers.supplier_requirements) zaaplikowanej ręcznie
 // w Supabase. Default `false`: gdy wyłączone, panel admina i dostawcy bez zmian.
 // Flip na `true` dopiero PO zaaplikowaniu migracji + smoke test prod.
-export const RETAILER_REQUIREMENTS = false;
+export const RETAILER_REQUIREMENTS = true;
