@@ -809,7 +809,10 @@
         "public_title_label": "🌐 For the buyer:",
         "next_send_format": "Submission window: {{date}}",
         "send_button": "Submit proposal",
-        "cost_info_format": "Cost: {{cost}} EUR · 1 submission from the package"
+        "cost_info_format": "Cost: {{cost}} EUR · 1 submission from the package",
+        "req_title": "Important information about this retailer's requirements",
+        "req_checkbox": "I confirm that I have read this retailer's requirements before sending the offer.",
+        "req_error": "Before sending the offer you must confirm that you have read this retailer's requirements."
       },
       "history": {
         "tabs": {
@@ -1747,6 +1750,9 @@
       "expand_field_next_send_label": "NEXT SUBMISSION",
       "expand_field_next_send_hint": "(defaults to first Tuesday of the month)",
       "expand_field_desc_label": "ADMIN DESCRIPTION / NOTE",
+      "supplier_req_label": "Notes for supplier / retailer requirements",
+      "supplier_req_help": "Visible to the supplier before sending an offer to this retailer. Can include purchasing requirements, restrictions, preferred categories, import or volume information.",
+      "supplier_req_placeholder": "E.g. This retailer does not import directly from abroad. It prefers suppliers operating through local distributors in Poland. Large export volume offers may not be a good fit.",
       "buyers_section_title_format": "Buyers ({{count}})",
       "buyers_add_btn": "Add buyer",
       "buyer_no_format": "Buyer #{{n}}",

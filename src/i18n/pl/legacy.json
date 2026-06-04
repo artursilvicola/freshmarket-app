@@ -809,7 +809,10 @@
         "public_title_label": "🌐 Dla kupca:",
         "next_send_format": "Wysyłka: {{date}}",
         "send_button": "Wyślij propozycję",
-        "cost_info_format": "Koszt: {{cost}} EUR · 1 wysyłka z pakietu"
+        "cost_info_format": "Koszt: {{cost}} EUR · 1 wysyłka z pakietu",
+        "req_title": "Ważne informacje o wymaganiach tej sieci",
+        "req_checkbox": "Potwierdzam, że zapoznałem się z wymaganiami tej sieci przed wysłaniem oferty.",
+        "req_error": "Przed wysłaniem oferty musisz potwierdzić, że zapoznałeś się z wymaganiami tej sieci."
       },
       "history": {
         "tabs": {
@@ -1747,6 +1750,9 @@
       "expand_field_next_send_label": "NASTĘPNA WYSYŁKA",
       "expand_field_next_send_hint": "(domyślnie pierwszy wtorek miesiąca)",
       "expand_field_desc_label": "OPIS / NOTATKA ADMINA",
+      "supplier_req_label": "Uwagi dla dostawcy / wymagania sieci",
+      "supplier_req_help": "Widoczne dla dostawcy przed wysłaniem oferty do tej sieci. Mogą to być wymagania zakupowe, ograniczenia, preferowane kategorie, informacje o imporcie lub wolumenach.",
+      "supplier_req_placeholder": "Np. Ta sieć nie importuje bezpośrednio z zagranicy. Preferuje dostawców działających przez lokalnych dystrybutorów w Polsce. Oferty dużych wolumenów eksportowych mogą być niedopasowane.",
       "buyers_section_title_format": "Kupcy ({{count}})",
       "buyers_add_btn": "Dodaj kupca",
       "buyer_no_format": "Kupiec #{{n}}",
