@@ -69,7 +69,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -2299,6 +2299,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               fm26ChainId: r.fm26_chain_id || r.fm26ChainId || RETAILER_TO_CHAIN[r.id] || null,
               fm26Active:  !!(r.fm26_active ?? r.fm26Active ?? RETAILER_TO_CHAIN[r.id]),
               active: r.active !== false,
+              // [retailer-requirements] alias camelCase (kolumna z migracji 039)
+              supplierRequirements: r.supplier_requirements ?? r.supplierRequirements ?? "",
               buyers: fallbackBuyers,
             };
           });
@@ -2995,7 +2997,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     nav("offers");
   }
 
-  async function sendToChain(oId, rId) {
+  async function sendToChain(oId, rId, opts = {}) {
     // [B2B Round supplier-onboarding-access-and-communication]
     // Trzy bramki dostępu, każda z innym komunikatem dla supplera:
     //   1. Konto musi być zatwierdzone (account_status='active')
@@ -3034,6 +3036,14 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       daysLeft: 14,
       confirmHistory: [],
     };
+    // [retailer-requirements] Zapis potwierdzenia zapoznania z uwagami sieci.
+    // Top-level + data round-trippuje przez upsertLegacySend (data: send).
+    if (opts.requirementsAck) {
+      const ts = new Date().toISOString();
+      newSend.requirementsAck = true;
+      newSend.requirementsAckAt = ts;
+      newSend.data = { ...(newSend.data || {}), requirementsAck: true, requirementsAckAt: ts };
+    }
     try {
       await upsertLegacySend(newSend);
     } catch (e) {
@@ -4470,9 +4480,21 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
   const [so,   setSo]   = useState(sid ? String(sid) : "");
   const [sr,   setSr]   = useState("");
   const [search, setSearch] = useState("");
+  // [retailer-requirements] Potwierdzenie zapoznania z uwagami sieci + komunikat
+  // błędu przy próbie wysyłki bez potwierdzenia. Reset przy zmianie sieci.
+  const [reqAck, setReqAck] = useState(false);
+  const [reqError, setReqError] = useState(false);
 
   const ao = offers.filter(o => o.status==="active" && (!o.supplierId || o.supplierId===accountId));
   const pct = pkgMax > 0 ? Math.min(100, Math.round(pkgUsed / pkgMax * 100)) : 0;
+
+  // [retailer-requirements] Uwagi wybranej sieci (tylko gdy flaga ON i niepuste).
+  const selectedRetailerObj = sr ? (retailers||[]).find(r => r.id === +sr) : null;
+  const selectedReq = (RETAILER_REQUIREMENTS && selectedRetailerObj?.supplierRequirements
+    ? String(selectedRetailerObj.supplierRequirements).trim() : "");
+  const reqBlocks = !!selectedReq; // czy uwagi wymagają potwierdzenia
+  // Reset potwierdzenia gdy zmienia się sieć (każda wysyłka osobno).
+  useEffect(() => { setReqAck(false); setReqError(false); }, [sr]);
 
   // [B2B Round prod-rollout / UX] Modal potwierdzenia kosztu — supplier widzi
   // "Pobierzemy 1 wysyłkę. Zostanie X/Y" przed faktyczną wysyłką. Buduje
@@ -4481,13 +4503,17 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
 
   function doSend() {
     if (!so || !sr) return;
+    // [retailer-requirements] Blokada: jeśli sieć ma uwagi i dostawca ich nie
+    // potwierdził → komunikat błędu, brak otwarcia modala wysyłki.
+    if (reqBlocks && !reqAck) { setReqError(true); return; }
     setShowSendConfirm(true);
   }
 
   function confirmAndSend() {
-    sendToChain(+so, +sr);
+    // [retailer-requirements] przekazujemy potwierdzenie do zapisu w send.data.
+    sendToChain(+so, +sr, { requirementsAck: reqBlocks ? true : undefined });
     setShowSendConfirm(false);
-    setView("list"); setSo(""); setSr(""); setTab("pending");
+    setView("list"); setSo(""); setSr(""); setTab("pending"); setReqAck(false); setReqError(false);
   }
 
   function startSendTo(retailerId) {
@@ -4639,8 +4665,25 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
                 </div>
               );
             })()}
+            {/* [retailer-requirements] Blok uwag sieci + checkbox potwierdzenia.
+                Tylko gdy sieć wybrana i ma niepuste uwagi (flaga ON). */}
+            {reqBlocks && (
+              <div style={{ padding:"12px 14px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, marginBottom:14 }}>
+                <div style={{ fontWeight:700, fontSize:13, color:"#92400e", display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+                  <AlertTriangle size={14}/> {t("supplier.wysylki.new.req_title")}
+                </div>
+                <div style={{ fontSize:12.5, color:"#78350f", lineHeight:1.6, whiteSpace:"pre-line", marginBottom:10 }}>{selectedReq}</div>
+                <label style={{ display:"flex", alignItems:"flex-start", gap:8, fontSize:12.5, color:"#78350f", cursor:"pointer" }}>
+                  <input type="checkbox" checked={reqAck} onChange={e=>{ setReqAck(e.target.checked); if(e.target.checked) setReqError(false); }} style={{ marginTop:2, flexShrink:0, cursor:"pointer" }} />
+                  <span>{t("supplier.wysylki.new.req_checkbox")}</span>
+                </label>
+                {reqError && (
+                  <div style={{ fontSize:11.5, color:"#b91c1c", marginTop:8, fontWeight:600 }}>{t("supplier.wysylki.new.req_error")}</div>
+                )}
+              </div>
+            )}
             <div style={{ display:"flex",gap:10,alignItems:"center",justifyContent:"space-between" }}>
-              <Btn primary onClick={doSend} disabled={!so||!sr}>
+              <Btn primary onClick={doSend} disabled={!so||!sr||(reqBlocks&&!reqAck)}>
                 <Send size={13}/> {t("supplier.wysylki.new.send_button")}
               </Btn>
               <span style={{ fontSize:12,color:"#94a3b8" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.cost_info") : t("supplier.wysylki.new.cost_info_format", { cost: getPlanById(co?.pkg)?.perSend||40 })}</span>
@@ -9492,6 +9535,13 @@ function PageAdminRetailers({ retailers, setRetailers }) {
                   <label style={{fontSize:10,color:"#94a3b8",display:"block",marginBottom:3}}>{t("admin.retailers.expand_field_desc_label")}</label>
                   <textarea value={r.description||""} onChange={e=>updateRetailer(r.id,{description:e.target.value})} rows={3} style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"}}/>
                 </div>
+                {RETAILER_REQUIREMENTS && (
+                  <div style={{marginTop:10,padding:"10px 12px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8}}>
+                    <label style={{fontSize:10,color:"#92400e",display:"block",marginBottom:3,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.03em"}}>{t("admin.retailers.supplier_req_label")}</label>
+                    <div style={{fontSize:11,color:"#b45309",marginBottom:6,lineHeight:1.4}}>{t("admin.retailers.supplier_req_help")}</div>
+                    <textarea value={r.supplierRequirements||""} onChange={e=>updateRetailer(r.id,{supplierRequirements:e.target.value})} rows={4} placeholder={t("admin.retailers.supplier_req_placeholder")} style={{width:"100%",padding:"8px 10px",border:"1px solid #fde68a",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical",background:"white"}}/>
+                  </div>
+                )}
                 <div style={{marginTop:8}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                     <span style={{fontWeight:600,fontSize:13}}>{t("admin.retailers.buyers_section_title_format", { count: (r.buyers||[]).length })}</span>

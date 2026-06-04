@@ -95,3 +95,16 @@ export const ADMIN_PIPELINE_2_0_MAILING_BASKET = true;
 // Default `false`: gdy wyłączone, panel dostawcy pokazuje stare EUR/portfel
 // (zero zmian). Flip na `true` dopiero po review + smoke test prod.
 export const CREDITS_UI_SUPPLIER = true;
+
+// [feat/retailer-supplier-requirements]
+// Uwagi admina per sieć handlowa ("wymagania sieci") widoczne dla DOSTAWCY
+// przed wysłaniem oferty + wymagane potwierdzenie zapoznania (checkbox).
+// Admin: textarea "Uwagi dla dostawcy" przy edycji sieci (osobne od wewnętrznej
+// notatki `description`). Dostawca: blok z uwagami + checkbox blokujący wysyłkę
+// (tylko gdy sieć ma niepuste uwagi). Potwierdzenie zapisywane w
+// legacy_sends.data.requirementsAck (bez migracji legacy_sends).
+//
+// Wymaga migracji 039 (retailers.supplier_requirements) zaaplikowanej ręcznie
+// w Supabase. Default `false`: gdy wyłączone, panel admina i dostawcy bez zmian.
+// Flip na `true` dopiero PO zaaplikowaniu migracji + smoke test prod.
+export const RETAILER_REQUIREMENTS = false;

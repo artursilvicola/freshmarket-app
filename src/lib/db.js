@@ -280,6 +280,10 @@ function toRetailerDbRow(r = {}) {
     fm26_active: !!(r.fm26Active ?? r.fm26_active),
     fm26_chain_id: r.fm26ChainId ?? r.fm26_chain_id ?? null,
     description: r.description || null,
+    // [retailer-requirements] Uwagi dla dostawcy (widoczne przed wyslaniem
+    // oferty). Osobne od `description` (wewnetrzna notatka admina). Wymaga
+    // migracji 039. camelCase ze state'u UI ma priorytet nad snake_case z DB.
+    supplier_requirements: r.supplierRequirements ?? r.supplier_requirements ?? null,
   };
 }
 
