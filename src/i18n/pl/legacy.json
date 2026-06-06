@@ -985,6 +985,7 @@
           "success_body_credits_html": "Pakiet <strong>{{pkgLabel}}</strong> został aktywowany.<br/>Dodano <strong>+{{qty}} kredytów</strong> do Twojego konta.",
           "success_state_html": "Aktualny stan: <strong>{{total}} wysyłek łącznie</strong>",
           "success_state_credits_html": "Aktualny stan: <strong>{{total}} kredytów łącznie</strong>",
+          "valid_until_html": "Twoje kredyty są ważne do: <strong>{{date}}</strong>",
           "pkg_label_premium_one": "Premium {{qty}} wysyłka",
           "pkg_label_premium_other": "Premium {{qty}} wysyłek",
           "pkg_label_standard_one": "Standard {{qty}} wysyłka",
@@ -1054,6 +1055,7 @@
           "unit": "wysyłek"
         },
         "guarantee": "Gwarancja 14 dni — brak odczytu przez kupca = automatyczny zwrot kredytu na portfel. Kupujesz wysyłki, nie ryzyko.",
+        "validity_info": "Zakupione kredyty są ważne przez 12 miesięcy od daty zakupu.",
         "compare": {
           "standard_badge": "STANDARD",
           "standard_price_range": "40-30 EUR / wysyłka",

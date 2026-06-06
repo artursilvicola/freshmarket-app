@@ -108,3 +108,15 @@ export const CREDITS_UI_SUPPLIER = true;
 // w Supabase. Default `false`: gdy wyłączone, panel admina i dostawcy bez zmian.
 // Flip na `true` dopiero PO zaaplikowaniu migracji + smoke test prod.
 export const RETAILER_REQUIREMENTS = true;
+
+// [feat/credits-validity-and-expiry-ui — Poprawki Lany #4 + #5 + #7]
+// Wyświetlanie ważności kredytów (12 miesięcy od zakupu):
+//  - przed zakupem: linia info "Kredyty ważne przez 12 miesięcy od daty zakupu"
+//  - po zakupie (ekran potwierdzenia): "Twoje kredyty są ważne do: DD.MM.RRRR"
+//  - panel Finanse (karta aktywnego pakietu): data ważności w formacie DD.MM.RRRR
+//
+// Bez migracji — dane już istnieją (packages.expires_at, company_capacity.pkg_expiry).
+// Wygasanie kredytów jest już egzekwowane przez widok company_capacity (do puli
+// liczone tylko niewygasłe pakiety) — ta flaga to TYLKO warstwa prezentacji.
+// Default `false`: gdy wyłączone, panel bez zmian (stary format/placeholdery).
+export const CREDITS_VALIDITY_UI = false;

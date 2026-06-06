@@ -69,7 +69,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, CREDITS_VALIDITY_UI } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -3844,6 +3844,15 @@ function fmtPolishDate(d) {
   const months = isEn ? EN_MONTHS : PL_MONTHS;
   return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
+// [feat/credits-validity-and-expiry-ui — Lany #5] Format YYYY-MM-DD / Date → DD.MM.RRRR.
+// Bezpieczny dla pustych/niepoprawnych wartości (zwraca "—" / surowy string).
+function fmtDateDMY(d) {
+  if (!d) return "—";
+  const dt = d instanceof Date ? d : new Date(String(d).length <= 10 ? String(d) + "T00:00:00" : String(d));
+  if (isNaN(dt.getTime())) return String(d);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(dt.getDate())}.${p(dt.getMonth() + 1)}.${dt.getFullYear()}`;
+}
 function dayDiff(a, b) {
   return Math.ceil((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000));
 }
@@ -6381,7 +6390,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
               <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10 }}>
                 {[
                   [t("supplier.finance.active_pkg.price_label"), t("supplier.finance.active_pkg.price_value_format", { price: pkgOpt.price })],
-                  [t("supplier.finance.active_pkg.valid_until_label"), co.pkgExpiry||"2026-12-31"],
+                  [t("supplier.finance.active_pkg.valid_until_label"), CREDITS_VALIDITY_UI ? fmtDateDMY(co.pkgExpiry) : (co.pkgExpiry||"2026-12-31")],
                 ].map(([l,v])=><div key={l} style={{ padding:"7px 10px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div><div style={{ fontWeight:600,fontSize:12 }}>{v}</div></div>)}
               </div>
             </div>
@@ -6472,6 +6481,9 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   const [paid, setPaid] = useState(false);
   const sel = getPlanById(selected) || getPlanById("std_5") || PRICING_PLANS[0];
   const rem = Math.max(0, pkgMax - pkgUsed);
+  // [feat/credits-validity-and-expiry-ui — Lany #5] Data ważności kredytów z nowego
+  // zakupu = dziś + 12 miesięcy (zgodne z RPC purchase_package: current_date + 1 rok).
+  const creditsValidUntilDMY = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return fmtDateDMY(d); })();
 
   // [P2-5 i18n] Plurals: PL "wysyłka"/"wysyłek" matches qty===1?singular:plural.
   // Helper zwraca przetłumaczony pkg label dla obu tier'ów z plural variant.
@@ -6542,6 +6554,13 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 <div style={{ padding:"10px 16px",background:"#f0fdf4",borderRadius:8,fontSize:13,color:"#047857",border:"1px solid #bbf7d0" }}>
                   <Trans i18nKey={CREDITS_UI_SUPPLIER ? "supplier.finance.pakiety.payment_modal.success_state_credits_html" : "supplier.finance.pakiety.payment_modal.success_state_html"} ns="legacy" values={{ total: pkgMax + sel.qty }} components={{ strong: <strong /> }}/>
                 </div>
+                {/* [feat/credits-validity-and-expiry-ui — Lany #5] Data ważności kredytów PO zakupie. */}
+                {CREDITS_VALIDITY_UI && (
+                  <div style={{ marginTop:10,fontSize:13,color:"#475569",display:"flex",gap:6,alignItems:"center",justifyContent:"center" }}>
+                    <Clock size={14} color="#64748b"/>
+                    <span><Trans i18nKey="supplier.finance.pakiety.payment_modal.valid_until_html" ns="legacy" values={{ date: creditsValidUntilDMY }} components={{ strong: <strong /> }}/></span>
+                  </div>
+                )}
               </div>
             ):(
               <>
@@ -6636,6 +6655,14 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
         <ShieldCheck size={16} color="#059669" style={{ flexShrink:0,marginTop:1 }}/>
         <div>{t("supplier.finance.pakiety.guarantee")}</div>
       </div>
+
+      {/* [feat/credits-validity-and-expiry-ui — Lany #4] Info o ważności kredytów PRZED zakupem. */}
+      {CREDITS_VALIDITY_UI && (
+        <div style={{ display:"flex",gap:10,padding:"10px 16px",background:"#eff6ff",borderRadius:10,marginBottom:20,border:"1px solid #bfdbfe",fontSize:13,color:"#1e3a5f" }}>
+          <Clock size={16} color="#2563eb" style={{ flexShrink:0,marginTop:1 }}/>
+          <div>{t("supplier.finance.pakiety.validity_info")}</div>
+        </div>
+      )}
 
       {/* [B2B Round prod-rollout / UX] Codex feedback: jasne porównanie
           Standard vs Premium. Uczciwe — bez obietnic których nie potwierdzimy.
