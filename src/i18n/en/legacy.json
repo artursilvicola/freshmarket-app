@@ -1658,6 +1658,14 @@
     }
   },
   "admin": {
+    "proformas": {
+      "card_title": "Proformas awaiting payment (bank transfer)",
+      "mark_paid": "Mark paid → activate package",
+      "marking": "Activating…",
+      "paid_toast": "Proforma {{number}} paid — package activated.",
+      "error": "Could not mark the proforma as paid.",
+      "empty": "Proformas will appear here only after a supplier generates them (bank-transfer payment)."
+    },
     "common": {
       "save_changes_btn": "💾 Save changes",
       "saving": "Saving...",
@@ -2523,13 +2531,6 @@
       "footer_extra": "Your booth — you'll find out at event reception.\nRegistration starts: 8:00–9:00 AM."
     },
     "admin": {
-      "proformas": {
-        "card_title": "Proformas awaiting payment (bank transfer)",
-        "mark_paid": "Mark paid → activate package",
-        "marking": "Activating…",
-        "paid_toast": "Proforma {{number}} paid — package activated.",
-        "error": "Could not mark the proforma as paid."
-      },
       "tab_management": "⚙️ Management",
       "tab_data": "📋 Input data",
       "tab_plan": "⚡ Meeting plan",

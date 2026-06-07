@@ -1658,6 +1658,14 @@
     }
   },
   "admin": {
+    "proformas": {
+      "card_title": "Proformy oczekujące na płatność (przelew)",
+      "mark_paid": "Oznacz opłaconą → aktywuj pakiet",
+      "marking": "Aktywuję…",
+      "paid_toast": "Proforma {{number}} opłacona — pakiet aktywowany.",
+      "error": "Nie udało się oznaczyć proformy jako opłaconej.",
+      "empty": "Proformy pojawią się tutaj dopiero po wygenerowaniu ich przez dostawcę (płatność przelewem)."
+    },
     "common": {
       "save_changes_btn": "💾 Zapisz zmiany",
       "saving": "Zapisywanie...",
@@ -2523,13 +2531,6 @@
       "footer_extra": "Twoje stoisko — dowiesz się w recepcji eventu.\nStart rejestracji: 8:00–9:00."
     },
     "admin": {
-      "proformas": {
-        "card_title": "Proformy oczekujące na płatność (przelew)",
-        "mark_paid": "Oznacz opłaconą → aktywuj pakiet",
-        "marking": "Aktywuję…",
-        "paid_toast": "Proforma {{number}} opłacona — pakiet aktywowany.",
-        "error": "Nie udało się oznaczyć proformy jako opłaconej."
-      },
       "tab_management": "⚙️ Zarządzanie",
       "tab_data": "📋 Dane wejściowe",
       "tab_plan": "⚡ Plan spotkań",
