@@ -1,8 +1,10 @@
 # Regulamin korzystania z platformy Fresh Market B2B PreConnect
 
-**Wersja 1.1** · Obowiązuje od: 3 czerwca 2026 (poprzednio: wersja 1.0 z 24 maja 2026)
+**Wersja 1.2 (przygotowana do publikacji)** · Obowiązuje od: do ustalenia — po 14-dniowym powiadomieniu (§15) (poprzednio: 1.1 z 3 czerwca 2026; 1.0 z 24 maja 2026)
 **Administrator:** KJOW Sp. z o.o. z siedzibą w Pruszkowie
 
+> **Zmiany w wersji 1.2:** dodano **§16 — archiwizacja i usunięcie nieaktywnych kont** (nieaktywność 24 miesiące, ostrzeżenia 30 i 7 dni przed usunięciem, usunięcie albo anonimizacja zgodnie z RODO). Jako zmiana obowiązków wymaga **14-dniowego powiadomienia** Użytkowników (§15) i decyzji Operatora o dacie wejścia w życie (ewentualnie bump do 2.0 wg konwencji wersjonowania).
+>
 > **Zmiany w wersji 1.1:** doprecyzowano definicję **Kredytu PreConnect** (§1.11) jako niepieniężnej jednostki rozliczeniowej, która nie podlega wypłacie; doprecyzowano zasady zużycia i zwrotu Kredytu przy braku odczytu w 14 dni (§6.2–6.4); termin mailingu zbiorczego ujednolicono na **drugi wtorek miesiąca** (§6.6); doprecyzowano relację Pakiet/EUR/Kredyty (§8.1–8.2).
 
 ---
@@ -206,9 +208,10 @@ Kupiec zobowiązuje się do:
 
 ---
 
-<!-- [Poprawki Lany #8] Nowa sekcja §16 (nieaktywne konta). UWAGA: zmiana treści
-     Regulaminu wymaga decyzji Operatora o bumpie wersji (→ v1.2) i 14-dniowym
-     powiadomieniu wg §15.2. Publikacja do public/regulamin.html — osobny task. -->
+<!-- [Poprawki Lany #8] Nowa sekcja §16 (wersja 1.2; opublikowana też w
+     public/regulamin.html i regulations.html). Formalne wejście w życie
+     (data + 14-dniowe powiadomienie wg §15, ewentualnie bump do 2.0) wymaga
+     decyzji Operatora PRZED publikacją. TERMS_VERSION ustawione na 1.2. -->
 ## § 16. Archiwizacja i usunięcie nieaktywnych kont
 
 1. Konto Użytkownika, które pozostaje **nieaktywne przez 24 miesiące** (brak logowania i działań w panelu), może zostać przez Operatora **zarchiwizowane, a następnie usunięte lub zanonimizowane** zgodnie z zasadą ograniczenia przechowywania danych (art. 5 ust. 1 lit. e RODO).
