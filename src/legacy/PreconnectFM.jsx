@@ -56,6 +56,8 @@ import {
   createPayuOrder as dbCreatePayuOrder,
   // [feat/bank-transfer-proforma / Lany #2] proforma dla przelewu
   createProforma as dbCreateProforma, getMyProformas as dbGetMyProformas, getProformaHtml as dbGetProformaHtml,
+  // [followups / Lany #2 admin] proformy do rozliczenia przez admina
+  getPendingProformas as dbGetPendingProformas, markProformaPaid as dbMarkProformaPaid,
   // [followups / Lany #7] realna historia pakietów kredytów (status wygasłe)
   getPackages as dbGetPackages,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
@@ -9844,6 +9846,28 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     return (retailers||[]).find(r=>r.id===id) || null;
   }
   const [expandedId, setExpandedId] = useState(null);
+  // [followups / Lany #2 admin] Proformy oczekujące na płatność (przelew).
+  const [pendingProformas, setPendingProformas] = useState([]);
+  const [proformaBusyId, setProformaBusyId] = useState(null);
+  useEffect(() => {
+    if (!BANK_TRANSFER_PROFORMA) return;
+    let cancelled = false;
+    dbGetPendingProformas().then(rows => { if (!cancelled) setPendingProformas(rows || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  async function handleMarkProformaPaid(pf) {
+    setProformaBusyId(pf.id);
+    try {
+      await dbMarkProformaPaid(pf.id);                          // idempotentne (RPC) — bezpieczne przy double-click
+      setPendingProformas(prev => prev.filter(x => x.id !== pf.id));
+      fl(t("admin.proformas.paid_toast", { number: pf.number }));
+      if (typeof refreshCapacity === "function") { try { await refreshCapacity(); } catch { /* no-op */ } }
+    } catch (e) {
+      fl(e?.message || t("admin.proformas.error"), "error");
+    } finally {
+      setProformaBusyId(null);
+    }
+  }
   // [B2B Round supplier-onboarding-access-and-communication]
   // Filtr listy: "all" | "pending" — admin chce szybko zobaczyć tylko nowe rejestracje.
   // [Admin Companies 2.0 / Branch 1] Filter pozostaje dla legacy render path
@@ -11111,6 +11135,25 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
           </button>
         </div>
       </div>
+      {/* [followups / Lany #2 admin] Proformy oczekujące na płatność (przelew) → oznacz opłaconą → aktywuj pakiet. */}
+      {BANK_TRANSFER_PROFORMA && pendingProformas.length>0 && (
+        <Card title={t("admin.proformas.card_title")} icon={FileText} style={{ marginBottom:14,borderLeft:"3px solid #2563eb" }}>
+          {pendingProformas.map(pf=>(
+            <div key={pf.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center",flexWrap:"wrap" }}>
+              <div style={{ width:36,height:36,borderRadius:8,background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <FileText size={15} color="#2563eb"/>
+              </div>
+              <div style={{ flex:1,minWidth:160 }}>
+                <div style={{ fontWeight:600,fontSize:13 }}>{pf.number} · {pf.company_name_snapshot || "—"}</div>
+                <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{getPlanLabel(pf.plan_id, { withPerSend:false })} · {Number(pf.gross_amount||0).toFixed(2)} {pf.currency||"EUR"} · NIP {pf.company_nip_snapshot || "—"}</div>
+              </div>
+              <Btn primary sm disabled={proformaBusyId===pf.id} onClick={()=>handleMarkProformaPaid(pf)}>
+                {proformaBusyId===pf.id ? t("admin.proformas.marking") : t("admin.proformas.mark_paid")}
+              </Btn>
+            </div>
+          ))}
+        </Card>
+      )}
       {visibleLims.length === 0 && (
         <Alrt type="info">{filter === "pending" ? t("admin.firmy.empty_pending") : t("admin.firmy.empty_all")}</Alrt>
       )}

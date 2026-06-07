@@ -888,6 +888,28 @@ export async function getProformaHtml(proformaId) {
   return data;
 }
 
+// [feat/lany-fixes-followups / Lany #2 admin] Proformy oczekujące na płatność
+// (admin). RLS proformas dopuszcza is_admin() → admin widzi wszystkie.
+export async function getPendingProformas(limit = 50) {
+  const { data, error } = await supabase
+    .from("proformas")
+    .select("id, number, status, plan_id, qty, currency, net_amount, gross_amount, company_id, company_name_snapshot, company_nip_snapshot, issued_at")
+    .eq("status", "pending")
+    .order("issued_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+// [feat/lany-fixes-followups / Lany #2 admin] Oznacz proformę opłaconą + aktywuj
+// pakiet (RPC mark_proforma_paid, admin-only, idempotentne po numerze proformy).
+// Zwraca package_id aktywowanego pakietu.
+export async function markProformaPaid(proformaId) {
+  const { data, error } = await supabase.rpc("mark_proforma_paid", { p_proforma_id: proformaId });
+  if (error) throw error;
+  return data; // package_id
+}
+
 // ===================================================================
 // BUYER STARRED
 // ===================================================================
