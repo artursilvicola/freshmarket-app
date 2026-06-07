@@ -1747,7 +1747,19 @@
       "nav_firmy_title": "Firmy",
       "nav_firmy_desc": "Pakiety, limity, rozliczenia per firma",
       "reset_btn": "Reset danych testowych",
-      "reset_desc": "Przywraca domyślne propozycje, wysyłki i dane FM. Czyści localStorage."
+      "reset_desc": "Przywraca domyślne propozycje, wysyłki i dane FM. Czyści localStorage.",
+      "p_modules_title": "Moduły",
+      "p_tools_title": "Narzędzia testowe",
+      "p_kpi_firms": "Do aktywacji firm",
+      "p_kpi_moderation": "Do moderacji",
+      "p_kpi_approved": "Do wysyłki",
+      "p_kpi_tracking": "Do potwierdzenia",
+      "p_kpi_proformas": "Proformy oczekujące",
+      "p_nav_pipeline_desc": "Moderacja, wysyłka, tracking",
+      "p_nav_firmy_desc": "Aktywacja, profile, dostęp",
+      "p_nav_settlements_desc": "Proformy, pakiety, płatności",
+      "p_nav_retailers_desc": "Kupcy, kontakty, harmonogram",
+      "p_nav_messages_desc": "Czat z dostawcami i kupcami"
     },
     "retailers": {
       "header_title": "Sieci handlowe i kupcy",
