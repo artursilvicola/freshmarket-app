@@ -108,3 +108,14 @@ export const CREDITS_UI_SUPPLIER = true;
 // w Supabase. Default `false`: gdy wyłączone, panel admina i dostawcy bez zmian.
 // Flip na `true` dopiero PO zaaplikowaniu migracji + smoke test prod.
 export const RETAILER_REQUIREMENTS = true;
+
+// [feat/credit-expiry-reminder — Poprawki Lany #6]
+// Przypomnienie e-mail 14 dni przed wygaśnięciem pakietu kredytów, RAZ na pakiet.
+// Leniwy sweep przy wejściu do aplikacji (fire-and-forget) → funkcja Netlify
+// send-expiry-reminders → RPC claim_due_expiry_reminders (atomowo oznacza
+// packages.expiry_reminder_sent_at i zwraca due) → wysyłka Resend.
+//
+// Wymaga migracji 041 (packages.expiry_reminder_sent_at + claim_due_expiry_reminders)
+// zaaplikowanej ręcznie w Supabase. Default `false`: gdy wyłączone, sweep nie
+// jest wołany (zero zmian). Flip na `true` dopiero PO migracji + smoke test prod.
+export const CREDIT_EXPIRY_REMINDER = false;
