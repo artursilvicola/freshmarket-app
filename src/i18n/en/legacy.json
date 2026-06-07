@@ -985,6 +985,7 @@
           "success_body_credits_html": "Package <strong>{{pkgLabel}}</strong> has been activated.<br/>Added <strong>+{{qty}} credits</strong> to your account.",
           "success_state_html": "Current balance: <strong>{{total}} submissions total</strong>",
           "success_state_credits_html": "Current total: <strong>{{total}} credits</strong>",
+          "valid_until_html": "Your credits are valid until: <strong>{{date}}</strong>",
           "pkg_label_premium_one": "Premium {{qty}} submission",
           "pkg_label_premium_other": "Premium {{qty}} submissions",
           "pkg_label_standard_one": "Standard {{qty}} submission",
@@ -1045,6 +1046,7 @@
           "pay_button_format": "Pay {{gross}} EUR (incl. VAT)",
           "payment_init_error_format": "Payment initialization error: {{message}}",
           "payment_init_error_fallback": "please try again",
+          "nip_required": "Provide the company Tax ID. This field is required for registration and billing.",
           "no_redirect_error": "PayU did not return a redirect URL"
         },
         "pkg_stats": {
@@ -1054,6 +1056,7 @@
           "unit": "submissions"
         },
         "guarantee": "14-day guarantee — no buyer read = automatic credit refund to wallet. You buy submissions, not risk.",
+        "validity_info": "Purchased credits are valid for 12 months from the purchase date.",
         "compare": {
           "standard_badge": "STANDARD",
           "standard_price_range": "40-30 EUR / submission",
@@ -1123,6 +1126,27 @@
           "qty_added_credits_other_format": "+{{qty}} credits",
           "price_format": "−{{price}} EUR",
           "paid_badge": "Paid"
+        },
+        "proforma": {
+          "generate_button": "Generate proforma",
+          "title": "Proforma generated",
+          "subtitle_html": "Number: <strong>{{number}}</strong>. We have emailed it to you.",
+          "pay_info": "Pay by bank transfer using the details in the proforma. The credit package will be activated once the payment is posted.",
+          "download": "Download proforma",
+          "download_short": "Download",
+          "history_title": "Proformas (bank transfer)",
+          "status_pending": "Awaiting payment",
+          "status_paid": "Paid",
+          "status_cancelled": "Cancelled",
+          "error": "Could not generate the proforma."
+        },
+        "credit_history": {
+          "card_title": "Credit package history",
+          "status_active": "Active",
+          "status_expired": "Expired",
+          "remaining_format": "{{remaining}}/{{total}} credits",
+          "valid_until_format": "valid until {{date}}",
+          "expired_on_format": "expired {{date}}"
         }
       }
     },
@@ -1313,6 +1337,7 @@
       },
       "toasts": {
         "logo_required": "Upload the company logo.",
+        "nip_required": "Provide the company Tax ID. This field is required for registration and billing.",
         "saved": "Profile saved.",
         "contacts_error_format": "Failed to save contacts: {{message}}"
       }
@@ -2498,6 +2523,13 @@
       "footer_extra": "Your booth — you'll find out at event reception.\nRegistration starts: 8:00–9:00 AM."
     },
     "admin": {
+      "proformas": {
+        "card_title": "Proformas awaiting payment (bank transfer)",
+        "mark_paid": "Mark paid → activate package",
+        "marking": "Activating…",
+        "paid_toast": "Proforma {{number}} paid — package activated.",
+        "error": "Could not mark the proforma as paid."
+      },
       "tab_management": "⚙️ Management",
       "tab_data": "📋 Input data",
       "tab_plan": "⚡ Meeting plan",

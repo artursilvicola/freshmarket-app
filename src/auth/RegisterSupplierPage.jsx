@@ -8,6 +8,7 @@ import LanguageSwitcher from "../components/LanguageSwitcher";
 import i18n from "../i18n";
 import { normalizeLocale } from "../i18n/locale";
 import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/legal-versions";
+import { NIP_REQUIRED } from "../config/features";
 
 /**
  * RegisterSupplierPage — publiczna self-registration dostawcy.
@@ -56,6 +57,8 @@ export default function RegisterSupplierPage() {
     try {
       if (!form.accept) throw new Error(t("register.accept_required"));
       if (form.password.length < 8) throw new Error(t("register.password_too_short"));
+      // [feat/nip-required #1] NIP obowiązkowy do rejestracji (za flagą NIP_REQUIRED).
+      if (NIP_REQUIRED && !form.nip.trim()) throw new Error(t("register.nip_required"));
 
       const result = await selfRegisterSupplier({
         email: form.email,
@@ -211,8 +214,8 @@ export default function RegisterSupplierPage() {
               </select>
             </label>
             <label style={S.label}>
-              {t("register.labels.nip")}
-              <input type="text" value={form.nip} onChange={(e) => set("nip", e.target.value)} style={S.input}/>
+              {t("register.labels.nip")}{NIP_REQUIRED ? " *" : ""}
+              <input type="text" required={NIP_REQUIRED} value={form.nip} onChange={(e) => set("nip", e.target.value)} style={S.input}/>
             </label>
           </div>
           <label style={S.label}>

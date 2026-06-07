@@ -843,6 +843,73 @@ export async function getMyPayuOrders(companyId, limit = 20) {
   return data || [];
 }
 
+// [feat/bank-transfer-proforma / Lany #2] Generuje proformę przez funkcję
+// Netlify (auth = JWT usera). Zwraca { number, html, proforma_id, ... }.
+// NIE przechodzi przez PayU — pakiet zostaje "oczekuje na płatność".
+export async function createProforma(planId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error(i18n.t("legacy:errors.db.payu_must_be_logged_in"));
+
+  const res = await fetch("/.netlify/functions/generate-proforma", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ plan_id: planId, locale: i18n.language }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || i18n.t("legacy:errors.db.payu_status_format", { status: res.status }));
+  return body;
+}
+
+// [feat/bank-transfer-proforma / Lany #2] Proformy firmy (historia płatności).
+// RLS dopuszcza widok własnych (company_id = app_company_id()) + admin.
+export async function getMyProformas(companyId, limit = 20) {
+  const { data, error } = await supabase
+    .from("proformas")
+    .select("id, number, status, plan_id, qty, currency, net_amount, vat_amount, gross_amount, issued_at, paid_at")
+    .eq("company_id", companyId)
+    .order("issued_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+// [feat/bank-transfer-proforma / Lany #2] Pełny HTML pojedynczej proformy do
+// pobrania z historii. RLS dopuszcza tylko własne (company_id) + admin.
+export async function getProformaHtml(proformaId) {
+  const { data, error } = await supabase
+    .from("proformas")
+    .select("number, html")
+    .eq("id", proformaId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+// [feat/lany-fixes-followups / Lany #2 admin] Proformy oczekujące na płatność
+// (admin). RLS proformas dopuszcza is_admin() → admin widzi wszystkie.
+export async function getPendingProformas(limit = 50) {
+  const { data, error } = await supabase
+    .from("proformas")
+    .select("id, number, status, plan_id, qty, currency, net_amount, gross_amount, company_id, company_name_snapshot, company_nip_snapshot, issued_at")
+    .eq("status", "pending")
+    .order("issued_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+// [feat/lany-fixes-followups / Lany #2 admin] Oznacz proformę opłaconą + aktywuj
+// pakiet (RPC mark_proforma_paid, admin-only, idempotentne po numerze proformy).
+// Zwraca package_id aktywowanego pakietu.
+export async function markProformaPaid(proformaId) {
+  const { data, error } = await supabase.rpc("mark_proforma_paid", { p_proforma_id: proformaId });
+  if (error) throw error;
+  return data; // package_id
+}
+
 // ===================================================================
 // BUYER STARRED
 // ===================================================================
@@ -1200,6 +1267,45 @@ export async function refundUnreadExpiredLegacySends() {
   const { data, error } = await supabase.rpc("refund_unread_expired_legacy_sends");
   if (error) throw error;
   return data || 0;
+}
+
+// [feat/credit-expiry-reminder / Lany #6] Leniwy sweep przypomnień o wygaśnięciu
+// kredytów (14 dni przed). Woła funkcję Netlify (wymaga Resend key po stronie
+// serwera). Idempotentny (marker w DB) — bezpieczny do wołania przy każdej
+// hydracji. Best-effort: błąd nie jest krytyczny dla działania panelu.
+export async function sendDueExpiryReminders() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { skipped: true };
+  const res = await fetch("/.netlify/functions/send-expiry-reminders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `send-expiry-reminders ${res.status}`);
+  return body;
+}
+
+// [feat/account-inactivity-foundation / Lany #8] Bump last_active_at zalogowanego
+// usera (RPC SECURITY DEFINER po auth.uid()). Best-effort — nie blokuje panelu.
+export async function touchLastActive() {
+  const { error } = await supabase.rpc("touch_last_active");
+  if (error) throw error;
+  return true;
+}
+
+// [feat/account-inactivity-foundation / Lany #8] Leniwy sweep ostrzeżeń o
+// nieaktywności (30/7 dni). Woła funkcję Netlify (Resend po stronie serwera).
+// Idempotentny (markery w DB). Best-effort.
+export async function sendDueInactivityWarnings() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { skipped: true };
+  const res = await fetch("/.netlify/functions/send-inactivity-warnings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `send-inactivity-warnings ${res.status}`);
+  return body;
 }
 
 // ===================================================================

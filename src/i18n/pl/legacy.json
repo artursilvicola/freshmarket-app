@@ -985,6 +985,7 @@
           "success_body_credits_html": "Pakiet <strong>{{pkgLabel}}</strong> został aktywowany.<br/>Dodano <strong>+{{qty}} kredytów</strong> do Twojego konta.",
           "success_state_html": "Aktualny stan: <strong>{{total}} wysyłek łącznie</strong>",
           "success_state_credits_html": "Aktualny stan: <strong>{{total}} kredytów łącznie</strong>",
+          "valid_until_html": "Twoje kredyty są ważne do: <strong>{{date}}</strong>",
           "pkg_label_premium_one": "Premium {{qty}} wysyłka",
           "pkg_label_premium_other": "Premium {{qty}} wysyłek",
           "pkg_label_standard_one": "Standard {{qty}} wysyłka",
@@ -1045,6 +1046,7 @@
           "pay_button_format": "Zapłać {{gross}} EUR (z VAT)",
           "payment_init_error_format": "Błąd inicjalizacji płatności: {{message}}",
           "payment_init_error_fallback": "spróbuj ponownie",
+          "nip_required": "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
           "no_redirect_error": "PayU nie zwrócił adresu przekierowania"
         },
         "pkg_stats": {
@@ -1054,6 +1056,7 @@
           "unit": "wysyłek"
         },
         "guarantee": "Gwarancja 14 dni — brak odczytu przez kupca = automatyczny zwrot kredytu na portfel. Kupujesz wysyłki, nie ryzyko.",
+        "validity_info": "Zakupione kredyty są ważne przez 12 miesięcy od daty zakupu.",
         "compare": {
           "standard_badge": "STANDARD",
           "standard_price_range": "40-30 EUR / wysyłka",
@@ -1123,6 +1126,27 @@
           "qty_added_credits_other_format": "+{{qty}} kredytów",
           "price_format": "−{{price}} EUR",
           "paid_badge": "Opłacone"
+        },
+        "proforma": {
+          "generate_button": "Generuj proformę",
+          "title": "Proforma wygenerowana",
+          "subtitle_html": "Numer: <strong>{{number}}</strong>. Wysłaliśmy ją na Twój e-mail.",
+          "pay_info": "Opłać przelewem wg danych w proformie. Pakiet kredytów aktywujemy po zaksięgowaniu wpłaty.",
+          "download": "Pobierz proformę",
+          "download_short": "Pobierz",
+          "history_title": "Proformy (przelew)",
+          "status_pending": "Oczekuje na płatność",
+          "status_paid": "Opłacona",
+          "status_cancelled": "Anulowana",
+          "error": "Nie udało się wygenerować proformy."
+        },
+        "credit_history": {
+          "card_title": "Historia pakietów kredytów",
+          "status_active": "Aktywny",
+          "status_expired": "Wygasłe",
+          "remaining_format": "{{remaining}}/{{total}} kredytów",
+          "valid_until_format": "ważne do {{date}}",
+          "expired_on_format": "wygasło {{date}}"
         }
       }
     },
@@ -1313,6 +1337,7 @@
       },
       "toasts": {
         "logo_required": "Wgraj logo firmy.",
+        "nip_required": "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
         "saved": "Profil zapisany.",
         "contacts_error_format": "Nie udało się zapisać kontaktów: {{message}}"
       }
@@ -2498,6 +2523,13 @@
       "footer_extra": "Twoje stoisko — dowiesz się w recepcji eventu.\nStart rejestracji: 8:00–9:00."
     },
     "admin": {
+      "proformas": {
+        "card_title": "Proformy oczekujące na płatność (przelew)",
+        "mark_paid": "Oznacz opłaconą → aktywuj pakiet",
+        "marking": "Aktywuję…",
+        "paid_toast": "Proforma {{number}} opłacona — pakiet aktywowany.",
+        "error": "Nie udało się oznaczyć proformy jako opłaconej."
+      },
       "tab_management": "⚙️ Zarządzanie",
       "tab_data": "📋 Dane wejściowe",
       "tab_plan": "⚡ Plan spotkań",

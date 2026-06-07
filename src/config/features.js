@@ -108,3 +108,74 @@ export const CREDITS_UI_SUPPLIER = true;
 // w Supabase. Default `false`: gdy wyłączone, panel admina i dostawcy bez zmian.
 // Flip na `true` dopiero PO zaaplikowaniu migracji + smoke test prod.
 export const RETAILER_REQUIREMENTS = true;
+
+// [feat/nip-required — Poprawki Lany #1]
+// NIP firmy obowiązkowy: blokuje rejestrację dostawcy, zapis profilu firmy oraz
+// zakup kredytów, dopóki pole NIP jest puste. Komunikat:
+// "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń."
+//
+// Bez migracji — kolumna companies.nip już istnieje (nullable). NIE dodajemy
+// NOT NULL, bo zepsułoby historyczne rekordy bez NIP-u; egzekwujemy w aplikacji.
+//
+// Walidacja serwerowa w netlify/functions/register-supplier-self.js jest
+// gatowana OSOBNO env-varem NIP_REQUIRED="true" (defense-in-depth) — flaga
+// frontendowa jest głównym gate'em UX. Default `false`: gdy wyłączone, NIP
+// pozostaje opcjonalny wszędzie (zero zmian). Flip na `true` po smoke test prod.
+export const NIP_REQUIRED = false;
+
+// [feat/credits-validity-and-expiry-ui — Poprawki Lany #4 + #5 + #7]
+// Wyświetlanie ważności kredytów (12 miesięcy od zakupu):
+//  - przed zakupem: linia info "Kredyty ważne przez 12 miesięcy od daty zakupu"
+//  - po zakupie (ekran potwierdzenia): "Twoje kredyty są ważne do: DD.MM.RRRR"
+//  - panel Finanse (karta aktywnego pakietu): data ważności w formacie DD.MM.RRRR
+//
+// Bez migracji — dane już istnieją (packages.expires_at, company_capacity.pkg_expiry).
+// Wygasanie kredytów jest już egzekwowane przez widok company_capacity (do puli
+// liczone tylko niewygasłe pakiety) — ta flaga to TYLKO warstwa prezentacji.
+// Default `false`: gdy wyłączone, panel bez zmian (stary format/placeholdery).
+export const CREDITS_VALIDITY_UI = false;
+
+// [feat/bank-transfer-proforma — Poprawki Lany #2]
+// Płatność przelewem generuje fakturę proforma (HTML): przycisk "Pobierz proformę",
+// wysyłka mailem, zapis w historii płatności, numeracja PF/RRRR/NNNNNN. Pakiet
+// pozostaje "oczekuje na płatność" — admin aktywuje ręcznie po zaksięgowaniu wpłaty.
+// Wymaga NIP firmy (rozliczenia).
+//
+// Wymaga migracji 040 (proformas + allocate_proforma_number) zaaplikowanej ręcznie
+// w Supabase ORAZ env w Netlify: PROFORMA_SELLER_NIP, PROFORMA_BANK_IBAN
+// (dane prawne/finansowe sprzedawcy — domyślnie placeholdery). NIE dotyka PayU.
+// Default `false`: gdy wyłączone, przelew działa jak dziś (ekran z numerem konta).
+// Flip na `true` dopiero PO migracji + ustawieniu env + smoke test prod.
+export const BANK_TRANSFER_PROFORMA = false;
+
+// [feat/credit-expiry-reminder — Poprawki Lany #6]
+// Przypomnienie e-mail 14 dni przed wygaśnięciem pakietu kredytów, RAZ na pakiet.
+// Leniwy sweep przy wejściu do aplikacji (fire-and-forget) → funkcja Netlify
+// send-expiry-reminders → RPC claim_due_expiry_reminders (atomowo oznacza
+// packages.expiry_reminder_sent_at i zwraca due) → wysyłka Resend.
+//
+// Wymaga migracji 041 (packages.expiry_reminder_sent_at + claim_due_expiry_reminders)
+// zaaplikowanej ręcznie w Supabase. Default `false`: gdy wyłączone, sweep nie
+// jest wołany (zero zmian). Flip na `true` dopiero PO migracji + smoke test prod.
+export const CREDIT_EXPIRY_REMINDER = false;
+
+// [feat/account-inactivity-foundation — Poprawki Lany #8 — część BEZPIECZNA]
+// Śledzenie aktywności konta + ostrzeżenia e-mail 30 i 7 dni przed progiem
+// 24 miesięcy nieaktywności. Przy wejściu do aplikacji: bump last_active_at
+// (RPC touch_last_active) + leniwy sweep ostrzeżeń (fire-and-forget) →
+// funkcja send-inactivity-warnings → RPC claim_due_inactivity_warnings → Resend.
+//
+// TYLKO ostrzeżenia + śledzenie. Archiwizacja/anonimizacja/usuwanie kont to
+// OSOBNY etap za flagą ACCOUNT_HARD_DELETE (poniżej, default false) — do testów
+// na sandboxie i osobnej decyzji (RODO, destrukcyjne).
+//
+// Wymaga migracji 042 (profiles.last_active_at + markery + RPC) zaaplikowanej
+// ręcznie w Supabase. Default `false`: gdy wyłączone, brak śledzenia i sweepów
+// (zero zmian). Flip na `true` dopiero PO migracji + smoke test prod.
+export const ACCOUNT_LIFECYCLE = false;
+
+// [feat/account-inactivity-foundation — placeholder destrukcyjnej części #8]
+// Steruje WYKONANIEM archiwizacji/anonimizacji/usuwania kont po 24 mc. NIE jest
+// jeszcze podpięty do żadnej logiki — rezerwacja nazwy + jawny sygnał, że ta
+// część wymaga osobnej implementacji, sandboxu i sign-offu (RODO). Trzymać false.
+export const ACCOUNT_HARD_DELETE = false;

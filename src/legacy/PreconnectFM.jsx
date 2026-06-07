@@ -42,6 +42,10 @@ import {
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
   refundUnreadExpiredLegacySends as dbRefundUnreadExpiredLegacySends,
+  // [feat/credit-expiry-reminder / Lany #6] leniwy sweep przypomnień
+  sendDueExpiryReminders as dbSendDueExpiryReminders,
+  // [feat/account-inactivity-foundation / Lany #8] śledzenie aktywności + sweep ostrzeżeń
+  touchLastActive as dbTouchLastActive, sendDueInactivityWarnings as dbSendDueInactivityWarnings,
   // [B2B Round supplier-FM-UX] Confirm supplier's FM chain selection
   saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
   // [B2B Round prod-rollout / faza 2] Real packages/capacity from DB
@@ -50,6 +54,12 @@ import {
   getStarred as dbGetStarred, toggleStar as dbToggleStar,
   // [B2B Round prod-rollout / faza 3] PayU integration
   createPayuOrder as dbCreatePayuOrder,
+  // [feat/bank-transfer-proforma / Lany #2] proforma dla przelewu
+  createProforma as dbCreateProforma, getMyProformas as dbGetMyProformas, getProformaHtml as dbGetProformaHtml,
+  // [followups / Lany #2 admin] proformy do rozliczenia przez admina
+  getPendingProformas as dbGetPendingProformas, markProformaPaid as dbMarkProformaPaid,
+  // [followups / Lany #7] realna historia pakietów kredytów (status wygasłe)
+  getPackages as dbGetPackages,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
   getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
   // [B2B Round prod-rollout / admin-team] zarządzanie zespołem administratorów
@@ -69,7 +79,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -1991,6 +2001,17 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         await dbExpireLegacySends14d();
         await dbRefundUnreadExpiredLegacySends();
       } catch (e) { console.warn("[expire sends]", e?.message || e); }
+      // [feat/credit-expiry-reminder / Lany #6] Przypomnienia 14 dni przed
+      // wygaśnięciem kredytów — fire-and-forget (nie blokuje hydracji UI).
+      if (CREDIT_EXPIRY_REMINDER) {
+        dbSendDueExpiryReminders().catch((e) => console.warn("[expiry reminders]", e?.message || e));
+      }
+      // [feat/account-inactivity-foundation / Lany #8] Bump aktywności konta +
+      // leniwy sweep ostrzeżeń o nieaktywności — fire-and-forget (nie blokuje UI).
+      if (ACCOUNT_LIFECYCLE) {
+        dbTouchLastActive().catch((e) => console.warn("[touch last active]", e?.message || e));
+        dbSendDueInactivityWarnings().catch((e) => console.warn("[inactivity warnings]", e?.message || e));
+      }
       if (canceled) return;
       try {
         const rows = await loadLegacySends();
@@ -3844,6 +3865,15 @@ function fmtPolishDate(d) {
   const months = isEn ? EN_MONTHS : PL_MONTHS;
   return `${days[d.getDay()]}, ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
+// [feat/credits-validity-and-expiry-ui — Lany #5] Format YYYY-MM-DD / Date → DD.MM.RRRR.
+// Bezpieczny dla pustych/niepoprawnych wartości (zwraca "—" / surowy string).
+function fmtDateDMY(d) {
+  if (!d) return "—";
+  const dt = d instanceof Date ? d : new Date(String(d).length <= 10 ? String(d) + "T00:00:00" : String(d));
+  if (isNaN(dt.getTime())) return String(d);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(dt.getDate())}.${p(dt.getMonth() + 1)}.${dt.getFullYear()}`;
+}
 function dayDiff(a, b) {
   return Math.ceil((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000));
 }
@@ -5020,6 +5050,8 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
   const removeContact=(i)=>u("contacts",contacts.filter((_,idx)=>idx!==i));
   const saveProfile=async()=>{
     if(!c.logo){fl(t("supplier.company.toasts.logo_required"),"warning");return;}
+    // [feat/nip-required #1] NIP obowiązkowy przy zapisie profilu firmy (za flagą).
+    if(NIP_REQUIRED && !String(c.nip||"").trim()){fl(t("supplier.company.toasts.nip_required"),"warning");return;}
     const nextContacts = normalizeContacts(contacts);
     const nextCerts = normalizeCompanyCertList(c.certs || []);
     const id = c.id || companyId;
@@ -6381,7 +6413,7 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
               <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10 }}>
                 {[
                   [t("supplier.finance.active_pkg.price_label"), t("supplier.finance.active_pkg.price_value_format", { price: pkgOpt.price })],
-                  [t("supplier.finance.active_pkg.valid_until_label"), co.pkgExpiry||"2026-12-31"],
+                  [t("supplier.finance.active_pkg.valid_until_label"), CREDITS_VALIDITY_UI ? fmtDateDMY(co.pkgExpiry) : (co.pkgExpiry||"2026-12-31")],
                 ].map(([l,v])=><div key={l} style={{ padding:"7px 10px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div><div style={{ fontWeight:600,fontSize:12 }}>{v}</div></div>)}
               </div>
             </div>
@@ -6463,6 +6495,19 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
   );
 }
 
+// [feat/bank-transfer-proforma / Lany #2] Pobranie dokumentu HTML jako plik
+// (proforma). Browser-only; bezpieczne (try/catch), no-op gdy brak DOM/Blob.
+function downloadHtmlDocument(filename, html) {
+  try {
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch { /* no-op */ }
+}
+
 function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax, pkgUsed }) {
   const { t } = useTranslation("legacy");
   const [selected, setSelected] = useState(co.pkg||"std_5");
@@ -6470,8 +6515,65 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   const [payMethod, setPayMethod] = useState("karta");
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
+  // [feat/bank-transfer-proforma / Lany #2] Stan proform (płatność przelewem).
+  const [proforma, setProforma] = useState(null);          // świeżo wygenerowana
+  const [proformaBusy, setProformaBusy] = useState(false);
+  const [proformas, setProformas] = useState([]);          // historia proform firmy
+  // [followups / Lany #7] Realna historia pakietów kredytów (z packages, incl. wygasłe).
+  const [creditPackages, setCreditPackages] = useState([]);
   const sel = getPlanById(selected) || getPlanById("std_5") || PRICING_PLANS[0];
   const rem = Math.max(0, pkgMax - pkgUsed);
+  // [feat/credits-validity-and-expiry-ui — Lany #5] Data ważności kredytów z nowego
+  // zakupu = dziś + 12 miesięcy (zgodne z RPC purchase_package: current_date + 1 rok).
+  const creditsValidUntilDMY = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return fmtDateDMY(d); })();
+
+  // [feat/bank-transfer-proforma / Lany #2] Wczytaj historię proform (za flagą).
+  useEffect(() => {
+    if (!BANK_TRANSFER_PROFORMA || !co?.id) return;
+    let cancelled = false;
+    dbGetMyProformas(co.id).then(rows => { if (!cancelled) setProformas(rows || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [co?.id]);
+
+  // [followups / Lany #7] Wczytaj realną historię pakietów kredytów (incl. wygasłe).
+  // Za flagą CREDITS_VALIDITY_UI — gdy OFF, historia działa po staremu (mock orders).
+  useEffect(() => {
+    if (!CREDITS_VALIDITY_UI || !co?.id) return;
+    let cancelled = false;
+    dbGetPackages(co.id).then(rows => { if (!cancelled) setCreditPackages(rows || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [co?.id]);
+  // Dziś (YYYY-MM-DD) do oceny czy pakiet wygasł.
+  const _todayISO = new Date().toISOString().slice(0, 10);
+
+  // [feat/bank-transfer-proforma / Lany #2] Generuje proformę dla przelewu.
+  // NIE przechodzi przez PayU — pakiet zostaje "oczekuje na płatność".
+  async function handleProforma() {
+    setProformaBusy(true);
+    try {
+      const res = await dbCreateProforma(selected);
+      setProforma(res);
+      setProformas(prev => [{
+        id: res.proforma_id, number: res.number, status: res.status,
+        gross_amount: res.gross, currency: res.currency, issued_at: res.issued_at,
+        plan_id: selected, qty: sel.qty,
+      }, ...prev]);
+    } catch (e) {
+      fl(e?.message || t("supplier.finance.pakiety.proforma.error"), "error");
+    } finally {
+      setProformaBusy(false);
+    }
+  }
+
+  // [feat/bank-transfer-proforma / Lany #2] Pobierz proformę z historii (re-fetch HTML).
+  async function downloadProformaFromHistory(id, number) {
+    try {
+      const data = await dbGetProformaHtml(id);
+      if (data?.html) downloadHtmlDocument(`${String(number || data.number).replace(/[/\\]/g, "-")}.html`, data.html);
+    } catch (e) {
+      fl(e?.message || t("supplier.finance.pakiety.proforma.error"), "error");
+    }
+  }
 
   // [P2-5 i18n] Plurals: PL "wysyłka"/"wysyłek" matches qty===1?singular:plural.
   // Helper zwraca przetłumaczony pkg label dla obu tier'ów z plural variant.
@@ -6509,6 +6611,9 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   // hosted checkout i przekierowuje przeglądarkę. Po finalizacji PayU notify
   // wywoła purchase_package RPC i user wróci na /zakup-ok.
   async function handleOrder() {
+    // [feat/nip-required #1] NIP obowiązkowy do rozliczeń — blokuje zakup kredytów
+    // gdy firma nie ma NIP-u (za flagą NIP_REQUIRED).
+    if(NIP_REQUIRED && !String(co?.nip||"").trim()){fl(t("supplier.finance.pakiety.payment_modal.nip_required"),"error");return;}
     setPaying(true);
     try {
       const { redirectUri } = await dbCreatePayuOrder(selected);
@@ -6530,7 +6635,25 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       {showModal&&(
         <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16 }}>
           <div style={{ background:"white",borderRadius:16,padding:28,maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
-            {paid?(
+            {(BANK_TRANSFER_PROFORMA && proforma)?(
+              /* [feat/bank-transfer-proforma / Lany #2] Panel po wygenerowaniu proformy. */
+              <div style={{ textAlign:"center",padding:"8px 0" }}>
+                <div style={{ width:64,height:64,borderRadius:"50%",background:"#dbeafe",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+                  <FileText size={30} color="#2563eb"/>
+                </div>
+                <h3 style={{ margin:"0 0 8px",fontSize:18,color:"#0f172a" }}>{t("supplier.finance.pakiety.proforma.title")}</h3>
+                <p style={{ color:"#64748b",fontSize:13,margin:"0 0 14px",lineHeight:1.6 }}>
+                  <Trans i18nKey="supplier.finance.pakiety.proforma.subtitle_html" ns="legacy" values={{ number: proforma.number }} components={{ strong: <strong /> }}/>
+                </p>
+                <div style={{ padding:"10px 16px",background:"#eff6ff",borderRadius:8,fontSize:13,color:"#1e3a5f",border:"1px solid #bfdbfe",marginBottom:16,textAlign:"left" }}>
+                  {t("supplier.finance.pakiety.proforma.pay_info")}
+                </div>
+                <div style={{ display:"flex",gap:8 }}>
+                  <Btn primary onClick={()=>downloadHtmlDocument(`${String(proforma.number).replace(/[/\\]/g,"-")}.html`, proforma.html)} style={{ flex:2 }}><Download size={13}/> {t("supplier.finance.pakiety.proforma.download")}</Btn>
+                  <Btn outline onClick={()=>{ setProforma(null); setShowModal(false); }} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
+                </div>
+              </div>
+            ):paid?(
               <div style={{ textAlign:"center",padding:"8px 0" }}>
                 <div style={{ width:64,height:64,borderRadius:"50%",background:"#d1fae5",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
                   <CheckCircle size={32} color="#059669"/>
@@ -6542,6 +6665,13 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 <div style={{ padding:"10px 16px",background:"#f0fdf4",borderRadius:8,fontSize:13,color:"#047857",border:"1px solid #bbf7d0" }}>
                   <Trans i18nKey={CREDITS_UI_SUPPLIER ? "supplier.finance.pakiety.payment_modal.success_state_credits_html" : "supplier.finance.pakiety.payment_modal.success_state_html"} ns="legacy" values={{ total: pkgMax + sel.qty }} components={{ strong: <strong /> }}/>
                 </div>
+                {/* [feat/credits-validity-and-expiry-ui — Lany #5] Data ważności kredytów PO zakupie. */}
+                {CREDITS_VALIDITY_UI && (
+                  <div style={{ marginTop:10,fontSize:13,color:"#475569",display:"flex",gap:6,alignItems:"center",justifyContent:"center" }}>
+                    <Clock size={14} color="#64748b"/>
+                    <span><Trans i18nKey="supplier.finance.pakiety.payment_modal.valid_until_html" ns="legacy" values={{ date: creditsValidUntilDMY }} components={{ strong: <strong /> }}/></span>
+                  </div>
+                )}
               </div>
             ):(
               <>
@@ -6607,8 +6737,10 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 )}
                 <div style={{ display:"flex",gap:8 }}>
                   <Btn outline onClick={()=>setShowModal(false)} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
-                  <Btn primary disabled={paying||(payMethod==="portfel"&&wallet.balance<sel.price)} onClick={handleOrder} style={{ flex:2,background:sel.tier==="PREMIUM"?"#d97706":"#0d9488" }}>
-                    {paying?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><CreditCard size={13}/> {t("supplier.finance.pakiety.payment_modal.pay_button_format", { gross: Math.round(sel.price*1.23) })}</>}
+                  <Btn primary disabled={paying||proformaBusy||(payMethod==="portfel"&&wallet.balance<sel.price)} onClick={(BANK_TRANSFER_PROFORMA&&payMethod==="przelew")?handleProforma:handleOrder} style={{ flex:2,background:sel.tier==="PREMIUM"?"#d97706":"#0d9488" }}>
+                    {(BANK_TRANSFER_PROFORMA&&payMethod==="przelew")
+                      ? (proformaBusy?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><FileText size={13}/> {t("supplier.finance.pakiety.proforma.generate_button")}</>)
+                      : (paying?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><CreditCard size={13}/> {t("supplier.finance.pakiety.payment_modal.pay_button_format", { gross: Math.round(sel.price*1.23) })}</>)}
                   </Btn>
                 </div>
               </>
@@ -6636,6 +6768,14 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
         <ShieldCheck size={16} color="#059669" style={{ flexShrink:0,marginTop:1 }}/>
         <div>{t("supplier.finance.pakiety.guarantee")}</div>
       </div>
+
+      {/* [feat/credits-validity-and-expiry-ui — Lany #4] Info o ważności kredytów PRZED zakupem. */}
+      {CREDITS_VALIDITY_UI && (
+        <div style={{ display:"flex",gap:10,padding:"10px 16px",background:"#eff6ff",borderRadius:10,marginBottom:20,border:"1px solid #bfdbfe",fontSize:13,color:"#1e3a5f" }}>
+          <Clock size={16} color="#2563eb" style={{ flexShrink:0,marginTop:1 }}/>
+          <div>{t("supplier.finance.pakiety.validity_info")}</div>
+        </div>
+      )}
 
       {/* [B2B Round prod-rollout / UX] Codex feedback: jasne porównanie
           Standard vs Premium. Uczciwe — bez obietnic których nie potwierdzimy.
@@ -6752,7 +6892,8 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       </div>
 
       {/* Order history */}
-      {orders.length>0&&(
+      {/* [followups / Lany #7] Mock historia zamówień — tylko gdy realna historia OFF. */}
+      {!CREDITS_VALIDITY_UI && orders.length>0&&(
         <Card title={t("supplier.finance.pakiety.order_history.card_title")} icon={FileText}>
           {[...orders].reverse().map(ord=>(
             <div key={ord.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center" }}>
@@ -6769,6 +6910,58 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 <div style={{ fontWeight:700,fontSize:13,color:"#dc2626" }}>{t("supplier.finance.pakiety.order_history.price_format", { price: ord.price })}</div>
                 <Badge color="#059669" bg="#f0fdf4">{t("supplier.finance.pakiety.order_history.paid_badge")}</Badge>
               </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* [followups / Lany #7] Realna historia pakietów kredytów — status Aktywny / Wygasłe. */}
+      {CREDITS_VALIDITY_UI && creditPackages.length>0 && (
+        <Card title={t("supplier.finance.pakiety.credit_history.card_title")} icon={FileText}>
+          {creditPackages.map(pkg=>{
+            const expired = pkg.expires_at && String(pkg.expires_at).slice(0,10) < _todayISO;
+            const remaining = Math.max(0, Number(pkg.qty_total||0) - Number(pkg.qty_used||0));
+            const isPrem = String(pkg.plan||"").startsWith("prem");
+            return (
+              <div key={pkg.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center",opacity:expired?0.7:1 }}>
+                <div style={{ width:36,height:36,borderRadius:8,background:expired?"#f1f5f9":(isPrem?"#fef3c7":"#eff6ff"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                  <CreditCard size={15} color={expired?"#94a3b8":(isPrem?"#d97706":"#2563eb")}/>
+                </div>
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ fontWeight:600,fontSize:13 }}>{getPlanLabel(pkg.plan, { withPerSend:false })}</div>
+                  <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
+                    {fmtDateDMY(pkg.purchased_at)} · {expired
+                      ? t("supplier.finance.pakiety.credit_history.expired_on_format", { date: fmtDateDMY(pkg.expires_at) })
+                      : t("supplier.finance.pakiety.credit_history.valid_until_format", { date: fmtDateDMY(pkg.expires_at) })}
+                  </div>
+                </div>
+                <div style={{ textAlign:"right",flexShrink:0 }}>
+                  <div style={{ fontWeight:700,fontSize:13,color:expired?"#94a3b8":"#1e293b" }}>{expired ? "—" : t("supplier.finance.pakiety.credit_history.remaining_format", { remaining, total: pkg.qty_total })}</div>
+                  <Badge color={expired?"#64748b":"#059669"} bg={expired?"#f1f5f9":"#f0fdf4"}>{expired ? t("supplier.finance.pakiety.credit_history.status_expired") : t("supplier.finance.pakiety.credit_history.status_active")}</Badge>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      {/* [feat/bank-transfer-proforma / Lany #2] Historia proform (płatność przelewem). */}
+      {BANK_TRANSFER_PROFORMA && proformas.length>0 && (
+        <Card title={t("supplier.finance.pakiety.proforma.history_title")} icon={FileText}>
+          {proformas.map(pf=>(
+            <div key={pf.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center" }}>
+              <div style={{ width:36,height:36,borderRadius:8,background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <FileText size={15} color="#2563eb"/>
+              </div>
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ fontWeight:600,fontSize:13 }}>{pf.number}</div>
+                <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{String(pf.issued_at||"").slice(0,10)} · {t("supplier.finance.pakiety.order_history.method_bank")}</div>
+              </div>
+              <div style={{ textAlign:"right",flexShrink:0 }}>
+                <div style={{ fontWeight:700,fontSize:13 }}>{Number(pf.gross_amount||0).toFixed(2)} {pf.currency||"EUR"}</div>
+                <Badge color={pf.status==="paid"?"#059669":pf.status==="cancelled"?"#64748b":"#d97706"} bg={pf.status==="paid"?"#f0fdf4":pf.status==="cancelled"?"#f1f5f9":"#fffbeb"}>{t("supplier.finance.pakiety.proforma.status_"+(pf.status||"pending"))}</Badge>
+              </div>
+              <Btn outline sm onClick={()=>downloadProformaFromHistory(pf.id, pf.number)} style={{ flexShrink:0 }}><Download size={12}/> {t("supplier.finance.pakiety.proforma.download_short")}</Btn>
             </div>
           ))}
         </Card>
@@ -9653,6 +9846,28 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     return (retailers||[]).find(r=>r.id===id) || null;
   }
   const [expandedId, setExpandedId] = useState(null);
+  // [followups / Lany #2 admin] Proformy oczekujące na płatność (przelew).
+  const [pendingProformas, setPendingProformas] = useState([]);
+  const [proformaBusyId, setProformaBusyId] = useState(null);
+  useEffect(() => {
+    if (!BANK_TRANSFER_PROFORMA) return;
+    let cancelled = false;
+    dbGetPendingProformas().then(rows => { if (!cancelled) setPendingProformas(rows || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  async function handleMarkProformaPaid(pf) {
+    setProformaBusyId(pf.id);
+    try {
+      await dbMarkProformaPaid(pf.id);                          // idempotentne (RPC) — bezpieczne przy double-click
+      setPendingProformas(prev => prev.filter(x => x.id !== pf.id));
+      fl(t("admin.proformas.paid_toast", { number: pf.number }));
+      if (typeof refreshCapacity === "function") { try { await refreshCapacity(); } catch { /* no-op */ } }
+    } catch (e) {
+      fl(e?.message || t("admin.proformas.error"), "error");
+    } finally {
+      setProformaBusyId(null);
+    }
+  }
   // [B2B Round supplier-onboarding-access-and-communication]
   // Filtr listy: "all" | "pending" — admin chce szybko zobaczyć tylko nowe rejestracje.
   // [Admin Companies 2.0 / Branch 1] Filter pozostaje dla legacy render path
@@ -10920,6 +11135,25 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
           </button>
         </div>
       </div>
+      {/* [followups / Lany #2 admin] Proformy oczekujące na płatność (przelew) → oznacz opłaconą → aktywuj pakiet. */}
+      {BANK_TRANSFER_PROFORMA && pendingProformas.length>0 && (
+        <Card title={t("admin.proformas.card_title")} icon={FileText} style={{ marginBottom:14,borderLeft:"3px solid #2563eb" }}>
+          {pendingProformas.map(pf=>(
+            <div key={pf.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center",flexWrap:"wrap" }}>
+              <div style={{ width:36,height:36,borderRadius:8,background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <FileText size={15} color="#2563eb"/>
+              </div>
+              <div style={{ flex:1,minWidth:160 }}>
+                <div style={{ fontWeight:600,fontSize:13 }}>{pf.number} · {pf.company_name_snapshot || "—"}</div>
+                <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{getPlanLabel(pf.plan_id, { withPerSend:false })} · {Number(pf.gross_amount||0).toFixed(2)} {pf.currency||"EUR"} · NIP {pf.company_nip_snapshot || "—"}</div>
+              </div>
+              <Btn primary sm disabled={proformaBusyId===pf.id} onClick={()=>handleMarkProformaPaid(pf)}>
+                {proformaBusyId===pf.id ? t("admin.proformas.marking") : t("admin.proformas.mark_paid")}
+              </Btn>
+            </div>
+          ))}
+        </Card>
+      )}
       {visibleLims.length === 0 && (
         <Alrt type="info">{filter === "pending" ? t("admin.firmy.empty_pending") : t("admin.firmy.empty_all")}</Alrt>
       )}

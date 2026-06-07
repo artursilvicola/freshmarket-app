@@ -62,6 +62,7 @@ const MESSAGES = {
     missing_password: "Hasło musi mieć minimum 8 znaków.",
     missing_company_name: "Podaj nazwę firmy.",
     company_name_too_long: "Nazwa firmy jest za długa.",
+    missing_nip: "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
     invalid_role: "Niepoprawna rola (admin/supplier/buyer)",
     supplier_needs_company: "Supplier wymaga company_id",
     buyer_needs_retailer: "Buyer wymaga retailer_id",
@@ -107,6 +108,10 @@ const MESSAGES = {
     no_company_assigned: "Konto nie jest przypisane do firmy. Skontaktuj się z administratorem.",
     plan_not_found: "Plan {planId} nie istnieje lub jest nieaktywny",
     payu_order_register_failed: "Nie udało się zarejestrować zamówienia: {detail}",
+    // ── Proforma (przelew) ──
+    proforma_nip_required: "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
+    proforma_number_failed: "Nie udało się nadać numeru proformy: {detail}",
+    proforma_create_failed: "Nie udało się wygenerować proformy: {detail}",
     payu_api_error: "PayU API: {detail}",
 
     // ── Misc create / update failures ──
@@ -158,6 +163,7 @@ const MESSAGES = {
     missing_password: "Password must be at least 8 characters.",
     missing_company_name: "Provide a company name.",
     company_name_too_long: "Company name is too long.",
+    missing_nip: "Provide the company Tax ID. This field is required for registration and billing.",
     invalid_role: "Invalid role (admin/supplier/buyer)",
     supplier_needs_company: "Supplier requires company_id",
     buyer_needs_retailer: "Buyer requires retailer_id",
@@ -203,6 +209,10 @@ const MESSAGES = {
     no_company_assigned: "Account is not assigned to a company. Contact the administrator.",
     plan_not_found: "Plan {planId} does not exist or is inactive",
     payu_order_register_failed: "Could not register the order: {detail}",
+    // ── Proforma (bank transfer) ──
+    proforma_nip_required: "Provide the company Tax ID. This field is required for registration and billing.",
+    proforma_number_failed: "Could not assign a proforma number: {detail}",
+    proforma_create_failed: "Could not generate the proforma: {detail}",
     payu_api_error: "PayU API: {detail}",
 
     // ── Misc create / update failures ──
