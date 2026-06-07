@@ -121,7 +121,7 @@ export const RETAILER_REQUIREMENTS = true;
 // gatowana OSOBNO env-varem NIP_REQUIRED="true" (defense-in-depth) — flaga
 // frontendowa jest głównym gate'em UX. Default `false`: gdy wyłączone, NIP
 // pozostaje opcjonalny wszędzie (zero zmian). Flip na `true` po smoke test prod.
-export const NIP_REQUIRED = false;
+export const NIP_REQUIRED = true;
 
 // [feat/credits-validity-and-expiry-ui — Poprawki Lany #4 + #5 + #7]
 // Wyświetlanie ważności kredytów (12 miesięcy od zakupu):
