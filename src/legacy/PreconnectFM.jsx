@@ -81,7 +81,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -574,6 +574,81 @@ function getNextBuyerSubscriptionMailingDate(from = new Date()) {
   const year = nextMonth > 11 ? from.getFullYear() + 1 : from.getFullYear();
   const monthIdx = nextMonth > 11 ? 0 : nextMonth;
   return firstTuesdayOfMonth(year, monthIdx);
+}
+
+// ── [feat/preconnect-first-tuesday-mailing-logic — Faza 1] ──────────────────
+// Reguła: mailing PreConnect = PIERWSZY WTOREK MIESIĄCA. Poniższe helpery
+// rozdzielają "data mailingu" (kotwica statusu + 14 dni) od momentu, gdy oferta
+// trafia do panelu kupca (status sent). Wszystko liczone z istniejących danych
+// — bez migracji.
+
+// Parsuje "YYYY-MM-DD" jako datę LOKALNĄ (bez UTC-shifta, który potrafił cofnąć
+// dzień w strefach UTC+). Inny input → new Date(). Zwraca Date albo null.
+function parseLocalDate(raw) {
+  if (raw instanceof Date) return isNaN(raw.getTime()) ? null : raw;
+  if (typeof raw === "string") {
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  const d = new Date(raw);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// NAJBLIŻSZY pierwszy wtorek miesiąca >= podanej daty (porównanie date-only).
+// Gdy data <= pierwszego wtorku jej miesiąca → ten wtorek; gdy data jest PO
+// pierwszym wtorku → pierwszy wtorek NASTĘPNEGO miesiąca.
+//   2026-06-01 → 2026-06-02   2026-06-02 → 2026-06-02
+//   2026-06-07 → 2026-07-07   2026-07-08 → 2026-08-04
+function firstTuesdayOnOrAfter(date) {
+  const d = new Date(date); d.setHours(0, 0, 0, 0);
+  const ft = firstTuesdayOfMonth(d.getFullYear(), d.getMonth()); ft.setHours(0, 0, 0, 0);
+  if (d <= ft) return ft;
+  const m = d.getMonth() + 1;
+  return firstTuesdayOfMonth(m > 11 ? d.getFullYear() + 1 : d.getFullYear(), m > 11 ? 0 : m);
+}
+
+// Najbliższy pierwszy wtorek miesiąca od `from` (domyślnie dziś).
+function upcomingFirstTuesday(from = new Date()) {
+  return firstTuesdayOnOrAfter(from);
+}
+
+// Planowana data mailingu dla konkretnego sendu: NAJBLIŻSZY pierwszy wtorek OD
+// sendDate (a nie pierwszy wtorek miesiąca sendDate) — żeby oferta dodana PO
+// pierwszym wtorku NIE była traktowana jak już po mailingu. Brak/niepoprawny
+// sendDate → najbliższy pierwszy wtorek od dziś.
+function plannedMailingDateForSend(send) {
+  const d = parseLocalDate(send?.sendDate || send?.data?.sendDate);
+  if (d) return firstTuesdayOnOrAfter(d);
+  return upcomingFirstTuesday();
+}
+
+// Efektywna data mailingu: realna (mailingSentAt / emailSentAt — stempel przy
+// faktycznym wysłaniu e-maila) albo planowany pierwszy wtorek. Zwraca Date.
+function sendMailingDate(send) {
+  const real = send?.mailingSentAt || send?.data?.mailingSentAt
+            || send?.emailSentAt || send?.data?.emailSentAt;
+  if (real) {
+    const d = new Date(real);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return plannedMailingDateForSend(send);
+}
+
+// Czy mailing już ruszył (realnie wysłany LUB dziś >= planowany pierwszy wtorek).
+// Dopiero od tego momentu pokazujemy dostawcy status odczytu / licznik 14 dni.
+function isMailingActive(send) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const md = new Date(sendMailingDate(send)); md.setHours(0, 0, 0, 0);
+  return today >= md;
+}
+
+// Format DD.MM.RRRR dla etykiety "Zaplanowane do mailingu — DD.MM.RRRR".
+function fmtMailingDateDMY(d) {
+  const dt = (d instanceof Date) ? d : new Date(d);
+  if (isNaN(dt.getTime())) return "";
+  const dd = String(dt.getDate()).padStart(2, "0");
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${dt.getFullYear()}`;
 }
 
 // Format daty po polsku: "2026-06-02" → "2 czerwca 2026 (wt.)"
@@ -4757,6 +4832,10 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
             // spojnie z badge "Odczytana".
             const isRead = ["opened","read","read_manual"].includes(s.status);
             const isExpired = s.status === "unread_expired";
+            // [feat/preconnect-first-tuesday-mailing-logic] Przed datą mailingu
+            // (status sent, mailing jeszcze nie ruszył) — "Zaplanowane do mailingu",
+            // bez chipu "X dni" i bez statusu "czeka na odczyt".
+            const scheduled = PRECONNECT_MAILING_DATE_LOGIC && s.status==="sent" && !isMailingActive(s);
             return (
               <div key={s.id} style={{ display:"flex",gap:12,padding:"12px 16px",background:"white",borderRadius:10,border:`1px solid ${isExpired?"#fca5a5":isRead?"#bbf7d0":"#e2e8f0"}`,marginBottom:8,alignItems:"center" }}>
                 <span style={{ fontSize:19 }}>{CEMOJI[o?.category]}</span>
@@ -4766,14 +4845,18 @@ function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sen
                     <RetailerLogo retailer={r} size={14}/>
                     <span>{r?.name}</span>
                     <span>·</span>
-                    <span>{s.sentAt||s.sendDate}</span>
+                    <span>{scheduled ? fmtMailingDateDMY(sendMailingDate(s)) : (s.sentAt||s.sendDate)}</span>
                   </div>
                 </div>
-                <span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
+                {scheduled ? (
+                  <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge>
+                ) : (
+                  <span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
                     <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
                     {(s.status==="pending_moderation"||s.status==="queued")&&<Info size={11} color={sc?.[1]} style={{verticalAlign:"middle"}}/>}
                   </span>
-                {s.sentAt && !isRead && !isExpired && s.daysLeft > 0 && (
+                )}
+                {s.sentAt && !isRead && !isExpired && !scheduled && s.daysLeft > 0 && (
                   <span style={{ fontSize:11,color:"#d97706",background:"#fffbeb",padding:"2px 8px",borderRadius:6,border:"1px solid #fde68a" }}>{t("supplier.wysylki.history.days_left_format", { count: s.daysLeft })}</span>
                 )}
                 {isExpired && (
@@ -6478,10 +6561,19 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}><div style={{ display:"flex",gap:6,alignItems:"center" }}><RetailerLogo retailer={r} size={16}/><span style={{ fontSize:12 }}>{r?.name}</span></div></td>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}>{o?.tier==="premium"?<Badge color="#d97706" bg="#fef3c7">{t("supplier.finance.history.tier_premium")}</Badge>:<Badge color="#3b82f6" bg="#eff6ff">{t("supplier.finance.history.tier_standard")}</Badge>}</td>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontSize:12,color:"#64748b" }}>{s.sentAt||s.sendDate}</td>
-                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}><span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
-                    <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
-                    {(s.status==="pending_moderation"||s.status==="queued")&&<Info size={11} color={sc?.[1]} style={{verticalAlign:"middle"}}/>}
-                  </span></td>
+                  <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9" }}>
+                    {/* [feat/preconnect-first-tuesday-mailing-logic] Przed datą mailingu
+                        (status sent, ale mailing jeszcze nie ruszył) pokazujemy dostawcy
+                        "Zaplanowane do mailingu — DD.MM.RRRR" zamiast statusu odczytu. */}
+                    {PRECONNECT_MAILING_DATE_LOGIC && s.status==="sent" && !isMailingActive(s) ? (
+                      <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge>
+                    ) : (
+                      <span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
+                        <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
+                        {(s.status==="pending_moderation"||s.status==="queued")&&<Info size={11} color={sc?.[1]} style={{verticalAlign:"middle"}}/>}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{CREDITS_UI_SUPPLIER
                     ? (s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.credits.hist_refund_done")}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.credits.hist_refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.credits.hist_used")}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.credits.hist_awaiting")}</span>)
                     : (s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.history.refund_done_format", { amount: getRefundAmount(s) })}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.history.refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.history.amount_eur_format", { amount })}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.history.awaiting")}</span>)}</td>
@@ -8206,11 +8298,11 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
   );
 }
 
-// [Admin Pipeline 2.0 / mailing-basket] Data następnej wysyłki mailingu =
-// DRUGI WTOREK miesiąca. Jeśli drugi wtorek bieżącego miesiąca już minął
-// (lub jest dziś, ale chcemy następny cykl po wysyłce), bierzemy drugi wtorek
-// kolejnego miesiąca. `from` pozwala testować deterministycznie.
-// Przykład: from=2026-06-01 → 2026-06-09 (drugi wtorek czerwca).
+// [DEPRECATED — ścieżka flagi OFF] Stara data mailingu = DRUGI WTOREK miesiąca.
+// Reguła produktowa zmieniona na PIERWSZY WTOREK (patrz upcomingFirstTuesday +
+// flaga PRECONNECT_MAILING_DATE_LOGIC). Ta funkcja zostaje TYLKO jako fallback
+// dla flagi OFF i zostanie usunięta po flipie flagi na prod.
+// `from` pozwala testować deterministycznie.
 function secondTuesdayOfMonth(year, month0) {
   // month0: 0=styczeń. Pierwszy wtorek: dzień (1 + (2 - dow + 7) % 7), dow 1-go.
   const firstDow = new Date(year, month0, 1).getDay(); // 0=nd..2=wt
@@ -8648,7 +8740,11 @@ function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onTo
 
   const lang = (i18n.language || "pl").slice(0, 2);
   const isMod = mode === "mod";
-  const nextMail = (basketOn && !isMod) ? nextMailingDate() : null;
+  // [feat/preconnect-first-tuesday-mailing-logic] Reguła: pierwszy wtorek miesiąca.
+  // Flaga OFF zachowuje stary (deprecated) drugi wtorek z nextMailingDate().
+  const nextMail = (basketOn && !isMod)
+    ? (PRECONNECT_MAILING_DATE_LOGIC ? upcomingFirstTuesday() : nextMailingDate())
+    : null;
 
   return (
     <div>
@@ -8764,7 +8860,8 @@ function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onTo
         </div>
       )}
 
-      {/* [mailing-basket] Pasek daty następnej wysyłki (drugi wtorek miesiąca) */}
+      {/* [mailing-basket] Pasek daty następnej wysyłki. Reguła: pierwszy wtorek
+          miesiąca (flaga PRECONNECT_MAILING_DATE_LOGIC ON); OFF = stary drugi wtorek. */}
       {basketOn && !isMod && nextMail && (
         <div style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 12px", background:"#ecfeff", border:"1px solid #a5f3fc", borderRadius:8, marginBottom:10, fontSize:12, color:"#155e75" }}>
           <Calendar size={14}/>
@@ -9121,6 +9218,10 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
           sentAt: s.sentAt || sentAt,
           daysLeft: s.daysLeft || 14,
           emailSentAt: sentAt,
+          // [feat/preconnect-first-tuesday-mailing-logic] Stempel realnej daty
+          // mailingu przy faktycznym wysłaniu e-maila. To kotwica statusu/14 dni
+          // dla nowej logiki (za flagą). Bez flagi pole po prostu nie powstaje.
+          ...(PRECONNECT_MAILING_DATE_LOGIC ? { mailingSentAt: s.mailingSentAt || sentAt } : {}),
           inEmailBasket: false,
           resendBuyerEmails: result?.buyers_succeeded || s.resendBuyerEmails || [],
           data: {
@@ -9129,6 +9230,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
             sentAt: s.sentAt || sentAt,
             daysLeft: s.daysLeft || 14,
             emailSentAt: sentAt,
+            ...(PRECONNECT_MAILING_DATE_LOGIC ? { mailingSentAt: s.data?.mailingSentAt || sentAt } : {}),
             resendBuyerEmails: result?.buyers_succeeded || s.data?.resendBuyerEmails || [],
           },
         }
@@ -9432,11 +9534,16 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
               <div style={{ flex:1 }}>
                 <strong style={{ fontSize:13 }}>{CEMOJI[o?.category]} {o?.title||o?.product}</strong>
                 <div style={{ fontSize:12,color:"#64748b" }}>→ {r?.name} · {r?.buyer} · {s.sentAt}</div>
-                {/* TrackingBar only here in detail – not on list */}
-                {s.status==="sent"&&<div style={{ marginTop:5 }}>
+                {/* TrackingBar only here in detail – not on list.
+                    [feat/preconnect-first-tuesday-mailing-logic] Przed datą mailingu
+                    nie pokazujemy aktywnego countdownu 14 dni — tylko "Zaplanowane
+                    do mailingu — DD.MM.RRRR". */}
+                {s.status==="sent" && PRECONNECT_MAILING_DATE_LOGIC && !isMailingActive(s) ? (
+                  <div style={{ marginTop:5 }}><Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge></div>
+                ) : s.status==="sent" ? (<div style={{ marginTop:5 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>{t("admin.pipeline.track_tracking_label")}</span><span style={{ color:s.daysLeft<=3?"#dc2626":"#f59e0b" }}>{t("admin.pipeline.track_days_left_format", { count: s.daysLeft })}</span></div>
                   <div style={{ background:"#e2e8f0",borderRadius:3,height:4,overflow:"hidden" }}><div style={{ height:"100%",background:s.daysLeft<=3?"#dc2626":"#f59e0b",width:`${((14-s.daysLeft)/14)*100}%` }}/></div>
-                </div>}
+                </div>) : null}
               </div>
               <div style={{ display:"flex",gap:5,flexShrink:0 }}>
                 {isConf?<Badge color={isEmail?"#7c3aed":isAuto?"#059669":"#047857"}>{isEmail?t("admin.pipeline.track_badge_email_opened"):isAuto?t("admin.pipeline.track_badge_auto_app"):t("admin.pipeline.track_badge_manual")}</Badge>:<Badge color="#ea580c">{t("admin.pipeline.track_badge_unread")}</Badge>}
