@@ -33,6 +33,16 @@ function pickLocale(input) {
   return SUPPORTED_TPL_LOCALES.includes(raw) ? raw : "pl";
 }
 
+// [feat/fix-account-email-contact — Poprawki Lany #3]
+// Adres kontaktowy widoczny w TREŚCI i STOPCE maili o zmianach na koncie.
+// NIE dotyczy adresu nadawcy (FROM "Fresh Market <newsletter@freshmarket.eu>"),
+// który jest ustawiany w funkcjach wysyłających i pozostaje bez zmian.
+// Domyślnie OFF → newsletter@ (zero zmian). Po smoke teście ustaw w Netlify
+// env ACCOUNT_EMAIL_CONTACT_FIX="true" → kontakt = hello@freshmarket.eu (PL+EN).
+const CONTACT_EMAIL = process.env.ACCOUNT_EMAIL_CONTACT_FIX === "true"
+  ? "hello@freshmarket.eu"
+  : "newsletter@freshmarket.eu";
+
 const FOOTER = (appUrl, locale = "pl") => {
   const addressLine = locale === "en"
     ? "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Poland"
@@ -43,7 +53,7 @@ const FOOTER = (appUrl, locale = "pl") => {
   <div style="color:rgba(255,255,255,0.45);font-size:11px;line-height:1.7;">
     ${addressLine}<br>
     <a href="${esc(appUrl)}" style="color:rgba(255,255,255,0.7);text-decoration:none;">freshmarket.eu</a> ·
-    <a href="mailto:newsletter@freshmarket.eu" style="color:rgba(255,255,255,0.7);text-decoration:none;">newsletter@freshmarket.eu</a>
+    <a href="mailto:${CONTACT_EMAIL}" style="color:rgba(255,255,255,0.7);text-decoration:none;">${CONTACT_EMAIL}</a>
   </div>
 </td></tr>`;
 };
@@ -204,7 +214,7 @@ function tplAccountRejectedPL({ companyName, contactName, statusNote, appUrl }) 
   ${pBlock(greet)}
   ${pBlock(`niestety nie możemy w tej chwili aktywować konta firmy <strong>${esc(companyName)}</strong> na platformie Fresh Market PreConnect.`)}
   ${noteBlock || pBlock("Powód: prosimy o kontakt w celu uzupełnienia danych firmy lub sprawdzenia statusu rejestracji.")}
-  ${pBlock("Skontaktuj się z nami pod adresem <a href='mailto:newsletter@freshmarket.eu' style='color:#0d9488;'>newsletter@freshmarket.eu</a> — pomożemy doprowadzić rejestrację do końca.")}
+  ${pBlock(`Skontaktuj się z nami pod adresem <a href='mailto:${CONTACT_EMAIL}' style='color:#0d9488;'>${CONTACT_EMAIL}</a> — pomożemy doprowadzić rejestrację do końca.`)}
 </td></tr>`;
   return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl, locale: "pl" }) };
 }
@@ -220,7 +230,7 @@ function tplAccountRejectedEN({ companyName, contactName, statusNote, appUrl }) 
   ${pBlock(greet)}
   ${pBlock(`unfortunately we are not able to activate the account for <strong>${esc(companyName)}</strong> on the Fresh Market PreConnect platform at this moment.`)}
   ${noteBlock || pBlock("Reason: please contact us to complete the company details or check the registration status.")}
-  ${pBlock("Contact us at <a href='mailto:newsletter@freshmarket.eu' style='color:#0d9488;'>newsletter@freshmarket.eu</a> — we will help you finalise the registration.")}
+  ${pBlock(`Contact us at <a href='mailto:${CONTACT_EMAIL}' style='color:#0d9488;'>${CONTACT_EMAIL}</a> — we will help you finalise the registration.`)}
 </td></tr>`;
   return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl, locale: "en" }) };
 }
@@ -243,7 +253,7 @@ function tplAccountSuspendedPL({ companyName, contactName, statusNote, appUrl })
   ${pBlock(greet)}
   ${pBlock(`konto firmy <strong>${esc(companyName)}</strong> zostało tymczasowo wstrzymane przez administratora.`)}
   ${noteBlock}
-  ${pBlock("Wstrzymane konto nadal pozwala zalogować się do panelu i uzupełnić profil, ale wstrzymujemy wysyłkę ofert i Spotkania B2B do czasu wyjaśnienia. Skontaktuj się z <a href='mailto:newsletter@freshmarket.eu' style='color:#0d9488;'>newsletter@freshmarket.eu</a>.")}
+  ${pBlock(`Wstrzymane konto nadal pozwala zalogować się do panelu i uzupełnić profil, ale wstrzymujemy wysyłkę ofert i Spotkania B2B do czasu wyjaśnienia. Skontaktuj się z <a href='mailto:${CONTACT_EMAIL}' style='color:#0d9488;'>${CONTACT_EMAIL}</a>.`)}
 </td></tr>`;
   return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl, locale: "pl" }) };
 }
@@ -259,7 +269,7 @@ function tplAccountSuspendedEN({ companyName, contactName, statusNote, appUrl })
   ${pBlock(greet)}
   ${pBlock(`the account for <strong>${esc(companyName)}</strong> has been temporarily suspended by the administrator.`)}
   ${noteBlock}
-  ${pBlock("A suspended account still lets you sign in to the panel and update the profile, but submissions and B2B Meetings are paused until further notice. Contact <a href='mailto:newsletter@freshmarket.eu' style='color:#0d9488;'>newsletter@freshmarket.eu</a>.")}
+  ${pBlock(`A suspended account still lets you sign in to the panel and update the profile, but submissions and B2B Meetings are paused until further notice. Contact <a href='mailto:${CONTACT_EMAIL}' style='color:#0d9488;'>${CONTACT_EMAIL}</a>.`)}
 </td></tr>`;
   return { subject, html: shell({ title: subject, accent: "#dc2626", body, appUrl, locale: "en" }) };
 }
