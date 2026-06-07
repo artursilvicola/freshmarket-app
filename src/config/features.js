@@ -146,7 +146,7 @@ export const CREDITS_VALIDITY_UI = true;
 // (dane prawne/finansowe sprzedawcy — domyślnie placeholdery). NIE dotyka PayU.
 // Default `false`: gdy wyłączone, przelew działa jak dziś (ekran z numerem konta).
 // Flip na `true` dopiero PO migracji + ustawieniu env + smoke test prod.
-export const BANK_TRANSFER_PROFORMA = false;
+export const BANK_TRANSFER_PROFORMA = true;
 
 // [feat/credit-expiry-reminder — Poprawki Lany #6]
 // Przypomnienie e-mail 14 dni przed wygaśnięciem pakietu kredytów, RAZ na pakiet.
