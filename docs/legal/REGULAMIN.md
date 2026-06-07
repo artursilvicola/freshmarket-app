@@ -206,7 +206,19 @@ Kupiec zobowiązuje się do:
 
 ---
 
-## § 16. Postanowienia końcowe
+<!-- [Poprawki Lany #8] Nowa sekcja §16 (nieaktywne konta). UWAGA: zmiana treści
+     Regulaminu wymaga decyzji Operatora o bumpie wersji (→ v1.2) i 14-dniowym
+     powiadomieniu wg §15.2. Publikacja do public/regulamin.html — osobny task. -->
+## § 16. Archiwizacja i usunięcie nieaktywnych kont
+
+1. Konto Użytkownika, które pozostaje **nieaktywne przez 24 miesiące** (brak logowania i działań w panelu), może zostać przez Operatora **zarchiwizowane, a następnie usunięte lub zanonimizowane** zgodnie z zasadą ograniczenia przechowywania danych (art. 5 ust. 1 lit. e RODO).
+2. Przed usunięciem Operator wysyła ostrzeżenie na adres e-mail przypisany do konta **na 30 dni** oraz **na 7 dni** przed upływem terminu. **Zalogowanie się do panelu zeruje licznik nieaktywności** i zachowuje konto.
+3. Usunięcie konta następuje z poszanowaniem RODO: dane osobowe są usuwane albo **anonimizowane**, przy czym **historia rozliczeń (faktury, płatności)** jest zachowywana w zakresie i przez okres wymagany przepisami prawa (m.in. ustawą o rachunkowości).
+4. Niewykorzystane Kredyty przypisane do usuwanego konta wygasają zgodnie z § 1 i § 6; archiwizacja nie stanowi podstawy do ich zwrotu pieniężnego (Kredyt nie jest środkiem pieniężnym).
+
+---
+
+## § 17. Postanowienia końcowe
 
 1. Prawem właściwym dla Regulaminu jest prawo polskie.
 2. Wszelkie spory powstałe na tle Regulaminu, których nie uda się rozwiązać polubownie, będą rozpatrywane przez sąd właściwy dla siedziby Operatora.
