@@ -56,6 +56,8 @@ import {
   createPayuOrder as dbCreatePayuOrder,
   // [feat/bank-transfer-proforma / Lany #2] proforma dla przelewu
   createProforma as dbCreateProforma, getMyProformas as dbGetMyProformas, getProformaHtml as dbGetProformaHtml,
+  // [followups / Lany #7] realna historia pakietów kredytów (status wygasłe)
+  getPackages as dbGetPackages,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
   getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
   // [B2B Round prod-rollout / admin-team] zarządzanie zespołem administratorów
@@ -6515,6 +6517,8 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   const [proforma, setProforma] = useState(null);          // świeżo wygenerowana
   const [proformaBusy, setProformaBusy] = useState(false);
   const [proformas, setProformas] = useState([]);          // historia proform firmy
+  // [followups / Lany #7] Realna historia pakietów kredytów (z packages, incl. wygasłe).
+  const [creditPackages, setCreditPackages] = useState([]);
   const sel = getPlanById(selected) || getPlanById("std_5") || PRICING_PLANS[0];
   const rem = Math.max(0, pkgMax - pkgUsed);
   // [feat/credits-validity-and-expiry-ui — Lany #5] Data ważności kredytów z nowego
@@ -6528,6 +6532,17 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
     dbGetMyProformas(co.id).then(rows => { if (!cancelled) setProformas(rows || []); }).catch(() => {});
     return () => { cancelled = true; };
   }, [co?.id]);
+
+  // [followups / Lany #7] Wczytaj realną historię pakietów kredytów (incl. wygasłe).
+  // Za flagą CREDITS_VALIDITY_UI — gdy OFF, historia działa po staremu (mock orders).
+  useEffect(() => {
+    if (!CREDITS_VALIDITY_UI || !co?.id) return;
+    let cancelled = false;
+    dbGetPackages(co.id).then(rows => { if (!cancelled) setCreditPackages(rows || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [co?.id]);
+  // Dziś (YYYY-MM-DD) do oceny czy pakiet wygasł.
+  const _todayISO = new Date().toISOString().slice(0, 10);
 
   // [feat/bank-transfer-proforma / Lany #2] Generuje proformę dla przelewu.
   // NIE przechodzi przez PayU — pakiet zostaje "oczekuje na płatność".
@@ -6875,7 +6890,8 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       </div>
 
       {/* Order history */}
-      {orders.length>0&&(
+      {/* [followups / Lany #7] Mock historia zamówień — tylko gdy realna historia OFF. */}
+      {!CREDITS_VALIDITY_UI && orders.length>0&&(
         <Card title={t("supplier.finance.pakiety.order_history.card_title")} icon={FileText}>
           {[...orders].reverse().map(ord=>(
             <div key={ord.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center" }}>
@@ -6894,6 +6910,36 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
               </div>
             </div>
           ))}
+        </Card>
+      )}
+
+      {/* [followups / Lany #7] Realna historia pakietów kredytów — status Aktywny / Wygasłe. */}
+      {CREDITS_VALIDITY_UI && creditPackages.length>0 && (
+        <Card title={t("supplier.finance.pakiety.credit_history.card_title")} icon={FileText}>
+          {creditPackages.map(pkg=>{
+            const expired = pkg.expires_at && String(pkg.expires_at).slice(0,10) < _todayISO;
+            const remaining = Math.max(0, Number(pkg.qty_total||0) - Number(pkg.qty_used||0));
+            const isPrem = String(pkg.plan||"").startsWith("prem");
+            return (
+              <div key={pkg.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center",opacity:expired?0.7:1 }}>
+                <div style={{ width:36,height:36,borderRadius:8,background:expired?"#f1f5f9":(isPrem?"#fef3c7":"#eff6ff"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                  <CreditCard size={15} color={expired?"#94a3b8":(isPrem?"#d97706":"#2563eb")}/>
+                </div>
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ fontWeight:600,fontSize:13 }}>{getPlanLabel(pkg.plan, { withPerSend:false })}</div>
+                  <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
+                    {fmtDateDMY(pkg.purchased_at)} · {expired
+                      ? t("supplier.finance.pakiety.credit_history.expired_on_format", { date: fmtDateDMY(pkg.expires_at) })
+                      : t("supplier.finance.pakiety.credit_history.valid_until_format", { date: fmtDateDMY(pkg.expires_at) })}
+                  </div>
+                </div>
+                <div style={{ textAlign:"right",flexShrink:0 }}>
+                  <div style={{ fontWeight:700,fontSize:13,color:expired?"#94a3b8":"#1e293b" }}>{expired ? "—" : t("supplier.finance.pakiety.credit_history.remaining_format", { remaining, total: pkg.qty_total })}</div>
+                  <Badge color={expired?"#64748b":"#059669"} bg={expired?"#f1f5f9":"#f0fdf4"}>{expired ? t("supplier.finance.pakiety.credit_history.status_expired") : t("supplier.finance.pakiety.credit_history.status_active")}</Badge>
+                </div>
+              </div>
+            );
+          })}
         </Card>
       )}
 

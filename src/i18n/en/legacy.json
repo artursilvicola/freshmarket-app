@@ -1139,6 +1139,14 @@
           "status_paid": "Paid",
           "status_cancelled": "Cancelled",
           "error": "Could not generate the proforma."
+        },
+        "credit_history": {
+          "card_title": "Credit package history",
+          "status_active": "Active",
+          "status_expired": "Expired",
+          "remaining_format": "{{remaining}}/{{total}} credits",
+          "valid_until_format": "valid until {{date}}",
+          "expired_on_format": "expired {{date}}"
         }
       }
     },

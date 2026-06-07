@@ -1139,6 +1139,14 @@
           "status_paid": "Opłacona",
           "status_cancelled": "Anulowana",
           "error": "Nie udało się wygenerować proformy."
+        },
+        "credit_history": {
+          "card_title": "Historia pakietów kredytów",
+          "status_active": "Aktywny",
+          "status_expired": "Wygasłe",
+          "remaining_format": "{{remaining}}/{{total}} kredytów",
+          "valid_until_format": "ważne do {{date}}",
+          "expired_on_format": "wygasło {{date}}"
         }
       }
     },
