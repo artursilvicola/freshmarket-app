@@ -1669,6 +1669,8 @@
     "settlements": {
       "title": "Rozliczenia z dostawcami",
       "subtitle": "Proformy, pakiety kredytów i płatności dostawców.",
+      "revenue_label": "Przychód potwierdzony (legacy/szacunkowo)",
+      "revenue_hint": "Szacunek wg modelu legacy: potwierdzone wysyłki × 40 EUR.",
       "filter_company_ph": "Szukaj firmy / NIP…",
       "pf_filter_all": "Proformy: wszystkie",
       "pf_filter_pending": "Proformy: oczekujące",
@@ -1721,6 +1723,7 @@
       "urgent_btn_firmy": "Otwórz Firmy →",
       "kpi_revenue_label": "Przychód (potwier.)",
       "kpi_revenue_value_format": "{{amount}} EUR",
+      "settlements_nav_sub": "Finanse dostawców: proformy, kredyty, płatności",
       "kpi_moderation_label_format": "Do moderacji ({{count}})",
       "kpi_moderation_value_action": "Wymaga akcji",
       "kpi_moderation_value_ok": "OK",

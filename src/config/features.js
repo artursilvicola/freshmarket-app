@@ -192,3 +192,15 @@ export const ACCOUNT_HARD_DELETE = false;
 // TODO (przyszłość): rola "admin finansowy" z węższym dostępem — wymaga osobnego
 // modelu ról (migracja), NIE w tym branchu.
 export const ADMIN_SETTLEMENTS = true;
+
+// [feat/admin-pipeline-cleanup] Pipeline = widok OPERACYJNY, nie finansowy.
+// Gdy `true`: chowa bloki finansowe z Pipeline (credit-settlement
+// "Rozliczenie kredytów PreConnect": kupione/wykorzystane/pozostałe/zwroty/
+// oczekujące w PipelineTableV2, oraz charging-settlement w starym fallbacku
+// PageAdminPipeline) i RELOKUJE credit-settlement do zakładki Rozliczenia
+// (PageAdminSettlements), żeby nic nie zginęło. Operacyjne sekcje (moderacja,
+// koszyk mailingu, wysłane/tracking, odczyty/reakcje/per-send zwroty) zostają.
+//
+// Bez migracji, bez zmian danych. Default `false`: Pipeline bez zmian (bloki
+// finansowe tam, gdzie dziś; Rozliczenia bez relokowanej sekcji).
+export const ADMIN_PIPELINE_CLEANUP = false;

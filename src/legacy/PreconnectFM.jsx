@@ -81,7 +81,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -3523,7 +3523,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
-    if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity}/>;
+    if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity} sends={sends} offers={offers}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
@@ -7979,7 +7979,9 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
       )}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12,marginBottom:20 }}>
         {[
-          [t("admin.dash.kpi_revenue_label"), t("admin.dash.kpi_revenue_value_format", { amount: revenue }), revenue>0?"#059669":"#94a3b8", TrendingUp],
+          // [feat/admin-pipeline-cleanup] KPI "Przychód (potwier.)" — finansowy → chowany gdy flaga ON
+          // (przeniesiony do Rozliczeń). Spread warunkowy zachowuje pozostałe KPI bez zmian.
+          ...(!ADMIN_PIPELINE_CLEANUP ? [[t("admin.dash.kpi_revenue_label"), t("admin.dash.kpi_revenue_value_format", { amount: revenue }), revenue>0?"#059669":"#94a3b8", TrendingUp]] : []),
           [t("admin.dash.kpi_moderation_label_format", { count: pm }), pm>0?t("admin.dash.kpi_moderation_value_action"):t("admin.dash.kpi_moderation_value_ok"), pm>0?"#d97706":"#059669", Layers],
           [t("admin.dash.kpi_approved_label_format", { count: ap }), ap>0?t("admin.dash.kpi_approved_value_ready"):t("admin.dash.kpi_approved_value_dash"), ap>0?"#2563eb":"#94a3b8", Send],
           [t("admin.dash.kpi_pending_confirm_label_format", { count: nc }), nc>0?t("admin.dash.kpi_pending_confirm_value_tracking"):t("admin.dash.kpi_pending_confirm_value_dash"), nc>0?"#ea580c":"#94a3b8", Phone],
@@ -7990,6 +7992,17 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           </div>
         ))}
       </div>
+      {/* [feat/admin-pipeline-cleanup] Szybkie wejście do Rozliczeń (finanse dostawców) — gdy moduł ON. */}
+      {ADMIN_SETTLEMENTS && (
+        <div onClick={()=>nav("a-settlements")} style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 16px",marginBottom:20,background:"white",border:"1px solid #e2e8f0",borderRadius:12,borderLeft:"3px solid #2563eb",cursor:"pointer" }}>
+          <div style={{ width:38,height:38,borderRadius:9,background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Receipt size={18} color="#2563eb"/></div>
+          <div style={{ flex:1,minWidth:0 }}>
+            <div style={{ fontWeight:700,fontSize:13,color:"#0f172a" }}>{t("shell.sidebar.admin_settlements")}</div>
+            <div style={{ fontSize:11,color:"#64748b" }}>{t("admin.dash.settlements_nav_sub")}</div>
+          </div>
+          <span style={{ color:"#94a3b8",fontSize:18,flexShrink:0 }}>→</span>
+        </div>
+      )}
       {fmSettings && (()=>{
         // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej.
         const _ph = FM_PHASES[(fmSettings.currentPhase||1)-1] || FM_PHASES[FM_PHASES.length-1];
@@ -8622,8 +8635,9 @@ function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onTo
       )}
 
       {/* [admin-credits-settlement] Rozliczenie kredytów PreConnect (tylko tryb track).
-          Operacyjny widok qty (zero EUR). Totals + rozwijana tabela per firma. */}
-      {!isMod && (creditsSettlement.totals.bought > 0 || creditsSettlement.rows.length > 0) && (() => {
+          [feat/admin-pipeline-cleanup] Gdy flaga ON — finanse znikają z Pipeline
+          (relokacja do zakładki Rozliczenia). */}
+      {!ADMIN_PIPELINE_CLEANUP && !isMod && (creditsSettlement.totals.bought > 0 || creditsSettlement.rows.length > 0) && (() => {
         const tt = creditsSettlement.totals;
         const stat = (label, value, color, bg) => (
           <div style={{ padding:"8px 12px", background:bg, border:`1px solid ${color}33`, borderRadius:8, minWidth:120 }}>
@@ -9230,7 +9244,8 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
             })}
           </div>
         </Card>}
-        <Card title={t("admin.pipeline.settle_card_title")} icon={CreditCard}>
+        {/* [feat/admin-pipeline-cleanup] charging-settlement (stary fallback) — chowane gdy flaga ON. */}
+        {!ADMIN_PIPELINE_CLEANUP && <Card title={t("admin.pipeline.settle_card_title")} icon={CreditCard}>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:12 }}>
             <div style={{ padding:"10px 12px",background:"#ecfdf5",border:"1px solid #bbf7d0",borderRadius:8 }}>
               <div style={{ fontSize:10,color:"#047857",textTransform:"uppercase",fontWeight:800 }}>{t("admin.pipeline.settle_settled_label")}</div>
@@ -9271,7 +9286,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
               ))}
             </div>
           )}
-        </Card>
+        </Card>}
         {sentSends.map(s=>{ const o=getOffer(s.offerId,offers); const r=getRetailerLive(s.retailerId); const isAuto=s.status==="read"; const isEmail=s.status==="opened"; const isConf=isSeenOrCharged(s); const histLen=(s.confirmHistory||[]).length; return (
           <Card key={s.id} style={{ borderLeft:`3px solid ${s.status==="sent"?"#ea580c":isEmail?"#7c3aed":isAuto?"#059669":"#047857"}`,marginBottom:10 }}>
             <div style={{ display:"flex",gap:10,alignItems:"center",marginBottom:isConf?0:10,flexWrap:"wrap" }}>
@@ -9867,8 +9882,17 @@ function pickCompanyBusinessContact(company) {
 // wykorzystano/zostało/ważność/status). Read-only + akcja "oznacz opłaconą".
 // Dostęp jak inne zakładki admina (admin/super-admin).
 // TODO: przyszła rola "admin finansowy" z węższym dostępem — osobny model ról (migracja).
-function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity }) {
+function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, sends = [], offers = [] }) {
   const { t } = useTranslation("legacy");
+  // [feat/admin-pipeline-cleanup] Relokacja credit-settlement z Pipeline → tutaj.
+  const [creditsExpanded, setCreditsExpanded] = useState(false);
+  const creditsSettlement = useMemo(
+    () => computeCreditsSettlement(dbCapacity, sends, companies, offers),
+    [dbCapacity, sends, companies, offers]
+  );
+  // [feat/admin-pipeline-cleanup] Przychód potwierdzony (legacy/szacunkowo) — ta sama
+  // logika co dawne KPI na Dashboardzie: potwierdzone wysyłki (read/read_manual) × 40 EUR.
+  const confirmedRevenue = (sends || []).filter(s => ["read", "read_manual"].includes(s.status)).length * 40;
   const [proformas, setProformas] = useState([]);
   const [packages, setPackages] = useState([]);
   const [busyId, setBusyId] = useState(null);
@@ -10001,6 +10025,63 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity }) {
           );
         })}
       </Card>
+
+      {/* [feat/admin-pipeline-cleanup] Przychód potwierdzony (legacy/szacunkowo) — relokowany z KPI Dashboardu. */}
+      {ADMIN_PIPELINE_CLEANUP && (
+        <Card title={t("admin.settlements.revenue_label")} icon={TrendingUp} style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 24, fontWeight: 900, color: confirmedRevenue > 0 ? "#059669" : "#94a3b8" }}>{confirmedRevenue} EUR</div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{t("admin.settlements.revenue_hint")}</div>
+        </Card>
+      )}
+      {/* [feat/admin-pipeline-cleanup] Relokowane z Pipeline: "Rozliczenie kredytów PreConnect"
+          (kupione/wykorzystane/pozostałe/zwroty/oczekujące, per firma). Tylko gdy flaga ON. */}
+      {ADMIN_PIPELINE_CLEANUP && (creditsSettlement.totals.bought > 0 || creditsSettlement.rows.length > 0) && (
+        <Card title={t("admin.pipeline.credits_settle.title")} icon={CreditCard} style={{ marginTop: 16 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {[
+              [t("admin.pipeline.credits_settle.bought"), creditsSettlement.totals.bought, "#0d9488", "#f0fdfa"],
+              [t("admin.pipeline.credits_settle.used"), creditsSettlement.totals.used, "#2563eb", "#eff6ff"],
+              [t("admin.pipeline.credits_settle.remaining"), creditsSettlement.totals.remaining, "#059669", "#ecfdf5"],
+              [t("admin.pipeline.credits_settle.returned"), creditsSettlement.totals.returned, "#7c3aed", "#f5f3ff"],
+              [t("admin.pipeline.credits_settle.awaiting"), creditsSettlement.totals.awaiting, "#ea580c", "#fff7ed"],
+            ].map(([label, value, color, bg]) => (
+              <div key={label} style={{ padding: "8px 12px", background: bg, border: `1px solid ${color}33`, borderRadius: 8, minWidth: 120 }}>
+                <div style={{ fontSize: 10, color, textTransform: "uppercase", fontWeight: 800, letterSpacing: "0.03em" }}>{label}</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 8 }}>{t("admin.pipeline.credits_settle.hint")}</div>
+          {creditsSettlement.rows.length > 0 && (
+            <button type="button" onClick={() => setCreditsExpanded(v => !v)} style={{ marginTop: 10, background: "transparent", border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 10px", fontSize: 11, cursor: "pointer", color: "#475569", fontFamily: "inherit" }}>
+              {creditsExpanded ? t("admin.pipeline.credits_settle.hide_per_company") : t("admin.pipeline.credits_settle.show_per_company", { count: creditsSettlement.rows.length })}
+            </button>
+          )}
+          {creditsExpanded && creditsSettlement.rows.length > 0 && (
+            <div style={{ overflowX: "auto", marginTop: 10 }}>
+              <table style={{ width: "100%", minWidth: 560, borderCollapse: "collapse", fontFamily: "inherit" }}>
+                <thead><tr>
+                  {[["left", t("admin.pipeline.credits_settle.col_company")], ["right", t("admin.pipeline.credits_settle.bought")], ["right", t("admin.pipeline.credits_settle.used")], ["right", t("admin.pipeline.credits_settle.remaining")], ["right", t("admin.pipeline.credits_settle.returned")], ["right", t("admin.pipeline.credits_settle.awaiting")]].map(([al, h], i) => (
+                    <th key={i} style={{ padding: "6px 10px", fontSize: 10, textTransform: "uppercase", color: "#64748b", fontWeight: 700, borderBottom: "1px solid #e2e8f0", textAlign: al }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {creditsSettlement.rows.map(r => (
+                    <tr key={r.id}>
+                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f1f5f9", textAlign: "left", fontWeight: 600, color: "#0f172a", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={r.name}>{r.name}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>{r.bought}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>{r.used}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f1f5f9", textAlign: "right", color: r.remaining <= 0 ? "#dc2626" : "#059669", fontWeight: 700 }}>{r.remaining}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f1f5f9", textAlign: "right" }}>{r.returned || "—"}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid #f1f5f9", textAlign: "right", color: r.awaiting > 0 ? "#ea580c" : "#94a3b8" }}>{r.awaiting || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
