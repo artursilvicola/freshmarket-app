@@ -133,7 +133,7 @@ export const NIP_REQUIRED = true;
 // Wygasanie kredytów jest już egzekwowane przez widok company_capacity (do puli
 // liczone tylko niewygasłe pakiety) — ta flaga to TYLKO warstwa prezentacji.
 // Default `false`: gdy wyłączone, panel bez zmian (stary format/placeholdery).
-export const CREDITS_VALIDITY_UI = false;
+export const CREDITS_VALIDITY_UI = true;
 
 // [feat/bank-transfer-proforma — Poprawki Lany #2]
 // Płatność przelewem generuje fakturę proforma (HTML): przycisk "Pobierz proformę",
