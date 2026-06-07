@@ -179,3 +179,16 @@ export const ACCOUNT_LIFECYCLE = false;
 // jeszcze podpięty do żadnej logiki — rezerwacja nazwy + jawny sygnał, że ta
 // część wymaga osobnej implementacji, sandboxu i sign-offu (RODO). Trzymać false.
 export const ACCOUNT_HARD_DELETE = false;
+
+// [feat/admin-supplier-settlements] Nowy moduł admina "Rozliczenia" (Settlements):
+// osobna zakładka z finansami dostawców — proformy (oczekujące + opłacone),
+// pakiety kredytów (kupiono/wykorzystano/zostało/ważność/status), kwoty netto/VAT/brutto.
+// Akcja "Oznacz opłaconą → aktywuj pakiet" przenosi się tu z zakładki Firmy.
+//
+// Default `false`: gdy wyłączone, zakładka Rozliczenia nie istnieje, a karta proform
+// zostaje w Firmy (obecne zachowanie). Gdy `true`: zakładka Rozliczenia widoczna,
+// karta proform znika z Firmy (jest tylko w Rozliczeniach). Bez migracji — czyta
+// istniejące proformas/packages/company_capacity (RLS: admin widzi wszystko).
+// TODO (przyszłość): rola "admin finansowy" z węższym dostępem — wymaga osobnego
+// modelu ról (migracja), NIE w tym branchu.
+export const ADMIN_SETTLEMENTS = false;
