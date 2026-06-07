@@ -210,4 +210,5 @@ export const ADMIN_PIPELINE_CLEANUP = false;
 // Sieci/Wiadomości) → kompaktowy status FM 2026 → danger zone (reset) na dole.
 // Fork renderu PageAdminDash. Default `false`: stary układ bez zmian.
 // Bez migracji, bez zmian danych. Flip na `true` po smoke test prod.
-export const ADMIN_DASHBOARD_POLISH = false;
+// [chore/flip-admin-dashboard-polish] ON — nowy uporządkowany Dashboard na prod.
+export const ADMIN_DASHBOARD_POLISH = true;
