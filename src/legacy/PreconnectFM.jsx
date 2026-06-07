@@ -6518,6 +6518,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   // [feat/bank-transfer-proforma / Lany #2] Stan proform (płatność przelewem).
   const [proforma, setProforma] = useState(null);          // świeżo wygenerowana
   const [proformaBusy, setProformaBusy] = useState(false);
+  const [proformaError, setProformaError] = useState(null); // [fix/proforma-error-ux] inline błąd w modalu
   const [proformas, setProformas] = useState([]);          // historia proform firmy
   // [followups / Lany #7] Realna historia pakietów kredytów (z packages, incl. wygasłe).
   const [creditPackages, setCreditPackages] = useState([]);
@@ -6549,6 +6550,14 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   // [feat/bank-transfer-proforma / Lany #2] Generuje proformę dla przelewu.
   // NIE przechodzi przez PayU — pakiet zostaje "oczekuje na płatność".
   async function handleProforma() {
+    // [fix/proforma-error-ux] Czyść poprzedni błąd przy starcie generowania.
+    setProformaError(null);
+    // Guard NIP po stronie frontu (analogicznie do handleOrder) — proforma wymaga
+    // NIP do rozliczeń. Bez round-tripu do backendu, czytelny komunikat w modalu.
+    if (NIP_REQUIRED && !String(co?.nip || "").trim()) {
+      setProformaError(t("supplier.finance.pakiety.payment_modal.nip_required"));
+      return;
+    }
     setProformaBusy(true);
     try {
       const res = await dbCreateProforma(selected);
@@ -6559,7 +6568,10 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
         plan_id: selected, qty: sel.qty,
       }, ...prev]);
     } catch (e) {
-      fl(e?.message || t("supplier.finance.pakiety.proforma.error"), "error");
+      // [fix/proforma-error-ux] Pokaż dokładny e.message INLINE w modalu (toast chował
+      // się za modalem, z-index 9999). Dzięki temu user widzi konkretną przyczynę:
+      // brak NIP / migracja / plan / env / numer proformy.
+      setProformaError(e?.message || t("supplier.finance.pakiety.proforma.error"));
     } finally {
       setProformaBusy(false);
     }
@@ -6650,7 +6662,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 </div>
                 <div style={{ display:"flex",gap:8 }}>
                   <Btn primary onClick={()=>downloadHtmlDocument(`${String(proforma.number).replace(/[/\\]/g,"-")}.html`, proforma.html)} style={{ flex:2 }}><Download size={13}/> {t("supplier.finance.pakiety.proforma.download")}</Btn>
-                  <Btn outline onClick={()=>{ setProforma(null); setShowModal(false); }} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
+                  <Btn outline onClick={()=>{ setProforma(null); setProformaError(null); setShowModal(false); }} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
                 </div>
               </div>
             ):paid?(
@@ -6683,7 +6695,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                     <h3 style={{ margin:0,fontSize:16 }}>{t("supplier.finance.pakiety.payment_modal.title")}</h3>
                     <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>{t("supplier.finance.pakiety.payment_modal.subtitle")}</div>
                   </div>
-                  <button onClick={()=>setShowModal(false)} style={{ marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4 }}><X size={18}/></button>
+                  <button onClick={()=>{ setProformaError(null); setShowModal(false); }} style={{ marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4 }}><X size={18}/></button>
                 </div>
                 <div style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_pkg_label")}</span><span style={{ fontWeight:600 }}>{pkgLabel(sel.tier, sel.qty)}</span></div>
@@ -6735,8 +6747,15 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                     <div style={{ marginTop:6,padding:"5px 8px",background:"rgba(3,105,161,0.08)",borderRadius:5,fontSize:11 }}>{t("supplier.finance.pakiety.payment_modal.bank_form_info")}</div>
                   </div>
                 )}
+                {/* [fix/proforma-error-ux] Inline błąd generowania proformy (zamiast tylko toasta za modalem). */}
+                {BANK_TRANSFER_PROFORMA && proformaError && (
+                  <div style={{ marginBottom:12,padding:"10px 12px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,fontSize:13,color:"#b91c1c",display:"flex",gap:8,alignItems:"flex-start" }}>
+                    <AlertTriangle size={15} color="#dc2626" style={{ flexShrink:0,marginTop:1 }}/>
+                    <span>{proformaError}</span>
+                  </div>
+                )}
                 <div style={{ display:"flex",gap:8 }}>
-                  <Btn outline onClick={()=>setShowModal(false)} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
+                  <Btn outline onClick={()=>{ setProformaError(null); setShowModal(false); }} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
                   <Btn primary disabled={paying||proformaBusy||(payMethod==="portfel"&&wallet.balance<sel.price)} onClick={(BANK_TRANSFER_PROFORMA&&payMethod==="przelew")?handleProforma:handleOrder} style={{ flex:2,background:sel.tier==="PREMIUM"?"#d97706":"#0d9488" }}>
                     {(BANK_TRANSFER_PROFORMA&&payMethod==="przelew")
                       ? (proformaBusy?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><FileText size={13}/> {t("supplier.finance.pakiety.proforma.generate_button")}</>)
@@ -11136,8 +11155,12 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
         </div>
       </div>
       {/* [followups / Lany #2 admin] Proformy oczekujące na płatność (przelew) → oznacz opłaconą → aktywuj pakiet. */}
-      {BANK_TRANSFER_PROFORMA && pendingProformas.length>0 && (
+      {BANK_TRANSFER_PROFORMA && (
         <Card title={t("admin.proformas.card_title")} icon={FileText} style={{ marginBottom:14,borderLeft:"3px solid #2563eb" }}>
+          {/* [fix/proforma-error-ux] Empty-state — gdy żaden dostawca nie wygenerował jeszcze proformy. */}
+          {pendingProformas.length===0 && (
+            <div style={{ fontSize:12,color:"#64748b",padding:"6px 2px" }}>{t("admin.proformas.empty")}</div>
+          )}
           {pendingProformas.map(pf=>(
             <div key={pf.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center",flexWrap:"wrap" }}>
               <div style={{ width:36,height:36,borderRadius:8,background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
