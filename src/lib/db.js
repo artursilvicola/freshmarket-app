@@ -910,6 +910,30 @@ export async function markProformaPaid(proformaId) {
   return data; // package_id
 }
 
+// [feat/admin-supplier-settlements] Wszystkie proformy (admin) — pending + opłacone
+// + anulowane. RLS proformas dopuszcza is_admin() → admin widzi wszystkie.
+export async function getProformasAdmin(limit = 300) {
+  const { data, error } = await supabase
+    .from("proformas")
+    .select("id, number, status, plan_id, qty, currency, net_amount, vat_amount, gross_amount, company_id, company_name_snapshot, company_nip_snapshot, issued_at, paid_at, package_id")
+    .order("issued_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+// [feat/admin-supplier-settlements] Wszystkie pakiety kredytów (admin) — incl. wygasłe.
+// RLS packages: is_admin() or own → admin widzi wszystkie. Join companies dla nazwy/NIP.
+export async function getAllPackagesAdmin(limit = 1000) {
+  const { data, error } = await supabase
+    .from("packages")
+    .select("id, company_id, plan, qty_total, qty_used, currency, price_paid, purchased_at, expires_at, company:companies(name, nip)")
+    .order("purchased_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
 // ===================================================================
 // BUYER STARRED
 // ===================================================================

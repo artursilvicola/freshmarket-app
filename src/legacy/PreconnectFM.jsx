@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import {
-  Home, Building2, Store, Send, Tag, Plus, Clock, Edit, CheckCircle,
+  Home, Building2, Store, Send, Tag, Plus, Clock, Edit, CheckCircle, Receipt,
   X, ArrowLeft, Search, Info, AlertTriangle, Bot, Leaf, Award, Users,
   Calendar, Phone, Mail, User, Sliders, FileText, Layers, Zap, PlusCircle,
   Package, ExternalLink, Sparkles, RefreshCw, Eye, Upload, ShieldCheck,
@@ -58,6 +58,8 @@ import {
   createProforma as dbCreateProforma, getMyProformas as dbGetMyProformas, getProformaHtml as dbGetProformaHtml,
   // [followups / Lany #2 admin] proformy do rozliczenia przez admina
   getPendingProformas as dbGetPendingProformas, markProformaPaid as dbMarkProformaPaid,
+  // [feat/admin-supplier-settlements] moduł Rozliczenia (read-only finanse dostawców)
+  getProformasAdmin as dbGetProformasAdmin, getAllPackagesAdmin as dbGetAllPackagesAdmin,
   // [followups / Lany #7] realna historia pakietów kredytów (status wygasłe)
   getPackages as dbGetPackages,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
@@ -79,7 +81,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -3521,6 +3523,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
+    if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
@@ -3638,7 +3641,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.admin_section")}</span>
               </div>
-              {[[Layers,t("shell.sidebar.admin_pipeline"),"a-pipeline"],[Store,t("shell.sidebar.admin_retailers"),"a-retailers"],[Building2,t("shell.sidebar.admin_firmy"),"a-firmy"]].map(([Ic,label,key])=>{
+              {[[Layers,t("shell.sidebar.admin_pipeline"),"a-pipeline"],[Store,t("shell.sidebar.admin_retailers"),"a-retailers"],[Building2,t("shell.sidebar.admin_firmy"),"a-firmy"], ...(ADMIN_SETTLEMENTS ? [[Receipt,t("shell.sidebar.admin_settlements"),"a-settlements"]] : [])].map(([Ic,label,key])=>{
                 // [B2B Round prod-rollout / admin-notifications] Badge w sidebarze
                 // dla pozycji wymagających akcji admina:
                 //   - Pipeline: propozycje czekające na moderację (status pending_moderation)
@@ -9859,6 +9862,149 @@ function pickCompanyBusinessContact(company) {
   return company.contacts.find(c => c?.email || c?.phone || c?.name) || company.contacts[0] || null;
 }
 
+// [feat/admin-supplier-settlements] Nowy moduł admina "Rozliczenia" — finanse
+// dostawców: proformy (oczekujące + opłacone) + pakiety kredytów (kupiono/
+// wykorzystano/zostało/ważność/status). Read-only + akcja "oznacz opłaconą".
+// Dostęp jak inne zakładki admina (admin/super-admin).
+// TODO: przyszła rola "admin finansowy" z węższym dostępem — osobny model ról (migracja).
+function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity }) {
+  const { t } = useTranslation("legacy");
+  const [proformas, setProformas] = useState([]);
+  const [packages, setPackages] = useState([]);
+  const [busyId, setBusyId] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [companyFilter, setCompanyFilter] = useState("");
+  const [pfStatus, setPfStatus] = useState("all");     // all | pending | paid | cancelled
+  const [pkgStatus, setPkgStatus] = useState("all");   // all | active | expired
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([dbGetProformasAdmin(), dbGetAllPackagesAdmin()])
+      .then(([pf, pk]) => { if (!cancelled) { setProformas(pf || []); setPackages(pk || []); setLoading(false); } })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  async function handleMarkPaid(pf) {
+    setBusyId(pf.id);
+    try {
+      await dbMarkProformaPaid(pf.id);                                   // idempotentne (RPC po numerze)
+      setProformas(prev => prev.map(x => x.id === pf.id ? { ...x, status: "paid", paid_at: new Date().toISOString() } : x));
+      fl(t("admin.proformas.paid_toast", { number: pf.number }));
+      if (typeof refreshCapacity === "function") { try { await refreshCapacity(); } catch { /* no-op */ } }
+      try { const pk = await dbGetAllPackagesAdmin(); setPackages(pk || []); } catch { /* no-op */ }
+    } catch (e) {
+      fl(e?.message || t("admin.proformas.error"), "error");
+    } finally { setBusyId(null); }
+  }
+
+  const _today = new Date().toISOString().slice(0, 10);
+  const cf = companyFilter.trim().toLowerCase();
+  const money = (n) => Number(n || 0).toFixed(2);
+  const pfStatusLabel = (s) => t("admin.settlements.pf_status_" + (s || "pending"));
+  const pfStatusColor = (s) => s === "paid" ? ["#059669", "#f0fdf4"] : s === "cancelled" ? ["#64748b", "#f1f5f9"] : ["#d97706", "#fffbeb"];
+
+  const fProformas = proformas.filter(pf =>
+    (pfStatus === "all" || pf.status === pfStatus) &&
+    (!cf || (pf.company_name_snapshot || "").toLowerCase().includes(cf) || (pf.company_nip_snapshot || "").toLowerCase().includes(cf))
+  );
+
+  // Agregacja pakietów per dostawca (z packages, incl. wygasłe).
+  const byCompany = {};
+  for (const pk of (packages || [])) {
+    const cid = pk.company_id || "—";
+    if (!byCompany[cid]) byCompany[cid] = { cid, name: pk.company?.name || "—", nip: pk.company?.nip || "", bought: 0, used: 0, activeRemaining: 0, validUntil: null, hasActive: false };
+    const g = byCompany[cid];
+    const qt = Number(pk.qty_total || 0), qu = Number(pk.qty_used || 0);
+    const expired = pk.expires_at ? String(pk.expires_at).slice(0, 10) < _today : false;
+    g.bought += qt; g.used += qu;
+    if (!expired) {
+      g.hasActive = true;
+      g.activeRemaining += Math.max(0, qt - qu);
+      const exp = String(pk.expires_at || "").slice(0, 10);
+      if (exp && (!g.validUntil || exp > g.validUntil)) g.validUntil = exp;
+    }
+  }
+  const suppliers = Object.values(byCompany)
+    .filter(g => !cf || g.name.toLowerCase().includes(cf) || (g.nip || "").toLowerCase().includes(cf))
+    .filter(g => pkgStatus === "all" || (pkgStatus === "active" ? g.activeRemaining > 0 : g.activeRemaining <= 0))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const selStyle = { padding: "6px 10px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "inherit", background: "white" };
+
+  return (
+    <div>
+      <div style={{ marginBottom: 6 }}>
+        <div style={{ fontWeight: 700, fontSize: 15 }}>{t("admin.settlements.title")}</div>
+        <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{t("admin.settlements.subtitle")}</div>
+      </div>
+
+      {/* Filtry */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0 16px" }}>
+        <input value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} placeholder={t("admin.settlements.filter_company_ph")} style={{ ...selStyle, minWidth: 200, flex: "1 1 200px" }} />
+        <select value={pfStatus} onChange={e => setPfStatus(e.target.value)} style={selStyle}>
+          {["all", "pending", "paid", "cancelled"].map(s => <option key={s} value={s}>{t("admin.settlements.pf_filter_" + s)}</option>)}
+        </select>
+        <select value={pkgStatus} onChange={e => setPkgStatus(e.target.value)} style={selStyle}>
+          {["all", "active", "expired"].map(s => <option key={s} value={s}>{t("admin.settlements.pkg_filter_" + s)}</option>)}
+        </select>
+      </div>
+
+      {loading && <Alrt type="info">{t("admin.settlements.loading")}</Alrt>}
+
+      {/* Sekcja A — Proformy */}
+      <Card title={t("admin.settlements.proformas_title")} icon={FileText} style={{ marginBottom: 16 }}>
+        {fProformas.length === 0 ? (
+          <div style={{ fontSize: 12, color: "#64748b", padding: "6px 2px" }}>{t("admin.settlements.proformas_empty")}</div>
+        ) : fProformas.map(pf => {
+          const [c, bg] = pfStatusColor(pf.status);
+          return (
+            <div key={pf.id} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><FileText size={14} color="#2563eb" /></div>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{pf.number} · {pf.company_name_snapshot || "—"}</div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{getPlanLabel(pf.plan_id, { withPerSend: false })} · NIP {pf.company_nip_snapshot || "—"} · {String(pf.issued_at || "").slice(0, 10)}</div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0, fontSize: 11, color: "#64748b", minWidth: 140 }}>
+                <div>{t("admin.settlements.net")}: {money(pf.net_amount)} {pf.currency || "EUR"} · VAT: {money(pf.vat_amount)}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#1e293b" }}>{t("admin.settlements.gross")}: {money(pf.gross_amount)} {pf.currency || "EUR"}</div>
+              </div>
+              <Badge color={c} bg={bg}>{pfStatusLabel(pf.status)}</Badge>
+              {pf.status === "pending" && (
+                <Btn primary sm disabled={busyId === pf.id} onClick={() => handleMarkPaid(pf)}>
+                  {busyId === pf.id ? t("admin.proformas.marking") : t("admin.proformas.mark_paid")}
+                </Btn>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+
+      {/* Sekcja B — Kredyty dostawców */}
+      <Card title={t("admin.settlements.packages_title")} icon={CreditCard}>
+        {suppliers.length === 0 ? (
+          <div style={{ fontSize: 12, color: "#64748b", padding: "6px 2px" }}>{t("admin.settlements.packages_empty")}</div>
+        ) : suppliers.map(g => {
+          const active = g.activeRemaining > 0;
+          return (
+            <div key={g.cid} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center", flexWrap: "wrap", opacity: active ? 1 : 0.75 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: active ? "#f0fdfa" : "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><CreditCard size={14} color={active ? "#0d9488" : "#94a3b8"} /></div>
+              <div style={{ flex: 1, minWidth: 160 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{g.name}</div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>NIP {g.nip || "—"}{g.validUntil ? ` · ${t("admin.settlements.col_valid_until")}: ${fmtDateDMY(g.validUntil)}` : ""}</div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0, fontSize: 11, color: "#64748b", minWidth: 200 }}>
+                {t("admin.settlements.col_bought")}: <strong>{g.bought}</strong> · {t("admin.settlements.col_used")}: <strong>{g.used}</strong> · {t("admin.settlements.col_remaining")}: <strong style={{ color: active ? "#059669" : "#94a3b8" }}>{g.activeRemaining}</strong>
+              </div>
+              <Badge color={active ? "#059669" : "#64748b"} bg={active ? "#f0fdf4" : "#f1f5f9"}>{active ? t("admin.settlements.status_active") : t("admin.settlements.status_expired")}</Badge>
+            </div>
+          );
+        })}
+      </Card>
+    </div>
+  );
+}
+
 function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity, onOpenAdminChat, profiles = [] }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
@@ -11154,8 +11300,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
           </button>
         </div>
       </div>
-      {/* [followups / Lany #2 admin] Proformy oczekujące na płatność (przelew) → oznacz opłaconą → aktywuj pakiet. */}
-      {BANK_TRANSFER_PROFORMA && (
+      {/* [followups / Lany #2 admin] Proformy oczekujące na płatność. [feat/admin-supplier-settlements]
+          Gdy moduł Rozliczenia ON — karta przenosi się tam, więc w Firmy ją chowamy. */}
+      {BANK_TRANSFER_PROFORMA && !ADMIN_SETTLEMENTS && (
         <Card title={t("admin.proformas.card_title")} icon={FileText} style={{ marginBottom:14,borderLeft:"3px solid #2563eb" }}>
           {/* [fix/proforma-error-ux] Empty-state — gdy żaden dostawca nie wygenerował jeszcze proformy. */}
           {pendingProformas.length===0 && (
