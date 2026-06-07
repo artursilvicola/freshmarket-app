@@ -134,6 +134,12 @@ export function renderProforma(p) {
 
   const itemName = `${esc(t.pkg)} — ${esc(p.planLabel)} (${esc(p.qty)} ${esc(t.creditsUnit)})`;
 
+  // [feat/proforma-brand-logo] Logo Fresh Market z brandingu (fm_settings.brand_logo_url,
+  // publiczny URL z bucketu brand-assets). Fallback do tekstu gdy brak logo.
+  const brandHtml = p.brandLogoUrl
+    ? `<img src="${esc(p.brandLogoUrl)}" alt="Fresh Market" style="max-height:42px;max-width:240px;display:inline-block;border:0;" />`
+    : `<div style="color:white;font-weight:800;font-size:20px;letter-spacing:-0.4px;">Fresh Market <span style="color:rgba(255,255,255,0.6);font-weight:600;font-size:12px;">PreConnect</span></div>`;
+
   const html = `<!DOCTYPE html>
 <html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(t.title)} ${esc(p.number)}</title></head>
 <body style="margin:0;padding:0;background:#ececec;font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;">
@@ -141,7 +147,7 @@ export function renderProforma(p) {
   <tr><td align="center">
     <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="max-width:640px;background:white;border-radius:12px;overflow:hidden;box-shadow:0 4px 18px rgba(15,23,42,0.08);">
       <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0d9488 100%);padding:22px 32px;">
-        <div style="color:white;font-weight:800;font-size:20px;letter-spacing:-0.4px;">Fresh Market <span style="color:rgba(255,255,255,0.6);font-weight:600;font-size:12px;">PreConnect</span></div>
+        ${brandHtml}
         <div style="color:rgba(255,255,255,0.85);font-weight:700;font-size:15px;margin-top:6px;">${esc(t.title)}</div>
       </td></tr>
 
