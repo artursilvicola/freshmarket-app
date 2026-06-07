@@ -1123,6 +1123,19 @@
           "qty_added_credits_other_format": "+{{qty}} credits",
           "price_format": "−{{price}} EUR",
           "paid_badge": "Paid"
+        },
+        "proforma": {
+          "generate_button": "Generate proforma",
+          "title": "Proforma generated",
+          "subtitle_html": "Number: <strong>{{number}}</strong>. We have emailed it to you.",
+          "pay_info": "Pay by bank transfer using the details in the proforma. The credit package will be activated once the payment is posted.",
+          "download": "Download proforma",
+          "download_short": "Download",
+          "history_title": "Proformas (bank transfer)",
+          "status_pending": "Awaiting payment",
+          "status_paid": "Paid",
+          "status_cancelled": "Cancelled",
+          "error": "Could not generate the proforma."
         }
       }
     },

@@ -843,6 +843,51 @@ export async function getMyPayuOrders(companyId, limit = 20) {
   return data || [];
 }
 
+// [feat/bank-transfer-proforma / Lany #2] Generuje proformę przez funkcję
+// Netlify (auth = JWT usera). Zwraca { number, html, proforma_id, ... }.
+// NIE przechodzi przez PayU — pakiet zostaje "oczekuje na płatność".
+export async function createProforma(planId) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error(i18n.t("legacy:errors.db.payu_must_be_logged_in"));
+
+  const res = await fetch("/.netlify/functions/generate-proforma", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({ plan_id: planId, locale: i18n.language }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || i18n.t("legacy:errors.db.payu_status_format", { status: res.status }));
+  return body;
+}
+
+// [feat/bank-transfer-proforma / Lany #2] Proformy firmy (historia płatności).
+// RLS dopuszcza widok własnych (company_id = app_company_id()) + admin.
+export async function getMyProformas(companyId, limit = 20) {
+  const { data, error } = await supabase
+    .from("proformas")
+    .select("id, number, status, plan_id, qty, currency, net_amount, vat_amount, gross_amount, issued_at, paid_at")
+    .eq("company_id", companyId)
+    .order("issued_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+// [feat/bank-transfer-proforma / Lany #2] Pełny HTML pojedynczej proformy do
+// pobrania z historii. RLS dopuszcza tylko własne (company_id) + admin.
+export async function getProformaHtml(proformaId) {
+  const { data, error } = await supabase
+    .from("proformas")
+    .select("number, html")
+    .eq("id", proformaId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 // ===================================================================
 // BUYER STARRED
 // ===================================================================
