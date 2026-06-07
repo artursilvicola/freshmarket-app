@@ -81,7 +81,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -7938,6 +7938,144 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
   // kolejki które wymagają akcji admina — pokazujemy w bannerze na górze.
   const pendingFirms = (companies || []).filter(c => c.account_status === "pending_review").length;
   const hasUrgent = pm > 0 || pendingFirms > 0;
+
+  // [feat/admin-dashboard-polish] Liczba proform oczekujących na płatność — KPI
+  // operacyjne (tylko gdy moduł proform ON i polish ON). Best-effort: błąd → 0.
+  const [pendingProformasCount, setPendingProformasCount] = useState(0);
+  useEffect(() => {
+    if (!ADMIN_DASHBOARD_POLISH || !BANK_TRANSFER_PROFORMA) return;
+    let cancelled = false;
+    dbGetPendingProformas()
+      .then(rows => { if (!cancelled) setPendingProformasCount((rows || []).length); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // [feat/admin-dashboard-polish] Fork renderu: spokojne centrum pracy admina.
+  // Kolejność: A. alert akcji → B. KPI operacyjne → C. moduły → D. status FM 2026
+  // → E. narzędzia testowe (danger zone). Flaga OFF = stary układ poniżej bez zmian.
+  if (ADMIN_DASHBOARD_POLISH) {
+    return (
+      <div>
+        {/* A. Kompaktowy alert "Wymaga Twojej akcji" (jednowierszowy, mniejsza wysokość) */}
+        {hasUrgent && (
+          <div style={{ marginBottom:14, padding:"10px 14px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:10, display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+            <span style={{ fontSize:18, flexShrink:0, lineHeight:1 }}>🔔</span>
+            <div style={{ flex:1, minWidth:180, fontSize:13, color:"#78350f", lineHeight:1.5 }}>
+              <strong style={{ color:"#92400e" }}>{t("admin.dash.urgent_title")}.</strong>{" "}
+              {pm > 0 && (
+                <>
+                  <Trans i18nKey="admin.dash.urgent_proposals_html" ns="legacy" count={pm} values={{ count: pm }} components={{ strong: <strong /> }}/>
+                  {pendingFirms > 0 && t("admin.dash.urgent_separator")}
+                </>
+              )}
+              {pendingFirms > 0 && (
+                <Trans i18nKey="admin.dash.urgent_firms_html" ns="legacy" count={pendingFirms} values={{ count: pendingFirms }} components={{ strong: <strong /> }}/>
+              )}
+            </div>
+            <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+              {pm > 0 && (
+                <button onClick={()=>nav("a-pipeline")} style={{ padding:"6px 12px", background:"#d97706", color:"white", border:"none", borderRadius:7, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
+                  {t("admin.dash.urgent_btn_pipeline")}
+                </button>
+              )}
+              {pendingFirms > 0 && (
+                <button onClick={()=>nav("a-firmy")} style={{ padding:"6px 12px", background:"white", color:"#92400e", border:"1px solid #d97706", borderRadius:7, fontSize:12, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
+                  {t("admin.dash.urgent_btn_firmy")}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* B. Ujednolicone KPI operacyjne — jednolita siatka, spokojne kolory,
+            duża liczba = wartość, kolor tylko gdy > 0 (inaczej wyciszony). */}
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:10, marginBottom:18 }}>
+          {[
+            [t("admin.dash.p_kpi_firms"), pendingFirms, "#d97706", Building2],
+            [t("admin.dash.p_kpi_moderation"), pm, "#d97706", Layers],
+            [t("admin.dash.p_kpi_approved"), ap, "#2563eb", Send],
+            [t("admin.dash.p_kpi_tracking"), nc, "#ea580c", Phone],
+            ...(BANK_TRANSFER_PROFORMA ? [[t("admin.dash.p_kpi_proformas"), pendingProformasCount, "#7c3aed", Receipt]] : []),
+          ].map(([label, count, color, Ic]) => (
+            <div key={label} style={{ padding:"12px 14px", background:"white", border:"1px solid #e2e8f0", borderRadius:10, minHeight:78, display:"flex", flexDirection:"column", justifyContent:"space-between" }}>
+              <div style={{ display:"flex", gap:6, alignItems:"center", color:"#64748b", fontSize:11, lineHeight:1.3 }}>
+                <Ic size={13} color={count>0?color:"#94a3b8"} style={{ flexShrink:0 }}/>{label}
+              </div>
+              <div style={{ fontSize:24, fontWeight:800, color: count>0?color:"#cbd5e1" }}>{count}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* C. Główne moduły / szybkie przejścia — jednolity grid kafli. */}
+        <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#94a3b8", marginBottom:8 }}>{t("admin.dash.p_modules_title")}</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))", gap:10, marginBottom:18 }}>
+          {[
+            ["a-pipeline", Layers, t("admin.dash.nav_pipeline_title"), t("admin.dash.p_nav_pipeline_desc")],
+            ["a-firmy", Building2, t("admin.dash.nav_firmy_title"), t("admin.dash.p_nav_firmy_desc")],
+            ...(ADMIN_SETTLEMENTS ? [["a-settlements", Receipt, t("shell.sidebar.admin_settlements"), t("admin.dash.p_nav_settlements_desc")]] : []),
+            ["a-retailers", Store, t("admin.dash.nav_retailers_title"), t("admin.dash.p_nav_retailers_desc")],
+            ["a-chat", MessageSquare, t("shell.sidebar.admin_messages"), t("admin.dash.p_nav_messages_desc")],
+          ].map(([p, Ic, navTitle, d]) => (
+            <div key={p} onClick={()=>nav(p)} style={{ background:"white", border:"1px solid #e2e8f0", borderRadius:10, padding:"14px 16px", cursor:"pointer", minHeight:74 }}>
+              <div style={{ display:"flex", gap:8, alignItems:"center", marginBottom:5 }}>
+                <div style={{ width:30, height:30, borderRadius:8, background:"#f0fdfa", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}><Ic size={15} color="#0d9488"/></div>
+                <strong style={{ fontSize:13, color:"#0f172a" }}>{navTitle}</strong>
+              </div>
+              <div style={{ fontSize:11.5, color:"#64748b", lineHeight:1.4 }}>{d}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* D. Status FM 2026 — kompaktowa karta (nie dominujący dark hero). */}
+        {fmSettings && (()=>{
+          const _ph = FM_PHASES[(fmSettings.currentPhase||1)-1] || FM_PHASES[FM_PHASES.length-1];
+          const _phLabel = t(`fm.phases.${_ph.id}.label`, { defaultValue: _ph.label });
+          const _phSub = t(`fm.phases.${_ph.id}.sub`, { defaultValue: _ph.sub });
+          const _phDates = t(`fm.phases.${_ph.id}.dates`, { defaultValue: _ph.dates });
+          const _suppliers = fmSuppliers || FM_SUPPLIERS;
+          const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=5).length;
+          const _fmRetailers = (retailers||[]).filter(r => r.fm26Active && r.active!==false && r.fm26ChainId);
+          const _cr = _fmRetailers.filter(r => Object.values(fmResps[r.fm26ChainId]||{}).some(hasBuyerResponse)).length;
+          const _mt = fmSchedule ? Object.values(fmSchedule.res||{}).reduce((a,r)=>a+r.m.length,0) : 0;
+          return (
+            <div onClick={()=>nav("a-fm")} style={{ cursor:"pointer", background:"white", border:"1px solid #e2e8f0", borderRadius:10, padding:"12px 16px", marginBottom:18, display:"flex", gap:14, alignItems:"center", flexWrap:"wrap" }}>
+              <div style={{ width:9, height:9, borderRadius:"50%", background:_ph.color, flexShrink:0 }}/>
+              <div style={{ flex:1, minWidth:170 }}>
+                <div style={{ fontSize:10, color:"#94a3b8", textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:2 }}>{t("admin.dash.fm_status_label")}</div>
+                <div style={{ fontSize:13, fontWeight:700, color:"#0f172a", display:"flex", alignItems:"center", gap:7, flexWrap:"wrap" }}>
+                  <span>{_phLabel}</span>
+                  <span style={{ fontWeight:400, color:"#94a3b8", fontSize:11 }}>— {_phSub} · {_phDates}</span>
+                  {!fmSettings.schedulingOpen && <span style={{ fontSize:10, padding:"1px 7px", borderRadius:6, background:"#fef2f2", color:"#dc2626" }}>{t("admin.dash.fm_status_closed_badge")}</span>}
+                  {fmSettings.schedulingOpen && <span style={{ fontSize:10, padding:"1px 7px", borderRadius:6, background:"#ecfdf5", color:"#059669" }}>{t("admin.dash.fm_status_open_badge")}</span>}
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:16, fontSize:12, color:"#475569", flexShrink:0 }}>
+                <span><strong style={{ color:"#0f172a" }}>{_sr}/{_suppliers.length}</strong> {t("admin.dash.fm_status_stat_suppliers")}</span>
+                <span><strong style={{ color:"#0f172a" }}>{_cr}/{_fmRetailers.length}</strong> {t("admin.dash.fm_status_stat_retailers")}</span>
+                <span><strong style={{ color:"#0f172a" }}>{_mt}</strong> {t("admin.dash.fm_status_stat_meetings")}</span>
+              </div>
+              <span style={{ color:"#cbd5e1", fontSize:16, flexShrink:0 }}>→</span>
+            </div>
+          );
+        })()}
+
+        {/* E. Narzędzia testowe / danger zone — wyciszone, na samym dole. */}
+        {resetToSeed && (
+          <div style={{ marginTop:6, padding:"12px 14px", background:"#fef2f2", border:"1px dashed #fecaca", borderRadius:10 }}>
+            <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#b91c1c", marginBottom:8 }}>{t("admin.dash.p_tools_title")}</div>
+            <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+              <Btn outline sm onClick={resetToSeed} style={{ color:"#dc2626", borderColor:"#fca5a5", display:"flex", alignItems:"center", gap:5 }}>
+                <RotateCcw size={12}/> {t("admin.dash.reset_btn")}
+              </Btn>
+              <span style={{ fontSize:11, color:"#94a3b8" }}>{t("admin.dash.reset_desc")}</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* [B2B Round prod-rollout / admin-notifications]

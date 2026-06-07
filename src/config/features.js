@@ -204,3 +204,10 @@ export const ADMIN_SETTLEMENTS = true;
 // Bez migracji, bez zmian danych. Default `false`: Pipeline bez zmian (bloki
 // finansowe tam, gdzie dziś; Rozliczenia bez relokowanej sekcji).
 export const ADMIN_PIPELINE_CLEANUP = false;
+
+// [feat/admin-dashboard-polish] Wizualne/informacyjne uporządkowanie Admin Dashboard:
+// kompaktowy alert akcji → ujednolicone KPI → grid modułów (Pipeline/Firmy/Rozliczenia/
+// Sieci/Wiadomości) → kompaktowy status FM 2026 → danger zone (reset) na dole.
+// Fork renderu PageAdminDash. Default `false`: stary układ bez zmian.
+// Bez migracji, bez zmian danych. Flip na `true` po smoke test prod.
+export const ADMIN_DASHBOARD_POLISH = false;

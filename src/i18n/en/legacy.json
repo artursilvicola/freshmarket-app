@@ -1747,7 +1747,19 @@
       "nav_firmy_title": "Companies",
       "nav_firmy_desc": "Packages, limits, settlements per company",
       "reset_btn": "Reset test data",
-      "reset_desc": "Restores default proposals, submissions and FM data. Clears localStorage."
+      "reset_desc": "Restores default proposals, submissions and FM data. Clears localStorage.",
+      "p_modules_title": "Modules",
+      "p_tools_title": "Test tools",
+      "p_kpi_firms": "Companies to activate",
+      "p_kpi_moderation": "To moderate",
+      "p_kpi_approved": "Ready to send",
+      "p_kpi_tracking": "Awaiting confirmation",
+      "p_kpi_proformas": "Proformas pending",
+      "p_nav_pipeline_desc": "Moderation, sending, tracking",
+      "p_nav_firmy_desc": "Activation, profiles, access",
+      "p_nav_settlements_desc": "Proformas, packages, payments",
+      "p_nav_retailers_desc": "Buyers, contacts, schedule",
+      "p_nav_messages_desc": "Chat with suppliers and buyers"
     },
     "retailers": {
       "header_title": "Retailers and buyers",
