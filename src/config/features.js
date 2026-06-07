@@ -108,3 +108,24 @@ export const CREDITS_UI_SUPPLIER = true;
 // w Supabase. Default `false`: gdy wyłączone, panel admina i dostawcy bez zmian.
 // Flip na `true` dopiero PO zaaplikowaniu migracji + smoke test prod.
 export const RETAILER_REQUIREMENTS = true;
+
+// [feat/account-inactivity-foundation — Poprawki Lany #8 — część BEZPIECZNA]
+// Śledzenie aktywności konta + ostrzeżenia e-mail 30 i 7 dni przed progiem
+// 24 miesięcy nieaktywności. Przy wejściu do aplikacji: bump last_active_at
+// (RPC touch_last_active) + leniwy sweep ostrzeżeń (fire-and-forget) →
+// funkcja send-inactivity-warnings → RPC claim_due_inactivity_warnings → Resend.
+//
+// TYLKO ostrzeżenia + śledzenie. Archiwizacja/anonimizacja/usuwanie kont to
+// OSOBNY etap za flagą ACCOUNT_HARD_DELETE (poniżej, default false) — do testów
+// na sandboxie i osobnej decyzji (RODO, destrukcyjne).
+//
+// Wymaga migracji 042 (profiles.last_active_at + markery + RPC) zaaplikowanej
+// ręcznie w Supabase. Default `false`: gdy wyłączone, brak śledzenia i sweepów
+// (zero zmian). Flip na `true` dopiero PO migracji + smoke test prod.
+export const ACCOUNT_LIFECYCLE = false;
+
+// [feat/account-inactivity-foundation — placeholder destrukcyjnej części #8]
+// Steruje WYKONANIEM archiwizacji/anonimizacji/usuwania kont po 24 mc. NIE jest
+// jeszcze podpięty do żadnej logiki — rezerwacja nazwy + jawny sygnał, że ta
+// część wymaga osobnej implementacji, sandboxu i sign-offu (RODO). Trzymać false.
+export const ACCOUNT_HARD_DELETE = false;

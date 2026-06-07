@@ -42,6 +42,8 @@ import {
   markLegacySendRead as dbMarkLegacySendRead,
   expireLegacySends14d as dbExpireLegacySends14d,
   refundUnreadExpiredLegacySends as dbRefundUnreadExpiredLegacySends,
+  // [feat/account-inactivity-foundation / Lany #8] śledzenie aktywności + sweep ostrzeżeń
+  touchLastActive as dbTouchLastActive, sendDueInactivityWarnings as dbSendDueInactivityWarnings,
   // [B2B Round supplier-FM-UX] Confirm supplier's FM chain selection
   saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
   // [B2B Round prod-rollout / faza 2] Real packages/capacity from DB
@@ -69,7 +71,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, ACCOUNT_LIFECYCLE } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -1991,6 +1993,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         await dbExpireLegacySends14d();
         await dbRefundUnreadExpiredLegacySends();
       } catch (e) { console.warn("[expire sends]", e?.message || e); }
+      // [feat/account-inactivity-foundation / Lany #8] Bump aktywności konta +
+      // leniwy sweep ostrzeżeń o nieaktywności — fire-and-forget (nie blokuje UI).
+      if (ACCOUNT_LIFECYCLE) {
+        dbTouchLastActive().catch((e) => console.warn("[touch last active]", e?.message || e));
+        dbSendDueInactivityWarnings().catch((e) => console.warn("[inactivity warnings]", e?.message || e));
+      }
       if (canceled) return;
       try {
         const rows = await loadLegacySends();

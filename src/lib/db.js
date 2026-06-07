@@ -1202,6 +1202,29 @@ export async function refundUnreadExpiredLegacySends() {
   return data || 0;
 }
 
+// [feat/account-inactivity-foundation / Lany #8] Bump last_active_at zalogowanego
+// usera (RPC SECURITY DEFINER po auth.uid()). Best-effort — nie blokuje panelu.
+export async function touchLastActive() {
+  const { error } = await supabase.rpc("touch_last_active");
+  if (error) throw error;
+  return true;
+}
+
+// [feat/account-inactivity-foundation / Lany #8] Leniwy sweep ostrzeżeń o
+// nieaktywności (30/7 dni). Woła funkcję Netlify (Resend po stronie serwera).
+// Idempotentny (markery w DB). Best-effort.
+export async function sendDueInactivityWarnings() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { skipped: true };
+  const res = await fetch("/.netlify/functions/send-inactivity-warnings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `send-inactivity-warnings ${res.status}`);
+  return body;
+}
+
 // ===================================================================
 // AUDIT LOG
 // ===================================================================
