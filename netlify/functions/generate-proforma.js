@@ -103,6 +103,21 @@ export const handler = async (event) => {
   const seq = Number(seqData);
   const number = `PF/${year}/${String(seq).padStart(6, "0")}`;
 
+  // ── Logo brandingu (Fresh Market) — publiczny URL z fm_settings ─────
+  // Best-effort: brak logo → szablon użyje fallbacku tekstowego.
+  let brandLogoUrl = null;
+  try {
+    const { data: settings } = await supaSvc
+      .from("fm_settings")
+      .select("brand_logo_url")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    brandLogoUrl = settings?.brand_logo_url || null;
+  } catch {
+    brandLogoUrl = null;
+  }
+
   // ── Snapshot + render ───────────────────────────────────────────────
   const issuedAt = new Date().toISOString();
   const planLabel = `${plan.tier} ${plan.qty}`;
@@ -118,6 +133,7 @@ export const handler = async (event) => {
     vat,
     gross,
     company: { name: company.name, nip, address: addressSnapshot },
+    brandLogoUrl,
     locale,
   });
 
