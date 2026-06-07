@@ -203,7 +203,9 @@ export const ADMIN_SETTLEMENTS = true;
 //
 // Bez migracji, bez zmian danych. Default `false`: Pipeline bez zmian (bloki
 // finansowe tam, gdzie dziś; Rozliczenia bez relokowanej sekcji).
-export const ADMIN_PIPELINE_CLEANUP = false;
+// [chore/flip-admin-pipeline-cleanup] ON — finanse znikają z Pipeline i żyją
+// tylko w Rozliczeniach (relokowane credit-settlement + KPI przychodu).
+export const ADMIN_PIPELINE_CLEANUP = true;
 
 // [feat/admin-dashboard-polish] Wizualne/informacyjne uporządkowanie Admin Dashboard:
 // kompaktowy alert akcji → ujednolicone KPI → grid modułów (Pipeline/Firmy/Rozliczenia/
