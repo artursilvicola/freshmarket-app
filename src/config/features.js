@@ -191,4 +191,4 @@ export const ACCOUNT_HARD_DELETE = false;
 // istniejące proformas/packages/company_capacity (RLS: admin widzi wszystko).
 // TODO (przyszłość): rola "admin finansowy" z węższym dostępem — wymaga osobnego
 // modelu ról (migracja), NIE w tym branchu.
-export const ADMIN_SETTLEMENTS = false;
+export const ADMIN_SETTLEMENTS = true;
