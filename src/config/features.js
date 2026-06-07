@@ -69,7 +69,7 @@ export const ADMIN_PIPELINE_2_0_TABLE = true;
 // — już widoczne w panelu kupca, ale jeszcze bez wysłanego e-maila — trafią do
 // miesięcznego e-maila danej sieci. Rozdziela DWA stany: "w panelu kupca"
 // (status legacy_sends) vs "w koszyku e-mail" (s.inEmailBasket, marker
-// administracyjny). Pokazuje datę następnej wysyłki (drugi wtorek miesiąca),
+// administracyjny). Pokazuje datę następnej wysyłki (pierwszy wtorek miesiąca
 // grupy per sieć i ręczny przycisk "Wyślij e-mail do tej sieci".
 //
 // Bez migracji: marker trzymany na obiekcie sendu (top-level inEmailBasket),
@@ -214,3 +214,24 @@ export const ADMIN_PIPELINE_CLEANUP = true;
 // Bez migracji, bez zmian danych. Flip na `true` po smoke test prod.
 // [chore/flip-admin-dashboard-polish] ON — nowy uporządkowany Dashboard na prod.
 export const ADMIN_DASHBOARD_POLISH = true;
+
+// [feat/preconnect-first-tuesday-mailing-logic — Faza 1]
+// Reguła produktowa: mailing PreConnect = WSZĘDZIE PIERWSZY WTOREK MIESIĄCA
+// (nie drugi wtorek, nie czwartek). Rozdziela "w panelu kupca" (status sent)
+// od "daty mailingu" (realna data wysyłki e-maila albo planowany pierwszy
+// wtorek). Za flagą:
+//   • pasek "następna wysyłka" w koszyku Pipeline liczy pierwszy wtorek,
+//   • dostawca przed datą mailingu widzi "Zaplanowane do mailingu — DD.MM.RRRR",
+//     a od daty mailingu — normalny status odczytu,
+//   • przy ręcznym "Wyślij e-mail do tej sieci" stemplujemy data.mailingSentAt,
+//   • data mailingu = mailingSentAt jeśli jest, inaczej planowany pierwszy wtorek.
+//
+// UWAGA — ZAKRES FAZY 1: TYLKO UI/widoczność + planowana data + stempel
+// mailingSentAt. NIE domyka twardego wygaszania/zwrotu kredytu — RPC
+// expire_legacy_sends_14d nadal liczy 14 dni od `sentAt`. Pełna zgodność
+// zwrotów wymaga FAZY 2: migracji RPC, by liczyć 14 dni od mailingSentAt /
+// daty mailingu, a nie od sentAt.
+//
+// Bez migracji, bez zmian RPC, bez zmian danych historycznych (poza zapisem
+// mailingSentAt przy faktycznym wysłaniu e-maila). Default `false`: zero zmian.
+export const PRECONNECT_MAILING_DATE_LOGIC = false;

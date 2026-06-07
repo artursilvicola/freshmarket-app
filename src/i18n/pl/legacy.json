@@ -976,7 +976,8 @@
         "refund_done_format": "+{{amount}} EUR",
         "refund_pending": "zwrot w toku",
         "awaiting": "oczekuje",
-        "empty": "Brak wysyłek."
+        "empty": "Brak wysyłek.",
+        "scheduled_mailing_format": "Zaplanowane do mailingu — {{date}}"
       },
       "pakiety": {
         "payment_modal": {

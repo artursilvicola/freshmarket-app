@@ -976,7 +976,8 @@
         "refund_done_format": "+{{amount}} EUR",
         "refund_pending": "refund in progress",
         "awaiting": "pending",
-        "empty": "No submissions."
+        "empty": "No submissions.",
+        "scheduled_mailing_format": "Scheduled for mailing — {{date}}"
       },
       "pakiety": {
         "payment_modal": {
