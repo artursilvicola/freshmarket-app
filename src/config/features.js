@@ -108,3 +108,17 @@ export const CREDITS_UI_SUPPLIER = true;
 // w Supabase. Default `false`: gdy wyłączone, panel admina i dostawcy bez zmian.
 // Flip na `true` dopiero PO zaaplikowaniu migracji + smoke test prod.
 export const RETAILER_REQUIREMENTS = true;
+
+// [feat/nip-required — Poprawki Lany #1]
+// NIP firmy obowiązkowy: blokuje rejestrację dostawcy, zapis profilu firmy oraz
+// zakup kredytów, dopóki pole NIP jest puste. Komunikat:
+// "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń."
+//
+// Bez migracji — kolumna companies.nip już istnieje (nullable). NIE dodajemy
+// NOT NULL, bo zepsułoby historyczne rekordy bez NIP-u; egzekwujemy w aplikacji.
+//
+// Walidacja serwerowa w netlify/functions/register-supplier-self.js jest
+// gatowana OSOBNO env-varem NIP_REQUIRED="true" (defense-in-depth) — flaga
+// frontendowa jest głównym gate'em UX. Default `false`: gdy wyłączone, NIP
+// pozostaje opcjonalny wszędzie (zero zmian). Flip na `true` po smoke test prod.
+export const NIP_REQUIRED = false;

@@ -69,7 +69,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -5020,6 +5020,8 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
   const removeContact=(i)=>u("contacts",contacts.filter((_,idx)=>idx!==i));
   const saveProfile=async()=>{
     if(!c.logo){fl(t("supplier.company.toasts.logo_required"),"warning");return;}
+    // [feat/nip-required #1] NIP obowiązkowy przy zapisie profilu firmy (za flagą).
+    if(NIP_REQUIRED && !String(c.nip||"").trim()){fl(t("supplier.company.toasts.nip_required"),"warning");return;}
     const nextContacts = normalizeContacts(contacts);
     const nextCerts = normalizeCompanyCertList(c.certs || []);
     const id = c.id || companyId;
@@ -6509,6 +6511,9 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   // hosted checkout i przekierowuje przeglądarkę. Po finalizacji PayU notify
   // wywoła purchase_package RPC i user wróci na /zakup-ok.
   async function handleOrder() {
+    // [feat/nip-required #1] NIP obowiązkowy do rozliczeń — blokuje zakup kredytów
+    // gdy firma nie ma NIP-u (za flagą NIP_REQUIRED).
+    if(NIP_REQUIRED && !String(co?.nip||"").trim()){fl(t("supplier.finance.pakiety.payment_modal.nip_required"),"error");return;}
     setPaying(true);
     try {
       const { redirectUri } = await dbCreatePayuOrder(selected);

@@ -1045,6 +1045,7 @@
           "pay_button_format": "Pay {{gross}} EUR (incl. VAT)",
           "payment_init_error_format": "Payment initialization error: {{message}}",
           "payment_init_error_fallback": "please try again",
+          "nip_required": "Provide the company Tax ID. This field is required for registration and billing.",
           "no_redirect_error": "PayU did not return a redirect URL"
         },
         "pkg_stats": {
@@ -1313,6 +1314,7 @@
       },
       "toasts": {
         "logo_required": "Upload the company logo.",
+        "nip_required": "Provide the company Tax ID. This field is required for registration and billing.",
         "saved": "Profile saved.",
         "contacts_error_format": "Failed to save contacts: {{message}}"
       }

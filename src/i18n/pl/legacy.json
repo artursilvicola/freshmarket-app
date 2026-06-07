@@ -1045,6 +1045,7 @@
           "pay_button_format": "Zapłać {{gross}} EUR (z VAT)",
           "payment_init_error_format": "Błąd inicjalizacji płatności: {{message}}",
           "payment_init_error_fallback": "spróbuj ponownie",
+          "nip_required": "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
           "no_redirect_error": "PayU nie zwrócił adresu przekierowania"
         },
         "pkg_stats": {
@@ -1313,6 +1314,7 @@
       },
       "toasts": {
         "logo_required": "Wgraj logo firmy.",
+        "nip_required": "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
         "saved": "Profil zapisany.",
         "contacts_error_format": "Nie udało się zapisać kontaktów: {{message}}"
       }

@@ -89,6 +89,13 @@ export const handler = async (event) => {
   if (companyName.length > 200) {
     return json(400, { error: errLoc(locale, "company_name_too_long") });
   }
+  // [feat/nip-required #1] Defense-in-depth: gdy env NIP_REQUIRED="true", backend
+  // też odrzuca pustą wartość NIP. Domyślnie OFF → zachowanie bez zmian. Frontend
+  // (flaga NIP_REQUIRED w src/config/features.js) jest głównym gate'em UX; tę
+  // zmienną ustawiamy w Netlify razem z flipem flagi po smoke teście.
+  if (process.env.NIP_REQUIRED === "true" && !nip) {
+    return json(400, { error: errLoc(locale, "missing_nip") });
+  }
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
 
