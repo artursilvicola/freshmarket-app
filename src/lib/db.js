@@ -1247,6 +1247,22 @@ export async function refundUnreadExpiredLegacySends() {
   return data || 0;
 }
 
+// [feat/credit-expiry-reminder / Lany #6] Leniwy sweep przypomnień o wygaśnięciu
+// kredytów (14 dni przed). Woła funkcję Netlify (wymaga Resend key po stronie
+// serwera). Idempotentny (marker w DB) — bezpieczny do wołania przy każdej
+// hydracji. Best-effort: błąd nie jest krytyczny dla działania panelu.
+export async function sendDueExpiryReminders() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) return { skipped: true };
+  const res = await fetch("/.netlify/functions/send-expiry-reminders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `send-expiry-reminders ${res.status}`);
+  return body;
+}
+
 // ===================================================================
 // AUDIT LOG
 // ===================================================================
