@@ -7979,7 +7979,9 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
       )}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:12,marginBottom:20 }}>
         {[
-          [t("admin.dash.kpi_revenue_label"), t("admin.dash.kpi_revenue_value_format", { amount: revenue }), revenue>0?"#059669":"#94a3b8", TrendingUp],
+          // [feat/admin-pipeline-cleanup] KPI "Przychód (potwier.)" — finansowy → chowany gdy flaga ON
+          // (przeniesiony do Rozliczeń). Spread warunkowy zachowuje pozostałe KPI bez zmian.
+          ...(!ADMIN_PIPELINE_CLEANUP ? [[t("admin.dash.kpi_revenue_label"), t("admin.dash.kpi_revenue_value_format", { amount: revenue }), revenue>0?"#059669":"#94a3b8", TrendingUp]] : []),
           [t("admin.dash.kpi_moderation_label_format", { count: pm }), pm>0?t("admin.dash.kpi_moderation_value_action"):t("admin.dash.kpi_moderation_value_ok"), pm>0?"#d97706":"#059669", Layers],
           [t("admin.dash.kpi_approved_label_format", { count: ap }), ap>0?t("admin.dash.kpi_approved_value_ready"):t("admin.dash.kpi_approved_value_dash"), ap>0?"#2563eb":"#94a3b8", Send],
           [t("admin.dash.kpi_pending_confirm_label_format", { count: nc }), nc>0?t("admin.dash.kpi_pending_confirm_value_tracking"):t("admin.dash.kpi_pending_confirm_value_dash"), nc>0?"#ea580c":"#94a3b8", Phone],
@@ -7990,6 +7992,17 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           </div>
         ))}
       </div>
+      {/* [feat/admin-pipeline-cleanup] Szybkie wejście do Rozliczeń (finanse dostawców) — gdy moduł ON. */}
+      {ADMIN_SETTLEMENTS && (
+        <div onClick={()=>nav("a-settlements")} style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 16px",marginBottom:20,background:"white",border:"1px solid #e2e8f0",borderRadius:12,borderLeft:"3px solid #2563eb",cursor:"pointer" }}>
+          <div style={{ width:38,height:38,borderRadius:9,background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}><Receipt size={18} color="#2563eb"/></div>
+          <div style={{ flex:1,minWidth:0 }}>
+            <div style={{ fontWeight:700,fontSize:13,color:"#0f172a" }}>{t("shell.sidebar.admin_settlements")}</div>
+            <div style={{ fontSize:11,color:"#64748b" }}>{t("admin.dash.settlements_nav_sub")}</div>
+          </div>
+          <span style={{ color:"#94a3b8",fontSize:18,flexShrink:0 }}>→</span>
+        </div>
+      )}
       {fmSettings && (()=>{
         // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej.
         const _ph = FM_PHASES[(fmSettings.currentPhase||1)-1] || FM_PHASES[FM_PHASES.length-1];
@@ -9877,6 +9890,9 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
     () => computeCreditsSettlement(dbCapacity, sends, companies, offers),
     [dbCapacity, sends, companies, offers]
   );
+  // [feat/admin-pipeline-cleanup] Przychód potwierdzony (legacy/szacunkowo) — ta sama
+  // logika co dawne KPI na Dashboardzie: potwierdzone wysyłki (read/read_manual) × 40 EUR.
+  const confirmedRevenue = (sends || []).filter(s => ["read", "read_manual"].includes(s.status)).length * 40;
   const [proformas, setProformas] = useState([]);
   const [packages, setPackages] = useState([]);
   const [busyId, setBusyId] = useState(null);
@@ -10010,6 +10026,13 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
         })}
       </Card>
 
+      {/* [feat/admin-pipeline-cleanup] Przychód potwierdzony (legacy/szacunkowo) — relokowany z KPI Dashboardu. */}
+      {ADMIN_PIPELINE_CLEANUP && (
+        <Card title={t("admin.settlements.revenue_label")} icon={TrendingUp} style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 24, fontWeight: 900, color: confirmedRevenue > 0 ? "#059669" : "#94a3b8" }}>{confirmedRevenue} EUR</div>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{t("admin.settlements.revenue_hint")}</div>
+        </Card>
+      )}
       {/* [feat/admin-pipeline-cleanup] Relokowane z Pipeline: "Rozliczenie kredytów PreConnect"
           (kupione/wykorzystane/pozostałe/zwroty/oczekujące, per firma). Tylko gdy flaga ON. */}
       {ADMIN_PIPELINE_CLEANUP && (creditsSettlement.totals.bought > 0 || creditsSettlement.rows.length > 0) && (

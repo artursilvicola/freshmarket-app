@@ -1669,6 +1669,8 @@
     "settlements": {
       "title": "Supplier settlements",
       "subtitle": "Proformas, credit packages, and supplier payments.",
+      "revenue_label": "Confirmed revenue (legacy/estimate)",
+      "revenue_hint": "Legacy-model estimate: confirmed submissions × 40 EUR.",
       "filter_company_ph": "Search company / Tax ID…",
       "pf_filter_all": "Proformas: all",
       "pf_filter_pending": "Proformas: pending",
@@ -1721,6 +1723,7 @@
       "urgent_btn_firmy": "Open Companies →",
       "kpi_revenue_label": "Revenue (confirmed)",
       "kpi_revenue_value_format": "{{amount}} EUR",
+      "settlements_nav_sub": "Supplier finances: proformas, credits, payments",
       "kpi_moderation_label_format": "Awaiting moderation ({{count}})",
       "kpi_moderation_value_action": "Action required",
       "kpi_moderation_value_ok": "OK",
