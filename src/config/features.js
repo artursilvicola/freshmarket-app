@@ -122,3 +122,15 @@ export const RETAILER_REQUIREMENTS = true;
 // frontendowa jest głównym gate'em UX. Default `false`: gdy wyłączone, NIP
 // pozostaje opcjonalny wszędzie (zero zmian). Flip na `true` po smoke test prod.
 export const NIP_REQUIRED = false;
+
+// [feat/credits-validity-and-expiry-ui — Poprawki Lany #4 + #5 + #7]
+// Wyświetlanie ważności kredytów (12 miesięcy od zakupu):
+//  - przed zakupem: linia info "Kredyty ważne przez 12 miesięcy od daty zakupu"
+//  - po zakupie (ekran potwierdzenia): "Twoje kredyty są ważne do: DD.MM.RRRR"
+//  - panel Finanse (karta aktywnego pakietu): data ważności w formacie DD.MM.RRRR
+//
+// Bez migracji — dane już istnieją (packages.expires_at, company_capacity.pkg_expiry).
+// Wygasanie kredytów jest już egzekwowane przez widok company_capacity (do puli
+// liczone tylko niewygasłe pakiety) — ta flaga to TYLKO warstwa prezentacji.
+// Default `false`: gdy wyłączone, panel bez zmian (stary format/placeholdery).
+export const CREDITS_VALIDITY_UI = false;

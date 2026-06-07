@@ -985,6 +985,7 @@
           "success_body_credits_html": "Package <strong>{{pkgLabel}}</strong> has been activated.<br/>Added <strong>+{{qty}} credits</strong> to your account.",
           "success_state_html": "Current balance: <strong>{{total}} submissions total</strong>",
           "success_state_credits_html": "Current total: <strong>{{total}} credits</strong>",
+          "valid_until_html": "Your credits are valid until: <strong>{{date}}</strong>",
           "pkg_label_premium_one": "Premium {{qty}} submission",
           "pkg_label_premium_other": "Premium {{qty}} submissions",
           "pkg_label_standard_one": "Standard {{qty}} submission",
@@ -1055,6 +1056,7 @@
           "unit": "submissions"
         },
         "guarantee": "14-day guarantee — no buyer read = automatic credit refund to wallet. You buy submissions, not risk.",
+        "validity_info": "Purchased credits are valid for 12 months from the purchase date.",
         "compare": {
           "standard_badge": "STANDARD",
           "standard_price_range": "40-30 EUR / submission",
