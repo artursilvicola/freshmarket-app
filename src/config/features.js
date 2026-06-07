@@ -134,3 +134,16 @@ export const NIP_REQUIRED = false;
 // liczone tylko niewygasłe pakiety) — ta flaga to TYLKO warstwa prezentacji.
 // Default `false`: gdy wyłączone, panel bez zmian (stary format/placeholdery).
 export const CREDITS_VALIDITY_UI = false;
+
+// [feat/bank-transfer-proforma — Poprawki Lany #2]
+// Płatność przelewem generuje fakturę proforma (HTML): przycisk "Pobierz proformę",
+// wysyłka mailem, zapis w historii płatności, numeracja PF/RRRR/NNNNNN. Pakiet
+// pozostaje "oczekuje na płatność" — admin aktywuje ręcznie po zaksięgowaniu wpłaty.
+// Wymaga NIP firmy (rozliczenia).
+//
+// Wymaga migracji 040 (proformas + allocate_proforma_number) zaaplikowanej ręcznie
+// w Supabase ORAZ env w Netlify: PROFORMA_SELLER_NIP, PROFORMA_BANK_IBAN
+// (dane prawne/finansowe sprzedawcy — domyślnie placeholdery). NIE dotyka PayU.
+// Default `false`: gdy wyłączone, przelew działa jak dziś (ekran z numerem konta).
+// Flip na `true` dopiero PO migracji + ustawieniu env + smoke test prod.
+export const BANK_TRANSFER_PROFORMA = false;

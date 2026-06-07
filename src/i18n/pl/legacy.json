@@ -1126,6 +1126,19 @@
           "qty_added_credits_other_format": "+{{qty}} kredytów",
           "price_format": "−{{price}} EUR",
           "paid_badge": "Opłacone"
+        },
+        "proforma": {
+          "generate_button": "Generuj proformę",
+          "title": "Proforma wygenerowana",
+          "subtitle_html": "Numer: <strong>{{number}}</strong>. Wysłaliśmy ją na Twój e-mail.",
+          "pay_info": "Opłać przelewem wg danych w proformie. Pakiet kredytów aktywujemy po zaksięgowaniu wpłaty.",
+          "download": "Pobierz proformę",
+          "download_short": "Pobierz",
+          "history_title": "Proformy (przelew)",
+          "status_pending": "Oczekuje na płatność",
+          "status_paid": "Opłacona",
+          "status_cancelled": "Anulowana",
+          "error": "Nie udało się wygenerować proformy."
         }
       }
     },

@@ -50,6 +50,8 @@ import {
   getStarred as dbGetStarred, toggleStar as dbToggleStar,
   // [B2B Round prod-rollout / faza 3] PayU integration
   createPayuOrder as dbCreatePayuOrder,
+  // [feat/bank-transfer-proforma / Lany #2] proforma dla przelewu
+  createProforma as dbCreateProforma, getMyProformas as dbGetMyProformas, getProformaHtml as dbGetProformaHtml,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
   getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
   // [B2B Round prod-rollout / admin-team] zarządzanie zespołem administratorów
@@ -69,7 +71,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -6474,6 +6476,19 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
   );
 }
 
+// [feat/bank-transfer-proforma / Lany #2] Pobranie dokumentu HTML jako plik
+// (proforma). Browser-only; bezpieczne (try/catch), no-op gdy brak DOM/Blob.
+function downloadHtmlDocument(filename, html) {
+  try {
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch { /* no-op */ }
+}
+
 function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax, pkgUsed }) {
   const { t } = useTranslation("legacy");
   const [selected, setSelected] = useState(co.pkg||"std_5");
@@ -6481,11 +6496,52 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   const [payMethod, setPayMethod] = useState("karta");
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
+  // [feat/bank-transfer-proforma / Lany #2] Stan proform (płatność przelewem).
+  const [proforma, setProforma] = useState(null);          // świeżo wygenerowana
+  const [proformaBusy, setProformaBusy] = useState(false);
+  const [proformas, setProformas] = useState([]);          // historia proform firmy
   const sel = getPlanById(selected) || getPlanById("std_5") || PRICING_PLANS[0];
   const rem = Math.max(0, pkgMax - pkgUsed);
   // [feat/credits-validity-and-expiry-ui — Lany #5] Data ważności kredytów z nowego
   // zakupu = dziś + 12 miesięcy (zgodne z RPC purchase_package: current_date + 1 rok).
   const creditsValidUntilDMY = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return fmtDateDMY(d); })();
+
+  // [feat/bank-transfer-proforma / Lany #2] Wczytaj historię proform (za flagą).
+  useEffect(() => {
+    if (!BANK_TRANSFER_PROFORMA || !co?.id) return;
+    let cancelled = false;
+    dbGetMyProformas(co.id).then(rows => { if (!cancelled) setProformas(rows || []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [co?.id]);
+
+  // [feat/bank-transfer-proforma / Lany #2] Generuje proformę dla przelewu.
+  // NIE przechodzi przez PayU — pakiet zostaje "oczekuje na płatność".
+  async function handleProforma() {
+    setProformaBusy(true);
+    try {
+      const res = await dbCreateProforma(selected);
+      setProforma(res);
+      setProformas(prev => [{
+        id: res.proforma_id, number: res.number, status: res.status,
+        gross_amount: res.gross, currency: res.currency, issued_at: res.issued_at,
+        plan_id: selected, qty: sel.qty,
+      }, ...prev]);
+    } catch (e) {
+      fl(e?.message || t("supplier.finance.pakiety.proforma.error"), "error");
+    } finally {
+      setProformaBusy(false);
+    }
+  }
+
+  // [feat/bank-transfer-proforma / Lany #2] Pobierz proformę z historii (re-fetch HTML).
+  async function downloadProformaFromHistory(id, number) {
+    try {
+      const data = await dbGetProformaHtml(id);
+      if (data?.html) downloadHtmlDocument(`${String(number || data.number).replace(/[/\\]/g, "-")}.html`, data.html);
+    } catch (e) {
+      fl(e?.message || t("supplier.finance.pakiety.proforma.error"), "error");
+    }
+  }
 
   // [P2-5 i18n] Plurals: PL "wysyłka"/"wysyłek" matches qty===1?singular:plural.
   // Helper zwraca przetłumaczony pkg label dla obu tier'ów z plural variant.
@@ -6547,7 +6603,25 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       {showModal&&(
         <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16 }}>
           <div style={{ background:"white",borderRadius:16,padding:28,maxWidth:460,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
-            {paid?(
+            {(BANK_TRANSFER_PROFORMA && proforma)?(
+              /* [feat/bank-transfer-proforma / Lany #2] Panel po wygenerowaniu proformy. */
+              <div style={{ textAlign:"center",padding:"8px 0" }}>
+                <div style={{ width:64,height:64,borderRadius:"50%",background:"#dbeafe",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
+                  <FileText size={30} color="#2563eb"/>
+                </div>
+                <h3 style={{ margin:"0 0 8px",fontSize:18,color:"#0f172a" }}>{t("supplier.finance.pakiety.proforma.title")}</h3>
+                <p style={{ color:"#64748b",fontSize:13,margin:"0 0 14px",lineHeight:1.6 }}>
+                  <Trans i18nKey="supplier.finance.pakiety.proforma.subtitle_html" ns="legacy" values={{ number: proforma.number }} components={{ strong: <strong /> }}/>
+                </p>
+                <div style={{ padding:"10px 16px",background:"#eff6ff",borderRadius:8,fontSize:13,color:"#1e3a5f",border:"1px solid #bfdbfe",marginBottom:16,textAlign:"left" }}>
+                  {t("supplier.finance.pakiety.proforma.pay_info")}
+                </div>
+                <div style={{ display:"flex",gap:8 }}>
+                  <Btn primary onClick={()=>downloadHtmlDocument(`${String(proforma.number).replace(/[/\\]/g,"-")}.html`, proforma.html)} style={{ flex:2 }}><Download size={13}/> {t("supplier.finance.pakiety.proforma.download")}</Btn>
+                  <Btn outline onClick={()=>{ setProforma(null); setShowModal(false); }} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
+                </div>
+              </div>
+            ):paid?(
               <div style={{ textAlign:"center",padding:"8px 0" }}>
                 <div style={{ width:64,height:64,borderRadius:"50%",background:"#d1fae5",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px" }}>
                   <CheckCircle size={32} color="#059669"/>
@@ -6631,8 +6705,10 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 )}
                 <div style={{ display:"flex",gap:8 }}>
                   <Btn outline onClick={()=>setShowModal(false)} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
-                  <Btn primary disabled={paying||(payMethod==="portfel"&&wallet.balance<sel.price)} onClick={handleOrder} style={{ flex:2,background:sel.tier==="PREMIUM"?"#d97706":"#0d9488" }}>
-                    {paying?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><CreditCard size={13}/> {t("supplier.finance.pakiety.payment_modal.pay_button_format", { gross: Math.round(sel.price*1.23) })}</>}
+                  <Btn primary disabled={paying||proformaBusy||(payMethod==="portfel"&&wallet.balance<sel.price)} onClick={(BANK_TRANSFER_PROFORMA&&payMethod==="przelew")?handleProforma:handleOrder} style={{ flex:2,background:sel.tier==="PREMIUM"?"#d97706":"#0d9488" }}>
+                    {(BANK_TRANSFER_PROFORMA&&payMethod==="przelew")
+                      ? (proformaBusy?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><FileText size={13}/> {t("supplier.finance.pakiety.proforma.generate_button")}</>)
+                      : (paying?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><CreditCard size={13}/> {t("supplier.finance.pakiety.payment_modal.pay_button_format", { gross: Math.round(sel.price*1.23) })}</>)}
                   </Btn>
                 </div>
               </>
@@ -6801,6 +6877,28 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                 <div style={{ fontWeight:700,fontSize:13,color:"#dc2626" }}>{t("supplier.finance.pakiety.order_history.price_format", { price: ord.price })}</div>
                 <Badge color="#059669" bg="#f0fdf4">{t("supplier.finance.pakiety.order_history.paid_badge")}</Badge>
               </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* [feat/bank-transfer-proforma / Lany #2] Historia proform (płatność przelewem). */}
+      {BANK_TRANSFER_PROFORMA && proformas.length>0 && (
+        <Card title={t("supplier.finance.pakiety.proforma.history_title")} icon={FileText}>
+          {proformas.map(pf=>(
+            <div key={pf.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center" }}>
+              <div style={{ width:36,height:36,borderRadius:8,background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <FileText size={15} color="#2563eb"/>
+              </div>
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ fontWeight:600,fontSize:13 }}>{pf.number}</div>
+                <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{String(pf.issued_at||"").slice(0,10)} · {t("supplier.finance.pakiety.order_history.method_bank")}</div>
+              </div>
+              <div style={{ textAlign:"right",flexShrink:0 }}>
+                <div style={{ fontWeight:700,fontSize:13 }}>{Number(pf.gross_amount||0).toFixed(2)} {pf.currency||"EUR"}</div>
+                <Badge color={pf.status==="paid"?"#059669":pf.status==="cancelled"?"#64748b":"#d97706"} bg={pf.status==="paid"?"#f0fdf4":pf.status==="cancelled"?"#f1f5f9":"#fffbeb"}>{t("supplier.finance.pakiety.proforma.status_"+(pf.status||"pending"))}</Badge>
+              </div>
+              <Btn outline sm onClick={()=>downloadProformaFromHistory(pf.id, pf.number)} style={{ flexShrink:0 }}><Download size={12}/> {t("supplier.finance.pakiety.proforma.download_short")}</Btn>
             </div>
           ))}
         </Card>
