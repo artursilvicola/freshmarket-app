@@ -234,4 +234,6 @@ export const ADMIN_DASHBOARD_POLISH = true;
 //
 // Bez migracji, bez zmian RPC, bez zmian danych historycznych (poza zapisem
 // mailingSentAt przy faktycznym wysłaniu e-maila). Default `false`: zero zmian.
-export const PRECONNECT_MAILING_DATE_LOGIC = false;
+// [chore/flip-preconnect-mailing-date-logic] ON — pierwszy wtorek + statusy
+// "Zaplanowane do mailingu" na prod. UWAGA: Faza 2 (RPC zwrotów) wciąż otwarta.
+export const PRECONNECT_MAILING_DATE_LOGIC = true;
