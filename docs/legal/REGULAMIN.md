@@ -1,6 +1,14 @@
 # Regulamin korzystania z platformy Fresh Market B2B PreConnect
 
-**Wersja 1.2 (przygotowana do publikacji)** · Obowiązuje od: do ustalenia — po 14-dniowym powiadomieniu (§15) (poprzednio: 1.1 z 3 czerwca 2026; 1.0 z 24 maja 2026)
+> ⚠️ **WERSJA ROBOCZA (DRAFT) — NIE PUBLIKOWAĆ bez decyzji Operatora i flow
+> re-akceptacji (§15).** Ten plik to dokument roboczy z przygotowaną §16 oraz
+> klauzulami kredytowymi (v1.1/v1.2). **Publicznie obowiązujący regulamin pozostaje
+> 1.0** (`public/regulamin.html` / `regulations.html`, `TERMS_VERSION = "1.0"`).
+> Wariant C wdrożenia: regulamin ODŁĄCZONY od merge'a kodu — patrz
+> `docs/release/LANY_FIXES_RELEASE_CHECKLIST.md`. Publikacja v1.1/v1.2 wymaga
+> osobnego procesu (data + 14-dniowe powiadomienie + flow re-akceptacji).
+
+**Wersja robocza 1.2 (DRAFT, niepublikowana)** · Obowiązuje od: do ustalenia — po 14-dniowym powiadomieniu (§15) (poprzednio: 1.1 z 3 czerwca 2026; 1.0 z 24 maja 2026)
 **Administrator:** KJOW Sp. z o.o. z siedzibą w Pruszkowie
 
 > **Zmiany w wersji 1.2:** dodano **§16 — archiwizacja i usunięcie nieaktywnych kont** (nieaktywność 24 miesiące, ostrzeżenia 30 i 7 dni przed usunięciem, usunięcie albo anonimizacja zgodnie z RODO). Jako zmiana obowiązków wymaga **14-dniowego powiadomienia** Użytkowników (§15) i decyzji Operatora o dacie wejścia w życie (ewentualnie bump do 2.0 wg konwencji wersjonowania).

@@ -1,11 +1,18 @@
 # Lany fixes — checklista wdrożeniowa + ryzyka prawne
 
 > **Status: dokument. Zero merge, zero migracji Supabase, zero flipów flag, zero
-> anonimizacji/hard-delete.** Branch `feat/lany-fixes-followups` jest gotowy
-> technicznie; ten plik to warunki publikacji i bezpieczna kolejność wdrożenia.
+> anonimizacji/hard-delete.** Ten plik to warunki publikacji i bezpieczna kolejność wdrożenia.
 
-Branch `feat/lany-fixes-followups` **zawiera całość** (integracja 6 branchy + follow-upy):
-jeden merge do main wnosi wszystkie zmiany.
+> ✅ **WARIANT C zastosowany na branchu `feat/lany-fixes-release-no-legal-publish`.**
+> Regulamin ODŁĄCZONY od merge'a kodu: `TERMS_VERSION = "1.0"`, `public/regulamin.html`
+> i `regulations.html` cofnięte do **1.0** (bez §16, bez nagłówka 1.2). Merge tego brancha
+> **NIE publikuje** regulaminu 1.2/§16 ani nie zmienia akceptowanej wersji. Pełna wersja
+> 1.2 (z §16) żyje w `feat/lany-fixes-followups` — do osobnej publikacji po wdrożeniu
+> flow re-akceptacji (`feat/terms-reacceptance`). Sekcje §1–§2 poniżej dotyczą tej
+> PRZYSZŁEJ, osobnej publikacji — NIE tego release'u.
+
+Branch `feat/lany-fixes-release-no-legal-publish` **zawiera całość techniczną** (integracja
+6 branchy + follow-upy, bez publikacji regulaminu): jeden merge do main wnosi zmiany techniczne.
 
 ---
 
