@@ -175,7 +175,11 @@ export const CREDIT_EXPIRY_REMINDER = true;
 // Wymaga migracji 042 (profiles.last_active_at + markery + RPC) zaaplikowanej
 // ręcznie w Supabase. Default `false`: gdy wyłączone, brak śledzenia i sweepów
 // (zero zmian). Flip na `true` dopiero PO migracji + smoke test prod.
-export const ACCOUNT_LIFECYCLE = false;
+// [chore/flip-account-lifecycle] ON — uruchamia zegar aktywności (bump
+// last_active_at) + leniwy sweep ostrzeżeń. DRY-RUN potwierdził 0 maili 30d/7d
+// (cichy flip; ~22 mc runway). ACCOUNT_HARD_DELETE zostaje OFF — to tylko
+// śledzenie + ostrzeżenia, NIE usuwanie. Realne ostrzeżenia dopiero po §16/legal.
+export const ACCOUNT_LIFECYCLE = true;
 
 // [feat/account-inactivity-foundation — placeholder destrukcyjnej części #8]
 // Steruje WYKONANIEM archiwizacji/anonimizacji/usuwania kont po 24 mc. NIE jest
