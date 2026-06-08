@@ -251,4 +251,6 @@ export const PRECONNECT_MAILING_DATE_LOGIC = true;
 // Wykorzystuje istniejący currentUser.is_super_admin (AuthProvider) — zero migracji,
 // zero zmian RLS/backendu/danych. Twardy model ról (admin finansowy z migracją)
 // to osobny Wariant B na później. Default `false`: menu/dostęp bez zmian.
-export const ADMIN_ACCESS_POLISH = false;
+// [chore/flip-admin-access-polish] ON — grupy menu (Operacyjne/Finanse/System)
+// + Branding/reset tylko dla super-admina na prod. UI-only (nie backend/RLS).
+export const ADMIN_ACCESS_POLISH = true;
