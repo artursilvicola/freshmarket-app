@@ -271,4 +271,6 @@ export const ADMIN_ACCESS_POLISH = true;
 //   Dodano do panelu / Planowana wysyłka (pierwszy wtorek od dodania) /
 //   Wysłano e-mail (realna data) / Termin odczytu (14 dni od wysłania e-maila).
 // Default `false`: Pipeline renderuje dotychczasową tabelę bez zmian.
-export const ADMIN_PIPELINE_SPLIT = false;
+// [chore/flip-admin-pipeline-split] ON — Pipeline w 3 zakładkach (Do moderacji /
+// Sieci-mailing / Dostawcy-tracking) na prod. UI-only (nie backend/RPC/dane).
+export const ADMIN_PIPELINE_SPLIT = true;
