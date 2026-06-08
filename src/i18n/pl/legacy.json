@@ -2178,6 +2178,8 @@
         "mod_approve": "Zatwierdź",
         "mod_reject": "Odrzuć",
         "mod_send_approved": "Wyślij zatwierdzone do panelu kupca ({{count}})",
+        "mod_approved_ready_format": "Masz {{count}} propozycji zatwierdzonych (status „Gotowe do panelu\"). To już zatwierdzone — Krok 2: wyślij je do panelu kupca przyciskiem obok.",
+        "mod_step2": "Krok 2",
         "mod_empty_table": "Brak propozycji do moderacji.",
         "summary_all": "Wszystkie",
         "summary_in_panel": "W panelu",

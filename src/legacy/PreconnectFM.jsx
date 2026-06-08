@@ -8889,10 +8889,15 @@ function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onTo
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", padding:"8px 12px", background:"#fffbeb", border:"1px solid #fde68a", borderRadius:8, marginBottom:10, fontSize:12, color:"#92400e" }}>
           <span style={{ display:"inline-flex", alignItems:"center", gap:8 }}>
             <Info size={14}/>
-            {modCount > 0 ? t("admin.pipeline.table.mod_hint") : t("admin.pipeline.table.mod_empty_hint")}
+            {/* [feat/admin-pipeline-mod-ux] Gdy są zatwierdzone propozycje ("Gotowe do
+                panelu"), pokaż wyraźny komunikat kierujący do akcji u góry (Krok 2). */}
+            {approvedCount > 0
+              ? t("admin.pipeline.table.mod_approved_ready_format", { count: approvedCount })
+              : (modCount > 0 ? t("admin.pipeline.table.mod_hint") : t("admin.pipeline.table.mod_empty_hint"))}
           </span>
           {onSendApproved && approvedCount > 0 && (
-            <Btn sm onClick={() => onSendApproved()} style={{ background:"#0d9488", color:"white", border:"none", flexShrink:0 }}>
+            <Btn sm onClick={() => onSendApproved()} style={{ background:"#0d9488", color:"white", border:"none", flexShrink:0, gap:6 }}>
+              <span style={{ background:"rgba(255,255,255,0.25)", borderRadius:5, padding:"1px 6px", fontSize:10, fontWeight:700 }}>{t("admin.pipeline.table.mod_step2")}</span>
               <Send size={11}/> {t("admin.pipeline.table.mod_send_approved", { count: approvedCount })}
             </Btn>
           )}
