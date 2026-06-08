@@ -9201,7 +9201,6 @@ function PipelineSplitV3({ sends, offers, retailers, companies, onSendRetailerEm
   const [tab, setTab] = useState("net"); // główny widok = mailing do sieci
   const list = sends || [];
   const getRetailer = (id) => (retailers || []).find(r => r.id === id) || null;
-  const getCompany = (sid) => (companies || []).find(c => c.id === sid || c.legacy_supplier_id === sid) || null;
 
   const IN_PANEL = ["sent", "opened", "read", "read_manual", "unread_expired"]; // w panelu kupca
   const READ = ["opened", "read", "read_manual"];
@@ -9218,33 +9217,64 @@ function PipelineSplitV3({ sends, offers, retailers, companies, onSendRetailerEm
   const modSends = list.filter(s => s.status === "pending_moderation");
 
   const networkRows = useMemo(() => {
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
     const m = new Map();
     for (const s of list) { const rid = s.retailerId; if (rid == null) continue; if (!m.has(rid)) m.set(rid, []); m.get(rid).push(s); }
-    return [...m.entries()].map(([rid, ss]) => ({
-      rid,
-      name: getRetailer(rid)?.name || ("#" + rid),
-      inPanel: ss.filter(s => IN_PANEL.includes(s.status)).length,
-      inBasket: ss.filter(s => !!s.inEmailBasket).length,
-      emailed: ss.filter(isEmailSent).length,
-      lastEmail: maxDate(ss.map(emailDate).filter(Boolean)),
-      nextPlanned: upcomingFirstTuesday(),
-    })).sort((a, b) => (b.inBasket - a.inBasket) || (b.inPanel - a.inPanel));
+    return [...m.entries()].map(([rid, ss]) => {
+      // [patch] "Następna planowana wysyłka" liczona Z KOSZYKA tej sieci (nie globalnie):
+      // najbliższa przyszła planowana data (pierwszy wtorek od dodania) wśród ofert w koszyku;
+      // brak koszyka → null → "—". Globalny pierwszy wtorek jest w pasku u góry.
+      const basketSends = ss.filter(s => !!s.inEmailBasket);
+      let nextPlanned = null;
+      if (basketSends.length) {
+        const planned = basketSends.map(s => { const d = new Date(plannedMailingDateForSend(s)); d.setHours(0, 0, 0, 0); return d; });
+        const future = planned.filter(d => d >= today0);
+        nextPlanned = future.length ? future.reduce((a, d) => d < a ? d : a) : upcomingFirstTuesday();
+      }
+      return {
+        rid,
+        name: getRetailer(rid)?.name || ("#" + rid),
+        inPanel: ss.filter(s => IN_PANEL.includes(s.status)).length,
+        inBasket: basketSends.length,
+        emailed: ss.filter(isEmailSent).length,
+        lastEmail: maxDate(ss.map(emailDate).filter(Boolean)),
+        nextPlanned,
+      };
+    }).sort((a, b) => (b.inBasket - a.inBasket) || (b.inPanel - a.inPanel));
   }, [list, retailers]);
 
   const supplierRows = useMemo(() => {
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    // [patch] Grupowanie po POPRAWNIE rozwiązanej firmie (getSupplierCo — przez
+    // offer.supplierId + legacyKeyMatchesCompany), spójnie z resztą panelu.
     const m = new Map();
-    for (const s of list) { const sid = s.supplierId; if (sid == null) continue; if (!m.has(sid)) m.set(sid, []); m.get(sid).push(s); }
-    return [...m.entries()].map(([sid, ss]) => ({
-      sid,
-      name: getCompany(sid)?.name || String(sid),
-      inPanel: ss.filter(s => IN_PANEL.includes(s.status)).length,
-      networks: new Set(ss.filter(s => IN_PANEL.includes(s.status)).map(s => s.retailerId)).size,
-      lastEmail: maxDate(ss.map(emailDate).filter(Boolean)),
-      read: ss.filter(s => READ.includes(s.status)).length,
-      // czeka na rozliczenie (w panelu, bez markera obciążenia) lub zwrot (wygasłe bez zwrotu)
-      awaiting: ss.filter(s => (["sent", "opened", "read", "read_manual"].includes(s.status) && !hasChargeMarker(s)) || (s.status === "unread_expired" && !hasRefundMarker(s))).length,
-    })).sort((a, b) => b.inPanel - a.inPanel);
-  }, [list, companies]);
+    for (const s of list) {
+      const co = getSupplierCo(s, offers, companies);
+      const key = co?.id || ("sid:" + s.supplierId);
+      if (!m.has(key)) m.set(key, { co, sends: [] });
+      m.get(key).sends.push(s);
+    }
+    return [...m.values()].map(({ co, sends: ss }) => {
+      const inPanelSends = ss.filter(s => IN_PANEL.includes(s.status));
+      // Termin odczytu: najbliższy przyszły (data mailingu + 14 dni) wśród aktywnych 'sent'.
+      const deadlines = ss.filter(s => s.status === "sent")
+        .map(s => { const d = new Date(sendMailingDate(s)); d.setDate(d.getDate() + 14); d.setHours(0, 0, 0, 0); return d; })
+        .filter(d => d >= today0);
+      return {
+        key: co?.id || ss[0]?.supplierId,
+        name: co?.name || String(ss[0]?.supplierId || "—"),
+        inPanel: inPanelSends.length,
+        networks: new Set(inPanelSends.map(s => s.retailerId)).size,
+        // "Ostatnio dodano do panelu" = max(sentAt|sendDate) wśród ofert w panelu kupca.
+        lastAdded: maxDate(inPanelSends.map(s => parseLocalDate(s.sentAt || s.data?.sentAt || s.sendDate || s.data?.sendDate)).filter(Boolean)),
+        lastEmail: maxDate(ss.map(emailDate).filter(Boolean)),
+        readDeadline: deadlines.length ? deadlines.reduce((a, d) => d < a ? d : a) : null,
+        read: ss.filter(s => READ.includes(s.status)).length,
+        // czeka na rozliczenie (w panelu, bez markera obciążenia) lub zwrot (wygasłe bez zwrotu)
+        awaiting: ss.filter(s => (["sent", "opened", "read", "read_manual"].includes(s.status) && !hasChargeMarker(s)) || (s.status === "unread_expired" && !hasRefundMarker(s))).length,
+      };
+    }).sort((a, b) => b.inPanel - a.inPanel);
+  }, [list, offers, companies]);
 
   const TABS = [
     ["mod", t("admin.pipeline_split.tab_moderation"), modSends.length],
@@ -9276,7 +9306,7 @@ function PipelineSplitV3({ sends, offers, retailers, companies, onSendRetailerEm
                 <th style={thS}></th>
               </tr></thead>
               <tbody>
-                {modSends.map(s => { const o = getOffer(s.offerId, offers); const r = getRetailer(s.retailerId); const co = getCompany(s.supplierId); return (
+                {modSends.map(s => { const o = getOffer(s.offerId, offers); const r = getRetailer(s.retailerId); const co = getSupplierCo(s, offers, companies); return (
                   <tr key={s.id}>
                     <td style={tdS}><strong>{o?.title || o?.product || "—"}</strong></td>
                     <td style={tdS}>{co?.name || s.supplierId}</td>
@@ -9296,6 +9326,10 @@ function PipelineSplitV3({ sends, offers, retailers, companies, onSendRetailerEm
 
       {tab === "net" && (
         <Card noPad>
+          {/* [patch] Pasek globalny: najbliższy mailing (pierwszy wtorek) — kontekst dla całej tabeli. */}
+          <div style={{ fontSize: 12, color: "#475569", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", padding: "8px 12px" }}>
+            {t("admin.pipeline_split.net_global_bar", { date: fmtMailingDateDMY(upcomingFirstTuesday()) })}
+          </div>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ background: "#f8fafc" }}>
@@ -9329,20 +9363,22 @@ function PipelineSplitV3({ sends, offers, retailers, companies, onSendRetailerEm
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ background: "#f8fafc" }}>
-                {[t("admin.pipeline_split.sup_col_supplier"), t("admin.pipeline_split.sup_col_in_panel"), t("admin.pipeline_split.sup_col_networks"), t("admin.pipeline_split.sup_col_last_email"), t("admin.pipeline_split.sup_col_read"), t("admin.pipeline_split.sup_col_awaiting")].map((h, i) => <th key={i} style={thS}>{h}</th>)}
+                {[t("admin.pipeline_split.sup_col_supplier"), t("admin.pipeline_split.sup_col_in_panel"), t("admin.pipeline_split.sup_col_networks"), t("admin.pipeline_split.sup_col_last_added"), t("admin.pipeline_split.sup_col_last_email"), t("admin.pipeline_split.sup_col_read_deadline"), t("admin.pipeline_split.sup_col_read"), t("admin.pipeline_split.sup_col_awaiting")].map((h, i) => <th key={i} style={thS}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {supplierRows.map(row => (
-                  <tr key={row.sid}>
+                  <tr key={row.key}>
                     <td style={tdS}><strong>{row.name}</strong></td>
                     <td style={tdS}>{row.inPanel}</td>
                     <td style={tdS}>{row.networks}</td>
+                    <td style={{ ...tdS, color: "#64748b" }}>{dmy(row.lastAdded)}</td>
                     <td style={{ ...tdS, color: "#64748b" }}>{dmy(row.lastEmail)}</td>
+                    <td style={{ ...tdS, color: "#64748b" }}>{dmy(row.readDeadline)}</td>
                     <td style={tdS}>{row.read > 0 ? <Badge color="#059669" bg="#ecfdf5">{row.read}</Badge> : <span style={{ color: "#94a3b8" }}>0</span>}</td>
                     <td style={tdS}>{row.awaiting > 0 ? <Badge color="#d97706" bg="#fffbeb">{row.awaiting}</Badge> : <span style={{ color: "#94a3b8" }}>0</span>}</td>
                   </tr>
                 ))}
-                {supplierRows.length === 0 && <tr><td colSpan={6} style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>{t("admin.pipeline_split.sup_empty")}</td></tr>}
+                {supplierRows.length === 0 && <tr><td colSpan={8} style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>{t("admin.pipeline_split.sup_empty")}</td></tr>}
               </tbody>
             </table>
           </div>
