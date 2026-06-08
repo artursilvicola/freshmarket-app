@@ -9213,6 +9213,11 @@ function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onTo
 
   const IN_PANEL = ["sent", "opened", "read", "read_manual", "unread_expired"]; // w panelu kupca
   const READ = ["opened", "read", "read_manual"];
+  // [v2 patch] Zakres TRACKINGU (zakładki Sieci i Dostawcy) — bez moderacji.
+  // Spójne z trybem "track" PipelineTableV2 (!inModeration). Moderacja =
+  // pending_moderation + queued + approved → osobna zakładka "Do moderacji".
+  const TRACKING = ["sent", "opened", "read", "read_manual", "unread_expired", "refunded"];
+  const IN_MODERATION = ["pending_moderation", "queued", "approved"];
   const emailDate = (s) => {
     const raw = s.emailSentAt || s.data?.emailSentAt || s.mailingSentAt || s.data?.mailingSentAt;
     if (!raw) return null;
@@ -9222,19 +9227,24 @@ function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onTo
   const dmy = (d) => d ? fmtMailingDateDMY(d) : t("admin.pipeline_split.date_none");
   // Status rozliczenia/zwrotu pojedynczej propozycji (BEZ kwot — finanse w Rozliczeniach).
   const settleLabel = (s) => {
+    if (s.status === "refunded") return t("admin.pipeline_split.prop_settle_refunded");
     if (s.status === "unread_expired") return hasRefundMarker(s) ? t("admin.pipeline_split.prop_settle_refunded") : t("admin.pipeline_split.prop_settle_awaiting_refund");
     if (["sent", "opened", "read", "read_manual"].includes(s.status)) return hasChargeMarker(s) ? t("admin.pipeline_split.prop_settle_settled") : t("admin.pipeline_split.prop_settle_awaiting");
     return t("admin.pipeline_split.date_none");
   };
 
-  const modCount = list.filter(s => s.status === "pending_moderation" || s.status === "approved").length;
-  const netCount = new Set(list.filter(s => s.retailerId != null).map(s => s.retailerId)).size;
+  // Licznik moderacji = jak w PipelineTableV2: pending_moderation + queued + approved.
+  const modCount = list.filter(s => IN_MODERATION.includes(s.status)).length;
+  // Licznik sieci = tylko sieci z trybu tracking (bez moderacji/queued/approved).
+  const netCount = new Set(list.filter(s => TRACKING.includes(s.status) && s.retailerId != null).map(s => s.retailerId)).size;
 
   const supplierRows = useMemo(() => {
     const today0 = new Date(); today0.setHours(0, 0, 0, 0);
     // Grupowanie po POPRAWNIE rozwiązanej firmie (getSupplierCo) — spójnie z panelem.
+    // [v2 patch] TYLKO tracking — bez propozycji do moderacji (brak duplikacji z "Do moderacji").
     const m = new Map();
     for (const s of list) {
+      if (!TRACKING.includes(s.status)) continue;
       const co = getSupplierCo(s, offers, companies);
       const key = co?.id || ("sid:" + s.supplierId);
       if (!m.has(key)) m.set(key, { co, sends: [] });
