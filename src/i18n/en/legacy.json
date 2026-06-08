@@ -2870,6 +2870,8 @@
       "preconnect_section": "PreConnect",
       "fm_section": "Fresh Market 2026",
       "admin_section": "Admin",
+      "admin_operational_section": "Operational",
+      "admin_finance_section": "Finance",
       "system_section": "System",
       "supplier_wysylki": "Submissions",
       "supplier_my_offers": "My submissions",

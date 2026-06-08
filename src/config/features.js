@@ -237,3 +237,18 @@ export const ADMIN_DASHBOARD_POLISH = true;
 // [chore/flip-preconnect-mailing-date-logic] ON — pierwszy wtorek + statusy
 // "Zaplanowane do mailingu" na prod. UWAGA: Faza 2 (RPC zwrotów) wciąż otwarta.
 export const PRECONNECT_MAILING_DATE_LOGIC = true;
+
+// [feat/admin-access-polish — Wariant A: UI-only porządek dostępu admina]
+// Czytelny podział menu admina na grupy (Operacyjne / Finanse / System) oraz
+// zawężenie pozycji super-adminowych do is_super_admin:
+//   • Branding (a-branding) — ukryty w menu dla zwykłego admina + best-effort
+//     route guard (zwykły admin na a-branding → Dashboard),
+//   • Reset danych testowych (Dashboard danger zone) — tylko super-admin,
+//   • Administratorzy (a-team) — bez zmian (już super-admin only),
+//   • Rozliczenia (a-settlements) — zostają widoczne dla zwykłego admina (Finanse).
+//
+// ⚠️ To jest UI-only access polish, NIE twarde zabezpieczenie backend/RLS.
+// Wykorzystuje istniejący currentUser.is_super_admin (AuthProvider) — zero migracji,
+// zero zmian RLS/backendu/danych. Twardy model ról (admin finansowy z migracją)
+// to osobny Wariant B na później. Default `false`: menu/dostęp bez zmian.
+export const ADMIN_ACCESS_POLISH = false;
