@@ -271,6 +271,8 @@ export const ADMIN_ACCESS_POLISH = true;
 //   Dodano do panelu / Planowana wysyłka (pierwszy wtorek od dodania) /
 //   Wysłano e-mail (realna data) / Termin odczytu (14 dni od wysłania e-maila).
 // Default `false`: Pipeline renderuje dotychczasową tabelę bez zmian.
-// [chore/flip-admin-pipeline-split] ON — Pipeline w 3 zakładkach (Do moderacji /
-// Sieci-mailing / Dostawcy-tracking) na prod. UI-only (nie backend/RPC/dane).
-export const ADMIN_PIPELINE_SPLIT = true;
+// [chore/rollback-admin-pipeline-split] ROLLBACK na false — wersja 3-zakładkowa
+// była zbyt statystyczna i ukrywała funkcje pracy admina (podgląd oferty,
+// szczegóły, wiadomości, AI/uwagi z PipelineTableV2). Wraca pełna stara tabela.
+// Pełna funkcjonalność wróci w feat/admin-pipeline-split-v2 (master-detail).
+export const ADMIN_PIPELINE_SPLIT = false;
