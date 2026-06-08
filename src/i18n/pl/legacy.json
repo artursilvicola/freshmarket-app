@@ -1789,7 +1789,20 @@
       "sup_col_awaiting": "Czeka na rozliczenie/zwrot",
       "sup_empty": "Brak dostawców.",
       "date_none": "—",
-      "date_legend": "Dodano do panelu = kiedy oferta trafiła do panelu kupca · Planowana wysyłka = pierwszy wtorek od dodania · Wysłano e-mail = realna data wysyłki maila · Termin odczytu = 14 dni od wysłania e-maila."
+      "date_legend": "Dodano do panelu = kiedy oferta trafiła do panelu kupca · Planowana wysyłka = pierwszy wtorek od dodania · Wysłano e-mail = realna data wysyłki maila · Termin odczytu = 14 dni od wysłania e-maila.",
+      "prop_col_network": "Sieć",
+      "prop_col_product": "Produkt",
+      "prop_col_added": "Dodano do panelu",
+      "prop_col_planned": "Planowana wysyłka",
+      "prop_col_emailed": "Wysłano e-mail",
+      "prop_col_read": "Odczyt",
+      "prop_col_deadline": "Termin odczytu",
+      "prop_col_settle": "Rozliczenie / zwrot",
+      "prop_preview": "Podgląd",
+      "prop_settle_settled": "Rozliczone",
+      "prop_settle_awaiting": "Czeka na rozliczenie",
+      "prop_settle_refunded": "Zwrócone",
+      "prop_settle_awaiting_refund": "Czeka na zwrot"
     },
     "retailers": {
       "header_title": "Sieci handlowe i kupcy",
