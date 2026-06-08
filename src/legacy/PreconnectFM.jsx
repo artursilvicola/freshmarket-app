@@ -81,7 +81,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC, ADMIN_ACCESS_POLISH } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC, ADMIN_ACCESS_POLISH, ADMIN_PIPELINE_SPLIT } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -9190,6 +9190,208 @@ function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onTo
 }
 
 /* ── Admin Pipeline: tabs Moderacja / Wysłane+Tracking ──────────────────── */
+// [feat/admin-pipeline-split] UI-only: Pipeline w 3 czytelnych zakładkach.
+//   1) Do moderacji — tylko oferty do moderacji (bez mailingu/rozliczeń)
+//   2) Sieci / mailing — widok per sieć + "Wyślij e-mail do tej sieci"
+//   3) Dostawcy / tracking — widok per dostawca (bez finansów zakupowych)
+// Agregaty liczone z sends/offers/retailers/companies + helpery dat. sendDate
+// NIE jest nazywane "datą wysyłki", dopóki e-mail realnie nie poszedł.
+function PipelineSplitV3({ sends, offers, retailers, companies, onSendRetailerEmail, onModerate }) {
+  const { t } = useTranslation("legacy");
+  const [tab, setTab] = useState("net"); // główny widok = mailing do sieci
+  const list = sends || [];
+  const getRetailer = (id) => (retailers || []).find(r => r.id === id) || null;
+
+  const IN_PANEL = ["sent", "opened", "read", "read_manual", "unread_expired"]; // w panelu kupca
+  const READ = ["opened", "read", "read_manual"];
+  const emailDate = (s) => {
+    const raw = s.emailSentAt || s.data?.emailSentAt || s.mailingSentAt || s.data?.mailingSentAt;
+    if (!raw) return null;
+    const d = new Date(raw);
+    return isNaN(d.getTime()) ? null : d;
+  };
+  const isEmailSent = (s) => emailDate(s) != null;
+  const maxDate = (arr) => arr.reduce((a, d) => (d && (!a || d > a)) ? d : a, null);
+  const dmy = (d) => d ? fmtMailingDateDMY(d) : t("admin.pipeline_split.date_none");
+
+  const modSends = list.filter(s => s.status === "pending_moderation");
+
+  const networkRows = useMemo(() => {
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    const m = new Map();
+    for (const s of list) { const rid = s.retailerId; if (rid == null) continue; if (!m.has(rid)) m.set(rid, []); m.get(rid).push(s); }
+    return [...m.entries()].map(([rid, ss]) => {
+      // [patch] "Następna planowana wysyłka" liczona Z KOSZYKA tej sieci (nie globalnie):
+      // najbliższa przyszła planowana data (pierwszy wtorek od dodania) wśród ofert w koszyku;
+      // brak koszyka → null → "—". Globalny pierwszy wtorek jest w pasku u góry.
+      const basketSends = ss.filter(s => !!s.inEmailBasket);
+      let nextPlanned = null;
+      if (basketSends.length) {
+        const planned = basketSends.map(s => { const d = new Date(plannedMailingDateForSend(s)); d.setHours(0, 0, 0, 0); return d; });
+        const future = planned.filter(d => d >= today0);
+        nextPlanned = future.length ? future.reduce((a, d) => d < a ? d : a) : upcomingFirstTuesday();
+      }
+      return {
+        rid,
+        name: getRetailer(rid)?.name || ("#" + rid),
+        inPanel: ss.filter(s => IN_PANEL.includes(s.status)).length,
+        inBasket: basketSends.length,
+        emailed: ss.filter(isEmailSent).length,
+        lastEmail: maxDate(ss.map(emailDate).filter(Boolean)),
+        nextPlanned,
+      };
+    }).sort((a, b) => (b.inBasket - a.inBasket) || (b.inPanel - a.inPanel));
+  }, [list, retailers]);
+
+  const supplierRows = useMemo(() => {
+    const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+    // [patch] Grupowanie po POPRAWNIE rozwiązanej firmie (getSupplierCo — przez
+    // offer.supplierId + legacyKeyMatchesCompany), spójnie z resztą panelu.
+    const m = new Map();
+    for (const s of list) {
+      const co = getSupplierCo(s, offers, companies);
+      const key = co?.id || ("sid:" + s.supplierId);
+      if (!m.has(key)) m.set(key, { co, sends: [] });
+      m.get(key).sends.push(s);
+    }
+    return [...m.values()].map(({ co, sends: ss }) => {
+      const inPanelSends = ss.filter(s => IN_PANEL.includes(s.status));
+      // Termin odczytu: najbliższy przyszły (data mailingu + 14 dni) wśród aktywnych 'sent'.
+      const deadlines = ss.filter(s => s.status === "sent")
+        .map(s => { const d = new Date(sendMailingDate(s)); d.setDate(d.getDate() + 14); d.setHours(0, 0, 0, 0); return d; })
+        .filter(d => d >= today0);
+      return {
+        key: co?.id || ss[0]?.supplierId,
+        name: co?.name || String(ss[0]?.supplierId || "—"),
+        inPanel: inPanelSends.length,
+        networks: new Set(inPanelSends.map(s => s.retailerId)).size,
+        // "Ostatnio dodano do panelu" = max(sentAt|sendDate) wśród ofert w panelu kupca.
+        lastAdded: maxDate(inPanelSends.map(s => parseLocalDate(s.sentAt || s.data?.sentAt || s.sendDate || s.data?.sendDate)).filter(Boolean)),
+        lastEmail: maxDate(ss.map(emailDate).filter(Boolean)),
+        readDeadline: deadlines.length ? deadlines.reduce((a, d) => d < a ? d : a) : null,
+        read: ss.filter(s => READ.includes(s.status)).length,
+        // czeka na rozliczenie (w panelu, bez markera obciążenia) lub zwrot (wygasłe bez zwrotu)
+        awaiting: ss.filter(s => (["sent", "opened", "read", "read_manual"].includes(s.status) && !hasChargeMarker(s)) || (s.status === "unread_expired" && !hasRefundMarker(s))).length,
+      };
+    }).sort((a, b) => b.inPanel - a.inPanel);
+  }, [list, offers, companies]);
+
+  const TABS = [
+    ["mod", t("admin.pipeline_split.tab_moderation"), modSends.length],
+    ["net", t("admin.pipeline_split.tab_networks"), networkRows.length],
+    ["sup", t("admin.pipeline_split.tab_suppliers"), supplierRows.length],
+  ];
+  const thS = { padding: "9px 12px", textAlign: "left", fontSize: 11, textTransform: "uppercase", color: "#64748b", borderBottom: "2px solid #e2e8f0", whiteSpace: "nowrap" };
+  const tdS = { padding: "9px 12px", borderBottom: "1px solid #f1f5f9", fontSize: 13 };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 0, marginBottom: 14, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
+        {TABS.map(([k, label, n]) => (
+          <div key={k} onClick={() => setTab(k)} style={{ display: "flex", gap: 7, alignItems: "center", padding: "10px 16px", cursor: "pointer", background: tab === k ? "#f0fdfa" : "white", borderRight: "1px solid #f1f5f9", borderBottom: tab === k ? "2px solid #0d9488" : "2px solid transparent" }}>
+            <span style={{ fontSize: 13, fontWeight: tab === k ? 600 : 400, color: tab === k ? "#0d9488" : "#475569" }}>{label}</span>
+            <span style={{ fontSize: 11, background: tab === k ? "rgba(13,148,136,0.12)" : "#f1f5f9", color: tab === k ? "#0d9488" : "#64748b", padding: "1px 7px", borderRadius: 10, fontWeight: 600 }}>{n}</span>
+          </div>
+        ))}
+      </div>
+
+      {tab === "mod" && (
+        <Card noPad>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: "#f8fafc" }}>
+                <th style={thS}>{t("admin.pipeline_split.mod_offer")}</th>
+                <th style={thS}>{t("admin.pipeline_split.mod_supplier")}</th>
+                <th style={thS}>{t("admin.pipeline_split.mod_retailer")}</th>
+                <th style={thS}></th>
+              </tr></thead>
+              <tbody>
+                {modSends.map(s => { const o = getOffer(s.offerId, offers); const r = getRetailer(s.retailerId); const co = getSupplierCo(s, offers, companies); return (
+                  <tr key={s.id}>
+                    <td style={tdS}><strong>{o?.title || o?.product || "—"}</strong></td>
+                    <td style={tdS}>{co?.name || s.supplierId}</td>
+                    <td style={tdS}>{r?.name || ("#" + s.retailerId)}</td>
+                    <td style={{ ...tdS, textAlign: "right", whiteSpace: "nowrap" }}>
+                      <Btn sm onClick={() => onModerate(s.id, "approve")} style={{ background: "#059669", color: "white", border: "none", gap: 5, marginRight: 6 }}><CheckCircle size={11} /> {t("admin.pipeline.table.mod_approve")}</Btn>
+                      <Btn sm onClick={() => onModerate(s.id, "reject")} style={{ background: "#dc2626", color: "white", border: "none", gap: 5 }}><X size={11} /> {t("admin.pipeline.table.mod_reject")}</Btn>
+                    </td>
+                  </tr>
+                ); })}
+                {modSends.length === 0 && <tr><td colSpan={4} style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>{t("admin.pipeline_split.mod_empty")}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {tab === "net" && (
+        <Card noPad>
+          {/* [patch] Pasek globalny: najbliższy mailing (pierwszy wtorek) — kontekst dla całej tabeli. */}
+          <div style={{ fontSize: 12, color: "#475569", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", padding: "8px 12px" }}>
+            {t("admin.pipeline_split.net_global_bar", { date: fmtMailingDateDMY(upcomingFirstTuesday()) })}
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: "#f8fafc" }}>
+                {[t("admin.pipeline_split.net_col_network"), t("admin.pipeline_split.net_col_in_panel"), t("admin.pipeline_split.net_col_in_basket"), t("admin.pipeline_split.net_col_sent"), t("admin.pipeline_split.net_col_last_email"), t("admin.pipeline_split.net_col_next_planned"), ""].map((h, i) => <th key={i} style={thS}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {networkRows.map(row => (
+                  <tr key={row.rid}>
+                    <td style={tdS}><strong>{row.name}</strong></td>
+                    <td style={tdS}>{row.inPanel}</td>
+                    <td style={tdS}>{row.inBasket > 0 ? <Badge color="#2563eb" bg="#eff6ff">{row.inBasket}</Badge> : <span style={{ color: "#94a3b8" }}>0</span>}</td>
+                    <td style={tdS}>{row.emailed}</td>
+                    <td style={{ ...tdS, color: "#64748b" }}>{dmy(row.lastEmail)}</td>
+                    <td style={{ ...tdS, color: "#64748b" }}>{dmy(row.nextPlanned)}</td>
+                    <td style={{ ...tdS, textAlign: "right" }}>
+                      {row.inBasket > 0
+                        ? <Btn sm onClick={() => onSendRetailerEmail(row.rid)} style={{ background: "rgba(37,99,235,0.08)", color: "#2563eb", border: "1px solid rgba(37,99,235,0.25)", gap: 5 }}><Mail size={11} /> {t("admin.pipeline_split.net_send_email")}</Btn>
+                        : <span style={{ fontSize: 11, color: "#cbd5e1" }}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+                {networkRows.length === 0 && <tr><td colSpan={7} style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>{t("admin.pipeline_split.net_empty")}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {tab === "sup" && (
+        <Card noPad>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: "#f8fafc" }}>
+                {[t("admin.pipeline_split.sup_col_supplier"), t("admin.pipeline_split.sup_col_in_panel"), t("admin.pipeline_split.sup_col_networks"), t("admin.pipeline_split.sup_col_last_added"), t("admin.pipeline_split.sup_col_last_email"), t("admin.pipeline_split.sup_col_read_deadline"), t("admin.pipeline_split.sup_col_read"), t("admin.pipeline_split.sup_col_awaiting")].map((h, i) => <th key={i} style={thS}>{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {supplierRows.map(row => (
+                  <tr key={row.key}>
+                    <td style={tdS}><strong>{row.name}</strong></td>
+                    <td style={tdS}>{row.inPanel}</td>
+                    <td style={tdS}>{row.networks}</td>
+                    <td style={{ ...tdS, color: "#64748b" }}>{dmy(row.lastAdded)}</td>
+                    <td style={{ ...tdS, color: "#64748b" }}>{dmy(row.lastEmail)}</td>
+                    <td style={{ ...tdS, color: "#64748b" }}>{dmy(row.readDeadline)}</td>
+                    <td style={tdS}>{row.read > 0 ? <Badge color="#059669" bg="#ecfdf5">{row.read}</Badge> : <span style={{ color: "#94a3b8" }}>0</span>}</td>
+                    <td style={tdS}>{row.awaiting > 0 ? <Badge color="#d97706" bg="#fffbeb">{row.awaiting}</Badge> : <span style={{ color: "#94a3b8" }}>0</span>}</td>
+                  </tr>
+                ))}
+                {supplierRows.length === 0 && <tr><td colSpan={8} style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>{t("admin.pipeline_split.sup_empty")}</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>
+        {t("admin.pipeline_split.date_legend")}
+      </div>
+    </div>
+  );
+}
+
 function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies, dbCapacity, onSendSupplierMessage }) {
   const { t, i18n } = useTranslation("legacy");
   function getRetailerLive(id) {
@@ -9387,19 +9589,31 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
             onSent={handleEmailSent}
           />
         )}
-        <PipelineTableV2
-          sends={sends}
-          offers={offers}
-          retailers={retailers}
-          companies={companies}
-          dbCapacity={dbCapacity}
-          onToggleBasket={onToggleBasket}
-          onSendRetailerEmail={openRetailerEmailFromBasket}
-          onModerate={moderate}
-          onSendApproved={sendApproved}
-          onAnalyzeModerationOffer={analyzeModerationOffer}
-          onSendModerationMessage={sendModerationMessage}
-        />
+        {/* [feat/admin-pipeline-split] Flaga ON → 3 zakładki; OFF → dotychczasowa tabela. */}
+        {ADMIN_PIPELINE_SPLIT ? (
+          <PipelineSplitV3
+            sends={sends}
+            offers={offers}
+            retailers={retailers}
+            companies={companies}
+            onSendRetailerEmail={openRetailerEmailFromBasket}
+            onModerate={moderate}
+          />
+        ) : (
+          <PipelineTableV2
+            sends={sends}
+            offers={offers}
+            retailers={retailers}
+            companies={companies}
+            dbCapacity={dbCapacity}
+            onToggleBasket={onToggleBasket}
+            onSendRetailerEmail={openRetailerEmailFromBasket}
+            onModerate={moderate}
+            onSendApproved={sendApproved}
+            onAnalyzeModerationOffer={analyzeModerationOffer}
+            onSendModerationMessage={sendModerationMessage}
+          />
+        )}
       </>
     );
   }

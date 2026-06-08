@@ -257,3 +257,18 @@ export const PRECONNECT_MAILING_DATE_LOGIC = true;
 // [chore/flip-admin-access-polish] ON — grupy menu (Operacyjne/Finanse/System)
 // + Branding/reset tylko dla super-admina na prod. UI-only (nie backend/RLS).
 export const ADMIN_ACCESS_POLISH = true;
+
+// [feat/admin-pipeline-split — UI-only podział Pipeline na 3 zakładki]
+// Zastępuje monolityczną tabelę Pipeline (PipelineTableV2) trzema czytelnymi
+// zakładkami: 1) Do moderacji (tylko oferty do moderacji), 2) Sieci / mailing
+// (widok per sieć + "Wyślij e-mail do tej sieci"), 3) Dostawcy / tracking
+// (widok per dostawca, bez finansów zakupowych — te zostają w Rozliczeniach).
+//
+// Czysto prezentacyjne: agregaty liczone z sends/offers/retailers/companies +
+// istniejące helpery dat (sendMailingDate / upcomingFirstTuesday). Reużywa
+// akcji moderacji (onModerate) i wysyłki maila do sieci (openRetailerEmailFromBasket).
+// Bez migracji, bez zmian danych, bez zmian RPC. Słownik dat (jednoznaczny):
+//   Dodano do panelu / Planowana wysyłka (pierwszy wtorek od dodania) /
+//   Wysłano e-mail (realna data) / Termin odczytu (14 dni od wysłania e-maila).
+// Default `false`: Pipeline renderuje dotychczasową tabelę bez zmian.
+export const ADMIN_PIPELINE_SPLIT = false;
