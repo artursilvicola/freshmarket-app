@@ -157,7 +157,10 @@ export const BANK_TRANSFER_PROFORMA = true;
 // Wymaga migracji 041 (packages.expiry_reminder_sent_at + claim_due_expiry_reminders)
 // zaaplikowanej ręcznie w Supabase. Default `false`: gdy wyłączone, sweep nie
 // jest wołany (zero zmian). Flip na `true` dopiero PO migracji + smoke test prod.
-export const CREDIT_EXPIRY_REMINDER = false;
+// [chore/flip-credit-expiry-reminder] ON — migracja 041 w bazie potwierdzona,
+// DRY-RUN = 0 maili do wysłania teraz (flip "cichy"). UWAGA: po flipie system
+// wysyła REALNE maile, gdy pakiet wejdzie w okno 14 dni przed wygaśnięciem.
+export const CREDIT_EXPIRY_REMINDER = true;
 
 // [feat/account-inactivity-foundation — Poprawki Lany #8 — część BEZPIECZNA]
 // Śledzenie aktywności konta + ostrzeżenia e-mail 30 i 7 dni przed progiem
