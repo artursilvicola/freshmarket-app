@@ -275,4 +275,7 @@ export const ADMIN_ACCESS_POLISH = true;
 // była zbyt statystyczna i ukrywała funkcje pracy admina (podgląd oferty,
 // szczegóły, wiadomości, AI/uwagi z PipelineTableV2). Wraca pełna stara tabela.
 // Pełna funkcjonalność wróci w feat/admin-pipeline-split-v2 (master-detail).
-export const ADMIN_PIPELINE_SPLIT = false;
+// [chore/flip-admin-pipeline-split-v2] ON — V2 master-detail: zakładki 1/2 to
+// pełny PipelineTableV2 (zero utraty funkcji), 3 = master-detail dostawców.
+// W razie problemu: rollback jednej flagi na false.
+export const ADMIN_PIPELINE_SPLIT = true;
