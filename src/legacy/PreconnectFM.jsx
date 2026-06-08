@@ -81,7 +81,7 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC, ADMIN_ACCESS_POLISH } from "../config/features";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -3578,7 +3578,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     // [fix/admin-dashboard-routes] Compatibility guard: gdyby admin trafił na
     // pg==="dashboard" (stary stan / nieaktualny nav), NIE pokazuj dashboardu
     // dostawcy — renderuj PageAdminDash. Supplier/buyer bez zmian.
-    if(pg==="dashboard" && role==="admin") return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
+    if(pg==="dashboard" && role==="admin") return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies} isSuperAdmin={currentUser?.is_super_admin}/>;
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers} retailers={retailers} hiddenRetailers={companyHiddenRetailers} setHiddenRetailers={setCompanyHiddenRetailers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} pkgPlan={pkgPlan} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
@@ -3594,7 +3594,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
-    if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
+    if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies} isSuperAdmin={currentUser?.is_super_admin}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
@@ -3605,7 +3605,13 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
       : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
     if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
-    if(pg==="a-branding")   return <PageAdminBranding fl={fl}/>;
+    // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
+    // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.
+    if(pg==="a-branding") {
+      if (ADMIN_ACCESS_POLISH && !currentUser?.is_super_admin)
+        return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies} isSuperAdmin={currentUser?.is_super_admin}/>;
+      return <PageAdminBranding fl={fl}/>;
+    }
     if(pg==="a-team")       return <PageAdminTeam fl={fl} currentUser={currentUser}/>;
     return null;
   }
@@ -3713,10 +3719,17 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
 
             {/* ── ADMIN NAV ── */}
             {role==="admin"&&<>
+              {/* [feat/admin-access-polish] UI-only podział menu admina na grupy
+                  (Operacyjne / Finanse / System) + zawężenie pozycji super-adminowych.
+                  TO NIE JEST twarde zabezpieczenie backend/RLS — tylko porządek
+                  wyświetlania oparty na istniejącym currentUser.is_super_admin. */}
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.admin_section")}</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t(ADMIN_ACCESS_POLISH ? "shell.sidebar.admin_operational_section" : "shell.sidebar.admin_section")}</span>
               </div>
-              {[[Layers,t("shell.sidebar.admin_pipeline"),"a-pipeline"],[Store,t("shell.sidebar.admin_retailers"),"a-retailers"],[Building2,t("shell.sidebar.admin_firmy"),"a-firmy"], ...(ADMIN_SETTLEMENTS ? [[Receipt,t("shell.sidebar.admin_settlements"),"a-settlements"]] : [])].map(([Ic,label,key])=>{
+              {(ADMIN_ACCESS_POLISH
+                ? [[Layers,t("shell.sidebar.admin_pipeline"),"a-pipeline"],[Building2,t("shell.sidebar.admin_firmy"),"a-firmy"],[Store,t("shell.sidebar.admin_retailers"),"a-retailers"]]
+                : [[Layers,t("shell.sidebar.admin_pipeline"),"a-pipeline"],[Store,t("shell.sidebar.admin_retailers"),"a-retailers"],[Building2,t("shell.sidebar.admin_firmy"),"a-firmy"], ...(ADMIN_SETTLEMENTS ? [[Receipt,t("shell.sidebar.admin_settlements"),"a-settlements"]] : [])]
+              ).map(([Ic,label,key])=>{
                 // [B2B Round prod-rollout / admin-notifications] Badge w sidebarze
                 // dla pozycji wymagających akcji admina:
                 //   - Pipeline: propozycje czekające na moderację (status pending_moderation)
@@ -3739,6 +3752,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                   </div>
                 );
               })}
+              {/* [feat/admin-access-polish] "Wiadomości" należą do grupy OPERACYJNE
+                  (Pipeline / Firmy / Sieci / Wiadomości). Renderowane osobnym blokiem
+                  (nie w mapie powyżej) WYŁĄCZNIE z powodu własnej logiki badge unread —
+                  pozostają pod nagłówkiem "Operacyjne", PRZED nagłówkiem "Finanse". */}
               {(()=>{
                 const unread = messages.filter(m=>m.toId==="admin"&&!m.read).length;
                 return (
@@ -3748,6 +3765,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                   </div>
                 );
               })()}
+              {/* [feat/admin-access-polish] Grupa "Finanse" — Rozliczenia jako osobna
+                  sekcja. Zostają widoczne dla zwykłego admina (UI-only, brak blokady). */}
+              {ADMIN_ACCESS_POLISH && ADMIN_SETTLEMENTS && (
+                <>
+                  <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.admin_finance_section")}</span>
+                  </div>
+                  <div onClick={()=>nav("a-settlements")} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="a-settlements"?"white":"#64748b",background:navKey==="a-settlements"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-settlements"?600:400,transition:"all 0.15s" }}>
+                    <Receipt size={14}/><span>{t("shell.sidebar.admin_settlements")}</span>
+                  </div>
+                </>
+              )}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
               </div>
@@ -3761,9 +3790,13 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.system_section")}</span>
               </div>
-              <div onClick={()=>nav("a-branding")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-branding"?"white":"#64748b",background:navKey==="a-branding"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-branding"?600:400 }}>
-                <Sparkles size={14}/><span>{t("shell.sidebar.admin_branding")}</span>
-              </div>
+              {/* [feat/admin-access-polish] Branding tylko dla super-admina (UI-only).
+                  Flaga OFF → widoczny dla każdego admina jak dziś. */}
+              {(!ADMIN_ACCESS_POLISH || currentUser?.is_super_admin) && (
+                <div onClick={()=>nav("a-branding")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-branding"?"white":"#64748b",background:navKey==="a-branding"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-branding"?600:400 }}>
+                  <Sparkles size={14}/><span>{t("shell.sidebar.admin_branding")}</span>
+                </div>
+              )}
               {/* [B2B Round prod-rollout / admin-team] Pozycja "Administratorzy"
                   widoczna TYLKO dla super admina (is_super_admin = role=admin
                   AND admin_level='super'). Zwykli admini nie zobaczą tej zakładki. */}
@@ -8018,7 +8051,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Admin Dashboard ──────────────────────────────────────────────────── */
-function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, resetToSeed, retailers, fmSuppliers, companies }) {
+function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, resetToSeed, retailers, fmSuppliers, companies, isSuperAdmin }) {
   const { t } = useTranslation("legacy");
   const pm=sends.filter(s=>s.status==="pending_moderation").length;
   const ap=sends.filter(s=>s.status==="approved").length;
@@ -8152,8 +8185,9 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           );
         })()}
 
-        {/* E. Narzędzia testowe / danger zone — wyciszone, na samym dole. */}
-        {resetToSeed && (
+        {/* E. Narzędzia testowe / danger zone — wyciszone, na samym dole.
+            [feat/admin-access-polish] Gdy flaga ON — tylko dla super-admina (UI-only). */}
+        {resetToSeed && (!ADMIN_ACCESS_POLISH || isSuperAdmin) && (
           <div style={{ marginTop:6, padding:"12px 14px", background:"#fef2f2", border:"1px dashed #fecaca", borderRadius:10 }}>
             <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#b91c1c", marginBottom:8 }}>{t("admin.dash.p_tools_title")}</div>
             <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
@@ -8286,7 +8320,8 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           </div>
         ))}
       </div>
-      {resetToSeed&&(
+      {/* [feat/admin-access-polish] Reset (stary render) — gdy flaga ON tylko super-admin. */}
+      {resetToSeed && (!ADMIN_ACCESS_POLISH || isSuperAdmin) && (
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",alignItems:"center",gap:10 }}>
           <Btn outline sm onClick={resetToSeed} style={{ color:"#dc2626",borderColor:"#fca5a5",display:"flex",alignItems:"center",gap:5 }}>
             <RotateCcw size={12}/> {t("admin.dash.reset_btn")}
