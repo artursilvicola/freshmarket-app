@@ -3752,6 +3752,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                   </div>
                 );
               })}
+              {/* [feat/admin-access-polish] "Wiadomości" należą do grupy OPERACYJNE
+                  (Pipeline / Firmy / Sieci / Wiadomości). Renderowane osobnym blokiem
+                  (nie w mapie powyżej) WYŁĄCZNIE z powodu własnej logiki badge unread —
+                  pozostają pod nagłówkiem "Operacyjne", PRZED nagłówkiem "Finanse". */}
               {(()=>{
                 const unread = messages.filter(m=>m.toId==="admin"&&!m.read).length;
                 return (
