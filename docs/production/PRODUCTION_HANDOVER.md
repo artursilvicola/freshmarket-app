@@ -50,7 +50,7 @@ asortymentowe, admin je moderuje i wysyła do paneli kupców oraz w miesięcznym
 | **Maile** | **Resend** (`RESEND_API_KEY`). From: `newsletter@freshmarket.eu`. Webhook: `resend-webhook.js` |
 | **Płatności** | **PayU** (karta/online) + **przelew bankowy → proforma** (HTML) |
 | **Feature flagi** | `src/config/features.js` (jedno źródło — sekcja C) |
-| **Legal** | `public/regulamin.html` (PL), `public/regulations.html` (EN), wersje w `src/lib/legal-versions.js`, źródła w `docs/legal/` |
+| **Legal** | `public/regulamin.html` (PL **2.0**), `public/regulations.html` (EN 2.0 draft), wersje w `src/lib/legal-versions.js` (`TERMS_VERSION=2.0`), źródła w `docs/legal/` |
 
 **Hosting/CD:** push do `main` (GitHub `artursilvicola/freshmarket-app`) → Netlify auto-deploy.
 **Migracje Supabase NIE jadą z gita** — aplikowane RĘCZNIE w Supabase SQL Editor po deployu.
@@ -169,24 +169,31 @@ powiadomienia), 3. **sign-offu właściciela**, 4. pełnego **backupu**.
 
 ## G. Prawnik / RODO / legal
 
-> ⚠️ Stan na main: **`TERMS_VERSION = "1.0"`, `PRIVACY_VERSION = "1.0"`** (`src/lib/legal-versions.js`).
+> ✅ Stan na main: **`TERMS_VERSION = "2.0"`, `PRIVACY_VERSION = "1.0"`** (`src/lib/legal-versions.js`).
+> **Regulamin 2.0 jest opublikowany.**
 
-- **Regulamin** — `public/regulamin.html` (PL, v1.0), źródło `docs/legal/REGULAMIN.md`.
-- **Polityka prywatności** — `docs/legal/POLITYKA_PRYWATNOSCI.md` (+ HTML jeśli publikowany).
-- **§16 / konta nieaktywne / 24 mc / 14 dni** — funkcja `ACCOUNT_LIFECYCLE` (ostrzeżenia 30/7 dni)
-  jest ON, ale **realne usuwanie OFF** (`ACCOUNT_HARD_DELETE=false`). **DO WERYFIKACJI PRAWNEJ:**
-  czy treść regulaminu v1.0 na prod adekwatnie opisuje 24-mies. retencję + 14 dni powiadomienia
-  ZANIM jakiekolwiek realne ostrzeżenia/usuwanie zostaną włączone.
-- **Brak twardego usuwania obecnie** — konta nie są kasowane automatycznie; `ACCOUNT_HARD_DELETE=false`.
-- **Retencja danych finansowych** — proformy (`proformas`) przy usuwaniu firmy są zachowywane
+- **Regulamin 2.0** — `public/regulamin.html` (PL, wersja **2.0**), źródło `docs/legal/REGULAMIN.md` (2.0).
+  Checklista publikacji: `docs/legal/REGULAMIN_2_0_RELEASE_CHECKLIST.md`.
+- **Daty:** **ogłoszony 9 czerwca 2026**, **wchodzi w życie 23 czerwca 2026** (14 dni wyprzedzenia).
+- **§16 — Archiwizacja i usunięcie kont nieaktywnych — JEST już w regulaminie 2.0:** archiwizacja/
+  anonimizacja/usunięcie po **24 miesiącach** nieaktywności, z ostrzeżeniami **30 i 7 dni** przed terminem.
+  Czyli podstawa prawna dla `ACCOUNT_LIFECYCLE` jest opublikowana.
+- **Mail powiadamiający (14 dni)** — wysyłany **9 czerwca 2026** (ogłoszenie 2.0 → wejście 23.06.2026);
+  szablon w `REGULAMIN_2_0_RELEASE_CHECKLIST.md`.
+- **Polityka prywatności** — `docs/legal/POLITYKA_PRYWATNOSCI.md` (wersja 1.0).
+- **Twarde usuwanie nadal OFF** — `ACCOUNT_HARD_DELETE=false`; **publikacja regulaminu 2.0 NIE uruchamia
+  usuwania kont**. `ACCOUNT_LIFECYCLE=true` daje tylko zegar + ostrzeżenia. Realne usuwanie wymaga
+  osobnej decyzji + sandboxu + sign-offu (patrz C, I).
+- **Retencja danych finansowych** — proformy (`proformas`) przy usuwaniu firmy zachowywane
   (`company_id → NULL`, nie kasowane) dla księgowości. Pakiety kaskadują.
 - **Faktury/proformy** — numeracja `PF/RRRR/NNNNNN`, VAT 23%, dane sprzedawcy z env (H).
 - **Maile transakcyjne** — Resend, from `newsletter@freshmarket.eu`; kontakt w treści: `hello@freshmarket.eu`.
-- **Zgody / `accepted_terms_version`** — zapisywane przy rejestracji (profiles).
-- 🔴 **RYZYKO: brak wymuszonej re-akceptacji** — banner „zaakceptuj nową wersję" przy zmianie
-  major regulaminu jest **TODO / niezaimplementowany** (komentarz w `legal-versions.js`). Jeśli
-  prawnik uzna re-akceptację za konieczną przy zmianie regulaminu → wymaga implementacji.
-- **EN `public/regulations.html`** — traktować jako **DRAFT do review prawnika** (nie final).
+- **Zgody / `accepted_terms_version`** — **nowe rejestracje zapisują `accepted_terms_version = "2.0"`** (profiles).
+- 🔴 **RYZYKO (otwarte): brak wymuszonego flow re-akceptacji dla ISTNIEJĄCYCH użytkowników** — ekran
+  „zaakceptuj nową wersję" przy zmianie major regulaminu jest **niezaimplementowany**. Wg checklisty 2.0
+  (§15) **operator decyduje**, czy wystarcza powiadomienie e-mail, czy trzeba zbudować ekran re-akceptacji.
+  **Decyzja prawna do podjęcia.**
+- **EN `public/regulations.html`** — wersja 2.0 z §16, ale **nadal DRAFT do review prawnika** (nie final).
 
 ---
 
@@ -257,8 +264,8 @@ powiadomienia), 3. **sign-offu właściciela**, 4. pełnego **backupu**.
 |---|---|
 | `src/config/features.js` | feature flagi (jedno źródło) |
 | `src/lib/legal-versions.js` | `TERMS_VERSION`, `PRIVACY_VERSION` |
-| `public/regulamin.html` / `public/regulations.html` | regulamin PL / EN (draft) |
-| `docs/legal/REGULAMIN.md`, `docs/legal/POLITYKA_PRYWATNOSCI.md` | źródła legal |
+| `public/regulamin.html` / `public/regulations.html` | regulamin **2.0** PL / EN (EN = draft) |
+| `docs/legal/REGULAMIN.md` (2.0), `docs/legal/REGULAMIN_2_0_RELEASE_CHECKLIST.md`, `docs/legal/POLITYKA_PRYWATNOSCI.md` | źródła legal + checklista publikacji 2.0 |
 | `docs/account-lifecycle/*` | audyt kont testowych, plan czyszczenia, DRY-RUN nieaktywności |
 | `docs/billing/*` | plan Fazy 2 RPC mailingu + DRY-RUN |
 | `supabase/migrations/*` | migracje DB (001–044) |
@@ -284,9 +291,12 @@ powiadomienia), 3. **sign-offu właściciela**, 4. pełnego **backupu**.
 - Mailing do sieci + odczyty + zwroty na realnym cyklu miesięcznym.
 
 **Co wymaga DECYZJI PRAWNEJ:**
-- Treść regulaminu v1.0 vs realne procesy (retencja 24 mc, 14 dni, RODO).
-- Czy potrzebny mechanizm **wymuszonej re-akceptacji** regulaminu (dziś TODO).
-- Zatwierdzenie EN regulations (draft).
+- **Regulamin 2.0 jest już opublikowany** (§16: retencja 24 mc + ostrzeżenia 30/7 dni; ogłoszony
+  09.06.2026, wejście 23.06.2026, mail powiadamiający 09.06.2026). Do potwierdzenia przez prawnika,
+  że treść §16 odpowiada realnemu działaniu `ACCOUNT_LIFECYCLE`.
+- Czy potrzebny mechanizm **wymuszonej re-akceptacji** dla **istniejących** użytkowników, czy wystarcza
+  powiadomienie e-mail (§15) — decyzja operatora/prawnika (ekran re-akceptacji niezaimplementowany).
+- Zatwierdzenie **EN regulations 2.0** (wciąż draft).
 
 **Co jest ZABLOKOWANE (świadomie):**
 - **Twarde usuwanie kont (`ACCOUNT_HARD_DELETE`) — OFF.** Nie włączać bez sandboxu + prawnika + sign-offu.
