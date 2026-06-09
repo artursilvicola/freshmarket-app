@@ -1,19 +1,11 @@
 # Regulamin korzystania z platformy Fresh Market B2B PreConnect
 
-> ⚠️ **WERSJA ROBOCZA (DRAFT) — NIE PUBLIKOWAĆ bez decyzji Operatora i flow
-> re-akceptacji (§15).** Ten plik to dokument roboczy z przygotowaną §16 oraz
-> klauzulami kredytowymi (v1.1/v1.2). **Publicznie obowiązujący regulamin pozostaje
-> 1.0** (`public/regulamin.html` / `regulations.html`, `TERMS_VERSION = "1.0"`).
-> Wariant C wdrożenia: regulamin ODŁĄCZONY od merge'a kodu — patrz
-> `docs/release/LANY_FIXES_RELEASE_CHECKLIST.md`. Publikacja v1.1/v1.2 wymaga
-> osobnego procesu (data + 14-dniowe powiadomienie + flow re-akceptacji).
-
-**Wersja robocza 1.2 (DRAFT, niepublikowana)** · Obowiązuje od: do ustalenia — po 14-dniowym powiadomieniu (§15) (poprzednio: 1.1 z 3 czerwca 2026; 1.0 z 24 maja 2026)
+**Wersja 2.0** · Ogłoszona: 9 czerwca 2026 · Obowiązuje od: 23 czerwca 2026 (po 14-dniowym powiadomieniu zgodnie z §15)
 **Administrator:** KJOW Sp. z o.o. z siedzibą w Pruszkowie
 
-> **Zmiany w wersji 1.2:** dodano **§16 — archiwizacja i usunięcie nieaktywnych kont** (nieaktywność 24 miesiące, ostrzeżenia 30 i 7 dni przed usunięciem, usunięcie albo anonimizacja zgodnie z RODO). Jako zmiana obowiązków wymaga **14-dniowego powiadomienia** Użytkowników (§15) i decyzji Operatora o dacie wejścia w życie (ewentualnie bump do 2.0 wg konwencji wersjonowania).
+> **Zmiany w wersji 2.0:** dodano **§16 — archiwizacja i usunięcie nieaktywnych kont** (nieaktywność 24 miesiące, ostrzeżenia 30 i 7 dni przed usunięciem, usunięcie albo anonimizacja zgodnie z RODO). Jako zmiana obowiązków wymaga **14-dniowego powiadomienia** Użytkowników (§15).
 >
-> **Zmiany w wersji 1.1:** doprecyzowano definicję **Kredytu PreConnect** (§1.11) jako niepieniężnej jednostki rozliczeniowej, która nie podlega wypłacie; doprecyzowano zasady zużycia i zwrotu Kredytu przy braku odczytu w 14 dni (§6.2–6.4); termin mailingu zbiorczego ujednolicono na **drugi wtorek miesiąca** (§6.6); doprecyzowano relację Pakiet/EUR/Kredyty (§8.1–8.2).
+> **Zmiany w wersji 1.1:** doprecyzowano definicję **Kredytu PreConnect** (§1.11) jako niepieniężnej jednostki rozliczeniowej, która nie podlega wypłacie; doprecyzowano zasady zużycia i zwrotu Kredytu przy braku odczytu w 14 dni (§6.2–6.4); termin mailingu zbiorczego ujednolicono na **pierwszy wtorek miesiąca** (§6.6); doprecyzowano relację Pakiet/EUR/Kredyty (§8.1–8.2).
 
 ---
 
@@ -95,7 +87,7 @@ Do korzystania z Serwisu wymagane jest:
    - treść jest sprzeczna z prawem, dobrymi obyczajami lub zasadami uczciwego obrotu,
    - Propozycja zawiera treści wprowadzające w błąd,
    - kategoria produktu nie odpowiada profilowi działalności wybranej Sieci.
-6. **Wysyłki mailingowe realizowane są w drugi wtorek każdego miesiąca** — wszystkie Propozycje zatwierdzone i wybrane do mailingu w danym miesiącu trafiają do Sieci w jednym mailingu zbiorczym. Operator może zmienić termin mailingu, informując o tym w panelu; aktualna najbliższa data jest zawsze widoczna w panelu Pipeline.
+6. **Wysyłki mailingowe realizowane są w pierwszy wtorek każdego miesiąca** — wszystkie Propozycje zatwierdzone i wybrane do mailingu w danym miesiącu trafiają do Sieci w jednym mailingu zbiorczym. Operator może zmienić termin mailingu, informując o tym w panelu; aktualna najbliższa data jest zawsze widoczna w panelu Pipeline.
 7. Dostawca może w każdej chwili **usunąć własną Propozycję** — pod warunkiem, że nie została jeszcze wysłana do żadnej Sieci. Po pierwszej wysyłce usunięcie jest niemożliwe (Propozycja żyje w pipeline procesowym Operatora).
 8. Profil Dostawcy w katalogu firm jest domyślnie widoczny dla zalogowanych Kupców reprezentujących aktywne Sieci. Dostawca może w panelu ukryć profil przed wybranymi Sieciami; ukrycie profilu w katalogu nie wpływa na Propozycje już wysłane do danej Sieci ani na rozliczenia wysyłek.
 
@@ -223,9 +215,10 @@ Kupiec zobowiązuje się do:
 ## § 16. Archiwizacja i usunięcie nieaktywnych kont
 
 1. Konto Użytkownika, które pozostaje **nieaktywne przez 24 miesiące** (brak logowania i działań w panelu), może zostać przez Operatora **zarchiwizowane, a następnie usunięte lub zanonimizowane** zgodnie z zasadą ograniczenia przechowywania danych (art. 5 ust. 1 lit. e RODO).
-2. Przed usunięciem Operator wysyła ostrzeżenie na adres e-mail przypisany do konta **na 30 dni** oraz **na 7 dni** przed upływem terminu. **Zalogowanie się do panelu zeruje licznik nieaktywności** i zachowuje konto.
-3. Usunięcie konta następuje z poszanowaniem RODO: dane osobowe są usuwane albo **anonimizowane**, przy czym **historia rozliczeń (faktury, płatności)** jest zachowywana w zakresie i przez okres wymagany przepisami prawa (m.in. ustawą o rachunkowości).
-4. Niewykorzystane Kredyty przypisane do usuwanego konta wygasają zgodnie z § 1 i § 6; archiwizacja nie stanowi podstawy do ich zwrotu pieniężnego (Kredyt nie jest środkiem pieniężnym).
+2. Przed usunięciem lub anonimizacją konta Operator wysyła ostrzeżenie na adres e-mail przypisany do konta **na 30 dni** oraz **na 7 dni** przed planowanym terminem. **Zalogowanie się do panelu zeruje licznik nieaktywności** i zachowuje konto.
+3. Usunięcie albo anonimizacja konta następuje z poszanowaniem RODO. Dane osobowe są usuwane albo anonimizowane, przy czym **historia rozliczeń, faktury, płatności i dokumenty księgowe** mogą być zachowywane w zakresie i przez okres wymagany przepisami prawa, w szczególności przepisami podatkowymi i ustawą o rachunkowości.
+4. Niewykorzystane Kredyty przypisane do usuwanego albo anonimizowanego konta wygasają wraz z kontem, chyba że bezwzględnie obowiązujące przepisy prawa stanowią inaczej. Kredyt nie jest środkiem pieniężnym i nie podlega wymianie na gotówkę.
+5. Operator może odstąpić od usunięcia konta lub ograniczyć zakres usunięcia, jeżeli zachowanie wybranych danych jest niezbędne do ustalenia, dochodzenia lub obrony roszczeń, wykonania obowiązków prawnych Operatora albo zachowania historii rozliczeń.
 
 ---
 
@@ -234,7 +227,7 @@ Kupiec zobowiązuje się do:
 1. Prawem właściwym dla Regulaminu jest prawo polskie.
 2. Wszelkie spory powstałe na tle Regulaminu, których nie uda się rozwiązać polubownie, będą rozpatrywane przez sąd właściwy dla siedziby Operatora.
 3. W sprawach nieuregulowanych Regulaminem zastosowanie mają przepisy Kodeksu Cywilnego, ustawy o świadczeniu usług drogą elektroniczną, Ustawy Prawo przedsiębiorców oraz RODO.
-4. Regulamin wchodzi w życie z dniem 24 maja 2026.
+4. Regulamin w wersji 2.0 wchodzi w życie z dniem 23 czerwca 2026.
 5. Polityka Prywatności dostępna jest pod adresem `https://b2b.freshmarket.eu/polityka-prywatnosci` i stanowi integralną część Regulaminu w zakresie ochrony danych osobowych.
 
 ---
