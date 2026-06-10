@@ -248,6 +248,25 @@ powiadomienia), 3. **sign-offu właściciela**, 4. pełnego **backupu**.
 ---
 
 ## I. Ryzyka i rzeczy, których NIE robić
+
+### 🔴 RÓWNOLEGŁY SYSTEM MAILOWY `freshmarketb2b` — krytyczne ryzyko operacyjne
+> Pełny opis: [`EMAIL_INCIDENT_2026-06-10_PARALLEL_SYSTEM.md`](EMAIL_INCIDENT_2026-06-10_PARALLEL_SYSTEM.md).
+- **Istnieje drugi, równoległy system** współdzielący ten sam projekt Supabase (`sklyfuvzjikkqerxtulo`):
+  **`freshmarketb2b.netlify.app`** + **Supabase Edge Function `send-email`** (from `hello@`/`kontakt@`),
+  napędzany **triggerami DB** i **pg_cron** — jego logika żyje w funkcjach bazy, **NIE w tym repo**.
+- **Może wysyłać maile niezależnie od `b2b.freshmarket.eu`** (Netlify+Resend, `newsletter@`). Przy
+  diagnozie nieoczekiwanych maili NIE wystarczy przeszukać repo — trzeba sprawdzić `cron.job`
+  i funkcje `public.fm_*` w Supabase (audyt: [`SUPABASE_MAIL_CRON_AUDIT.sql`](SUPABASE_MAIL_CRON_AUDIT.sql)).
+- **Incydent 2026-06-10:** cron `fm-14d-reminder` → `fm_14d_reminder_job()` wysłał błędny mail
+  („propozycja od **Dostawca**", puste placeholdery) — 1 mail na konto testowe, zero realnych sieci.
+  **Zatrzymane:** `cron.unschedule('fm-14d-reminder')` = `true`.
+- 🛑 **Przed produkcją trzeba ZDECYDOWAĆ, który system jest oficjalną produkcją** (`b2b.freshmarket.eu`
+  vs `freshmarketb2b`). Dwa systemy na jednej bazie to źródło „duchów" wysyłających maile spod radaru.
+- 🛑 **NIE wolno re-enable `fm-14d-reminder`** (ani innych cronów tego systemu) **bez naprawy**
+  (nazwy przez JOIN + filtr odbiorców) **i testu na sandboxie**. Komenda powrotu jest świadomą,
+  osobną decyzją — patrz dokument incydentu.
+
+### Pozostałe
 - 🛑 **NIE włączać `ACCOUNT_HARD_DELETE`** bez sandboxu + decyzji prawnej + sign-offu + backupu.
 - 🛑 **NIE usuwać firm Unica Group / Pik Global / OKSALE** bez osobnej decyzji (mają historię finansową).
 - 🛑 **NIE zmieniać regulaminu** (major) bez maila do userów + 14 dni wyprzedzenia (i ew. re-akceptacji).
