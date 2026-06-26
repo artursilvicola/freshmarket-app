@@ -123,6 +123,7 @@ export async function createPayuOrder({
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
+      Accept: "application/json",
     },
     body: JSON.stringify(payload),
     redirect: "manual",
@@ -131,20 +132,22 @@ export async function createPayuOrder({
   // PayU zwraca 302 z Location → redirect_uri przy success.
   // Z `redirect: 'manual'` body JSON też ma `redirectUri`.
   // Niektóre tryby (np. card token) zwracają 200.
-  let json = null;
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("application/json")) {
-    try { json = await res.json(); } catch {}
-  }
+  const body = await readPayuBody(res);
+  const json = body.json;
 
   if (res.status !== 200 && res.status !== 302) {
-    const detail = json ? JSON.stringify(json) : await res.text().catch(() => "");
+    const detail = json ? JSON.stringify(json) : body.text;
     throw new Error(`PayU createOrder ${res.status}: ${detail || res.statusText}`);
   }
 
   const redirectUri = json?.redirectUri || res.headers.get("location");
   const orderId = json?.orderId || null;
   const statusCode = json?.status?.statusCode || (res.status === 302 ? "SUCCESS" : null);
+
+  if (!redirectUri) {
+    const detail = json ? JSON.stringify(json) : body.text;
+    throw new Error(`PayU createOrder: brak redirectUri w odpowiedzi (${detail || `HTTP ${res.status}`})`);
+  }
 
   return {
     redirectUri,
@@ -158,6 +161,16 @@ export async function createPayuOrder({
       location: res.headers.get("location"),
     },
   };
+}
+
+async function readPayuBody(res) {
+  const text = await res.text().catch(() => "");
+  if (!text) return { text: "", json: null };
+  try {
+    return { text, json: JSON.parse(text) };
+  } catch {
+    return { text, json: null };
+  }
 }
 
 /**

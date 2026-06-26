@@ -6921,16 +6921,9 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                   {payMethod==="portfel"&&wallet.balance<sel.price&&<div style={{ marginTop:8,fontSize:12,color:"#dc2626",background:"#fef2f2",padding:"6px 10px",borderRadius:6,border:"1px solid #fca5a5" }}>{t("supplier.finance.pakiety.payment_modal.wallet_insufficient_warn_format", { missing: sel.price-wallet.balance })}</div>}
                 </div>
                 {payMethod==="karta"&&(
-                  <div style={{ background:"#f8fafc",borderRadius:8,padding:"12px 14px",marginBottom:16,border:"1px solid #e2e8f0" }}>
-                    <div style={{ fontSize:11,color:"#94a3b8",marginBottom:8,textTransform:"uppercase",letterSpacing:0.5 }}>{t("supplier.finance.pakiety.payment_modal.card_form_title")}</div>
-                    <div style={{ display:"grid",gap:8 }}>
-                      <input placeholder={t("supplier.finance.pakiety.payment_modal.card_form_number_placeholder")} style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit",letterSpacing:1 }}/>
-                      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8 }}>
-                        <input placeholder={t("supplier.finance.pakiety.payment_modal.card_form_expiry_placeholder")} style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
-                        <input placeholder={t("supplier.finance.pakiety.payment_modal.card_form_cvv_placeholder")} style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
-                      </div>
-                      <input placeholder={t("supplier.finance.pakiety.payment_modal.card_form_name_placeholder")} style={{ padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit" }}/>
-                    </div>
+                  <div style={{ background:"#f0fdfa",borderRadius:8,padding:"12px 14px",marginBottom:16,border:"1px solid #99f6e4",fontSize:12,color:"#0f766e",lineHeight:1.55 }}>
+                    <strong>{t("supplier.finance.pakiety.payment_modal.payu_online_title")}</strong><br/>
+                    {t("supplier.finance.pakiety.payment_modal.payu_online_info")}
                   </div>
                 )}
                 {payMethod==="przelew"&&(
