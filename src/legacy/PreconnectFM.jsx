@@ -775,6 +775,10 @@ function getOrderPlanLabel(order) {
   const planId = order?.planId || order?.pkg || order?.pkg_plan;
   return planId ? getPlanLabel(planId, { withPerSend:false }) : (order?.planLabel || "");
 }
+function fmtMoney(value) {
+  const rounded = Math.round(Number(value || 0) * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2);
+}
 function getTransactionDescription(tx) {
   if (tx?.planId) {
     return i18n.t("legacy:shell.package.transaction_purchase_format", { pkgLabel: getPlanLabel(tx.planId, { withPerSend:false }) });
@@ -6705,10 +6709,14 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   const [proforma, setProforma] = useState(null);          // świeżo wygenerowana
   const [proformaBusy, setProformaBusy] = useState(false);
   const [proformaError, setProformaError] = useState(null); // [fix/proforma-error-ux] inline błąd w modalu
+  const [paymentError, setPaymentError] = useState(null);
   const [proformas, setProformas] = useState([]);          // historia proform firmy
   // [followups / Lany #7] Realna historia pakietów kredytów (z packages, incl. wygasłe).
   const [creditPackages, setCreditPackages] = useState([]);
   const sel = getPlanById(selected) || getPlanById("std_5") || PRICING_PLANS[0];
+  const selectedNet = Number(sel.price || 0);
+  const selectedVat = Math.round(selectedNet * 23) / 100;
+  const selectedGross = Math.round(selectedNet * 123) / 100;
   const rem = Math.max(0, pkgMax - pkgUsed);
   // [feat/credits-validity-and-expiry-ui — Lany #5] Data ważności kredytów z nowego
   // zakupu = dziś + 12 miesięcy (zgodne z RPC purchase_package: current_date + 1 rok).
@@ -6811,7 +6819,8 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
   async function handleOrder() {
     // [feat/nip-required #1] NIP obowiązkowy do rozliczeń — blokuje zakup kredytów
     // gdy firma nie ma NIP-u (za flagą NIP_REQUIRED).
-    if(NIP_REQUIRED && !String(co?.nip||"").trim()){fl(t("supplier.finance.pakiety.payment_modal.nip_required"),"error");return;}
+    setPaymentError(null);
+    if(NIP_REQUIRED && !String(co?.nip||"").trim()){setPaymentError(t("supplier.finance.pakiety.payment_modal.nip_required"));return;}
     setPaying(true);
     try {
       const { redirectUri } = await dbCreatePayuOrder(selected);
@@ -6823,7 +6832,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
       // [P2-5 i18n] Raw e.message z createPayuOrder już bilingual (P2-5
       // legacy.errors.db.payu_*). Wrapper i fallback "spróbuj ponownie"
       // tłumaczone tutaj.
-      fl(t("supplier.finance.pakiety.payment_modal.payment_init_error_format", { message: e?.message || t("supplier.finance.pakiety.payment_modal.payment_init_error_fallback") }), "error");
+      setPaymentError(t("supplier.finance.pakiety.payment_modal.payment_init_error_format", { message: e?.message || t("supplier.finance.pakiety.payment_modal.payment_init_error_fallback") }));
     }
   }
 
@@ -6881,7 +6890,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                     <h3 style={{ margin:0,fontSize:16 }}>{t("supplier.finance.pakiety.payment_modal.title")}</h3>
                     <div style={{ fontSize:12,color:"#64748b",marginTop:2 }}>{t("supplier.finance.pakiety.payment_modal.subtitle")}</div>
                   </div>
-                  <button onClick={()=>{ setProformaError(null); setShowModal(false); }} style={{ marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4 }}><X size={18}/></button>
+                  <button onClick={()=>{ setProformaError(null); setPaymentError(null); setShowModal(false); }} style={{ marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",padding:4 }}><X size={18}/></button>
                 </div>
                 <div style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px",marginBottom:16 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_pkg_label")}</span><span style={{ fontWeight:600 }}>{pkgLabel(sel.tier, sel.qty)}</span></div>
@@ -6889,10 +6898,10 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                   {sel.discount>0&&<div style={{ display:"flex",justifyContent:"space-between",marginBottom:6,fontSize:13 }}><span style={{ color:"#64748b" }}>{t("supplier.finance.pakiety.payment_modal.summary_discount_label")}</span><span style={{ color:"#059669",fontWeight:600 }}>{t("supplier.finance.pakiety.payment_modal.summary_discount_value_format", { percent: sel.discount })}</span></div>}
                   <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:10,marginTop:4,display:"flex",justifyContent:"space-between" }}>
                     <span style={{ fontWeight:700,fontSize:15 }}>{t("supplier.finance.pakiety.payment_modal.summary_net_label")}</span>
-                    <span style={{ fontWeight:800,fontSize:18,color:"#0d9488" }}>{t("supplier.finance.pakiety.payment_modal.summary_net_format", { price: sel.price })}</span>
+                    <span style={{ fontWeight:800,fontSize:18,color:"#0d9488" }}>{t("supplier.finance.pakiety.payment_modal.summary_net_format", { price: fmtMoney(selectedNet) })}</span>
                   </div>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginTop:4,fontSize:12,color:"#94a3b8" }}><span>{t("supplier.finance.pakiety.payment_modal.summary_vat_label")}</span><span>{t("supplier.finance.pakiety.payment_modal.summary_vat_format", { amount: Math.round(sel.price*0.23) })}</span></div>
-                  <div style={{ display:"flex",justifyContent:"space-between",marginTop:2 }}><span style={{ fontSize:13,fontWeight:600,color:"#475569" }}>{t("supplier.finance.pakiety.payment_modal.summary_gross_label")}</span><span style={{ fontSize:15,fontWeight:800,color:"#1e293b" }}>{t("supplier.finance.pakiety.payment_modal.summary_gross_format", { amount: Math.round(sel.price*1.23) })}</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",marginTop:4,fontSize:12,color:"#94a3b8" }}><span>{t("supplier.finance.pakiety.payment_modal.summary_vat_label")}</span><span>{t("supplier.finance.pakiety.payment_modal.summary_vat_format", { amount: fmtMoney(selectedVat) })}</span></div>
+                  <div style={{ display:"flex",justifyContent:"space-between",marginTop:2 }}><span style={{ fontSize:13,fontWeight:600,color:"#475569" }}>{t("supplier.finance.pakiety.payment_modal.summary_gross_label")}</span><span style={{ fontSize:15,fontWeight:800,color:"#1e293b" }}>{t("supplier.finance.pakiety.payment_modal.summary_gross_format", { amount: fmtMoney(selectedGross) })}</span></div>
                 </div>
                 <div style={{ marginBottom:16 }}>
                   <label style={{ fontSize:12,fontWeight:600,display:"block",marginBottom:8,color:"#334155" }}>{t("supplier.finance.pakiety.payment_modal.pay_method_label")}</label>
@@ -6940,12 +6949,18 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
                     <span>{proformaError}</span>
                   </div>
                 )}
+                {paymentError && (
+                  <div style={{ marginBottom:12,padding:"10px 12px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:8,fontSize:13,color:"#b91c1c",display:"flex",gap:8,alignItems:"flex-start" }}>
+                    <AlertTriangle size={15} color="#dc2626" style={{ flexShrink:0,marginTop:1 }}/>
+                    <span>{paymentError}</span>
+                  </div>
+                )}
                 <div style={{ display:"flex",gap:8 }}>
-                  <Btn outline onClick={()=>{ setProformaError(null); setShowModal(false); }} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
+                  <Btn outline onClick={()=>{ setProformaError(null); setPaymentError(null); setShowModal(false); }} style={{ flex:1 }}>{t("supplier.finance.pakiety.payment_modal.cancel")}</Btn>
                   <Btn primary disabled={paying||proformaBusy||(payMethod==="portfel"&&wallet.balance<sel.price)} onClick={(BANK_TRANSFER_PROFORMA&&payMethod==="przelew")?handleProforma:handleOrder} style={{ flex:2,background:sel.tier==="PREMIUM"?"#d97706":"#0d9488" }}>
                     {(BANK_TRANSFER_PROFORMA&&payMethod==="przelew")
                       ? (proformaBusy?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><FileText size={13}/> {t("supplier.finance.pakiety.proforma.generate_button")}</>)
-                      : (paying?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><CreditCard size={13}/> {t("supplier.finance.pakiety.payment_modal.pay_button_format", { gross: Math.round(sel.price*1.23) })}</>)}
+                      : (paying?<><RefreshCw size={13} style={{ animation:"spin 1s linear infinite" }}/> {t("supplier.finance.pakiety.payment_modal.processing")}</>:<><CreditCard size={13}/> {t("supplier.finance.pakiety.payment_modal.pay_button_format", { gross: fmtMoney(selectedGross) })}</>)}
                   </Btn>
                 </div>
               </>
