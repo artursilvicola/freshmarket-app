@@ -49,6 +49,7 @@ import {
   // [B2B Round supplier-FM-UX] Confirm supplier's FM chain selection
   saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
   // [B2B Round prod-rollout / faza 2] Real packages/capacity from DB
+  getPackagePlans as dbGetPackagePlans,
   getAllCompanyCapacity as dbGetAllCompanyCapacity,
   adminSetCompanyPackage as dbAdminSetCompanyPackage,
   getStarred as dbGetStarred, toggleStar as dbToggleStar,
@@ -696,6 +697,51 @@ const PKG_OPTS=[
   { id:"prem_20", max:20, price:1000, perSend:50, tier:"PREMIUM" },
   { id:"prem_50", max:50, price:2250, tier:"PREMIUM", perSend:45 },
 ];
+function applyPackagePlansFromDb(rows) {
+  const activeRows = (rows || []).filter((row) => row?.id && row?.active !== false);
+  if (!activeRows.length) return false;
+
+  const fallbackById = new Map(PRICING_PLANS.map((plan) => [plan.id, plan]));
+  const fallbackByTier = {
+    STANDARD: PRICING_PLANS.find((plan) => plan.tier === "STANDARD") || PRICING_PLANS[0],
+    PREMIUM: PRICING_PLANS.find((plan) => plan.tier === "PREMIUM") || PRICING_PLANS[0],
+  };
+
+  const mapped = activeRows
+    .map((row) => {
+      const tier = String(row.tier || "STANDARD").toUpperCase();
+      const fallback = fallbackById.get(row.id) || fallbackByTier[tier] || PRICING_PLANS[0];
+      const qty = Number(row.qty);
+      const price = Number(row.price_eur);
+      const perSend = Number(row.per_send_eur);
+      const safeQty = Number.isFinite(qty) && qty > 0 ? qty : fallback.qty;
+      const safePrice = Number.isFinite(price) && price >= 0 ? price : fallback.price;
+      return {
+        ...fallback,
+        id: row.id,
+        tier,
+        qty: safeQty,
+        price: safePrice,
+        perSend: Number.isFinite(perSend) && perSend >= 0
+          ? perSend
+          : (safeQty > 0 ? Math.round((safePrice / safeQty) * 100) / 100 : safePrice),
+        discount: Number(row.discount_pct || 0),
+        popular: !!row.popular,
+        displayOrder: Number(row.display_order || fallback.displayOrder || 100),
+      };
+    })
+    .sort((a, b) => (a.displayOrder || 100) - (b.displayOrder || 100));
+
+  PRICING_PLANS.splice(0, PRICING_PLANS.length, ...mapped);
+  PKG_OPTS.splice(0, PKG_OPTS.length, ...mapped.map((plan) => ({
+    id: plan.id,
+    max: plan.qty,
+    price: plan.price,
+    perSend: plan.perSend,
+    tier: plan.tier,
+  })));
+  return true;
+}
 // Renders description text: **Bold-** becomes <strong>Bold-</strong>
 function renderDesc(text) {
   if (!text) return null;
@@ -1934,6 +1980,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // [P2-4b] App ma teraz dostęp do t() — używamy go w saveOffer dla flash
   // toastów (success/draft/error) propagowanych do PageOfferForm przez prop.
   const { t } = useTranslation("legacy");
+  const [, forcePricingRefresh] = useState(0);
+
+  useEffect(() => {
+    let canceled = false;
+    dbGetPackagePlans()
+      .then((rows) => {
+        if (canceled) return;
+        if (applyPackagePlansFromDb(rows)) forcePricingRefresh((v) => v + 1);
+      })
+      .catch((e) => console.warn("[load package_plans]", e));
+    return () => { canceled = true; };
+  }, []);
 
   // lockedRole: jeśli ustawiony, ukrywamy switcher i blokujemy przełączanie
   // (admin może swobodnie udawać innych userów; dostawca/kupiec - nie)
