@@ -139,7 +139,8 @@ BEGIN
     url := 'https://sklyfuvzjikkqerxtulo.supabase.co/functions/v1/send-email',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'Authorization', 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNrbHlmdXZ6amlra3Flcnh0dWxvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NjQ5OTAsImV4cCI6MjA5MzA0MDk5MH0.W3LMPFO5Hsvo41hdYpxprP2L84NobeYduJ053mkjKk8'
+      -- UZUPELNIC bezpiecznie przy odtwarzaniu migracji, najlepiej przez Supabase Vault.
+      'Authorization', 'Bearer <SUPABASE_ANON_KEY>'
     ),
     body := v_payload
   );

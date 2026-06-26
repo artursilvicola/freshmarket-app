@@ -1,6 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /admin/
-Disallow: /__forms.html
-
-Sitemap: https://freshmarket.eu/sitemap-index.xml

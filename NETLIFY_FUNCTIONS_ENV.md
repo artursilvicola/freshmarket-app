@@ -46,6 +46,30 @@ Używane przez:
 Jeśli nie jest ustawione, funkcje użyją domyślnego adresu:
 - `https://freshmarketb2b.netlify.app`
 
+## Dodatkowo dla płatności PayU
+
+Wymagane:
+- `PAYU_ENV` (`sandbox` / `production`; `prod` też jest akceptowane)
+- `PAYU_POS_ID`
+- `PAYU_SECOND_KEY`
+- `PAYU_OAUTH_CLIENT_ID`
+- `PAYU_OAUTH_CLIENT_SECRET`
+- `PAYU_CURRENCY_CODE`
+
+Opcjonalnie:
+- `PAYU_VAT_RATE` — domyślnie `23`
+- `PAYU_EUR_TO_PAYU_RATE` — wymagane tylko wtedy, gdy `PAYU_CURRENCY_CODE` jest inne niż `EUR`
+
+Ważne:
+- `PAYU_CURRENCY_CODE` musi odpowiadać walucie POS skonfigurowanej w PayU.
+- Katalog pakietów i rozliczenia w aplikacji są w EUR netto.
+- PayU obciąża klienta kwotą brutto, czyli netto z `package_plans.price_eur` + VAT.
+- Najbezpieczniejszy wariant produkcyjny: POS PayU w EUR i `PAYU_CURRENCY_CODE=EUR`.
+
+Używane przez:
+- `/.netlify/functions/create-payu-order`
+- `/.netlify/functions/payu-notify`
+
 ## Szybki check po deployu
 
 Możesz otworzyć:
@@ -56,6 +80,7 @@ Zobaczysz:
 - czy konfiguracja dla adminowych funkcji jest kompletna,
 - czy konfiguracja Resend (mailing) jest kompletna,
 - czy konfiguracja dla funkcji AI jest kompletna,
+- czy konfiguracja PayU jest kompletna,
 - jakich zmiennych brakuje.
 
 ## Gdzie to ustawić

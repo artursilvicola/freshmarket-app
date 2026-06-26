@@ -108,6 +108,11 @@ const MESSAGES = {
     no_company_assigned: "Konto nie jest przypisane do firmy. Skontaktuj się z administratorem.",
     plan_not_found: "Plan {planId} nie istnieje lub jest nieaktywny",
     payu_order_register_failed: "Nie udało się zarejestrować zamówienia: {detail}",
+    payu_config_error: "Konfiguracja PayU jest niepoprawna: {detail}",
+    payu_currency_rate_missing:
+      "Konfiguracja PayU wymaga kursu przeliczeniowego EUR na {currency}. Ustaw PAYU_EUR_TO_PAYU_RATE albo skonfiguruj POS PayU w EUR.",
+    payu_currency_mismatch:
+      "Waluta zamówienia nie zgadza się z walutą POS PayU. Ustaw PAYU_CURRENCY_CODE zgodnie z konfiguracją POS albo użyj POS w EUR.",
     // ── Proforma (przelew) ──
     proforma_nip_required: "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
     proforma_number_failed: "Nie udało się nadać numeru proformy: {detail}",
@@ -209,6 +214,11 @@ const MESSAGES = {
     no_company_assigned: "Account is not assigned to a company. Contact the administrator.",
     plan_not_found: "Plan {planId} does not exist or is inactive",
     payu_order_register_failed: "Could not register the order: {detail}",
+    payu_config_error: "PayU configuration is invalid: {detail}",
+    payu_currency_rate_missing:
+      "PayU configuration requires an EUR to {currency} conversion rate. Set PAYU_EUR_TO_PAYU_RATE or configure the PayU POS in EUR.",
+    payu_currency_mismatch:
+      "The order currency does not match the PayU POS currency. Set PAYU_CURRENCY_CODE to match the POS configuration or use an EUR POS.",
     // ── Proforma (bank transfer) ──
     proforma_nip_required: "Provide the company Tax ID. This field is required for registration and billing.",
     proforma_number_failed: "Could not assign a proforma number: {detail}",

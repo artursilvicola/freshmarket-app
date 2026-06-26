@@ -30,6 +30,12 @@ export function resolveEnvConfig() {
   const payuSecondKey = getFirstEnv("PAYU_SECOND_KEY");        // do weryfikacji notify (SHA-256 HMAC)
   const payuClientId = getFirstEnv("PAYU_OAUTH_CLIENT_ID");    // OAuth client_credentials
   const payuClientSecret = getFirstEnv("PAYU_OAUTH_CLIENT_SECRET");
+  // Waluta MUSI odpowiadac walucie POS w panelu PayU. Cennik w DB jest w EUR,
+  // wiec domyslnie wymagamy POS EUR. Dla POS w innej walucie ustaw takze
+  // PAYU_EUR_TO_PAYU_RATE, zeby nie pobrac przypadkiem 276.75 PLN zamiast EUR.
+  const payuCurrencyCode = (getFirstEnv("PAYU_CURRENCY_CODE") || "EUR").trim().toUpperCase();
+  const payuEurToPayuRate = getFirstEnv("PAYU_EUR_TO_PAYU_RATE");
+  const payuVatRate = getFirstEnv("PAYU_VAT_RATE") || "23";
 
   return {
     supabaseUrl,
@@ -45,6 +51,9 @@ export function resolveEnvConfig() {
     payuSecondKey,
     payuClientId,
     payuClientSecret,
+    payuCurrencyCode,
+    payuEurToPayuRate,
+    payuVatRate,
   };
 }
 
@@ -63,6 +72,9 @@ export function missingEnvNames(config, requiredKeys = []) {
     payuSecondKey: "PAYU_SECOND_KEY",
     payuClientId: "PAYU_OAUTH_CLIENT_ID",
     payuClientSecret: "PAYU_OAUTH_CLIENT_SECRET",
+    payuCurrencyCode: "PAYU_CURRENCY_CODE",
+    payuEurToPayuRate: "PAYU_EUR_TO_PAYU_RATE",
+    payuVatRate: "PAYU_VAT_RATE",
   };
 
   return requiredKeys

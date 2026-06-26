@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 80" width="400" height="80">
-  <rect width="400" height="80" fill="transparent"/>
-  <g font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-weight="800">
-    <text x="10" y="38" font-size="28" fill="#ffffff">Fresh</text>
-    <text x="92" y="38" font-size="28" fill="#ffd9b3">Market</text>
-    <text x="10" y="68" font-size="18" fill="#ffffff" font-weight="600" letter-spacing="2">2026 — WARSAW</text>
-  </g>
-</svg>

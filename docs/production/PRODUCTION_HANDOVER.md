@@ -212,11 +212,20 @@ powiadomienia), 3. **sign-offu właściciela**, 4. pełnego **backupu**.
 | `RESEND_WEBHOOK_SECRET` | webhook odczytów | |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | AI moderacja/opisy | model domyślny `gpt-4.1-mini` |
 | `B2B_APP_URL` | linki w mailach | fallback `https://b2b.freshmarket.eu` (w kodzie) |
-| `PAYU_ENV` | `sandbox`/`prod` | **na prod ustawić właściwie** |
+| `PAYU_ENV` | `sandbox`/`production` | **na prod ustawić `production`; `prod` też zadziała** |
 | `PAYU_POS_ID`, `PAYU_SECOND_KEY`, `PAYU_OAUTH_CLIENT_ID`, `PAYU_OAUTH_CLIENT_SECRET` | PayU | |
+| `PAYU_CURRENCY_CODE` | waluta zamówienia PayU | **musi zgadzać się z walutą POS; zalecane `EUR`** |
+| `PAYU_VAT_RATE` | VAT dla płatności PayU | domyślnie `23`; PayU pobiera kwotę brutto |
+| `PAYU_EUR_TO_PAYU_RATE` | kurs EUR → waluta POS | wymagane tylko gdy `PAYU_CURRENCY_CODE` ≠ `EUR` |
 | **`PROFORMA_SELLER_NIP`** | NIP sprzedawcy na proformie | **DOMYŚLNIE PLACEHOLDER — USTAWIĆ!** |
 | **`PROFORMA_BANK_IBAN`** | IBAN do przelewu | **DOMYŚLNIE PLACEHOLDER — USTAWIĆ!** |
 | `PROFORMA_SELLER_NAME`, `PROFORMA_SELLER_ADDRESS`, `PROFORMA_BANK_BENEFICIARY`, `PROFORMA_BANK_NAME` | dane na proformie | defaulty: KJOW Sp. z o.o. / PKO BP |
+
+> ⚠️ **PayU:** aplikacja ma katalog pakietów i księgowanie w EUR netto (`package_plans.price_eur`).
+> Do PayU wysyłana jest kwota brutto w najmniejszej jednostce waluty POS. Jeżeli POS w PayU jest
+> w PLN, a aplikacja wyśle `EUR`, PayU zwróci `ERROR_INCONSISTENT_CURRENCIES`. Najczystszy wariant
+> to POS PayU w EUR. Wariant PLN wymaga ustawienia `PAYU_CURRENCY_CODE=PLN` oraz świadomego kursu
+> `PAYU_EUR_TO_PAYU_RATE`.
 
 > ⚠️ **Proforma:** `PROFORMA_SELLER_NIP` i `PROFORMA_BANK_IBAN` mają domyślnie **placeholder
 > tekstowy** (`[NIP — uzupełnij…]`). Bez ustawienia env proformy wyjdą z placeholderem — **ustawić

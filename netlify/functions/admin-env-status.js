@@ -18,9 +18,21 @@ export const handler = async (event) => {
   const missingAdmin = missingEnvNames(env, ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey"]);
   const missingSendOffer = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey", "resendApiKey"]);
   const missingAiFeatures = missingEnvNames(env, ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey", "openAiApiKey"]);
+  const missingPayu = missingEnvNames(env, [
+    "supabaseUrl",
+    "supabaseServiceRoleKey",
+    "payuPosId",
+    "payuSecondKey",
+    "payuClientId",
+    "payuClientSecret",
+    "payuCurrencyCode",
+  ]);
+  if (env.payuCurrencyCode !== "EUR" && !env.payuEurToPayuRate) {
+    missingPayu.push("PAYU_EUR_TO_PAYU_RATE");
+  }
 
   return json(200, {
-    ok: missingAdmin.length === 0 && missingSendOffer.length === 0 && missingAiFeatures.length === 0,
+    ok: missingAdmin.length === 0 && missingSendOffer.length === 0 && missingAiFeatures.length === 0 && missingPayu.length === 0,
     checks: {
       adminUsers: {
         ok: missingAdmin.length === 0,
@@ -33,6 +45,10 @@ export const handler = async (event) => {
       aiFeatures: {
         ok: missingAiFeatures.length === 0,
         missing: missingAiFeatures,
+      },
+      payu: {
+        ok: missingPayu.length === 0,
+        missing: missingPayu,
       },
     },
     hint: "Ustaw brakujące zmienne w Netlify -> Site configuration -> Environment variables i zrób nowy deploy.",

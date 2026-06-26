@@ -10,9 +10,16 @@
 
 import crypto from "node:crypto";
 
+const MINOR_UNIT_FACTOR = {
+  BIF: 1, CLP: 1, DJF: 1, GNF: 1, JPY: 1, KMF: 1, KRW: 1,
+  MGA: 1, PYG: 1, RWF: 1, UGX: 1, VND: 1, VUV: 1, XAF: 1,
+  XOF: 1, XPF: 1,
+};
+
 export function payuBaseUrl(env) {
-  // env = 'sandbox' | 'production'
-  return env === "production"
+  // env = 'sandbox' | 'production' | 'prod' | 'live'
+  const normalized = String(env || "sandbox").trim().toLowerCase();
+  return ["production", "prod", "live"].includes(normalized)
     ? "https://secure.payu.com"
     : "https://secure.snd.payu.com";
 }
@@ -48,6 +55,32 @@ export async function fetchPayuToken({ baseUrl, clientId, clientSecret }) {
   return data.access_token;
 }
 
+export function normalizePayuCurrencyCode(value) {
+  const code = String(value || "EUR").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) {
+    throw new Error(`Nieprawidlowa waluta PayU: ${value || "(pusta)"}`);
+  }
+  return code;
+}
+
+export function parsePositiveNumber(value, fallback = null) {
+  if (value == null || value === "") return fallback;
+  const normalized = String(value).trim().replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function toMinorUnits(amount, currencyCode = "EUR") {
+  const factor = MINOR_UNIT_FACTOR[currencyCode] || 100;
+  return String(Math.round(Number(amount) * factor));
+}
+
+export function parsePayuStatusCode(error) {
+  const message = String(error?.message || error || "");
+  const match = message.match(/"statusCode"\s*:\s*"([^"]+)"/);
+  return match?.[1] || null;
+}
+
 /**
  * Utwórz zamówienie w PayU. Zwraca { redirectUri, orderId, extOrderId,
  * statusCode, raw } albo rzuca błąd.
@@ -69,6 +102,7 @@ export async function createPayuOrder({
   products,         // [{ name, unitPrice, quantity }]
   notifyUrl,
   continueUrl,
+  metadata,
 }) {
   const orderUrl = `${baseUrl}/api/v2_1/orders`;
   const payload = {
@@ -112,7 +146,18 @@ export async function createPayuOrder({
   const orderId = json?.orderId || null;
   const statusCode = json?.status?.statusCode || (res.status === 302 ? "SUCCESS" : null);
 
-  return { redirectUri, orderId, extOrderId, statusCode, raw: json };
+  return {
+    redirectUri,
+    orderId,
+    extOrderId,
+    statusCode,
+    raw: {
+      request: { ...payload, metadata },
+      response: json,
+      httpStatus: res.status,
+      location: res.headers.get("location"),
+    },
+  };
 }
 
 /**

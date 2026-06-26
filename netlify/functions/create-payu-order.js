@@ -23,7 +23,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
-import { payuBaseUrl, fetchPayuToken, createPayuOrder } from "./_shared/payu.js";
+import {
+  createPayuOrder,
+  fetchPayuToken,
+  normalizePayuCurrencyCode,
+  parsePayuStatusCode,
+  parsePositiveNumber,
+  payuBaseUrl,
+  toMinorUnits,
+} from "./_shared/payu.js";
 import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
@@ -46,8 +54,15 @@ export const handler = async (event) => {
     "payuPosId",
     "payuClientId",
     "payuClientSecret",
+    "payuCurrencyCode",
   ]);
   if (missing.length) return json(500, envErrorPayload("create-payu-order", missing));
+  let payuCurrencyCode;
+  try {
+    payuCurrencyCode = normalizePayuCurrencyCode(env.payuCurrencyCode);
+  } catch (e) {
+    return json(500, { error: errLoc(locale, "payu_config_error", { detail: e?.message || String(e) }) });
+  }
 
   // ── Auth ────────────────────────────────────────────────────────────
   const authHeader = event.headers.authorization || event.headers.Authorization || "";
@@ -95,17 +110,33 @@ export const handler = async (event) => {
     .maybeSingle();
   if (planErr || !plan) return json(400, { error: errLoc(locale, "plan_not_found", { planId }) });
 
-  // ── Insert payu_orders (status=created) ─────────────────────────────
+  // ── Kwoty ───────────────────────────────────────────────────────────
+  // package_plans.price_eur jest kwota NETTO w EUR. UI i proforma pokazuja
+  // kwote BRUTTO z VAT 23%, wiec PayU musi pobrac brutto. Waluta createOrder
+  // musi byc zgodna z POS w panelu PayU (PAYU_CURRENCY_CODE).
   const extOrderId = randomUUID();
-  const priceEur = Number(plan.price_eur);
-  const totalAmountCents = Math.round(priceEur * 100).toString();
+  const priceNetEur = roundMoney(Number(plan.price_eur));
+  const vatRate = parsePositiveNumber(env.payuVatRate, 23);
+  const grossEur = roundMoney(priceNetEur * (1 + vatRate / 100));
+  const eurToPayuRate = payuCurrencyCode === "EUR" ? 1 : parsePositiveNumber(env.payuEurToPayuRate, null);
+
+  if (payuCurrencyCode !== "EUR" && !eurToPayuRate) {
+    return json(500, {
+      error: errLoc(locale, "payu_currency_rate_missing", { currency: payuCurrencyCode }),
+    });
+  }
+
+  const payuGrossAmount = roundMoney(grossEur * eurToPayuRate);
+  const totalAmountMinor = toMinorUnits(payuGrossAmount, payuCurrencyCode);
+
+  // ── Insert payu_orders (status=created) ─────────────────────────────
 
   const { data: orderRow, error: orderErr } = await supaSvc
     .from("payu_orders")
     .insert({
       company_id: companyId,
       plan_id: plan.id,
-      price_eur: priceEur,
+      price_eur: priceNetEur,
       currency: "EUR",
       status: "created",
       ext_order_id: extOrderId,
@@ -146,8 +177,8 @@ export const handler = async (event) => {
       posId: env.payuPosId,
       customerIp: event.headers["x-forwarded-for"]?.split(",")[0]?.trim() || "127.0.0.1",
       description: payuDescription,
-      currencyCode: "EUR",
-      totalAmount: totalAmountCents,
+      currencyCode: payuCurrencyCode,
+      totalAmount: totalAmountMinor,
       extOrderId,
       buyer: {
         email: profile.email,
@@ -159,19 +190,33 @@ export const handler = async (event) => {
       },
       products: [{
         name: payuProductName,
-        unitPrice: totalAmountCents,
+        unitPrice: totalAmountMinor,
         quantity: "1",
       }],
       notifyUrl,
       continueUrl,
+      metadata: {
+        accountingCurrency: "EUR",
+        netEur: priceNetEur,
+        vatRate,
+        grossEur,
+        payuCurrencyCode,
+        eurToPayuRate,
+        payuGrossAmount,
+        totalAmountMinor,
+      },
     });
   } catch (e) {
+    const statusCode = parsePayuStatusCode(e);
+    const userMessage = statusCode === "ERROR_INCONSISTENT_CURRENCIES"
+      ? errLoc(locale, "payu_currency_mismatch", { currency: payuCurrencyCode })
+      : errLoc(locale, "payu_api_error", { detail: e?.message || "unknown" });
     // Oznacz order jako failed
     await supaSvc.from("payu_orders").update({
       status: "failed",
       failure_reason: e?.message || String(e),
     }).eq("id", orderRow.id);
-    return json(502, { error: errLoc(locale, "payu_api_error", { detail: e?.message || "unknown" }) });
+    return json(502, { error: userMessage });
   }
 
   // Update z payu_order_id + raw_create
@@ -187,6 +232,10 @@ export const handler = async (event) => {
     payu_order_id: payuResult.orderId,
   });
 };
+
+function roundMoney(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
 
 function json(statusCode, payload) {
   return {
