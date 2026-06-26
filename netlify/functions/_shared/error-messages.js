@@ -112,7 +112,7 @@ const MESSAGES = {
     payu_currency_rate_missing:
       "Konfiguracja PayU wymaga kursu przeliczeniowego EUR na {currency}. Ustaw PAYU_EUR_TO_PAYU_RATE albo skonfiguruj POS PayU w EUR.",
     payu_currency_mismatch:
-      "Waluta zamówienia nie zgadza się z walutą POS PayU. Ustaw PAYU_CURRENCY_CODE zgodnie z konfiguracją POS albo użyj POS w EUR.",
+      "Waluta zamówienia nie zgadza się z walutą POS PayU. Użyta konfiguracja: {context}. Porównaj POS ID i OAuth client_id z punktem płatności REST API w PayU.",
     // ── Proforma (przelew) ──
     proforma_nip_required: "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
     proforma_number_failed: "Nie udało się nadać numeru proformy: {detail}",
@@ -218,7 +218,7 @@ const MESSAGES = {
     payu_currency_rate_missing:
       "PayU configuration requires an EUR to {currency} conversion rate. Set PAYU_EUR_TO_PAYU_RATE or configure the PayU POS in EUR.",
     payu_currency_mismatch:
-      "The order currency does not match the PayU POS currency. Set PAYU_CURRENCY_CODE to match the POS configuration or use an EUR POS.",
+      "The order currency does not match the PayU POS currency. Used configuration: {context}. Compare POS ID and OAuth client_id with the REST API payment point in PayU.",
     // ── Proforma (bank transfer) ──
     proforma_nip_required: "Provide the company Tax ID. This field is required for registration and billing.",
     proforma_number_failed: "Could not assign a proforma number: {detail}",

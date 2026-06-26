@@ -208,13 +208,22 @@ export const handler = async (event) => {
     });
   } catch (e) {
     const statusCode = parsePayuStatusCode(e);
+    const debugContext = payuDebugContext(env, payuCurrencyCode);
     const userMessage = statusCode === "ERROR_INCONSISTENT_CURRENCIES"
-      ? errLoc(locale, "payu_currency_mismatch", { currency: payuCurrencyCode })
+      ? errLoc(locale, "payu_currency_mismatch", { currency: payuCurrencyCode, context: debugContext })
       : errLoc(locale, "payu_api_error", { detail: e?.message || "unknown" });
+    console.error("[create-payu-order] PayU error", {
+      statusCode,
+      message: e?.message || String(e),
+      payu: debugContext,
+      extOrderId,
+      planId: plan.id,
+      amount: { netEur: priceNetEur, grossEur, payuCurrencyCode, totalAmountMinor },
+    });
     // Oznacz order jako failed
     await supaSvc.from("payu_orders").update({
       status: "failed",
-      failure_reason: e?.message || String(e),
+      failure_reason: `${e?.message || String(e)} | ${debugContext}`,
     }).eq("id", orderRow.id);
     return json(502, { error: userMessage });
   }
@@ -235,6 +244,22 @@ export const handler = async (event) => {
 
 function roundMoney(value) {
   return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function payuDebugContext(env, currencyCode) {
+  return [
+    `env=${String(env.payuEnv || "sandbox")}`,
+    `currency=${currencyCode}`,
+    `pos=${maskValue(env.payuPosId)}`,
+    `client=${maskValue(env.payuClientId)}`,
+  ].join(", ");
+}
+
+function maskValue(value) {
+  const str = String(value || "");
+  if (!str) return "(brak)";
+  if (str.length <= 4) return "***";
+  return `***${str.slice(-4)}`;
 }
 
 function json(statusCode, payload) {
