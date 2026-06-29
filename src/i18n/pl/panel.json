@@ -17,5 +17,10 @@
     "super_admin": "Super admin",
     "supplier": "Dostawca",
     "buyer": "Kupiec"
+  },
+  "mobile_portrait": {
+    "title": "Telefon pionowo może być niewygodny",
+    "body": "Panel B2B najlepiej działa na komputerze albo na telefonie w orientacji poziomej. W pionie część tabel i formularzy może wymagać przewijania.",
+    "continue_button": "Rozumiem, kontynuuj"
   }
 }

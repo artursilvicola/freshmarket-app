@@ -46,6 +46,19 @@
   to = "/privacy-policy.html"
   status = 200
 
+# Pre-launch cleanup: internal pre-production checklist must not be exposed
+# as a public static page on the production domain.
+[[redirects]]
+  from = "/testy-przed-produkcja.html"
+  to = "/index.html"
+  status = 404
+  force = true
+[[redirects]]
+  from = "/testy-przed-produkcja"
+  to = "/index.html"
+  status = 404
+  force = true
+
 # SPA fallback - React Router obsługuje routing po stronie klienta
 [[redirects]]
   from = "/*"

@@ -61,6 +61,7 @@ import {
   getPendingProformas as dbGetPendingProformas, markProformaPaid as dbMarkProformaPaid,
   // [feat/admin-supplier-settlements] moduł Rozliczenia (read-only finanse dostawców)
   getProformasAdmin as dbGetProformasAdmin, getAllPackagesAdmin as dbGetAllPackagesAdmin,
+  getPayuOrdersAdmin as dbGetPayuOrdersAdmin,
   // [followups / Lany #7] realna historia pakietów kredytów (status wygasłe)
   getPackages as dbGetPackages,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
@@ -2073,8 +2074,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [flash,  setFlash]  = useState(null);
   const [adminChatTargetId, setAdminChatTargetId] = useState(null);
   // co is derived from active account when supplier
-  // OFFERS — ładowane z Supabase (legacy_offers table). Seed jeśli puste.
-  const [offers, _setOffersRaw] = useState(OFFERS_INIT);
+  // OFFERS — ładowane z Supabase (legacy_offers table). Demo seed only in dev.
+  const [offers, _setOffersRaw] = useState(() => import.meta.env.PROD ? [] : OFFERS_INIT);
   const [offersLoaded, setOffersLoaded] = useState(false);
   useEffect(() => {
     let canceled = false;
@@ -2087,8 +2088,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         // don't auto-insert OFFERS_INIT into Supabase — empty table stays empty.
         // Reason: cleanup of ghost data (DELETE FROM legacy_offers) would
         // otherwise be undone the next time any user loaded the app, because
-        // OFFERS_INIT contains demo offers tied to non-existent suppliers
-        // (sup-s14 etc.). Admin can still recreate demo via resetToSeed button.
+        // OFFERS_INIT contains dev seed offers tied to non-existent suppliers
+        // (sup-s14 etc.).
         let bridge = null;
         try { bridge = JSON.parse(localStorage.getItem("fm_offers") || "null"); } catch(e){}
         const seed = (bridge && bridge.length) ? bridge : OFFERS_INIT;
@@ -2127,8 +2128,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     });
   }, []);
 
-  // SENDS — analogicznie
-  const [sends, _setSendsRaw] = useState(SENDS_INIT);
+  // SENDS — analogicznie. Demo seed only in dev.
+  const [sends, _setSendsRaw] = useState(() => import.meta.env.PROD ? [] : SENDS_INIT);
   const [sendsLoaded, setSendsLoaded] = useState(false);
   useEffect(() => {
     let canceled = false;
@@ -2159,7 +2160,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
           _setSendsRaw(rows);
         } else if (!import.meta.env.PROD) {
           // [B2B Round 5.6] Same reasoning as legacy_offers above. SENDS_INIT
-          // contains 14 demo sends across suppliers sup-s1 / sup-s5 / sup-s14;
+          // contains 14 dev seed sends across suppliers sup-s1 / sup-s5 / sup-s14;
           // sup-s14 has no matching company row so it would re-create ghost
           // data after each cleanup. Dev only.
           let bridge = null;
@@ -2222,8 +2223,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return next;
     });
   }, []);
-  // [B2B Round 2.1] companies: load from Supabase on mount; seed if empty.
-  const [companies, _setCompaniesRaw] = useState(COMPANIES_DB);
+  // [B2B Round 2.1] companies: load from Supabase on mount; dev seed if empty.
+  const [companies, _setCompaniesRaw] = useState(() => import.meta.env.PROD ? [] : COMPANIES_DB);
   const [companiesLoaded, setCompaniesLoaded] = useState(false);
   const [companyHiddenRetailers, setCompanyHiddenRetailers] = useState([]);
   useEffect(() => {
@@ -2366,11 +2367,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     } catch (e) { console.warn("[refresh company_capacity]", e); }
   }, []);
   useEffect(() => { if (companiesLoaded) refreshCapacity(); }, [companiesLoaded, refreshCapacity]);
-  const [walletMap, setWalletMap] = useState({
-    "sup-s1":  { balance:160, transactions:[{id:1,desc:"package:prem_10",planId:"prem_10",amount:-600,date:"2026-01-15",type:"debit"},{id:2,desc:"topup",amount:760,date:"2026-01-15",type:"credit"}] },
-    "sup-s5":  { balance:120, transactions:[{id:1,desc:"package:std_10",planId:"std_10",amount:-400,date:"2026-02-01",type:"debit"},{id:2,desc:"topup",amount:520,date:"2026-02-01",type:"credit"}] },
-    "sup-s14": { balance:200, transactions:[{id:1,desc:"package:prem_10",planId:"prem_10",amount:-600,date:"2026-01-20",type:"debit"},{id:2,desc:"topup",amount:800,date:"2026-01-20",type:"credit"}] },
-  });
+  const [walletMap, setWalletMap] = useState({});
   const walletKey = account.role === "supplier" ? mySupplierKey : account.id;
   const baseWallet = walletMap[walletKey] || walletMap[account.id] || WALLET_INIT;
   const refundedSendsForWallet = useMemo(
@@ -2398,12 +2395,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     };
   }, [baseWallet, refundedSendsForWallet]);
   const setWallet = (val) => setWalletMap(prev=>({ ...prev, [walletKey]: typeof val==="function"?val(wallet):val }));
-  const [orders, setOrders] = useState([
-    { id:1, planId:"std_10", planLabel:"std_10", price:400, perSend:40, qty:10, date:"2026-01-15", status:"paid", paymentMethod:"przelew", firmName:"Food Market" },
-  ]);
+  const [orders, setOrders] = useState([]);
   // [B2B Round 2.1] retailers: load from Supabase on mount; seed if empty.
   const [retailers, _setRetailersRaw] = useState(() =>
-    RETAILERS.map(r => ({
+    import.meta.env.PROD ? [] : RETAILERS.map(r => ({
       ...r,
       active: true,
       fm26ChainId: RETAILER_TO_CHAIN[r.id] || null,
@@ -2545,11 +2540,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     })();
     return () => { canceled = true; };
   }, [account.id, account.role]);
-  const REFUND_NOTIFS_SEED = [
-    { id:10, supplierId:"sup-s5", msg:"Brokuły → Carrefour nie zostały przeczytane w 14 dni. Zwrot 40 EUR wrócił na Twoje konto.", amount:40, dismissed:false }
-  ];
   const [refundNotifs, setRefundNotifs] = useState(() => {
-    try { const s=localStorage.getItem("fm_refundNotifs"); return s?JSON.parse(s):REFUND_NOTIFS_SEED; } catch(e){ return REFUND_NOTIFS_SEED; }
+    try { const s=localStorage.getItem("fm_refundNotifs"); return s?JSON.parse(s):[]; } catch(e){ return []; }
   });
   const [fmWishlists, setFmWishlists] = useState({});
   // fmLateResps: late selections for a chain unlocked by admin after Sept 16
@@ -2599,7 +2591,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // [B2B Round 2.1] fmPrefs / fmResps: kept in fm_settings.schedule.meta + fm_resps table.
   // Initial: try Supabase; fallback to seed _fmInitData.
   // Production state starts empty and is hydrated from Supabase. Demo data can
-  // still be generated manually from the admin "Dane testowe" button.
+  // still exist as dev/local fallback data, but are not exposed by production UI.
   const [fmPrefs, setFmPrefs] = useState({});
   const [fmResps, setFmResps] = useState({});
   const [fmRespsLoaded, setFmRespsLoaded] = useState(false);
@@ -2838,7 +2830,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     // auth UUID — `stillExists` returned undefined and the auto-switch effect
     // (~line 1828) flipped the admin onto the first supplier on mount.
     // For non-admin sessions we keep the seed Oksana entry so the account
-    // switcher still presents an "admin" option for demo / view-as.
+    // switcher still presents an "admin" option for local view-as flows.
     const adminAcc = currentUser && initialRole === "admin"
       ? {
           id: currentUser.id || "admin",
@@ -2901,7 +2893,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     }
     // [B2B Round admin-entry-fix] Real-auth admin (account.role === "admin")
     // must NEVER be auto-switched to a supplier seed on mount. The legacy
-    // demo behavior — "admin lands on first supplier as default" — was for
+    // old local behavior — "admin lands on first supplier as default" — was for
     // the showcase mode where there was no real auth. In production it
     // caused /admin to render PageDashboard (supplier) hiding PageAdminDash
     // and the FM admin tools. Real admin already has account.role="admin"
@@ -2909,13 +2901,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if (account.role === "admin") {
       return;
     }
-    // Demo / no-auth fallback: pick first supplier as default account so
-    // the showcase has something to render.
+    // Local/no-auth fallback: pick first supplier as default account so
+    // development sessions have something to render.
     const firstSupplier = runtimeAccounts.find(a => a.role === "supplier");
     if (firstSupplier) switchAccount(firstSupplier);
   }, [runtimeAccounts]); // eslint-disable-line
 
-  const onFMRegenerate = useCallback(() => { const d=genFMData(fmSuppliers, fmChains); setFmPrefs(d.p); setFmResps(d.r); }, [fmSuppliers, fmChains]);
   // [B2B Round 2.1] fmSchedule: load from fm_settings.schedule (Supabase).
   const [fmSchedule, setFmSchedule] = useState(null);
   useEffect(() => {
@@ -3054,31 +3045,6 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     setSid(null);
     setFlash(null);
   };
-
-  function resetToSeed() {
-    // [B2B Round ghost-data-cleanup] Hard-block resetToSeed in production.
-    // The function was useful for staging/QA but in production it would
-    // re-inject SENDS_INIT/OFFERS_INIT/COMPANIES_DB which contain
-    // sup-s1/sup-s14 ghost suppliers — undoing any cleanup. Admin who
-    // really needs to reset prod must do it consciously via Supabase SQL.
-    if (import.meta.env.PROD) {
-      fl(t("shell.app_toasts.reset_disabled"), "error");
-      return;
-    }
-    ["fm_offers","fm_sends","fm_fmPrefs","fm_fmResps","fm_fmSchedule","fm_retailers","fm_companies","fm_refundNotifs","fm_fmWishlists","fm_fmLateResps","fm_previewFor","fm_messages"].forEach(k=>localStorage.removeItem(k));
-    setOffers(OFFERS_INIT);
-    setSends(SENDS_INIT);
-    setFmPrefs(_fmInitData.p);
-    setFmResps(_fmInitData.r);
-    setFmSchedule(null);
-    setRetailers(RETAILERS.map(r=>({...r, active:true, fm26ChainId:RETAILER_TO_CHAIN[r.id]||null, fm26Active:!!RETAILER_TO_CHAIN[r.id], buyers:[{
-      id:r.id+"_b1", name:r.buyer||"", email:r.email||"", phone:r.phone||"", cats:r.cats||[], active:true, fm26Active:!!RETAILER_TO_CHAIN[r.id]
-    }]})));
-    setCompanies(COMPANIES_DB);
-    setRefundNotifs(REFUND_NOTIFS_SEED);
-    setPreviewFor({ suppliers: [], chains: [] });
-    fl(t("shell.app_toasts.reset_done"));
-  }
 
   // ── Buy Package (simulated payment flow) ───────────────────────────────
   function buyPackage(planId, paymentMethod) {
@@ -3640,7 +3606,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     // [fix/admin-dashboard-routes] Compatibility guard: gdyby admin trafił na
     // pg==="dashboard" (stary stan / nieaktualny nav), NIE pokazuj dashboardu
     // dostawcy — renderuj PageAdminDash. Supplier/buyer bez zmian.
-    if(pg==="dashboard" && role==="admin") return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies} isSuperAdmin={currentUser?.is_super_admin}/>;
+    if(pg==="dashboard" && role==="admin") return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers} retailers={retailers} hiddenRetailers={companyHiddenRetailers} setHiddenRetailers={setCompanyHiddenRetailers}/>;
     if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} pkgPlan={pkgPlan} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
@@ -3656,7 +3622,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
-    if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies} isSuperAdmin={currentUser?.is_super_admin}/>;
+    if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
@@ -3666,12 +3632,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
       : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
-    if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
+    if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
     // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
     // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.
     if(pg==="a-branding") {
       if (ADMIN_ACCESS_POLISH && !currentUser?.is_super_admin)
-        return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies} isSuperAdmin={currentUser?.is_super_admin}/>;
+        return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
       return <PageAdminBranding fl={fl}/>;
     }
     if(pg==="a-team")       return <PageAdminTeam fl={fl} currentUser={currentUser}/>;
@@ -8117,7 +8083,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Admin Dashboard ──────────────────────────────────────────────────── */
-function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, resetToSeed, retailers, fmSuppliers, companies, isSuperAdmin }) {
+function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, retailers, fmSuppliers, companies }) {
   const { t } = useTranslation("legacy");
   const pm=sends.filter(s=>s.status==="pending_moderation").length;
   const ap=sends.filter(s=>s.status==="approved").length;
@@ -8143,8 +8109,8 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
   }, []);
 
   // [feat/admin-dashboard-polish] Fork renderu: spokojne centrum pracy admina.
-  // Kolejność: A. alert akcji → B. KPI operacyjne → C. moduły → D. status FM 2026
-  // → E. narzędzia testowe (danger zone). Flaga OFF = stary układ poniżej bez zmian.
+  // Kolejność: A. alert akcji → B. KPI operacyjne → C. moduły → D. status FM 2026.
+  // Flaga OFF = stary układ poniżej bez zmian.
   if (ADMIN_DASHBOARD_POLISH) {
     return (
       <div>
@@ -8251,19 +8217,6 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           );
         })()}
 
-        {/* E. Narzędzia testowe / danger zone — wyciszone, na samym dole.
-            [feat/admin-access-polish] Gdy flaga ON — tylko dla super-admina (UI-only). */}
-        {resetToSeed && (!ADMIN_ACCESS_POLISH || isSuperAdmin) && (
-          <div style={{ marginTop:6, padding:"12px 14px", background:"#fef2f2", border:"1px dashed #fecaca", borderRadius:10 }}>
-            <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#b91c1c", marginBottom:8 }}>{t("admin.dash.p_tools_title")}</div>
-            <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-              <Btn outline sm onClick={resetToSeed} style={{ color:"#dc2626", borderColor:"#fca5a5", display:"flex", alignItems:"center", gap:5 }}>
-                <RotateCcw size={12}/> {t("admin.dash.reset_btn")}
-              </Btn>
-              <span style={{ fontSize:11, color:"#94a3b8" }}>{t("admin.dash.reset_desc")}</span>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
@@ -8386,15 +8339,6 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           </div>
         ))}
       </div>
-      {/* [feat/admin-access-polish] Reset (stary render) — gdy flaga ON tylko super-admin. */}
-      {resetToSeed && (!ADMIN_ACCESS_POLISH || isSuperAdmin) && (
-        <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",alignItems:"center",gap:10 }}>
-          <Btn outline sm onClick={resetToSeed} style={{ color:"#dc2626",borderColor:"#fca5a5",display:"flex",alignItems:"center",gap:5 }}>
-            <RotateCcw size={12}/> {t("admin.dash.reset_btn")}
-          </Btn>
-          <span style={{ fontSize:11,color:"#94a3b8" }}>{t("admin.dash.reset_desc")}</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -10455,6 +10399,7 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
   // logika co dawne KPI na Dashboardzie: potwierdzone wysyłki (read/read_manual) × 40 EUR.
   const confirmedRevenue = (sends || []).filter(s => ["read", "read_manual"].includes(s.status)).length * 40;
   const [proformas, setProformas] = useState([]);
+  const [payuOrders, setPayuOrders] = useState([]);
   const [packages, setPackages] = useState([]);
   const [busyId, setBusyId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10464,8 +10409,8 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([dbGetProformasAdmin(), dbGetAllPackagesAdmin()])
-      .then(([pf, pk]) => { if (!cancelled) { setProformas(pf || []); setPackages(pk || []); setLoading(false); } })
+    Promise.all([dbGetProformasAdmin(), dbGetAllPackagesAdmin(), dbGetPayuOrdersAdmin()])
+      .then(([pf, pk, po]) => { if (!cancelled) { setProformas(pf || []); setPackages(pk || []); setPayuOrders(po || []); setLoading(false); } })
       .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -10488,10 +10433,15 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
   const money = (n) => Number(n || 0).toFixed(2);
   const pfStatusLabel = (s) => t("admin.settlements.pf_status_" + (s || "pending"));
   const pfStatusColor = (s) => s === "paid" ? ["#059669", "#f0fdf4"] : s === "cancelled" ? ["#64748b", "#f1f5f9"] : ["#d97706", "#fffbeb"];
+  const payuStatusLabel = (s) => t("admin.settlements.payu_status_" + (s || "created"));
+  const payuStatusColor = (s) => s === "completed" ? ["#059669", "#f0fdf4"] : ["canceled", "rejected", "failed"].includes(s) ? ["#dc2626", "#fef2f2"] : ["#d97706", "#fffbeb"];
 
   const fProformas = proformas.filter(pf =>
     (pfStatus === "all" || pf.status === pfStatus) &&
     (!cf || (pf.company_name_snapshot || "").toLowerCase().includes(cf) || (pf.company_nip_snapshot || "").toLowerCase().includes(cf))
+  );
+  const fPayuOrders = payuOrders.filter(po =>
+    !cf || (po.company?.name || "").toLowerCase().includes(cf) || (po.company?.nip || "").toLowerCase().includes(cf)
   );
 
   // Agregacja pakietów per dostawca (z packages, incl. wygasłe).
@@ -10565,7 +10515,36 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
         })}
       </Card>
 
-      {/* Sekcja B — Kredyty dostawców */}
+      {/* Sekcja B — Płatności online PayU */}
+      <Card title={t("admin.settlements.payu_title")} icon={Receipt} style={{ marginBottom: 16 }}>
+        {fPayuOrders.length === 0 ? (
+          <div style={{ fontSize: 12, color: "#64748b", padding: "6px 2px" }}>{t("admin.settlements.payu_empty")}</div>
+        ) : fPayuOrders.map(po => {
+          const [c, bg] = payuStatusColor(po.status);
+          const net = Number(po.price_eur || 0);
+          const gross = Math.round(net * 1.23 * 100) / 100;
+          return (
+            <div key={po.id} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: "1px solid #f1f5f9", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ width: 34, height: 34, borderRadius: 8, background: "#f0fdfa", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Receipt size={14} color="#0d9488" /></div>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>{po.company?.name || "—"}</div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{getPlanLabel(po.plan_id, { withPerSend: false })} · NIP {po.company?.nip || "—"} · {String(po.created_at || "").slice(0, 10)}</div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0, fontSize: 11, color: "#64748b", minWidth: 170 }}>
+                <div>{t("admin.settlements.net")}: {money(net)} {po.currency || "EUR"}</div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#1e293b" }}>{t("admin.settlements.gross")}: {money(gross)} {po.currency || "EUR"}</div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0, fontSize: 11, color: "#64748b", minWidth: 150 }}>
+                <div>{po.payu_order_id || po.ext_order_id || "—"}</div>
+                {po.completed_at && <div>{String(po.completed_at).slice(0, 10)}</div>}
+              </div>
+              <Badge color={c} bg={bg}>{payuStatusLabel(po.status)}</Badge>
+            </div>
+          );
+        })}
+      </Card>
+
+      {/* Sekcja C — Kredyty dostawców */}
       <Card title={t("admin.settlements.packages_title")} icon={CreditCard}>
         {suppliers.length === 0 ? (
           <div style={{ fontSize: 12, color: "#64748b", padding: "6px 2px" }}>{t("admin.settlements.packages_empty")}</div>
@@ -14709,7 +14688,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   );
 }
 
-function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, onRegenerate, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies }) {
+function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies }) {
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
@@ -14719,7 +14698,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
   const phase = fmSettings.currentPhase;
   // Full data with slot numbers for Faza 4 admin correction grid
   const [fmFullData, setFmFullData] = useState(() => pickFMPlan(fmSchedule, buildFMData(fmPrefs, fmResps, _chains, _suppliers)));
-  // Rebuild when prefs/resps change (e.g. after onRegenerate)
+  // Rebuild when prefs/resps change.
   const rebuildFull = () => setFmFullData(buildFMData(fmPrefs, fmResps, _chains, _suppliers));
   const approveAndPublish = (data) => { setFmSchedule(data); setFmFullData(data); };
   const syncFromSchedule = () => { if(fmSchedule) setFmFullData(fmSchedule); };
@@ -14779,13 +14758,6 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
               </div>
             </div>
             {!fmSettings.planPublished&&<Alrt type="warning">{t("fm.admin.publish_warning")}</Alrt>}
-          </Card>
-          <Card title={t("fm.admin.test_data_card_title")} icon={RefreshCw}>
-            <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>{t("fm.admin.test_data_desc")}</div>
-            <div style={{ display:"flex",gap:8,alignItems:"center" }}>
-              <Btn outline sm onClick={onRegenerate}><RefreshCw size={12}/> {t("fm.admin.test_data_btn")}</Btn>
-              <span style={{ fontSize:11,color:"#94a3b8" }}>{t("fm.admin.test_data_meta_format", { suppliers: _suppliers.length, chains: _chains.length })}</span>
-            </div>
           </Card>
           <Card title={t("fm.admin.phases_card_title")} icon={Calendar}>
             <div style={{ fontSize:12,color:"#64748b",marginBottom:14 }}>{t("fm.admin.phases_card_desc")}</div>

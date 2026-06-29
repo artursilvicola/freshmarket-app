@@ -17,5 +17,10 @@
     "super_admin": "Super admin",
     "supplier": "Supplier",
     "buyer": "Buyer"
+  },
+  "mobile_portrait": {
+    "title": "Portrait view may be less comfortable",
+    "body": "The B2B panel works best on desktop or on phones in landscape orientation. In portrait mode, some tables and forms may require extra scrolling.",
+    "continue_button": "I understand, continue"
   }
 }

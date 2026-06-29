@@ -3,6 +3,7 @@ import LegacyApp from "../legacy/PreconnectFM";
 import PanelTopBar from "../components/PanelTopBar";
 import EntityLogo from "../components/EntityLogo";
 import LegalFooter from "../components/LegalFooter";
+import MobilePortraitNotice from "../components/MobilePortraitNotice";
 
 export default function SupplierPanel() {
   const { user, profile, signOut } = useAuth();
@@ -26,6 +27,7 @@ export default function SupplierPanel() {
       <div style={{ flex: 1 }}>
         <LegacyApp initialRole="supplier" currentUser={profile} />
       </div>
+      <MobilePortraitNotice />
       <LegalFooter />
     </div>
   );

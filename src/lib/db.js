@@ -934,6 +934,18 @@ export async function getAllPackagesAdmin(limit = 1000) {
   return data || [];
 }
 
+// [feat/admin-supplier-settlements] Wszystkie płatności online PayU (admin).
+// Proformy dotyczą tylko przelewów, więc PayU pokazujemy osobno jako audit trail.
+export async function getPayuOrdersAdmin(limit = 300) {
+  const { data, error } = await supabase
+    .from("payu_orders")
+    .select("id, company_id, plan_id, price_eur, currency, status, payu_order_id, ext_order_id, payment_method, package_id, created_at, completed_at, company:companies(name, nip)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
 // ===================================================================
 // BUYER STARRED
 // ===================================================================

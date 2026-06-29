@@ -250,7 +250,6 @@ export const PRECONNECT_MAILING_DATE_LOGIC = true;
 // zawężenie pozycji super-adminowych do is_super_admin:
 //   • Branding (a-branding) — ukryty w menu dla zwykłego admina + best-effort
 //     route guard (zwykły admin na a-branding → Dashboard),
-//   • Reset danych testowych (Dashboard danger zone) — tylko super-admin,
 //   • Administratorzy (a-team) — bez zmian (już super-admin only),
 //   • Rozliczenia (a-settlements) — zostają widoczne dla zwykłego admina (Finanse).
 //
@@ -259,7 +258,7 @@ export const PRECONNECT_MAILING_DATE_LOGIC = true;
 // zero zmian RLS/backendu/danych. Twardy model ról (admin finansowy z migracją)
 // to osobny Wariant B na później. Default `false`: menu/dostęp bez zmian.
 // [chore/flip-admin-access-polish] ON — grupy menu (Operacyjne/Finanse/System)
-// + Branding/reset tylko dla super-admina na prod. UI-only (nie backend/RLS).
+// + Branding tylko dla super-admina na prod. UI-only (nie backend/RLS).
 export const ADMIN_ACCESS_POLISH = true;
 
 // [feat/admin-pipeline-split — UI-only podział Pipeline na 3 zakładki]

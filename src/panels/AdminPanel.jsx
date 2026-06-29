@@ -3,6 +3,7 @@ import LegacyApp from "../legacy/PreconnectFM";
 import PanelTopBar from "../components/PanelTopBar";
 import FreshMarketLogo from "../components/FreshMarketLogo";
 import LegalFooter from "../components/LegalFooter";
+import MobilePortraitNotice from "../components/MobilePortraitNotice";
 
 /**
  * AdminPanel — wrapper na istniejącą aplikację z wymuszonym kontekstem admina.
@@ -31,6 +32,7 @@ export default function AdminPanel() {
       <div style={{ flex: 1 }}>
         <LegacyApp initialRole="admin" currentUser={profile} />
       </div>
+      <MobilePortraitNotice />
       <LegalFooter />
     </div>
   );
