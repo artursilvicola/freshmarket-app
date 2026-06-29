@@ -66,6 +66,8 @@ import {
   getPackages as dbGetPackages,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
   getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
+  // [feat/admin-instructions-announcements] treści sterowane z Brandingu
+  getUiContent as dbGetUiContent, saveUiContent as dbSaveUiContent, emptyUiContent as dbEmptyUiContent,
   // [B2B Round prod-rollout / admin-team] zarządzanie zespołem administratorów
   getAllAdmins as dbGetAllAdmins, promoteToAdmin as dbPromoteToAdmin,
   demoteFromAdmin as dbDemoteFromAdmin, setSuperAdmin as dbSetSuperAdmin,
@@ -844,6 +846,90 @@ function CompanyLogo({ company, size=40 }) {
 function Modal({ title, onClose, children, wide }) {
   return <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16 }} onClick={onClose}><div onClick={e=>e.stopPropagation()} style={{ background:"white",borderRadius:16,maxWidth:wide?820:500,width:"100%",maxHeight:"92vh",overflow:"auto" }}><div style={{ padding:"16px 20px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,background:"white",zIndex:1 }}><strong style={{ fontSize:15 }}>{title}</strong><button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",padding:4 }}><X size={18}/></button></div><div style={{ padding:20 }}>{children}</div></div></div>;
 }
+// =============================================================================
+// [feat/admin-instructions-announcements]
+// Instrukcje (link w sidebarze → strona) + Komunikaty (pasek / okno) sterowane
+// z panelu admina (Branding). Treść w fmSettings.ui_content (PL/EN, per rola).
+// =============================================================================
+function fmRoleKey(role) { return role === "buyer" ? "buyer" : "supplier"; }
+function fmUiLang(i18n) { return String(i18n?.language || "pl").toLowerCase().startsWith("en") ? "en" : "pl"; }
+// Komunikat aktywny: włączony, ma treść w danym języku, mieści się w oknie dat.
+function isAnnouncementLive(a, lang) {
+  if (!a || !a.enabled) return false;
+  if (!(a[lang] || "").trim()) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  if (a.dateFrom && today < a.dateFrom) return false;
+  if (a.dateTo && today > a.dateTo) return false;
+  return true;
+}
+function announceHash(s) {
+  let h = 0; const str = String(s || "");
+  for (let i = 0; i < str.length; i++) { h = (h * 31 + str.charCodeAt(i)) | 0; }
+  return String(h);
+}
+
+function AnnouncementTicker({ role, uiContent }) {
+  const { t, i18n } = useTranslation("legacy");
+  const lang = fmUiLang(i18n);
+  const a = uiContent?.announcements?.[fmRoleKey(role)];
+  const live = isAnnouncementLive(a, lang);
+  const html = live ? a[lang] : "";
+  const [dismissed, setDismissed] = useState(false);
+  // Reset gdy treść/język się zmieni; respektuj zamknięcie z tej sesji.
+  useEffect(() => {
+    try { setDismissed(sessionStorage.getItem("fm_ticker_dismissed") === announceHash(html)); }
+    catch { setDismissed(false); }
+  }, [html]);
+  if (!live || dismissed) return null;
+  const close = () => { try { sessionStorage.setItem("fm_ticker_dismissed", announceHash(html)); } catch {} setDismissed(true); };
+  return (
+    <div style={{ background:"#0d9488",color:"white",display:"flex",alignItems:"center",gap:10,padding:"0 12px",overflow:"hidden",fontSize:13,borderBottom:"1px solid rgba(255,255,255,0.15)" }}>
+      <style>{`@keyframes fm-marquee{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}`}</style>
+      <div style={{ flex:1,overflow:"hidden",whiteSpace:"nowrap" }}>
+        <div style={{ display:"inline-block",paddingLeft:"100%",animation:"fm-marquee 28s linear infinite",padding:"7px 0" }} dangerouslySetInnerHTML={{ __html: html }} />
+      </div>
+      <button onClick={close} title={t("shell.sidebar.ticker_close")} aria-label={t("shell.sidebar.ticker_close")} style={{ flexShrink:0,background:"rgba(255,255,255,0.18)",border:"none",color:"white",cursor:"pointer",borderRadius:6,padding:"4px 6px",lineHeight:0 }}>
+        <X size={14}/>
+      </button>
+    </div>
+  );
+}
+
+function AnnouncementModal({ role, uiContent }) {
+  const { t, i18n } = useTranslation("legacy");
+  const lang = fmUiLang(i18n);
+  const a = uiContent?.announcements?.[fmRoleKey(role)];
+  const live = isAnnouncementLive(a, lang) && a.type === "modal";
+  const html = live ? a[lang] : "";
+  const [seen, setSeen] = useState(true);
+  useEffect(() => {
+    try { setSeen(sessionStorage.getItem("fm_announce_modal_seen") === announceHash(html)); }
+    catch { setSeen(false); }
+  }, [html]);
+  if (!live || seen) return null;
+  const close = () => { try { sessionStorage.setItem("fm_announce_modal_seen", announceHash(html)); } catch {} setSeen(true); };
+  return (
+    <Modal title={t("shell.sidebar.announcement_title")} onClose={close}>
+      <div style={{ fontSize:14,lineHeight:1.6,color:"#334155" }} dangerouslySetInnerHTML={{ __html: html }} />
+    </Modal>
+  );
+}
+
+function PageInstructions({ role, fmSettings }) {
+  const { t, i18n } = useTranslation("legacy");
+  const lang = fmUiLang(i18n);
+  const html = (fmSettings?.ui_content?.instructions?.[fmRoleKey(role)]?.[lang] || "").trim();
+  return (
+    <div style={{ maxWidth:820 }}>
+      <Card title={t("shell.sidebar.instructions_page_title")} icon={FileText}>
+        {html
+          ? <div style={{ fontSize:14,lineHeight:1.7,color:"#334155" }} dangerouslySetInnerHTML={{ __html: html }} />
+          : <div style={{ fontSize:13,color:"#94a3b8" }}>{t("shell.sidebar.instructions_empty")}</div>}
+      </Card>
+    </div>
+  );
+}
+
 function TrackingBar({ daysLeft, status }) {
   // [pipeline-supplier-flow] "opened" (kupiec otworzył maila) = potwierdzone,
   // spójnie z resztą widoków dostawcy.
@@ -3621,6 +3707,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
+    if(pg==="instructions") return <PageInstructions role={role} fmSettings={fmSettings}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
@@ -3649,6 +3736,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   return (
     <div style={{ fontFamily:"system-ui,-apple-system,sans-serif",background:"#f1f5f9",minHeight:"100vh",color:"#1e293b",fontSize:14 }}>
       <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
+      {/* [feat/admin-instructions-announcements] Komunikat admina — pasek u góry
+          + opcjonalne okno (pilne). Tylko dla dostawcy/kupca (lockedRole). */}
+      {lockedRole && fmSettings?.ui_content && (<>
+        <AnnouncementTicker role={role} uiContent={fmSettings.ui_content} />
+        <AnnouncementModal role={role} uiContent={fmSettings.ui_content} />
+      </>)}
       {/* Account switcher — tylko dla admina (dostawca/kupiec ma zablokowaną rolę) */}
       {!lockedRole && (
         <AccountSwitcherBar account={account} accounts={runtimeAccounts} onSwitch={switchAccount} wallet={wallet} fmSettings={fmSettings} retailers={retailers}/>
@@ -3683,7 +3776,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.preconnect_section")}</span>
               </div>
-              {[[Send,t("shell.sidebar.supplier_wysylki"),"wysylki"],[Tag,t("shell.sidebar.supplier_my_offers"),"offers"],[CreditCard,t("shell.sidebar.supplier_finance"),"finanse"],[Building2,t("shell.sidebar.supplier_your_company"),"company"],[User,t("shell.sidebar.supplier_my_profile"),"profile"]].map(([Ic,label,key])=>(
+              {[[Send,t("shell.sidebar.supplier_wysylki"),"wysylki"],[Tag,t("shell.sidebar.supplier_my_offers"),"offers"],[CreditCard,t("shell.sidebar.supplier_finance"),"finanse"],[Building2,t("shell.sidebar.supplier_your_company"),"company"],[User,t("shell.sidebar.supplier_my_profile"),"profile"],[FileText,t("shell.sidebar.instructions"),"instructions"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
                   {key==="finanse" && (CREDITS_UI_SUPPLIER
@@ -3730,7 +3823,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.preconnect_section")}</span>
               </div>
-              {[[Send,t("shell.sidebar.buyer_offers"),"b-offers"],[Building2,t("shell.sidebar.buyer_suppliers"),"b-katalog"],[Heart,t("shell.sidebar.buyer_saved"),"b-saved"],[User,t("shell.sidebar.buyer_my_profile"),"b-profile"]].map(([Ic,label,key])=>(
+              {[[Send,t("shell.sidebar.buyer_offers"),"b-offers"],[Building2,t("shell.sidebar.buyer_suppliers"),"b-katalog"],[Heart,t("shell.sidebar.buyer_saved"),"b-saved"],[User,t("shell.sidebar.buyer_my_profile"),"b-profile"],[FileText,t("shell.sidebar.instructions"),"instructions"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
                 </div>
@@ -15165,6 +15258,28 @@ function PageAdminBranding({ fl }) {
     }
   };
 
+  // [feat/admin-instructions-announcements] Edytor treści: instrukcje + komunikaty.
+  const [ui, setUi] = useState(() => dbEmptyUiContent());
+  const [savingUi, setSavingUi] = useState(false);
+  const [prevRole, setPrevRole] = useState("supplier");
+  const [prevLang, setPrevLang] = useState("pl");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try { const c = await dbGetUiContent(); if (!cancelled) setUi(c); }
+      catch (e) { if (!cancelled) console.warn("[PageAdminBranding] ui_content", e?.message || e); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+  const setInstr = (rk, lang, val) => setUi(p => ({ ...p, instructions: { ...p.instructions, [rk]: { ...p.instructions[rk], [lang]: val } } }));
+  const setAnn = (rk, field, val) => setUi(p => ({ ...p, announcements: { ...p.announcements, [rk]: { ...p.announcements[rk], [field]: val } } }));
+  const saveUi = async () => {
+    setSavingUi(true);
+    try { await dbSaveUiContent(ui); fl?.(t("admin.branding.ui_toast_saved"), "success"); }
+    catch (e) { fl?.(t("admin.branding.ui_toast_error_format", { error: e?.message || String(e) }), "error"); }
+    finally { setSavingUi(false); }
+  };
+
   return (
     <div style={{ maxWidth: 720 }}>
       <div style={{ marginBottom: 18 }}>
@@ -15265,6 +15380,77 @@ function PageAdminBranding({ fl }) {
           )}
         </div>
       </div>
+
+      {/* [feat/admin-instructions-announcements] Instrukcje (link w menu) */}
+      <Card title={t("admin.branding.ui_instructions_title")} icon={FileText} style={{ marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{t("admin.branding.ui_instructions_desc")}</div>
+        {["supplier", "buyer"].map(rk => (
+          <div key={rk} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", marginBottom: 6 }}>{t(rk === "supplier" ? "admin.branding.ui_role_supplier" : "admin.branding.ui_role_buyer")}</div>
+            <Row>
+              <Inp ta label={t("admin.branding.ui_field_pl")} value={ui.instructions[rk].pl} onChange={e => setInstr(rk, "pl", e.target.value)} />
+              <Inp ta label={t("admin.branding.ui_field_en")} value={ui.instructions[rk].en} onChange={e => setInstr(rk, "en", e.target.value)} />
+            </Row>
+          </div>
+        ))}
+        <div style={{ fontSize: 11, color: "#94a3b8" }}>{t("admin.branding.ui_html_hint")}</div>
+      </Card>
+
+      {/* Komunikaty (pasek / okno) */}
+      <Card title={t("admin.branding.ui_announce_title")} icon={Bell}>
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{t("admin.branding.ui_announce_desc")}</div>
+        {["supplier", "buyer"].map(rk => {
+          const a = ui.announcements[rk];
+          return (
+            <div key={rk} style={{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #f1f5f9" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{t(rk === "supplier" ? "admin.branding.ui_role_supplier" : "admin.branding.ui_role_buyer")}</div>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#334155", cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!a.enabled} onChange={e => setAnn(rk, "enabled", e.target.checked)} style={{ accentColor: "#0d9488" }} />
+                  {t("admin.branding.ui_announce_enabled")}
+                </label>
+              </div>
+              <Row>
+                <Inp ta label={t("admin.branding.ui_field_pl")} value={a.pl} onChange={e => setAnn(rk, "pl", e.target.value)} />
+                <Inp ta label={t("admin.branding.ui_field_en")} value={a.en} onChange={e => setAnn(rk, "en", e.target.value)} />
+              </Row>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                <Inp label={t("admin.branding.ui_announce_type")} value={a.type || "bar"} onChange={e => setAnn(rk, "type", e.target.value)}>
+                  <option value="bar">{t("admin.branding.ui_announce_type_bar")}</option>
+                  <option value="modal">{t("admin.branding.ui_announce_type_modal")}</option>
+                </Inp>
+                <Inp type="date" label={t("admin.branding.ui_announce_date_from")} value={a.dateFrom || ""} onChange={e => setAnn(rk, "dateFrom", e.target.value || null)} />
+                <Inp type="date" label={t("admin.branding.ui_announce_date_to")} value={a.dateTo || ""} onChange={e => setAnn(rk, "dateTo", e.target.value || null)} />
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Podgląd */}
+        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+            <strong style={{ fontSize: 12, color: "#0f172a" }}>{t("admin.branding.ui_preview_title")}</strong>
+            <span style={{ fontSize: 11, color: "#64748b" }}>{t("admin.branding.ui_preview_role")}:</span>
+            {["supplier", "buyer"].map(rk => (
+              <button key={rk} onClick={() => setPrevRole(rk)} style={{ fontSize: 11, padding: "3px 9px", borderRadius: 6, border: `1px solid ${prevRole === rk ? "#0d9488" : "#cbd5e1"}`, background: prevRole === rk ? "#0d9488" : "white", color: prevRole === rk ? "white" : "#475569", cursor: "pointer" }}>{t(rk === "supplier" ? "admin.branding.ui_role_supplier" : "admin.branding.ui_role_buyer")}</button>
+            ))}
+            <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>{t("admin.branding.ui_preview_lang")}:</span>
+            {["pl", "en"].map(lg => (
+              <button key={lg} onClick={() => setPrevLang(lg)} style={{ fontSize: 11, padding: "3px 9px", borderRadius: 6, border: `1px solid ${prevLang === lg ? "#0d9488" : "#cbd5e1"}`, background: prevLang === lg ? "#0d9488" : "white", color: prevLang === lg ? "white" : "#475569", cursor: "pointer" }}>{lg.toUpperCase()}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>{t("admin.branding.ui_preview_ticker_label")}</div>
+          {(ui.announcements[prevRole][prevLang] || "").trim()
+            ? <div style={{ background: "#0d9488", color: "white", borderRadius: 6, padding: "6px 10px", fontSize: 13 }} dangerouslySetInnerHTML={{ __html: ui.announcements[prevRole][prevLang] }} />
+            : <div style={{ fontSize: 12, color: "#94a3b8" }}>{t("admin.branding.ui_preview_empty")}</div>}
+          <div style={{ fontSize: 11, color: "#64748b", margin: "10px 0 4px" }}>{t("admin.branding.ui_preview_instr_label")}</div>
+          {(ui.instructions[prevRole][prevLang] || "").trim()
+            ? <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, padding: "8px 10px", fontSize: 13, color: "#334155" }} dangerouslySetInnerHTML={{ __html: ui.instructions[prevRole][prevLang] }} />
+            : <div style={{ fontSize: 12, color: "#94a3b8" }}>{t("admin.branding.ui_preview_empty")}</div>}
+        </div>
+
+        <Btn primary onClick={saveUi} disabled={savingUi}>{savingUi ? t("admin.branding.ui_saving") : t("admin.branding.ui_save_btn")}</Btn>
+      </Card>
 
       <div style={{ marginTop: 18, padding: "12px 14px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
         <Trans i18nKey="admin.branding.info_box_html" ns="legacy" components={{ strong: <strong style={{ color: "#475569" }} />, br: <br /> }}/>

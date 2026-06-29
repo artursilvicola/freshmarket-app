@@ -1132,6 +1132,81 @@ export async function uploadBrandLogo(file) {
   return { ok: true, url };
 }
 
+// [feat/admin-instructions-announcements]
+// Treści sterowane z panelu admina (Branding) i widoczne w panelach kupca/dostawcy:
+//   • instructions — instrukcja pomocy (osobno supplier/buyer, PL/EN),
+//   • announcements — komunikat (pasek/okno, osobno supplier/buyer, PL/EN) z
+//     włącznikiem, typem i opcjonalnym oknem dat.
+// Przechowywane w fm_settings.ui_content (JSONB, migracja 045).
+// Odczyt: każdy zalogowany (RLS public/auth read). Zapis: tylko admin (RLS).
+export function emptyUiContent() {
+  return {
+    instructions: {
+      supplier: { pl: "", en: "" },
+      buyer: { pl: "", en: "" },
+    },
+    announcements: {
+      supplier: { pl: "", en: "", enabled: false, type: "bar", dateFrom: null, dateTo: null },
+      buyer: { pl: "", en: "", enabled: false, type: "bar", dateFrom: null, dateTo: null },
+    },
+  };
+}
+
+// Łączy surowe ui_content z bazy z defaultami, żeby UI zawsze miało pełną
+// strukturę (odporne na starsze/niekompletne rekordy).
+export function normalizeUiContent(raw) {
+  const base = emptyUiContent();
+  const r = raw && typeof raw === "object" ? raw : {};
+  const ins = r.instructions || {};
+  const ann = r.announcements || {};
+  return {
+    instructions: {
+      supplier: { ...base.instructions.supplier, ...(ins.supplier || {}) },
+      buyer: { ...base.instructions.buyer, ...(ins.buyer || {}) },
+    },
+    announcements: {
+      supplier: { ...base.announcements.supplier, ...(ann.supplier || {}) },
+      buyer: { ...base.announcements.buyer, ...(ann.buyer || {}) },
+    },
+  };
+}
+
+export async function getUiContent() {
+  try {
+    const { data, error } = await supabase
+      .from("fm_settings")
+      .select("ui_content")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) return emptyUiContent();
+    return normalizeUiContent(data?.ui_content);
+  } catch (e) {
+    console.warn("[getUiContent]", e?.message || e);
+    return emptyUiContent();
+  }
+}
+
+// Zapis treści. Bezpośredni UPDATE kolumny ui_content (NIE przez saveFmSettings,
+// które serializuje tylko open_date/algo_phase). Wzorzec jak uploadBrandLogo.
+export async function saveUiContent(uiContent) {
+  const payload = normalizeUiContent(uiContent);
+  const existing = await getFmSettings();
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("fm_settings")
+      .update({ ui_content: payload, updated_at: new Date().toISOString() })
+      .eq("id", existing.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase
+      .from("fm_settings")
+      .insert({ ui_content: payload });
+    if (error) throw error;
+  }
+  return payload;
+}
+
 export async function getFmPrefs(retailerId) {
   const { data, error } = await supabase
     .from("fm_prefs")
