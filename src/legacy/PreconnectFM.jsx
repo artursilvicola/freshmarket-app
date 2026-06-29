@@ -10405,6 +10405,7 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
   const [loading, setLoading] = useState(true);
   const [companyFilter, setCompanyFilter] = useState("");
   const [pfStatus, setPfStatus] = useState("all");     // all | pending | paid | cancelled
+  const [payuStatus, setPayuStatus] = useState("relevant"); // relevant | all | completed | pending | failed
   const [pkgStatus, setPkgStatus] = useState("all");   // all | active | expired
 
   useEffect(() => {
@@ -10441,7 +10442,12 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
     (!cf || (pf.company_name_snapshot || "").toLowerCase().includes(cf) || (pf.company_nip_snapshot || "").toLowerCase().includes(cf))
   );
   const fPayuOrders = payuOrders.filter(po =>
-    !cf || (po.company?.name || "").toLowerCase().includes(cf) || (po.company?.nip || "").toLowerCase().includes(cf)
+    (payuStatus === "all" ||
+      (payuStatus === "relevant" && ["created", "pending", "completed"].includes(po.status)) ||
+      (payuStatus === "pending" && ["created", "pending"].includes(po.status)) ||
+      (payuStatus === "failed" && ["canceled", "rejected", "failed"].includes(po.status)) ||
+      po.status === payuStatus) &&
+    (!cf || (po.company?.name || "").toLowerCase().includes(cf) || (po.company?.nip || "").toLowerCase().includes(cf))
   );
 
   // Agregacja pakietów per dostawca (z packages, incl. wygasłe).
@@ -10479,6 +10485,9 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
         <input value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} placeholder={t("admin.settlements.filter_company_ph")} style={{ ...selStyle, minWidth: 200, flex: "1 1 200px" }} />
         <select value={pfStatus} onChange={e => setPfStatus(e.target.value)} style={selStyle}>
           {["all", "pending", "paid", "cancelled"].map(s => <option key={s} value={s}>{t("admin.settlements.pf_filter_" + s)}</option>)}
+        </select>
+        <select value={payuStatus} onChange={e => setPayuStatus(e.target.value)} style={selStyle}>
+          {["relevant", "all", "completed", "pending", "failed"].map(s => <option key={s} value={s}>{t("admin.settlements.payu_filter_" + s)}</option>)}
         </select>
         <select value={pkgStatus} onChange={e => setPkgStatus(e.target.value)} style={selStyle}>
           {["all", "active", "expired"].map(s => <option key={s} value={s}>{t("admin.settlements.pkg_filter_" + s)}</option>)}
