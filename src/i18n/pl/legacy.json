@@ -1893,6 +1893,7 @@
       "collapse_btn": "Zwiń",
       "toast_save_failed_default": "Nie udało się zapisać zmiany.",
       "toast_save_failed_full_default": "Nie udało się zapisać zmian.",
+      "toast_saved_full": "✅ Sieć zapisana.",
       "toast_save_name_required": "Sieć musi mieć nazwę.",
       "toast_save_active_needs_buyer": "Aktywna sieć musi mieć przynajmniej jednego aktywnego kupca.",
       "toast_save_fm26_needs_fm_buyer": "Sieć FM 2026 musi mieć przynajmniej jednego aktywnego kupca oznaczonego dla FM 2026.",

@@ -1893,6 +1893,7 @@
       "collapse_btn": "Collapse",
       "toast_save_failed_default": "Failed to save change.",
       "toast_save_failed_full_default": "Failed to save changes.",
+      "toast_saved_full": "✅ Network saved.",
       "toast_save_name_required": "Retailer must have a name.",
       "toast_save_active_needs_buyer": "An active retailer must have at least one active buyer.",
       "toast_save_fm26_needs_fm_buyer": "An FM 2026 retailer must have at least one active buyer marked for FM 2026.",
