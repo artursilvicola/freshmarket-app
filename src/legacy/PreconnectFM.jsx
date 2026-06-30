@@ -3711,7 +3711,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
-    if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers}/>;
+    if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers} fl={fl}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
     if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity} sends={sends} offers={offers}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
@@ -9920,7 +9920,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
 }
 
 /* ── Admin: Sieci ─────────────────────────────────────────────────────── */
-function PageAdminRetailers({ retailers, setRetailers }) {
+function PageAdminRetailers({ retailers, setRetailers, fl }) {
   const { t } = useTranslation("legacy");
   // [P2-admin] CAT_OPTS — wartości (klucze) PL zachowane jako historyczne
   // dane DB, labelki idą przez t() z admin.retailers.cat_options.*
@@ -10070,12 +10070,16 @@ function PageAdminRetailers({ retailers, setRetailers }) {
       if ((b.cats||[]).length === 0) { errs[id] = t("admin.retailers.toast_save_buyer_cats_required"); break; }
     }
     if (retailer.fm26Active && !retailer.fm26ChainId) errs[id] = t("admin.retailers.toast_save_fm26_id_required");
-    if (Object.keys(errs).length) { setSaveError(prev => ({ ...prev, ...errs })); return; }
+    if (Object.keys(errs).length) { setSaveError(prev => ({ ...prev, ...errs })); fl?.(Object.values(errs)[0], "warning"); return; }
 
     setSavingId(id);
     setSaveError(prev => ({ ...prev, [id]: null }));
     try {
-      await bulkUpsertRetailers([retailer]);
+      // [fix/retailer-cats-to-supplier] Zsynchronizuj kolumnę sieci `cats` z
+      // kategoriami kupców. Dostawca czyta retailers.cats (profili kupców nie
+      // widzi przez RLS) — bez tego "Kupiec kategorii" było puste w panelu dostawcy.
+      const retailerCats = [...new Set(buyers.flatMap(b => b.cats || []))];
+      await bulkUpsertRetailers([{ ...retailer, cats: retailerCats }]);
       const links = [];
       const nextBuyers = [];
       for (const b of buyers) {
@@ -10133,12 +10137,14 @@ function PageAdminRetailers({ retailers, setRetailers }) {
         }
       }
 
-      setRetailers(prev => prev.map(r => r.id !== id ? r : ({ ...r, buyers: nextBuyers })));
+      setRetailers(prev => prev.map(r => r.id !== id ? r : ({ ...r, cats: retailerCats, buyers: nextBuyers })));
       setSaveMeta(prev => ({ ...prev, [id]: { links } }));
       setSavedIds(prev=>({...prev,[id]:true}));
       setTimeout(()=>setSavedIds(prev=>{const n={...prev};delete n[id];return n;}),2500);
+      fl?.(t("admin.retailers.toast_saved_full"), "success");
     } catch (e) {
       setSaveError(prev => ({ ...prev, [id]: e?.message || t("admin.retailers.toast_save_failed_full_default") }));
+      fl?.(e?.message || t("admin.retailers.toast_save_failed_full_default"), "error");
     } finally {
       setSavingId(null);
     }
