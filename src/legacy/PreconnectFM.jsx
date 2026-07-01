@@ -71,6 +71,8 @@ import {
   demoteFromAdmin as dbDemoteFromAdmin, setSuperAdmin as dbSetSuperAdmin,
   getProfilesForAdminChat as dbGetProfilesForAdminChat,
 } from "../lib/db";
+// [feat/shared-countries] Jedno źródło listy krajów (panel + rejestracja dostawcy).
+import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 import FreshMarketLogo from "../components/FreshMarketLogo";
 // [B2B Round prod-rollout / email-open-tracking] Potrzebny do auth.getSession()
@@ -93,22 +95,10 @@ import i18n from "../i18n";
 import { useTranslation, Trans } from "react-i18next";
 
 /* ─────────────── CONSTANTS ─────────────────────────────────────────────── */
-const FLAGS  = { AT:"🇦🇹",BA:"🇧🇦",BY:"🇧🇾",BE:"🇧🇪",BR:"🇧🇷",BG:"🇧🇬",CL:"🇨🇱",CO:"🇨🇴",CR:"🇨🇷",HR:"🇭🇷",CY:"🇨🇾",CZ:"🇨🇿",DE:"🇩🇪",DK:"🇩🇰",EC:"🇪🇨",EG:"🇪🇬",EE:"🇪🇪",FI:"🇫🇮",FR:"🇫🇷",GR:"🇬🇷",ES:"🇪🇸",NL:"🇳🇱",IE:"🇮🇪",IN:"🇮🇳",IT:"🇮🇹",KE:"🇰🇪",LV:"🇱🇻",LT:"🇱🇹",LU:"🇱🇺",MD:"🇲🇩",MT:"🇲🇹",MA:"🇲🇦",PE:"🇵🇪",PL:"🇵🇱",PT:"🇵🇹",RO:"🇷🇴",SK:"🇸🇰",SI:"🇸🇮",ZA:"🇿🇦",SE:"🇸🇪",TR:"🇹🇷",UA:"🇺🇦",HU:"🇭🇺" };
+// [feat/shared-countries] FLAGS / CNAMES / CNAMES_EN / getCountryName /
+// getSortedCountries / CNAMES_SORTED przeniesione do src/lib/countries.js
+// (import wyżej) — jedno źródło krajów dla panelu ORAZ rejestracji dostawcy.
 const CEMOJI = { owoce:"🍎", warzywa:"🥕", kwiaty:"🌸", zioła:"🌿", inne:"📦" };
-// Alfabetyczna lista krajów
-const CNAMES = { AT:"Austria",BA:"Bośnia i Hercegowina",BY:"Białoruś",BE:"Belgia",BR:"Brazylia",BG:"Bułgaria",CL:"Chile",CO:"Kolumbia",CR:"Kostaryka",HR:"Chorwacja",CY:"Cypr",CZ:"Czechy",DE:"Niemcy",DK:"Dania",EC:"Ekwador",EG:"Egipt",EE:"Estonia",FI:"Finlandia",FR:"Francja",GR:"Grecja",ES:"Hiszpania",NL:"Holandia",IE:"Irlandia",IN:"Indie",IT:"Włochy",KE:"Kenia",LV:"Łotwa",LT:"Litwa",LU:"Luksemburg",MD:"Mołdawia",MT:"Malta",MA:"Maroko",PE:"Peru",PL:"Polska",PT:"Portugalia",RO:"Rumunia",SK:"Słowacja",SI:"Słowenia",ZA:"Republika Południowej Afryki",SE:"Szwecja",TR:"Turcja",UA:"Ukraina",HU:"Węgry" };
-// [P2-shared] Locale-aware country labels. ISO-3166 alpha-2 keys ze sklepu PL
-// pozostają — DB trzyma kody, etykietki PL/EN renderujemy display-only.
-const CNAMES_EN = { AT:"Austria",BA:"Bosnia and Herzegovina",BY:"Belarus",BE:"Belgium",BR:"Brazil",BG:"Bulgaria",CL:"Chile",CO:"Colombia",CR:"Costa Rica",HR:"Croatia",CY:"Cyprus",CZ:"Czechia",DE:"Germany",DK:"Denmark",EC:"Ecuador",EG:"Egypt",EE:"Estonia",FI:"Finland",FR:"France",GR:"Greece",ES:"Spain",NL:"Netherlands",IE:"Ireland",IN:"India",IT:"Italy",KE:"Kenya",LV:"Latvia",LT:"Lithuania",LU:"Luxembourg",MD:"Moldova",MT:"Malta",MA:"Morocco",PE:"Peru",PL:"Poland",PT:"Portugal",RO:"Romania",SK:"Slovakia",SI:"Slovenia",ZA:"South Africa",SE:"Sweden",TR:"Turkey",UA:"Ukraine",HU:"Hungary" };
-const getCountryName = (code) => ((i18n.language || "pl").startsWith("en") ? CNAMES_EN : CNAMES)[code] || code || "";
-const getSortedCountries = () => {
-  const lang = (i18n.language || "pl").startsWith("en") ? "en" : "pl";
-  const dict = lang === "en" ? CNAMES_EN : CNAMES;
-  return Object.entries(dict).sort((a, b) => a[1].localeCompare(b[1], lang));
-};
-// CNAMES_SORTED zostaje na zgodność wstecz — używane przez kod nie-render
-// (np. inicjalizacje stanu). Konsumenci JSX powinni używać getSortedCountries().
-const CNAMES_SORTED = Object.entries(CNAMES).sort((a,b)=>a[1].localeCompare(b[1],"pl"));
 const TYPE_LABELS = { producent:"🌱 Producent", eksporter:"✈ Eksporter", importer:"📥 Importer", firma_handlowa:"🤝 Firma Handlowa", pakowalnia:"📦 Pakowalnia", firma_logistyczna:"🚛 Firma Logistyczna", kooperatywa:"🤲 Kooperatywa", agent:"🔎 Agent/Broker" };
 // [P2-fm C5] PL CLDR plurals via Intl.PluralRules (handles 22/23/24 jako "few"
 // poprawnie, czego nie robi naiwne n>=2&&n<=4). Returns "_one"/"_few"/"_many"/"_other".
