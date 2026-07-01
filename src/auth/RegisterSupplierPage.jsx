@@ -9,6 +9,8 @@ import i18n from "../i18n";
 import { normalizeLocale } from "../i18n/locale";
 import { TERMS_VERSION, PRIVACY_VERSION } from "../lib/legal-versions";
 import { NIP_REQUIRED } from "../config/features";
+// [feat/shared-countries] Ta sama lista krajów co w aplikacji (jedno źródło).
+import { getSortedCountries, FLAGS } from "../lib/countries";
 
 /**
  * RegisterSupplierPage — publiczna self-registration dostawcy.
@@ -199,18 +201,9 @@ export default function RegisterSupplierPage() {
                   ternary, bo wynoszenie do JSON wymuszałoby 12+ kluczy które
                   są de facto nazwami własnymi państw. */}
               <select value={form.country} onChange={(e) => set("country", e.target.value)} style={S.input}>
-                <option value="PL">{locale === "en" ? "Poland" : "Polska"}</option>
-                <option value="DE">{locale === "en" ? "Germany" : "Niemcy"}</option>
-                <option value="CZ">{locale === "en" ? "Czechia" : "Czechy"}</option>
-                <option value="SK">{locale === "en" ? "Slovakia" : "Słowacja"}</option>
-                <option value="HU">{locale === "en" ? "Hungary" : "Węgry"}</option>
-                <option value="LT">{locale === "en" ? "Lithuania" : "Litwa"}</option>
-                <option value="UA">{locale === "en" ? "Ukraine" : "Ukraina"}</option>
-                <option value="ES">{locale === "en" ? "Spain" : "Hiszpania"}</option>
-                <option value="IT">{locale === "en" ? "Italy" : "Włochy"}</option>
-                <option value="NL">{locale === "en" ? "Netherlands" : "Holandia"}</option>
-                <option value="FR">{locale === "en" ? "France" : "Francja"}</option>
-                <option value="RO">{locale === "en" ? "Romania" : "Rumunia"}</option>
+                {getSortedCountries().map(([code, label]) => (
+                  <option key={code} value={code}>{FLAGS[code] ? `${FLAGS[code]} ` : ""}{label}</option>
+                ))}
               </select>
             </label>
             <label style={S.label}>
