@@ -3667,7 +3667,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
-    if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers}/>;
+    if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers} profiles={adminChatProfiles}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="instructions") return <PageInstructions role={role} fmSettings={fmSettings}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
@@ -7550,7 +7550,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
 }
 
 
-function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role, hiddenRetailers = [] }) {
+function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role, hiddenRetailers = [], profiles = [] }) {
   // [Krok P2-2b] Bilingual via legacy.buyer.catalog.*
   const { t } = useTranslation("legacy");
   const [search, setSearch]         = useState("");
@@ -7566,7 +7566,19 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
     );
   }, [hiddenRetailers, buyerRetailerId, role]);
 
+  // [fix/hide-admin-companies-from-buyers] Firmy powiązane z profilem admina
+  // (KJOW, Internet Factory itd.) nie są dostawcami. Realny kupiec nie dostaje
+  // ich wcale z bazy (RLS, migracja 046) — ten filtr wyrównuje PODGLĄD admina
+  // "jako kupiec" (RLS przepuszcza adminowi wszystko; profiles są załadowane
+  // tylko u admina, u realnego kupca lista jest pusta).
+  const adminCompanyIds = useMemo(() => new Set(
+    (profiles || [])
+      .filter(p => p?.role === "admin" && p?.company_id)
+      .map(p => String(p.company_id))
+  ), [profiles]);
+
   const catalogCompanies = companies.filter(c => {
+    if (adminCompanyIds.has(String(c.id))) return false;
     if (role === "buyer") {
       if (c.account_status && c.account_status !== "active") return false;
       if (hiddenCompanyIdsForBuyer.has(String(c.id))) return false;
