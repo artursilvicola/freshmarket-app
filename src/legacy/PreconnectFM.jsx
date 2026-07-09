@@ -2085,7 +2085,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   //   - companies.legacy_fm_id -> account.fmId (przekazane z props w currentUser.legacy_fm_id)
   // Jesli currentUser nie zawiera tych pol — fallback na legacy seed (kompatybilnosc
   // wstecz dla istniejacych testowych instalacji bez migracji 008).
-  const [account, setAccount] = useState(() => {
+  const buildAccountFromCurrentUser = useCallback(() => {
     if (initialRole === "admin") {
       return {
         id: currentUser?.id || "admin",
@@ -2132,7 +2132,34 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       retailerId: null,
       pkg: currentUser?.pkg_plan || null
     };
-  });
+  }, [
+    initialRole,
+    currentUser?.id,
+    currentUser?.email,
+    currentUser?.name,
+    currentUser?.retailer_id,
+    currentUser?.retailer_name,
+    currentUser?.company_id,
+    currentUser?.company_name,
+    currentUser?.company_country,
+    currentUser?.country,
+    currentUser?.legacy_fm_id,
+    currentUser?.legacy_supplier_id,
+    currentUser?.pkg_plan,
+  ]);
+  const [account, setAccount] = useState(() => buildAccountFromCurrentUser());
+  useEffect(() => {
+    if (!lockedRole) return;
+    const next = buildAccountFromCurrentUser();
+    setAccount(prev => {
+      const changed =
+        String(prev?.id || "") !== String(next?.id || "") ||
+        String(prev?.legacySupplierId || "") !== String(next?.legacySupplierId || "") ||
+        String(prev?.retailerId || "") !== String(next?.retailerId || "") ||
+        String(prev?.name || "") !== String(next?.name || "");
+      return changed ? next : prev;
+    });
+  }, [lockedRole, buildAccountFromCurrentUser]);
   const mySupplierKey = account.role === "supplier" ? (account.legacySupplierId || account.id) : account.id;
   const role = account.role;
   // [B2B Round buyer-copy.1] Initial page must depend on role. Hardcoded
