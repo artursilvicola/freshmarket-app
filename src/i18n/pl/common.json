@@ -51,6 +51,14 @@
       "recovery_hint": "Jeśli chcesz zalogować się innym kontem, wyloguj się i przejdź do logowania.",
       "sign_out_btn": "Wyloguj i przejdź do logowania",
       "refresh_btn": "Odśwież profil"
+    },
+    "no_company": {
+      "title": "Konto bez przypisanej firmy",
+      "body": "To konto dostawcy nie ma przypisanej firmy. Skontaktuj się z administratorem, żeby połączyć profil z właściwą firmą."
+    },
+    "no_retailer": {
+      "title": "Konto bez przypisanej sieci",
+      "body": "To konto kupca nie ma przypisanej sieci handlowej. Skontaktuj się z administratorem, żeby połączyć profil z właściwą siecią."
     }
   },
   "config_error": {

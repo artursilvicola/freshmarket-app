@@ -51,6 +51,14 @@
       "recovery_hint": "If you want to sign in with a different account, sign out and go to the login page.",
       "sign_out_btn": "Sign out and go to login",
       "refresh_btn": "Refresh profile"
+    },
+    "no_company": {
+      "title": "Account without an assigned company",
+      "body": "This supplier account does not have a company assigned. Please contact the admin to connect the profile with the correct company."
+    },
+    "no_retailer": {
+      "title": "Account without an assigned retailer",
+      "body": "This buyer account does not have a retail chain assigned. Please contact the admin to connect the profile with the correct retail chain."
     }
   },
   "config_error": {
