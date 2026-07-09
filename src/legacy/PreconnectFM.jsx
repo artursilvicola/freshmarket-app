@@ -5151,23 +5151,41 @@ function parseCompanyCertNames(value) {
 
 function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers, retailers = [], hiddenRetailers = [], setHiddenRetailers }) {
   const { t } = useTranslation("legacy");
-  const [c,setC]=useState({...co, contacts:Array.isArray(co.contacts)?co.contacts:[]}); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
+  const toCompanyDraft = (row = {}) => ({ ...row, contacts: Array.isArray(row.contacts) ? row.contacts : [] });
+  const [c,setC]=useState(()=>toCompanyDraft(co)); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
+  const [dirty, setDirty] = useState(false);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
   const [hiddenRetailerDraft, setHiddenRetailerDraft] = useState([]);
-  const u = (k, v) => setC(prev => ({ ...prev, [k]: v }));
+  const u = (k, v) => { setDirty(true); setC(prev => ({ ...prev, [k]: v })); };
+  useEffect(() => {
+    const sourceId = co?.id;
+    if (!sourceId) return;
+    const draftId = c?.id;
+    if (dirty && draftId && String(draftId) === String(sourceId)) return;
+    if (!draftId || String(draftId) !== String(sourceId)) {
+      setC(toCompanyDraft(co));
+      setDirty(false);
+    }
+  }, [co, companyId, c?.id, dirty]);
   // Pomocnik do edycji zagnieżdżonych pól w profile_data.
   // setPd("offer", "private_label", true) -> {profile_data: {offer: {private_label: true}}}
-  const setPd = (section, key, val) => setC(prev => ({
-    ...prev,
-    profile_data: {
-      ...(prev.profile_data || {}),
-      [section]: { ...((prev.profile_data || {})[section] || {}), [key]: val },
-    },
-  }));
-  const setPdRoot = (key, val) => setC(prev => ({
-    ...prev,
-    profile_data: { ...(prev.profile_data || {}), [key]: val },
-  }));
+  const setPd = (section, key, val) => {
+    setDirty(true);
+    setC(prev => ({
+      ...prev,
+      profile_data: {
+        ...(prev.profile_data || {}),
+        [section]: { ...((prev.profile_data || {})[section] || {}), [key]: val },
+      },
+    }));
+  };
+  const setPdRoot = (key, val) => {
+    setDirty(true);
+    setC(prev => ({
+      ...prev,
+      profile_data: { ...(prev.profile_data || {}), [key]: val },
+    }));
+  };
   const pd = c.profile_data || {};
   const basics = pd.basics || {};
   const offer = pd.offer || {};
@@ -5284,7 +5302,8 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
     if(NIP_REQUIRED && !String(c.nip||"").trim()){fl(t("supplier.company.toasts.nip_required"),"warning");return;}
     const nextContacts = normalizeContacts(contacts);
     const nextCerts = normalizeCompanyCertList(c.certs || []);
-    const id = c.id || companyId;
+    const id = c.id;
+    if(!id){fl(t("errors.db.company_id_required"),"error");return;}
     const next = {
       ...c,
       id:id||c.id,
@@ -5318,6 +5337,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
       const savedContacts = id ? await dbSaveCompanyContacts(id, nextContacts) : nextContacts;
       const savedCerts = id ? await dbSaveCompanyCerts(id, nextCerts) : nextCerts;
       const savedProfile = {...next, contacts:savedContacts, certs:savedCerts, completeness:calcCompleteness({...next, contacts:savedContacts, certs:savedCerts})};
+      setDirty(false);
       setCo(savedProfile);
       fl(t("supplier.company.toasts.saved"));
     } catch(e) {
