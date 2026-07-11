@@ -180,9 +180,13 @@ export async function saveCompanyContacts(companyId, contacts = []) {
   if (loadError) throw loadError;
 
   const existingIds = new Set((existing || []).map((row) => row.id));
+  // [fix/contacts-mixed-upsert] Nowe kontakty dostają UUID po stronie klienta.
+  // Przy bulk upsert PostgREST ujednolica kolumny wszystkich wierszy i brakujące
+  // uzupełnia NULL-em — więc mieszanka {istniejący z id} + {nowy bez id} wysyłała
+  // id=null dla nowego wiersza → "null value in column id ... not-null constraint".
   const rows = (Array.isArray(contacts) ? contacts : [])
     .map((contact, index) => ({
-      id: contact.id && existingIds.has(contact.id) ? contact.id : undefined,
+      id: contact.id && existingIds.has(contact.id) ? contact.id : crypto.randomUUID(),
       company_id: companyId,
       role: normalizeText(contact.role) || "sales",
       name: normalizeText(contact.name),
