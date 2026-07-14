@@ -8281,8 +8281,10 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         })()}
 
         {/* E. Narzędzia testowe / danger zone — wyciszone, na samym dole.
-            [feat/admin-access-polish] Gdy flaga ON — tylko dla super-admina (UI-only). */}
-        {resetToSeed && (!ADMIN_ACCESS_POLISH || isSuperAdmin) && (
+            [feat/admin-access-polish] Gdy flaga ON — tylko dla super-admina (UI-only).
+            [chore/hide-reset-on-prod] Na produkcji przycisk NIE istnieje w ogóle
+            (funkcja resetToSeed i tak jest hard-blocked w PROD — to usuwa pokusę). */}
+        {!import.meta.env.PROD && resetToSeed && (!ADMIN_ACCESS_POLISH || isSuperAdmin) && (
           <div style={{ marginTop:6, padding:"12px 14px", background:"#fef2f2", border:"1px dashed #fecaca", borderRadius:10 }}>
             <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#b91c1c", marginBottom:8 }}>{t("admin.dash.p_tools_title")}</div>
             <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
@@ -8415,8 +8417,9 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           </div>
         ))}
       </div>
-      {/* [feat/admin-access-polish] Reset (stary render) — gdy flaga ON tylko super-admin. */}
-      {resetToSeed && (!ADMIN_ACCESS_POLISH || isSuperAdmin) && (
+      {/* [feat/admin-access-polish] Reset (stary render) — gdy flaga ON tylko super-admin.
+          [chore/hide-reset-on-prod] Na produkcji ukryty całkowicie. */}
+      {!import.meta.env.PROD && resetToSeed && (!ADMIN_ACCESS_POLISH || isSuperAdmin) && (
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",alignItems:"center",gap:10 }}>
           <Btn outline sm onClick={resetToSeed} style={{ color:"#dc2626",borderColor:"#fca5a5",display:"flex",alignItems:"center",gap:5 }}>
             <RotateCcw size={12}/> {t("admin.dash.reset_btn")}
