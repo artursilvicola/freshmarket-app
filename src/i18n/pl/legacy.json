@@ -1994,6 +1994,7 @@
         "pending": "Do zatwierdzenia",
         "suspended": "Wstrzymane",
         "rejected": "Odrzucone",
+        "fm_b2b": "B2B FM26",
         "all": "Wszystkie"
       },
       "tab_count_aria": "{{count}} firm",
@@ -2014,6 +2015,7 @@
       "empty_active": "Brak aktywnych firm.",
       "empty_suspended": "Brak wstrzymanych firm.",
       "empty_rejected": "Brak odrzuconych firm.",
+      "empty_fm_b2b": "Brak firm dopuszczonych do Spotkań B2B FM 2026.",
       "empty_filtered": "Nie znaleziono firm dla tych filtrów. Wyczyść filtry albo zmień szukaną frazę.",
       "search_placeholder": "Szukaj: nazwa, osoba, e-mail, telefon, kraj, miasto…",
       "search_aria": "Szukaj firm",
