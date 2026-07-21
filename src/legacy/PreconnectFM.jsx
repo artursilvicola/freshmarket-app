@@ -11100,10 +11100,19 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     else if (status === "rejected") acc.rejected += 1;
     return acc;
   }, { active: 0, pending: 0, suspended: 0, rejected: 0, all: 0 });
+  // [feat/admin-firmy-fm-b2b-tab] Zakładka "B2B FM26" — firmy dopuszczone do
+  // Spotkań B2B (fm_b2b_enabled). Flaga żyje na pełnym wierszu companies,
+  // nie w capacity view — stąd osobne liczenie.
+  tabCounts.fm_b2b = allLims.filter(lim =>
+    (companies || []).find(c => c.id === lim.id)?.fm_b2b_enabled === true
+  ).length;
 
   const visibleLimsByTab = selectedTab === "all"
     ? allLims
     : allLims.filter(lim => {
+        if (selectedTab === "fm_b2b") {
+          return (companies || []).find(c => c.id === lim.id)?.fm_b2b_enabled === true;
+        }
         const co = capacitySource.find(c => c.id === lim.id);
         const status = co?.account_status || "active";
         if (selectedTab === "pending") return status === "pending_review";
@@ -11173,9 +11182,13 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     }
     return true;
   };
-  const visibleLimsForRender = ADMIN_COMPANIES_2_0_FILTERS && anyFilterActive
+  // [feat/admin-firmy-alpha-sort] Lista firm zawsze alfabetycznie (locale-aware,
+  // ignoruje wiodące cudzysłowy typu "KA-MAR").
+  const alphaName = (lim) => String(lim?.name || "").replace(/^["'„”\s]+/, "");
+  const visibleLimsForRender = (ADMIN_COMPANIES_2_0_FILTERS && anyFilterActive
     ? visibleLimsByTab.filter(limMatchesFilters)
-    : visibleLimsByTab;
+    : visibleLimsByTab
+  ).slice().sort((a, b) => alphaName(a).localeCompare(alphaName(b), "pl", { sensitivity: "base" }));
 
   // [Admin Companies 2.0 / Branch 1] Wydzielony expanded JSX —
   // share'owany między legacy renderem (ADMIN_COMPANIES_2_0_LIST=false)
@@ -11410,14 +11423,15 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   // Branch 1. Wszystkie handlery (changeAccountStatus, toggleAccessFlag,
   // regenerateForCompany, etc.) są wspólne dla obu ścieżek.
   if (ADMIN_COMPANIES_2_0_LIST) {
-    const TABS_V2 = ["active", "pending", "suspended", "rejected", "all"];
-    const tabAccent = (tabKey) => tabKey === "pending" ? "#d97706" : "#0d9488";
-    const tabBgActive = (tabKey) => tabKey === "pending" ? "rgba(217,119,6,0.05)" : "rgba(13,148,136,0.05)";
+    const TABS_V2 = ["active", "pending", "suspended", "rejected", "fm_b2b", "all"];
+    const tabAccent = (tabKey) => tabKey === "pending" ? "#d97706" : tabKey === "fm_b2b" ? "#7c3aed" : "#0d9488";
+    const tabBgActive = (tabKey) => tabKey === "pending" ? "rgba(217,119,6,0.05)" : tabKey === "fm_b2b" ? "rgba(124,58,237,0.05)" : "rgba(13,148,136,0.05)";
     const emptyKey = (() => {
       if (selectedTab === "pending") return "admin.firmy.empty_pending";
       if (selectedTab === "active") return "admin.firmy.empty_active";
       if (selectedTab === "suspended") return "admin.firmy.empty_suspended";
       if (selectedTab === "rejected") return "admin.firmy.empty_rejected";
+      if (selectedTab === "fm_b2b") return "admin.firmy.empty_fm_b2b";
       return "admin.firmy.empty_all";
     })();
 

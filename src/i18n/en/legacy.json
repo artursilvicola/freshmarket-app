@@ -2006,6 +2006,7 @@
         "pending": "Pending review",
         "suspended": "Suspended",
         "rejected": "Rejected",
+        "fm_b2b": "B2B FM26",
         "all": "All"
       },
       "tab_count_aria": "{{count}} companies",
@@ -2026,6 +2027,7 @@
       "empty_active": "No active companies.",
       "empty_suspended": "No suspended companies.",
       "empty_rejected": "No rejected companies.",
+      "empty_fm_b2b": "No companies enabled for FM 2026 B2B meetings.",
       "empty_filtered": "No companies found for these filters. Clear the filters or change the search term.",
       "search_placeholder": "Search: name, person, email, phone, country, city…",
       "search_aria": "Search companies",
