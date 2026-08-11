@@ -1961,6 +1961,8 @@
       "ai_btn_edit": "Edytuj",
       "ai_btn_generate": " Generuj AI",
       "ai_btn_generating": " Generuję…",
+      "ai_website_label": "Strona WWW (AI pobierze z niej treść):",
+      "ai_website_placeholder": "np. https://freshworld.com.pl — wpisz i kliknij Generuj AI",
       "ai_btn_approve": "Zatwierdź",
       "ai_edit_short_label": "Opis krótki",
       "ai_edit_standard_label": "Opis standardowy",

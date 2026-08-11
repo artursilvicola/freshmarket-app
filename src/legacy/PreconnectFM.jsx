@@ -10756,6 +10756,10 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
   // opisów AI: trwająca regeneracja, edycja inline, podgląd profilu kupca.
   const [aiLoadingId, setAiLoadingId] = useState(null);
+  // [feat/admin-ai-website-input] Adres WWW podawany przez admina przy Generuj AI
+  // (per firma). Backend pobiera treść strony (fetchWebsiteSnippet) — bez adresu
+  // AI nie ma z czego pisać, gdy dostawca nie uzupełnił profilu.
+  const [aiWebsiteDraft, setAiWebsiteDraft] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState({ description_short: "", description: "" });
   const [previewCompany, setPreviewCompany] = useState(null);
@@ -10830,11 +10834,21 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
       fl(t("admin.firmy.toast_ai_no_name"), "warning");
       return;
     }
+    // [feat/admin-ai-website-input] Adres z pola przy AI: normalizuj (dołóż
+    // https:// gdy brak), utrwal na firmie i przekaż do generatora — backend
+    // pobierze treść strony i użyje jej w prompcie.
+    const draft = (aiWebsiteDraft[firmCo.id] ?? firmCo.website ?? "").trim();
+    let website = firmCo.website || null;
+    if (draft) {
+      website = /^https?:\/\//i.test(draft) ? draft : `https://${draft}`;
+      if (website !== firmCo.website) patchCompany(firmCo.id, { website });
+    }
+    const companyForAi = { ...firmCo, website };
     setAiLoadingId(firmCo.id);
     try {
       const result = await dbGenerateCompanyDescriptionAI({
         company_id: firmCo.id,
-        company: firmCo,
+        company: companyForAi,
       });
       patchCompany(firmCo.id, {
         description: result?.description || "",
@@ -11258,6 +11272,19 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                   )}
                 </div>
               </div>
+              {/* [feat/admin-ai-website-input] Pole WWW dla generatora — AI
+                  pobiera treść strony; kluczowe gdy dostawca nie wpisał adresu. */}
+              {!isEditing && (
+                <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap" }}>
+                  <label style={{ fontSize:11,color:"#64748b",whiteSpace:"nowrap" }}>{t("admin.firmy.ai_website_label")}</label>
+                  <input
+                    value={aiWebsiteDraft[firmCo.id] ?? firmCo.website ?? ""}
+                    onChange={e=>setAiWebsiteDraft(p=>({ ...p, [firmCo.id]: e.target.value }))}
+                    placeholder={t("admin.firmy.ai_website_placeholder")}
+                    style={{ flex:1,minWidth:220,padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box" }}
+                  />
+                </div>
+              )}
               {isEditing ? (
                 <>
                   <Inp
