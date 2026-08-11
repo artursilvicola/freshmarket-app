@@ -34,6 +34,7 @@ export function ProtectedRoute({ children, allowedRoles }) {
         body={t("errors.no_company.body")}
         signOut={signOut}
         refreshProfile={refreshProfile}
+        registerUrl="/zarejestruj-dostawce"
       />
     );
   }
@@ -52,17 +53,35 @@ export function ProtectedRoute({ children, allowedRoles }) {
   return children;
 }
 
-function AccountLinkError({ title, body, signOut, refreshProfile }) {
+function AccountLinkError({ title, body, signOut, refreshProfile, registerUrl }) {
   const { t } = useTranslation("common");
   return (
     <div style={{ padding: 40, textAlign: "center", maxWidth: 520, margin: "0 auto" }}>
       <h2>{title}</h2>
       <p style={{ color: "#64748b" }}>{body}</p>
       <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", marginTop: 20 }}>
+        {/* [feat/orphan-reregister-cta] Sierota po przerwanej rejestracji może
+            naprawić konto samodzielnie — rejestracja z tym samym e-mailem
+            przechodzi dzięki auto-heal w register-supplier-self. Wylogowujemy
+            przed przejściem, żeby formularz startował na czystej sesji. */}
+        {registerUrl && (
+          <button
+            type="button"
+            onClick={async () => {
+              try { await signOut?.(); } catch { /* i tak nawigujemy */ }
+              window.location.assign(registerUrl);
+            }}
+            style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#0d9488", color: "white", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            {t("errors.no_company.register_btn")}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => signOut?.()}
-          style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#0d9488", color: "white", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+          style={registerUrl
+            ? { padding: "9px 18px", borderRadius: 8, border: "1px solid #e2e8f0", background: "white", color: "#475569", fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }
+            : { padding: "9px 18px", borderRadius: 8, border: "none", background: "#0d9488", color: "white", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
         >
           {t("errors.no_role.sign_out_btn")}
         </button>

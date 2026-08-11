@@ -54,7 +54,8 @@
     },
     "no_company": {
       "title": "Konto bez przypisanej firmy",
-      "body": "To konto dostawcy nie ma przypisanej firmy. Skontaktuj się z administratorem, żeby połączyć profil z właściwą firmą."
+      "body": "Twoja rejestracja nie zapisała się w całości i konto nie ma przypisanej firmy. Najszybsze rozwiązanie: zarejestruj się ponownie z tym samym adresem e-mail — system automatycznie naprawi konto. Możesz też skontaktować się z administratorem.",
+      "register_btn": "Zarejestruj się ponownie"
     },
     "no_retailer": {
       "title": "Konto bez przypisanej sieci",

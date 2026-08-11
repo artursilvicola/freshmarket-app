@@ -54,7 +54,8 @@
     },
     "no_company": {
       "title": "Account without an assigned company",
-      "body": "This supplier account does not have a company assigned. Please contact the admin to connect the profile with the correct company."
+      "body": "Your registration did not complete fully and the account has no company assigned. Fastest fix: register again with the same email address — the system will repair the account automatically. You can also contact the admin.",
+      "register_btn": "Register again"
     },
     "no_retailer": {
       "title": "Account without an assigned retailer",
