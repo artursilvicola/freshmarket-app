@@ -1973,6 +1973,8 @@
       "ai_btn_edit": "Edit",
       "ai_btn_generate": " Generate AI",
       "ai_btn_generating": " Generating…",
+      "ai_website_label": "Website (AI will read its content):",
+      "ai_website_placeholder": "e.g. https://freshworld.com.pl — enter and click Generate AI",
       "ai_btn_approve": "Approve",
       "ai_edit_short_label": "Short description",
       "ai_edit_standard_label": "Standard description",
