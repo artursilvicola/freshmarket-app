@@ -100,13 +100,41 @@ export const handler = async (event) => {
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
 
   // ── Sprawdź czy email już istnieje w profiles ──────────────────────
+  // [fix/registration-orphan-selfheal] Przerwana rejestracja zostawiała
+  // profil-sierotę (rola supplier, company_id NULL — trigger handle_new_user
+  // tworzy profil od razu przy createUser, a profiles nie kaskadują z auth).
+  // Taka sierota blokowała email NA ZAWSZE (409 „konto już istnieje", mimo że
+  // konto nigdy nie powstało w całości) — przypadki: Sandra/Athos, Jeroen/
+  // Den Berk, Agnieszka/Nowalijka, Tomasz/Euro Pool. Auto-heal: sierotę
+  // sprzątamy i pozwalamy rejestracji przejść. Kompletne konta (z firmą)
+  // dostają 409 jak dotychczas. Nie obniża bezpieczeństwa — flow i tak działa
+  // bez weryfikacji email (email_confirm: true, admin zatwierdza ręcznie).
   const { data: existing } = await supaSvc
     .from("profiles")
-    .select("id, email")
+    .select("id, email, role, company_id")
     .eq("email", email)
     .maybeSingle();
   if (existing) {
-    return json(409, { error: errLoc(locale, "email_exists") });
+    const isOrphan = (existing.role || "supplier") === "supplier" && !existing.company_id;
+    if (!isOrphan) {
+      return json(409, { error: errLoc(locale, "email_exists") });
+    }
+    // Auto-heal sieroty: usuń ewentualnego auth usera + wiersz profiles,
+    // rejestracja leci dalej jak przy świeżym emailu.
+    try {
+      await supaSvc.auth.admin.deleteUser(existing.id);
+    } catch {
+      // Auth user mógł już nie istnieć (typowy stan sieroty) — ignorujemy.
+    }
+    const { error: orphanDelErr } = await supaSvc
+      .from("profiles")
+      .delete()
+      .eq("id", existing.id);
+    if (orphanDelErr) {
+      // Nie udało się sprzątnąć — zachowaj dotychczasowe zachowanie (409),
+      // zamiast tworzyć drugi profil na ten sam email.
+      return json(409, { error: errLoc(locale, "email_exists") });
+    }
   }
 
   // ── Krok 1: utwórz auth user ────────────────────────────────────────
@@ -153,6 +181,13 @@ export const handler = async (event) => {
     } catch {
       // Best effort cleanup. Pierwotny błąd zwracamy niżej.
     }
+    // [fix/registration-orphan-selfheal] Profil z triggera handle_new_user nie
+    // kaskaduje z auth — bez tego delete zostawał orphan blokujący email (409).
+    try {
+      await supaSvc.from("profiles").delete().eq("id", userId);
+    } catch {
+      // Best effort cleanup.
+    }
     return json(500, { error: errLoc(locale, "create_company_failed", { detail: coErr?.message || "unknown" }) });
   }
 
@@ -191,6 +226,12 @@ export const handler = async (event) => {
       await supaSvc.auth.admin.deleteUser(userId);
     } catch {
       // Best effort cleanup. Pierwotny błąd zwracamy niżej.
+    }
+    // [fix/registration-orphan-selfheal] jw. — dobij wiersz profiles z triggera.
+    try {
+      await supaSvc.from("profiles").delete().eq("id", userId);
+    } catch {
+      // Best effort cleanup.
     }
     return json(500, { error: errLoc(locale, "create_profile_failed", { detail: profErr.message }) });
   }
