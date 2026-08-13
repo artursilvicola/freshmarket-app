@@ -146,6 +146,8 @@ export async function updateCompany(id, patch) {
     // Round supplier-onboarding-access-and-communication: trzy warstwy
     // uprawnień + audit
     "account_status", "preconnect_enabled", "fm_b2b_enabled",
+    // [feat/fm-b2b-packages] liczba pakietów Business (1-5) → pula spotkań FM
+    "fm_b2b_packages",
     "approved_at", "approved_by", "status_note",
   ];
   const row = {};
@@ -1979,6 +1981,10 @@ export async function bulkUpsertCompanies(companies) {
     account_status: c.account_status || undefined,
     preconnect_enabled: typeof c.preconnect_enabled === "boolean" ? c.preconnect_enabled : undefined,
     fm_b2b_enabled: typeof c.fm_b2b_enabled === "boolean" ? c.fm_b2b_enabled : undefined,
+    // [feat/fm-b2b-packages] round-trip liczby pakietów (1-5)
+    fm_b2b_packages: Number.isFinite(Number(c.fm_b2b_packages))
+      ? Math.max(1, Math.min(5, Number(c.fm_b2b_packages)))
+      : undefined,
     status_note: c.status_note ?? undefined,
   }));
   const byId = rows.filter((row) => row.id);
