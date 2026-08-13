@@ -2837,6 +2837,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         // Brak akceptacji → twarde wykluczenie z algorytmu (FAZA 0 w buildFMData).
         // undefined = traktujemy jako true dla starszych mock-firm bez tego pola.
         fmB2bEnabled: co.fm_b2b_enabled !== false,
+        // [feat/fm-b2b-packages] liczba pakietów Business → pula spotkań = 5×N
+        fmPackages: Math.max(1, Math.min(5, Number(co.fm_b2b_packages) || 1)),
         _sortIdx:    idx, // stable fallback
       })),
     [companies]
@@ -10944,6 +10946,14 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     fl(t("admin.firmy.toast_flag_format", { flag: flagLabel, state: stateLabel, name: firmCo.name }));
   }
 
+  // [feat/fm-b2b-packages] Liczba pakietów Business (1-5) → pula spotkań B2B
+  // = 5 × N (limit gwiazdek dostawcy + limit spotkań w algorytmie FM).
+  function setFmPackagesFor(firmCo, n) {
+    const next = Math.max(1, Math.min(5, Number(n) || 1));
+    patchCompany(firmCo.id, { fm_b2b_packages: next });
+    fl(t("admin.firmy.toast_fm_b2b_packages_format", { name: firmCo.name, count: next, meetings: next * 5 }));
+  }
+
   // [Admin Companies 2.0 / Branch 1] Helper do quick contact actions.
   // Używa Clipboard API z fallbackiem na document.execCommand("copy") dla
   // starszych przeglądarek (Safari/IE) oraz kontekstów bez HTTPS, w których
@@ -11178,6 +11188,21 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_fm_b2b_title")}</div>
                     <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_fm_b2b_desc")}</div>
                   </div>
+                  {/* [feat/fm-b2b-packages] Selektor liczby pakietów (1-5) → pula
+                      spotkań = 5×N. stopPropagation, żeby nie przełączać checkboxa. */}
+                  {firmCo.fm_b2b_enabled && (() => {
+                    const pk = Math.max(1, Math.min(5, Number(firmCo.fm_b2b_packages) || 1));
+                    return (
+                      <span onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); }} style={{ marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5,whiteSpace:"nowrap" }}>
+                        <span style={{ fontSize:10,color:"#7c3aed",fontWeight:700 }}>{t("admin.firmy.fm_b2b_packages_label")}</span>
+                        <select value={pk} onChange={(e)=>setFmPackagesFor(firmCo, e.target.value)}
+                          style={{ padding:"3px 6px",border:"1px solid #ddd6fe",borderRadius:6,fontSize:11,fontFamily:"inherit",background:"white" }}>
+                          {[1,2,3,4,5].map(n=><option key={n} value={n}>{n}</option>)}
+                        </select>
+                        <span style={{ fontSize:10,color:"#64748b" }}>{t("admin.firmy.fm_b2b_packages_hint_format", { count: pk * 5 })}</span>
+                      </span>
+                    );
+                  })()}
                 </label>
               </div>
             </div>
@@ -12075,7 +12100,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
                   {lim.country} · {t("admin.firmy.list_pkg_label")} {getPlanLabel(lim.pkg, { withPerSend: false })} · {t("admin.firmy.list_valid_until_label")} {lim.pkgExpiry}
                   {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>{t("admin.firmy.list_preconnect_off")}</span>}
-                  {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>{t("admin.firmy.list_fm_b2b")}</span>}
+                  {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>{t("admin.firmy.list_fm_b2b")}{(Math.max(1, Math.min(5, Number(firmCo.fm_b2b_packages) || 1))) > 1 ? ` ×${Math.max(1, Math.min(5, Number(firmCo.fm_b2b_packages) || 1))}` : ""}</span>}
                 </div>
               </div>
               <div style={{ textAlign:"right",flexShrink:0 }}>
@@ -13415,13 +13440,19 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
   // Count only from _chains that are displayed (avoids seed keys for non-displayed chains)
   const stars    = _chains.filter(c => myPrefs[c.id] === "star").length;
   const thumbs   = _chains.filter(c => myPrefs[c.id] === "thumb").length;
+  // [feat/fm-b2b-packages] Limit sieci głównych (⭐) = 5 × liczba pakietów
+  // Business firmy. "Gotowy" pozostaje od 5⭐ (minimum), a niewykorzystaną
+  // pulę komunikuje żółta podpowiedź niżej.
+  const myFmCo = (companies || []).find(c => c.id === accountId || (fmId && (c.fmId === fmId || c.legacy_fm_id === fmId)));
+  const fmPackages = Math.max(1, Math.min(5, Number(myFmCo?.fm_b2b_packages) || 1));
+  const starsMax = 5 * fmPackages;
   const meetings = currentPlan?.res?.[sid]?.m || [];
 
   function toggle(cid) {
     if (phase !== 2) return; // only editable in phase 2
     const cur = myPrefs[cid];
     const np = { ...fmPrefs, [sid]: { ...myPrefs } };
-    if (!cur) { if (stars < 5) np[sid][cid] = "star"; else np[sid][cid] = "thumb"; }
+    if (!cur) { if (stars < starsMax) np[sid][cid] = "star"; else np[sid][cid] = "thumb"; }
     else if (cur === "star") { np[sid][cid] = "thumb"; }
     else { delete np[sid][cid]; }
     setFmPrefs(np);
@@ -13466,6 +13497,11 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
           </div>
         )}
         {!readOnly&&ready&&<Alrt type="success"><Trans i18nKey="fm.supplier.ready_alert_html" ns="legacy" components={{ strong: <strong /> }}/></Alrt>}
+        {/* [feat/fm-b2b-packages] Firma z >1 pakietem ma większą pulę ⭐ — żółta
+            podpowiedź o niewykorzystanych wyborach (nie blokuje potwierdzenia). */}
+        {!readOnly&&ready&&stars<starsMax&&(
+          <Alrt type="warning">{t("fm.supplier.stars_remaining_hint", { count: starsMax - stars, max: starsMax })}</Alrt>
+        )}
         {(() => {
           // [B2B Round supplier-FM-UX] Confirmation block. Shown only in editable
           // phase (readOnly=false). Resolves the supplier's company row from
@@ -14203,15 +14239,23 @@ function buildFMData(prefs, resps, chains, suppliers) {
     return String(a.supplier.id).localeCompare(String(b.supplier.id));
   });
 
-  // FAZA 4 — przypisywanie multi-pass do FM_MAX_M spotkań/supplier
+  // FAZA 4 — przypisywanie multi-pass do puli spotkań per firma.
+  // [feat/fm-b2b-packages] Pula = FM_MAX_M × liczba pakietów Business (1-5).
+  // Default 1 → zachowanie identyczne jak dotychczas. Spotkania NIE są
+  // równoległe — FM_MIN_GAP w FAZIE 5 pozostaje bez zmian (osoby z jednej
+  // firmy zwykle chodzą na spotkania razem).
   // Każdy pass dodaje jedną kolejną parę firmie (round-robin po liczbie spotkań).
   // Iterujemy candidates w global sorted order — naturalnie pierwsze idą
   // mutual A (6000), potem mutual B (5000) itd.
+  const capOf = (s) => FM_MAX_M * Math.max(1, Math.min(5, Number(s?.fmPackages) || 1));
+  const maxPass = eligible.reduce((m, s) => Math.max(m, capOf(s)), FM_MAX_M);
   const pairsAssigned = new Set();  // "sid::cid" żeby uniknąć duplikatów
-  for (let pass = 1; pass <= FM_MAX_M; pass++) {
+  for (let pass = 1; pass <= maxPass; pass++) {
     for (const cand of candidates) {
       const sid = cand.supplier.id;
       const cid = cand.chain.id;
+      // Pomijamy jeśli firma wyczerpała swoją pulę (5 × pakiety)
+      if (res[sid].m.length >= capOf(cand.supplier)) continue;
       // Pomijamy jeśli firma już ma >= pass spotkań (czyli wzięła wcześniej)
       if (res[sid].m.length >= pass) continue;
       // Pomijamy jeśli firma ma < pass-1 (nie nadrabiamy z opóźnieniem)
