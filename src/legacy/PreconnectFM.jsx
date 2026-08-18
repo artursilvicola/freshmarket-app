@@ -30,6 +30,7 @@ import {
   markFmMessageRead as dbMarkFmMessageRead,
   generateCompanyDescriptionAI as dbGenerateCompanyDescriptionAI,
   translateCompanyDescriptionAI as dbTranslateCompanyDescriptionAI,
+  translateOfferAI as dbTranslateOfferAI,
   suggestAdminChatReplyAI as dbSuggestAdminChatReplyAI,
   analyzeModerationOfferAI as dbAnalyzeModerationOfferAI,
   // [B2B Round pipeline-retailer-email-mvp] Wysyłka zbiorcza przez admina
@@ -2010,7 +2011,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   //
   // [P2-4b] App ma teraz dostęp do t() — używamy go w saveOffer dla flash
   // toastów (success/draft/error) propagowanych do PageOfferForm przez prop.
-  const { t } = useTranslation("legacy");
+  // [feat/offer-i18n etap 2] i18nApp — język UI do widoku ofert kupca (EN → tłumaczenia).
+  const { t, i18n: i18nApp } = useTranslation("legacy");
 
   // lockedRole: jeśli ustawiony, ukrywamy switcher i blokujemy przełączanie
   // (admin może swobodnie udawać innych userów; dostawca/kupiec - nie)
@@ -3251,6 +3253,27 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     // Akceptacja moderacji też zostaje jako status w panelu. Mail do dostawcy
     // wysyłamy dopiero zbiorczo, gdy batch faktycznie wyjdzie do kupca.
     fl(act === "approve" ? t("shell.app_toasts.moderate_approved") : t("shell.app_toasts.moderate_rejected"));
+    // [feat/offer-i18n etap 2] Po zatwierdzeniu — dotłumacz pola oferty na EN
+    // (fire-and-forget; zapis w offer.i18n_en, JSONB round-trip). Zagraniczny
+    // kupiec (EN UI / mail EN) zobaczy tytuł+opis po angielsku.
+    if (act === "approve") {
+      const offer = (offers || []).find(o => o.id === cur.offerId);
+      if (offer && !offer.i18n_en) {
+        const fields = {};
+        ["title", "product", "variety", "subcategory", "description", "benefit1", "benefit2", "benefit3", "qualitySpec"].forEach(k => {
+          const v = typeof offer[k] === "string" ? offer[k].trim() : "";
+          if (v) fields[k] = v;
+        });
+        if (Object.keys(fields).length) {
+          dbTranslateOfferAI(fields).then(res => {
+            const tr = res?.translations || {};
+            if (Object.keys(tr).length) {
+              setOffers(prev => prev.map(o => o.id === offer.id ? { ...o, i18n_en: tr } : o));
+            }
+          }).catch(e => console.warn("[offer translate]", e?.message || e));
+        }
+      }
+    }
   }
 
   // updateSendDate / updateSendPos: lightweight admin-only edits, keep silent
@@ -3648,6 +3671,19 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const navKey = pg.startsWith("offer-")?"offers":pg.startsWith("b-det")?"b-offers":pg==="b-dash"?"dashboard":pg==="b-katalog"?"b-katalog":pg==="b-saved"?"b-saved":pg;
   const userName = account.name;
 
+  // [feat/offer-i18n etap 2] Widok ofert dla KUPCA w języku UI: przy EN
+  // nakładamy przetłumaczone pola z offer.i18n_en (tytuł/opis/benefity itd.,
+  // wypełniane przy moderacji). PL i panele admin/dostawca — oryginał.
+  const _buyerUiEn = String(i18nApp.language || "pl").toLowerCase().startsWith("en");
+  const offersForBuyer = useMemo(() => {
+    if (!_buyerUiEn) return offers;
+    return (offers || []).map(o => {
+      if (!o || !o.i18n_en) return o;
+      const tr = Object.fromEntries(Object.entries(o.i18n_en).filter(([, v]) => typeof v === "string" && v.trim()));
+      return Object.keys(tr).length ? { ...o, ...tr } : o;
+    });
+  }, [offers, _buyerUiEn]);
+
   function switchAccount(acc) {
     setAccount(acc);
     const defaultPg = acc.role==="supplier"?"dashboard":acc.role==="buyer"?"b-offers":"a-dash";
@@ -3671,12 +3707,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} pkgPlan={pkgPlan} retailers={retailers} accountId={mySupplierKey}/>;
     if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
-    if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
-    if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offers} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
-    if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offers} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers} profiles={adminChatProfiles}/>;
+    if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
+    if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
+    if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offersForBuyer} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers} profiles={adminChatProfiles}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
     if(pg==="instructions") return <PageInstructions role={role} fmSettings={fmSettings}/>;
-    if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offers} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
+    if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offersForBuyer} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} resetToSeed={resetToSeed} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies} isSuperAdmin={currentUser?.is_super_admin}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers} fl={fl}/>;
@@ -3686,7 +3722,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
-      : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
+      : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
     if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
     // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
     // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.

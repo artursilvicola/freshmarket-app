@@ -245,7 +245,14 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng, magicLinks
 
   const companyName = company?.name || ctaLabels.supplierFallback;
   const companyLogo = company?.logo_url || company?.logo || null;
-  const companyDescShort = (company?.description_short || "").trim();
+  // [feat/offer-i18n etap 2] Kupiec z locale EN dostaje przetłumaczone pola
+  // oferty (offer.i18n_en, wypełniane przy moderacji) i opis firmy EN.
+  const trOffer = lng === "en" && offer?.i18n_en && typeof offer.i18n_en === "object" ? offer.i18n_en : null;
+  const offerTitle = (trOffer?.title || trOffer?.product || offer.title || offer.product || "");
+  const offerDesc = (trOffer?.description || offer.description || "");
+  const companyDescShort = ((lng === "en"
+    ? (company?.description_short_en || company?.description_short)
+    : company?.description_short) || "").trim();
 
   return `
 <tr><td style="padding:0 0 0 0;border-left:4px solid ${isPrem ? "#fbbf24" : "#e2e8f0"};border-right:4px solid ${isPrem ? "#fbbf24" : "#e2e8f0"};border-bottom:1px solid #f1f5f9;background:white;">
@@ -261,13 +268,13 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng, magicLinks
           </td>
           <td valign="top">
             <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">${esc(companyName)}${isPrem ? `<span style="background:#d97706;color:white;font-size:10px;padding:2px 8px;border-radius:20px;margin-left:8px;text-transform:none;letter-spacing:0;">PREMIUM</span>` : ""}</div>
-            <div style="font-weight:700;font-size:16px;color:#0f172a;line-height:1.3;margin-bottom:4px;">${esc(offer.title || offer.product || "")}</div>
+            <div style="font-weight:700;font-size:16px;color:#0f172a;line-height:1.3;margin-bottom:4px;">${esc(offerTitle)}</div>
             <div style="font-size:12px;color:#64748b;">${originLabel}${offer.volume ? ` · ${esc(offer.volume)} ${esc(offer.volumeUnit || "")}` : ""}${packaging[0] ? ` · ${esc(packaging[0])}` : ""}</div>
           </td>
         </tr>
       </table>
       ${photo ? `<div style="margin-top:12px;"><img src="${esc(photo)}" alt="" width="552" style="display:block;width:100%;max-width:552px;height:auto;border-radius:8px;border:1px solid #f1f5f9;"></div>` : ""}
-      ${offer.description ? `<p style="margin:12px 0 0;font-size:13px;line-height:1.7;color:#475569;background:${isPrem ? "#fffbeb" : "#f8fafc"};padding:10px 14px;border-radius:7px;border-left:3px solid ${isPrem ? "#fbbf24" : "#e2e8f0"};">${esc(truncate(offer.description, 280))}</p>` : ""}
+      ${offerDesc ? `<p style="margin:12px 0 0;font-size:13px;line-height:1.7;color:#475569;background:${isPrem ? "#fffbeb" : "#f8fafc"};padding:10px 14px;border-radius:7px;border-left:3px solid ${isPrem ? "#fbbf24" : "#e2e8f0"};">${esc(truncate(offerDesc, 280))}</p>` : ""}
       ${(certs.length > 0 || companyDescShort) ? `
         <div style="margin-top:10px;font-size:11px;color:#64748b;">
           ${certs.length > 0 ? certs.slice(0, 5).map(c => `<span style="background:#d1fae5;color:#047857;font-weight:600;padding:2px 8px;border-radius:20px;border:1px solid #6ee7b7;margin-right:4px;">✓ ${esc(c)}</span>`).join("") : ""}

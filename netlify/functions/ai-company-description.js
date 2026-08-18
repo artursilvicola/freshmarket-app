@@ -90,6 +90,41 @@ export const handler = async (event) => {
     });
   }
 
+  // [feat/offer-i18n etap 2] Generyczny tryb tłumaczenia pól tekstowych
+  // (tytuł/opis/benefity propozycji itd.): body.translate_texts = {klucz: tekst}
+  // → { translations: {klucz: EN} }. Wierny przekład, EN źródło bez zmian.
+  const tt = body.translate_texts;
+  if (tt && typeof tt === "object" && !Array.isArray(tt)) {
+    const fields = {};
+    for (const [k, v] of Object.entries(tt)) {
+      const val = text(v);
+      if (val && String(k).length <= 40) fields[k] = val.slice(0, 2000);
+    }
+    if (!Object.keys(fields).length) return json(400, { error: errLoc(locale, "invalid_json") });
+    const rawTt = await openAiChat({
+      apiKey: env.openAiApiKey,
+      model: env.openAiModel,
+      system: [
+        "You translate B2B fresh-produce trade texts (product names, varieties, offer descriptions, benefits) from Polish into English faithfully.",
+        "No additions, no removals, no marketing embellishment. Keep any **bold** markers and line breaks as-is.",
+        "If a source text is already in English, return it unchanged.",
+        "Input is a JSON object {key: polishText}. Return JSON: {\"translations\": {key: englishText}} with EXACTLY the same keys.",
+      ].join("\n"),
+      user: JSON.stringify(fields),
+      temperature: 0.2,
+      responseFormat: { type: "json_object" },
+    });
+    let parsedTt;
+    try { parsedTt = JSON.parse(rawTt); } catch { parsedTt = {}; }
+    const translations = {};
+    const src = parsedTt.translations && typeof parsedTt.translations === "object" ? parsedTt.translations : parsedTt;
+    for (const k of Object.keys(fields)) {
+      const val = typeof src[k] === "string" ? src[k].trim() : "";
+      if (val) translations[k] = val;
+    }
+    return json(200, { ok: true, translations });
+  }
+
   const company = normalizeCompany(body.company || {});
   if (!company.name) return json(400, { error: errLoc(locale, "missing_data_company") });
   if (caller.role === "supplier" && caller.company_id && body.company_id && caller.company_id !== body.company_id) {
