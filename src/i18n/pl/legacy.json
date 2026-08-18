@@ -1998,6 +1998,8 @@
       "toast_ai_failed": "Nie udało się wygenerować opisu firmy.",
       "toast_ai_approved_format": "Profil firmy {{name}} zatwierdzony.",
       "toast_ai_approved_translated_format": "Profil firmy {{name}} zatwierdzony + opis przetłumaczony na EN.",
+      "toast_ai_translated_format": "{{name}}: opis przetłumaczony na EN.",
+      "ai_btn_translate": " Przetłumacz na EN",
       "toast_ai_saved_format": "Opisy zapisane dla {{name}}.",
       "toast_status_changed_with_email_format": "Status firmy {{name}} → {{status}}. Mail wysłany.",
       "toast_status_changed_without_email_format": "Status firmy {{name}} → {{status}}. (Mail nie został wysłany — sprawdź konfigurację.)",
