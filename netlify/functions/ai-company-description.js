@@ -60,6 +60,36 @@ export const handler = async (event) => {
   // [P2-backend-mails C3] body.locale overrides.
   locale = resolveLocale({ bodyLocale: body.locale, profileLocale: caller.locale, acceptLanguage: acceptLang });
 
+  // [feat/company-desc-i18n] Tryb TŁUMACZENIA: wierny przekład istniejących
+  // opisów (np. napisanych ręcznie po polsku) na EN. Bez generowania nowej
+  // treści. Używany przy admin-approve, gdy brakuje wersji EN.
+  const tr = body.translate;
+  if (tr && (text(tr.description) || text(tr.description_short))) {
+    const rawTr = await openAiChat({
+      apiKey: env.openAiApiKey,
+      model: env.openAiModel,
+      system: [
+        "You translate B2B company descriptions (fruit/vegetable/flower market) from Polish into English faithfully.",
+        "No additions, no removals, no marketing embellishment — a precise professional translation.",
+        "If a source text is already in English, return it unchanged.",
+        "Return JSON: {\"description_en\": string, \"description_short_en\": string}. Empty input -> empty string.",
+      ].join("\n"),
+      user: JSON.stringify({
+        description: text(tr.description) || "",
+        description_short: text(tr.description_short) || "",
+      }),
+      temperature: 0.2,
+      responseFormat: { type: "json_object" },
+    });
+    let parsedTr;
+    try { parsedTr = JSON.parse(rawTr); } catch { parsedTr = {}; }
+    return json(200, {
+      ok: true,
+      description_en: cleanDescription(parsedTr.description_en || ""),
+      description_short_en: cleanDescription(parsedTr.description_short_en || ""),
+    });
+  }
+
   const company = normalizeCompany(body.company || {});
   if (!company.name) return json(400, { error: errLoc(locale, "missing_data_company") });
   if (caller.role === "supplier" && caller.company_id && body.company_id && caller.company_id !== body.company_id) {
@@ -89,13 +119,16 @@ export const handler = async (event) => {
     // Fallback: AI nie zwrócił JSON-a. Traktuj cały tekst jako description,
     // a description_short zostaw puste — frontend wybierze description jako
     // główny opis i nie pokaże short na karcie.
-    parsed = { description: cleanDescription(raw), description_short: "" };
+    parsed = { description: cleanDescription(raw), description_short: "", description_en: "", description_short_en: "" };
   }
 
   return json(200, {
     ok: true,
     description: cleanDescription(parsed.description || ""),
     description_short: cleanDescription(parsed.description_short || ""),
+    // [feat/company-desc-i18n] Wersje EN generowane w tym samym wywołaniu.
+    description_en: cleanDescription(parsed.description_en || ""),
+    description_short_en: cleanDescription(parsed.description_short_en || ""),
     richness,
     source: {
       website_used: Boolean(site.text),
@@ -122,9 +155,10 @@ function systemPromptPL() {
     "3. Skalujesz długość do ilości danych: mało danych → krótko; dużo danych → szerzej, ale nadal konkretnie.",
     "4. Bez nagłówków, list punktowanych, emoji.",
     "5. Akcent: typ firmy + co sprzedaje + dla kogo + na jakich rynkach + zaplecze/certyfikaty (tylko jeśli podane).",
-    "Zwracasz JSON: {\"description_short\": string, \"description\": string}.",
-    "description_short: 2-3 zdania, ~200-300 znaków, do podglądu kart i dashboardu kupca.",
-    "description: 4-6 zdań, ~450-700 znaków, główny opis profilu. Jeśli danych mało (sama nazwa, kraj, jeden typ) — wystarczy 2-3 zdania (~250-400 znaków).",
+    "Zwracasz JSON z CZTEREMA polami: {\"description_short\": string, \"description\": string, \"description_short_en\": string, \"description_en\": string}.",
+    "description_short (PO POLSKU): 2-3 zdania, ~200-300 znaków, do podglądu kart i dashboardu kupca.",
+    "description (PO POLSKU): 4-6 zdań, ~450-700 znaków, główny opis profilu. Jeśli danych mało (sama nazwa, kraj, jeden typ) — wystarczy 2-3 zdania (~250-400 znaków).",
+    "description_short_en i description_en: WIERNE angielskie odpowiedniki wersji polskich (ta sama treść i długość, nie nowa treść).",
   ].join("\n");
 }
 
@@ -138,9 +172,10 @@ function systemPromptEN() {
     "3. Scale length to the amount of data: little data → short; more data → broader, but still specific.",
     "4. No headings, no bullet lists, no emoji.",
     "5. Emphasis: company type + what they sell + for whom + on which markets + capacity/certificates (only if provided).",
-    "Return JSON: {\"description_short\": string, \"description\": string}.",
-    "description_short: 2-3 sentences, ~200-300 characters, for card and buyer dashboard preview.",
-    "description: 4-6 sentences, ~450-700 characters, the main profile description. If data is limited (just name, country, one type) — 2-3 sentences (~250-400 characters) are enough.",
+    "Return JSON with FOUR fields: {\"description_short\": string, \"description\": string, \"description_short_en\": string, \"description_en\": string}.",
+    "description_short and description must be written IN POLISH (shown to Polish buyers).",
+    "description_short_en and description_en: faithful ENGLISH equivalents of the Polish versions (same content and length, not new text).",
+    "Lengths: short 2-3 sentences ~200-300 chars; full 4-6 sentences ~450-700 chars. If data is limited — 2-3 sentences are enough.",
   ].join("\n");
 }
 

@@ -139,6 +139,8 @@ export async function updateCompany(id, patch) {
   const allowed = [
     "name", "nip", "country", "city", "phone", "website",
     "description", "description_short",
+    // [feat/company-desc-i18n] angielskie wersje opisów
+    "description_en", "description_short_en",
     "types", "categories", "products", "seasonality", "markets",
     "completeness", "logo_url",
     "pkg_plan", "pkg_expiry", "fm_passport_completeness",
@@ -330,6 +332,33 @@ export async function generateCompanyDescriptionAI({ company_id = null, company 
     body: JSON.stringify({
       company_id,
       company,
+    }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error || i18n.t("legacy:errors.db.ai_company_description_failed"));
+  return json;
+}
+
+// [feat/company-desc-i18n] Wierny przekład istniejących opisów firmy na EN
+// (tryb translate w ai-company-description). Używane przy admin-approve,
+// gdy opis pisany ręcznie nie ma wersji angielskiej.
+export async function translateCompanyDescriptionAI({ company_id = null, description, description_short }) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_session"));
+
+  const res = await fetch("/.netlify/functions/ai-company-description", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      company_id,
+      translate: {
+        description: description || "",
+        description_short: description_short || "",
+      },
     }),
   });
   const json = await res.json();
@@ -1951,6 +1980,9 @@ export async function bulkUpsertCompanies(companies) {
     website: c.website || null,
     description: c.description || null,
     description_short: c.description_short || null,
+    // [feat/company-desc-i18n] round-trip wersji EN
+    description_en: c.description_en || null,
+    description_short_en: c.description_short_en || null,
     types: c.types || [],
     categories: c.categories || [],
     products: c.products || null,
