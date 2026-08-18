@@ -1986,6 +1986,8 @@
       "toast_ai_failed": "Failed to generate company description.",
       "toast_ai_approved_format": "Company profile {{name}} approved.",
       "toast_ai_approved_translated_format": "Company profile {{name}} approved + description translated to EN.",
+      "toast_ai_translated_format": "{{name}}: description translated to EN.",
+      "ai_btn_translate": " Translate to EN",
       "toast_ai_saved_format": "Descriptions saved for {{name}}.",
       "toast_status_changed_with_email_format": "Company status {{name}} → {{status}}. Email sent.",
       "toast_status_changed_without_email_format": "Company status {{name}} → {{status}}. (Email was not sent — check configuration.)",

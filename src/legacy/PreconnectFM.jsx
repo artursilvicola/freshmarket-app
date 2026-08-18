@@ -10911,6 +10911,29 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     }
   }
 
+  // [feat/company-desc-i18n] Ręczne tłumaczenie opisu na EN — dla firm już
+  // zatwierdzonych (przycisk Zatwierdź ukryty), gdzie auto-translate przy
+  // approve nie ma jak zadziałać. Wierny przekład, PL bez zmian.
+  async function translateForCompany(firmCo) {
+    setAiLoadingId(firmCo.id);
+    try {
+      const tr = await dbTranslateCompanyDescriptionAI({
+        company_id: firmCo.id,
+        description: firmCo.description || "",
+        description_short: firmCo.description_short || "",
+      });
+      patchCompany(firmCo.id, {
+        description_en: tr?.description_en || "",
+        description_short_en: tr?.description_short_en || "",
+      });
+      fl(t("admin.firmy.toast_ai_translated_format", { name: firmCo.name }));
+    } catch (e) {
+      fl(e?.message || t("admin.firmy.toast_ai_failed"), "warning");
+    } finally {
+      setAiLoadingId(null);
+    }
+  }
+
   async function approveDescriptions(firmCo) {
     // [feat/company-desc-i18n] Przy zatwierdzaniu dotłumacz brakującą wersję EN
     // (wierny przekład) — kupcy z EN UI widzą opis w swoim języku. Błąd
@@ -11344,6 +11367,10 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                   <Bot size={14} color="#3b82f6"/>
                   <strong style={{ fontSize:12 }}>{t("admin.firmy.ai_section_title")}</strong>
                   <span style={{ fontSize:10,color:statusColor,background:statusBg,padding:"2px 7px",borderRadius:4,fontWeight:600 }}>{statusLabel}</span>
+                  {/* [feat/company-desc-i18n] Znacznik obecności wersji EN */}
+                  {(firmCo.description_en || firmCo.description_short_en) && (
+                    <span style={{ fontSize:10,color:"#1d4ed8",background:"#dbeafe",padding:"2px 7px",borderRadius:4,fontWeight:700 }}>EN ✓</span>
+                  )}
                 </div>
                 <div style={{ display:"flex",gap:6 }}>
                   <Btn sm outline onClick={()=>setPreviewCompany(firmCo)}><Eye size={11}/> {t("admin.firmy.ai_btn_preview")}</Btn>
@@ -11354,6 +11381,13 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                         {isLoading ? <RefreshCw size={11} style={{ animation:"spin 1s linear infinite" }}/> : <Sparkles size={11}/>}
                         {isLoading ? t("admin.firmy.ai_btn_generating") : t("admin.firmy.ai_btn_generate")}
                       </Btn>
+                      {/* [feat/company-desc-i18n] Tłumaczenie dla firm już zatwierdzonych
+                          (auto-translate działa tylko przy kliknięciu Zatwierdź). */}
+                      {(firmCo.description || firmCo.description_short) && !(firmCo.description_en || firmCo.description_short_en) && (
+                        <Btn sm outline onClick={()=>translateForCompany(firmCo)} disabled={isLoading} style={{ color:"#1d4ed8",borderColor:"#bfdbfe" }}>
+                          {t("admin.firmy.ai_btn_translate")}
+                        </Btn>
+                      )}
                       {status !== "approved" && <Btn sm primary onClick={()=>approveDescriptions(firmCo)}>{t("admin.firmy.ai_btn_approve")}</Btn>}
                     </>
                   )}
