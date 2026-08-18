@@ -29,6 +29,7 @@ import {
   getFmMessages as dbGetFmMessages, saveFmMessage as dbSaveFmMessage,
   markFmMessageRead as dbMarkFmMessageRead,
   generateCompanyDescriptionAI as dbGenerateCompanyDescriptionAI,
+  translateCompanyDescriptionAI as dbTranslateCompanyDescriptionAI,
   suggestAdminChatReplyAI as dbSuggestAdminChatReplyAI,
   analyzeModerationOfferAI as dbAnalyzeModerationOfferAI,
   // [B2B Round pipeline-retailer-email-mvp] Wysyłka zbiorcza przez admina
@@ -3611,6 +3612,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       const patch = {
         description: result?.description || "",
         description_short: result?.description_short || "",
+        // [feat/company-desc-i18n] AI zwraca też wierne wersje EN
+        description_en: result?.description_en || "",
+        description_short_en: result?.description_short_en || "",
         ai_review_status: "edited",
       };
       if (typeof applyDraft === "function") applyDraft(patch);
@@ -10953,6 +10957,9 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
       patchCompany(firmCo.id, {
         description: result?.description || "",
         description_short: result?.description_short || "",
+        // [feat/company-desc-i18n] AI zwraca też wierne wersje EN
+        description_en: result?.description_en || "",
+        description_short_en: result?.description_short_en || "",
         ai_review_status: "pending",
       });
       const richKey = result?.richness === "rich" ? "toast_ai_richness_rich"
@@ -10966,9 +10973,28 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     }
   }
 
-  function approveDescriptions(firmCo) {
-    patchCompany(firmCo.id, { ai_review_status: "approved" });
-    fl(t("admin.firmy.toast_ai_approved_format", { name: firmCo.name }));
+  async function approveDescriptions(firmCo) {
+    // [feat/company-desc-i18n] Przy zatwierdzaniu dotłumacz brakującą wersję EN
+    // (wierny przekład) — kupcy z EN UI widzą opis w swoim języku. Błąd
+    // tłumaczenia nie blokuje zatwierdzenia.
+    let trPatch = {};
+    if ((firmCo.description || firmCo.description_short) && !(firmCo.description_en || firmCo.description_short_en)) {
+      try {
+        const tr = await dbTranslateCompanyDescriptionAI({
+          company_id: firmCo.id,
+          description: firmCo.description || "",
+          description_short: firmCo.description_short || "",
+        });
+        trPatch = {
+          description_en: tr?.description_en || "",
+          description_short_en: tr?.description_short_en || "",
+        };
+      } catch (e) {
+        fl(e?.message || t("admin.firmy.toast_ai_failed"), "warning");
+      }
+    }
+    patchCompany(firmCo.id, { ...trPatch, ai_review_status: "approved" });
+    fl(t(trPatch.description_en ? "admin.firmy.toast_ai_approved_translated_format" : "admin.firmy.toast_ai_approved_format", { name: firmCo.name }));
   }
 
   function startEdit(firmCo) {
@@ -12610,8 +12636,11 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
   const customerTypes = Array.isArray(offer.customer_types) ? offer.customer_types.filter(Boolean) : [];
   const certs = Array.isArray(co.certs) ? co.certs.filter(Boolean) : [];
 
-  const shortDesc = (co.description_short || "").trim();
-  const longDesc = (co.description || "").trim();
+  // [feat/company-desc-i18n] Opis w języku UI: EN → wersja angielska (fallback
+  // oryginał), PL → oryginał (fallback EN). Kupiec zagraniczny czyta po angielsku.
+  const _descEn = String(i18n.language || "pl").toLowerCase().startsWith("en");
+  const shortDesc = ((_descEn ? (co.description_short_en || co.description_short) : (co.description_short || co.description_short_en)) || "").trim();
+  const longDesc = ((_descEn ? (co.description_en || co.description) : (co.description || co.description_en)) || "").trim();
   // Jeśli są oba — krótki na górze (tier 1), pełny niżej (tier 2). Jeśli
   // jest tylko jeden, pokaż go raz w tier 1.
   const tier1Desc = shortDesc || longDesc || "";
