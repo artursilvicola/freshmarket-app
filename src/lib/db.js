@@ -366,6 +366,27 @@ export async function translateCompanyDescriptionAI({ company_id = null, descrip
   return json;
 }
 
+// [feat/offer-i18n etap 2] Wierny przekład pól propozycji (tytuł/opis/benefity)
+// na EN — generyczny tryb translate_texts w ai-company-description.
+// fields: {klucz: tekstPL} → zwraca { translations: {klucz: tekstEN} }.
+export async function translateOfferAI(fields) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_session"));
+
+  const res = await fetch("/.netlify/functions/ai-company-description", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ translate_texts: fields || {} }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json?.error || i18n.t("legacy:errors.db.ai_company_description_failed"));
+  return json;
+}
+
 export async function createRetailer(retailer) {
   const row = toRetailerDbRow(retailer);
   const { data, error } = await supabase

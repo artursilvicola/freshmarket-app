@@ -211,7 +211,7 @@ export const handler = async (event) => {
     // próba 1: legacy_supplier_id
     const { data: byLegacy } = await supaSvc
       .from("companies")
-      .select("id, legacy_supplier_id, legacy_fm_id, name, country, logo_url, description_short, description")
+      .select("id, legacy_supplier_id, legacy_fm_id, name, country, logo_url, description_short, description_short_en, description")
       .in("legacy_supplier_id", supplierKeys);
     for (const co of byLegacy || []) {
       if (co.legacy_supplier_id) companiesMap.set(co.legacy_supplier_id, co);
@@ -223,7 +223,7 @@ export const handler = async (event) => {
     if (uuidKeys.length) {
       const { data: byUuid } = await supaSvc
         .from("companies")
-        .select("id, legacy_supplier_id, legacy_fm_id, name, country, logo_url, description_short, description")
+        .select("id, legacy_supplier_id, legacy_fm_id, name, country, logo_url, description_short, description_short_en, description")
         .in("id", uuidKeys);
       for (const co of byUuid || []) {
         companiesMap.set(co.id, co);
