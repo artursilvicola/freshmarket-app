@@ -1365,6 +1365,9 @@
     "password": {
       "card_title": "Change password",
       "notice": "Enter your current password and a new one (minimum 8 characters). You will stay signed in on this device after the change.",
+      "no_current_link": "Don't know your current password? Set a new one",
+      "have_current_link": "← Back to change with current password",
+      "no_current_notice": "You are setting a new password without entering the current one — possible because you signed in via a secure email link. The new password works immediately.",
       "labels": {
         "current": "Current password",
         "new": "New password (min. 8 characters)",
