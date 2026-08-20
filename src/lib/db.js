@@ -486,6 +486,22 @@ export async function updateOwnSupplierProfile(id, patch) {
   return data;
 }
 
+// [feat/set-password-no-current] Ustawienie hasła BEZ znajomości aktualnego —
+// dla kont zalogowanych magic linkiem (kupcy tworzeni przez admina nigdy nie
+// znali hasła, więc formularz z polem „aktualne hasło" był dla nich ślepym
+// zaułkiem). Sesja jest już uwierzytelniona (magic link / recovery), więc
+// supabase.auth.updateUser wystarczy. UI pokazuje ten tryb dopiero po
+// dodatkowym kliknięciu (ochrona przed przypadkową zmianą przy odblokowanym
+// komputerze) — patrz ChangePasswordSection.
+export async function setOwnPassword(newPassword) {
+  if (!newPassword || newPassword.length < 8) {
+    throw new Error(i18n.t("legacy:errors.db.password_length"));
+  }
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
+  return true;
+}
+
 // [B2B Round profile-self-password-change] Zmiana hasla przez zalogowanego
 // uzytkownika. Wymaga re-auth (sprawdzenie aktualnego hasla via
 // signInWithPassword) zeby nie pozwolic na hijack sesji. Po sukcesie wola

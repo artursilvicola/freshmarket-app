@@ -1367,6 +1367,9 @@
     "password": {
       "card_title": "Zmiana hasła",
       "notice": "Wpisz aktualne hasło i nowe (minimum 8 znaków). Po zmianie nadal będziesz zalogowany na tym urządzeniu.",
+      "no_current_link": "Nie znasz obecnego hasła? Ustaw nowe",
+      "have_current_link": "← Wróć do zmiany z obecnym hasłem",
+      "no_current_notice": "Ustawiasz nowe hasło bez podawania obecnego — to możliwe, bo jesteś zalogowany przez bezpieczny link z e-maila. Nowe hasło zacznie działać od razu.",
       "labels": {
         "current": "Aktualne hasło",
         "new": "Nowe hasło (min 8 znaków)",

@@ -17,6 +17,7 @@ import {
   createBuyerAccount as dbCreateBuyerAccount,
   adminUpdateBuyerAccount as dbAdminUpdateBuyerAccount, updateOwnBuyerProfile as dbUpdateOwnBuyerProfile,
   updateOwnSupplierProfile as dbUpdateOwnSupplierProfile, changeOwnPassword as dbChangeOwnPassword,
+  setOwnPassword as dbSetOwnPassword,
   getFmSettings as dbGetFmSettings, saveFmSettings as dbSaveFmSettings,
   getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
   getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
@@ -7907,15 +7908,19 @@ function ChangePasswordSection({ fl }) {
   const [showCur, setShowCur] = useState(false);
   const [showNw, setShowNw] = useState(false);
   const [busy, setBusy] = useState(false);
+  // [feat/set-password-no-current] Tryb dla zalogowanych magic linkiem, którzy
+  // nigdy nie znali hasła — ustawienie nowego bez podawania obecnego.
+  const [noCurrent, setNoCurrent] = useState(false);
 
   async function submit() {
-    if (!cur || !nw || !cf) { fl(t("buyer.password.errors.empty_fields")); return; }
+    if (!nw || !cf || (!noCurrent && !cur)) { fl(t("buyer.password.errors.empty_fields")); return; }
     if (nw.length < 8) { fl(t("buyer.password.errors.length")); return; }
     if (nw !== cf) { fl(t("buyer.password.errors.mismatch")); return; }
     try {
       setBusy(true);
-      await dbChangeOwnPassword(cur, nw);
-      setCur(""); setNw(""); setCf("");
+      if (noCurrent) await dbSetOwnPassword(nw);
+      else await dbChangeOwnPassword(cur, nw);
+      setCur(""); setNw(""); setCf(""); setNoCurrent(false);
       fl(t("buyer.password.success"));
     } catch (e) {
       fl(t("buyer.password.errors.default_prefix") + (e?.message || t("buyer.password.errors.default_fallback")));
@@ -7943,12 +7948,24 @@ function ChangePasswordSection({ fl }) {
       <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
         {t("buyer.password.notice")}
       </div>
-      <InputPwd label={t("buyer.password.labels.current")} value={cur} onChange={(e) => setCur(e.target.value)} show={showCur} setShow={setShowCur} />
+      {noCurrent ? (
+        <Alrt type="info">{t("buyer.password.no_current_notice")}</Alrt>
+      ) : (
+        <InputPwd label={t("buyer.password.labels.current")} value={cur} onChange={(e) => setCur(e.target.value)} show={showCur} setShow={setShowCur} />
+      )}
       <Row>
         <InputPwd label={t("buyer.password.labels.new")} value={nw} onChange={(e) => setNw(e.target.value)} show={showNw} setShow={setShowNw} />
         <Inp label={t("buyer.password.labels.repeat")} type={showNw ? "text" : "password"} value={cf} onChange={(e) => setCf(e.target.value)} />
       </Row>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12, marginBottom: 24 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 12, marginBottom: 24 }}>
+        {/* [feat/set-password-no-current] Przełącznik trybu — dla kont z magic linka */}
+        <button
+          type="button"
+          onClick={() => { setNoCurrent(v => !v); setCur(""); }}
+          style={{ background: "none", border: "none", color: "#0d9488", fontSize: 12, cursor: "pointer", padding: 0, textDecoration: "underline", fontFamily: "inherit" }}
+        >
+          {noCurrent ? t("buyer.password.have_current_link") : t("buyer.password.no_current_link")}
+        </button>
         <Btn primary onClick={submit} disabled={busy}>{busy ? t("buyer.password.submitting") : t("buyer.password.submit_button")}</Btn>
       </div>
     </Card>
