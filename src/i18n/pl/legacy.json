@@ -1298,7 +1298,9 @@
       "materials": {
         "card_title": "Materiały (PDF, katalogi, zdjęcia)",
         "info": "Wgraj katalog handlowy, broszurę, zdjęcia zakładu / pakowania / produktów. Kupiec zobaczy je w podglądzie profilu.",
-        "uploader_label": "Kliknij lub przeciągnij PDF / zdjęcie"
+        "uploader_label": "Kliknij lub przeciągnij PDF / zdjęcie",
+        "saved_toast": "✓ Materiał wgrany i zapisany.",
+        "save_failed": "Plik wgrany, ale nie udało się zapisać listy — kliknij „Zapisz profil”."
       },
       "pitch": {
         "card_title": "Co chcesz podkreślić kupcowi?",

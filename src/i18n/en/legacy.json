@@ -1298,7 +1298,9 @@
       "materials": {
         "card_title": "Materials (PDF, catalogs, photos)",
         "info": "Upload a trade catalog, brochure, photos of the facility / packing / products. The buyer will see them in the profile preview.",
-        "uploader_label": "Click or drag a PDF / photo"
+        "uploader_label": "Click or drag a PDF / photo",
+        "saved_toast": "✓ Material uploaded and saved.",
+        "save_failed": "File uploaded, but the list could not be saved — please click “Save profile”."
       },
       "pitch": {
         "card_title": "What do you want to highlight to the buyer?",

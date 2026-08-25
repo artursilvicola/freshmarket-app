@@ -5617,6 +5617,22 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           pathPrefix={c.id || ""}
           value={materials}
           onChange={(newList) => setPdRoot("materials", newList)}
+          // [fix/materials-autosave] Materiały utrwalamy od razu po wgraniu.
+          // Wcześniej lista żyła tylko w stanie formularza do czasu kliknięcia
+          // "Zapisz profil" — kto o tym nie wiedział (albo komu zapis blokowała
+          // walidacja logo/NIP), tracił wgrany plik po odświeżeniu strony.
+          onUploaded={async (newList) => {
+            const id = c.id || companyId;
+            if (!id) return;
+            try {
+              const nextPd = { ...(c.profile_data || {}), materials: newList };
+              await dbUpdateCompany(id, { profile_data: nextPd });
+              setCo?.(prev => ({ ...prev, profile_data: nextPd }));
+              fl?.(t("supplier.company.materials.saved_toast"));
+            } catch (e) {
+              fl?.(e?.message || t("supplier.company.materials.save_failed"), "warning");
+            }
+          }}
           multi={true}
           max={12}
           accept="image/*,application/pdf"

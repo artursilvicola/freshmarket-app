@@ -89,6 +89,9 @@ export default function SimplePhotoUploader({
   accept = "image/*",
   // [feat/upload-size-guard] Nadpisanie limitu; domyślnie wg bucketu.
   maxSizeMB,
+  // [feat/upload-autosave-hook] Wywoływane po udanym uploadzie z nową listą —
+  // caller może od razu zapisać ją do bazy (bez osobnego "Zapisz").
+  onUploaded,
   // [Krok 11 P1] label: default undefined żeby caller mógł nadpisać własnym
   // stringiem (np. "Wgraj logo firmy"). Jeśli brak — fallback do t() poniżej.
   // Stary default "Kliknij lub przeciągnij zdjęcia" jest teraz w common.uploader.
@@ -129,6 +132,11 @@ export default function SimplePhotoUploader({
     setUploading(true);
     setProgress(0);
 
+    // [fix/upload-never-hangs] Cała pętla w try/finally — dowolny nieprzewidziany
+    // wyjątek (także w onChange konsumenta) nie może zostawić wiecznego
+    // "Wgrywanie… 0%". Wcześniej setUploading(false) było poza ochroną i przy
+    // błędzie spinner wisiał w nieskończoność.
+    try {
     const newUrls = [];
     let i = 0;
     for (const rawFile of fileArr) {
@@ -167,17 +175,30 @@ export default function SimplePhotoUploader({
         setProgress(Math.round((i / fileArr.length) * 100));
       } catch (e) {
         // [fix] rawFile — `file` żyje w try i przy błędzie kompresji było undefined
-        setError(t("uploader.errors.upload_failed", { file: rawFile.name, message: e.message }));
+        console.warn("[SimplePhotoUploader]", bucket, rawFile?.name, e);
+        setError(t("uploader.errors.upload_failed", { file: rawFile.name, message: e?.message || String(e) }));
       }
     }
 
     if (multi) {
-      onChange?.([...list, ...newUrls]);
+      if (newUrls.length) onChange?.([...list, ...newUrls]);
     } else if (newUrls[0]) {
       onChange?.(newUrls[0]);
     }
-    setUploading(false);
-    setProgress(0);
+    // [feat/upload-autosave-hook] Caller może utrwalić listę od razu po uploadzie
+    // (bez czekania na osobny przycisk "Zapisz").
+    if (newUrls.length) await onUploaded?.(multi ? [...list, ...newUrls] : newUrls[0]);
+    } catch (e) {
+      console.warn("[SimplePhotoUploader] fatal", bucket, e);
+      setError(t("uploader.errors.upload_failed", { file: "", message: e?.message || String(e) }));
+    } finally {
+      setUploading(false);
+      setProgress(0);
+      // [fix/same-file-twice] Reset inputa — bez tego ponowny wybór TEGO SAMEGO
+      // pliku nie wyzwala zdarzenia change i uploader „nie reaguje" (dokładnie
+      // ten objaw zgłosił admin przy prezentacji Naranjo).
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
   };
 
   const handleDelete = (urlToRemove) => {
@@ -238,7 +259,7 @@ export default function SimplePhotoUploader({
           accept={accept}
           multiple={multi}
           style={{ display: "none" }}
-          onChange={(e) => e.target.files && handleFiles(e.target.files)}
+          onChange={(e) => { const f = e.target.files; if (f && f.length) handleFiles(f); }}
         />
       </div>
 
