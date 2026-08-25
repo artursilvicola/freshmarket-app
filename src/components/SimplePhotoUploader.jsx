@@ -65,6 +65,19 @@ async function compressImage(file) {
  *   accept    : accept attribute na input (default "image/*")
  *   label     : tekst placeholder w drop zone
  */
+// [feat/upload-size-guard] Limity rozmiaru pliku per bucket — MUSZĄ odpowiadać
+// file_size_limit z migracji Supabase Storage (003, 021). Bez tego użytkownik
+// dostawał surowy błąd serwera dopiero po długim uploadzie i nie wiedział, że
+// chodzi o rozmiar (case: Naranjo Roses — prezentacja 24 MB przy limicie 10 MB).
+const BUCKET_MAX_MB = {
+  "offer-photos": 5,
+  "company-logos": 2,
+  "company-materials": 10,
+  "certs": 10,
+  "retailer-logos": 2,
+  "brand-assets": 1,
+};
+
 export default function SimplePhotoUploader({
   bucket = "offer-photos",
   pathPrefix,
@@ -74,6 +87,8 @@ export default function SimplePhotoUploader({
   multi = true,
   max = 8,
   accept = "image/*",
+  // [feat/upload-size-guard] Nadpisanie limitu; domyślnie wg bucketu.
+  maxSizeMB,
   // [Krok 11 P1] label: default undefined żeby caller mógł nadpisać własnym
   // stringiem (np. "Wgraj logo firmy"). Jeśli brak — fallback do t() poniżej.
   // Stary default "Kliknij lub przeciągnij zdjęcia" jest teraz w common.uploader.
@@ -90,6 +105,11 @@ export default function SimplePhotoUploader({
   const list = multi
     ? Array.isArray(value) ? value : []
     : (value ? [value] : []);
+
+  // [feat/upload-size-guard] Limit rozmiaru: prop > mapa bucketów > 10 MB.
+  const limitMB = Number(maxSizeMB) || BUCKET_MAX_MB[bucket] || 10;
+  const limitBytes = limitMB * 1024 * 1024;
+  const fmtMB = (bytes) => (bytes / 1048576).toFixed(1);
 
   const handleFiles = async (files) => {
     if (!pathPrefix) {
@@ -116,6 +136,17 @@ export default function SimplePhotoUploader({
       try {
         // Kompresja do 1600px / WebP / quality 0.85 (czytelne, ale lekkie)
         const file = await compressImage(rawFile);
+        // [feat/upload-size-guard] Walidacja PO kompresji: zdjęcia zwykle
+        // schudną poniżej limitu, PDF-y idą bez zmian. Za duży plik pomijamy
+        // z czytelnym komunikatem zamiast surowego błędu serwera po uploadzie.
+        if (file.size > limitBytes) {
+          setError(t("uploader.errors.file_too_large", {
+            file: rawFile.name,
+            size: fmtMB(file.size),
+            max: limitMB,
+          }));
+          continue;
+        }
         const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
         const safeName = file.name
           .replace(/\.[^.]+$/, "")
@@ -135,7 +166,8 @@ export default function SimplePhotoUploader({
         newUrls.push(pub.publicUrl);
         setProgress(Math.round((i / fileArr.length) * 100));
       } catch (e) {
-        setError(t("uploader.errors.upload_failed", { file: file.name, message: e.message }));
+        // [fix] rawFile — `file` żyje w try i przy błędzie kompresji było undefined
+        setError(t("uploader.errors.upload_failed", { file: rawFile.name, message: e.message }));
       }
     }
 
@@ -195,6 +227,8 @@ export default function SimplePhotoUploader({
               {multi
                 ? t("uploader.hint_simple_multi", { max })
                 : t("uploader.hint_simple_single")}
+              {/* [feat/upload-size-guard] Limit widoczny ZANIM user wybierze plik */}
+              {` · ${t("uploader.hint_max_size", { max: limitMB })}`}
             </div>
           </>
         )}
