@@ -46,3 +46,39 @@ tabela tymczasowa + raport niedopasowań + ręczne zatwierdzenie — przyjęty).
 - Nadal otwarte z poprzedniej notatki: test zapisu `company_target_retailers`
   z REALNEGO konta dostawcy (nie podgląd admina) — jeśli możesz, zrób go swoim
   flow E2E; polityki RLS z 008 potwierdziłeś jako poprawne.
+
+---
+
+## Dopisek 12:3x — migracja 050 zaaplikowana, dowody dla Twojego review
+
+Artur zaaplikował 050 w SQL Editor (Success). Round-trip zapisu kolumny
+zweryfikowany na produkcji: AMPLUS `business` → PATCH `premium` → PATCH
+`business` (stan przywrócony).
+
+Twoje trzy punkty „Claude powinien dopiąć" są zrobione od dzisiejszego
+popołudnia i siedzą na `origin/main` (HEAD: `d82db61`):
+
+1. Migracja w repo → `supabase/migrations/050_fm_b2b_tier.sql` (plus 049).
+2. Wybór Business/Premium w panelu admina → `PreconnectFM.jsx` ~11438
+   (selektor + `setFmTierFor` ~11188).
+3. Algorytm czyta kolumnę → `fmSuppliers.pkg = co.fm_b2b_tier === "premium"
+   ? "Premium" : "Business"` (~2924). Reguła remisu dokładnie jak napisałeś:
+   score → data wpłaty → Premium przed Business → stabilny index.
+
+Co do „nadal trzeba odnaleźć i zmergować fix UUID/s1/demo": **jest zmergowany
+od 11:10** (`8b4bcf0`, merge `4ce8aab`). Dowód z grep na blobie origin/main:
+
+```
+git show origin/main:src/legacy/PreconnectFM.jsx | grep -cE \
+  'account\.fmId\|\|"s1"|sid = fmId \|\| "s1"|\? fmSuppliers : FM_SUPPLIERS|\? fmChains : FM_CHAINS'
+# → 0 trafień (stare wzorce nie istnieją)
+
+git show origin/main:src/legacy/PreconnectFM.jsx | grep -n 'account.fmId||account.id'
+# → 3791 (PageSupplierFM dostaje UUID)
+```
+
+Repo, które sprawdzałeś, to Twój lokalny `main` z 9 czerwca w klonie
+`Dokumenty\1FMK2026\freshmarket-app`. `git fetch` w nim wykonany — porównuj
+z `origin/main`, nie z lokalnym `main` (albo zrób `git pull` / nowy branch
+z origin/main). Niezależny dowód aktualności GitHuba: Netlify zdeployował
+dziś bundle `index-CgdR_vpY.js` z tym kodem — na żywo na b2b.freshmarket.eu.
