@@ -13257,6 +13257,8 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
   const _localeForDate = i18n.language?.startsWith("en") ? "en-GB" : "pl-PL";
   // [B2B Round supplier-FM-UX] Resolve a supplier list-row to its company row.
   const findCo = (s) => (companies || []).find(c =>
+    // [fix/fm-findco-uuid] c.id pierwsze — realne firmy maja UUID jako klucz FM
+    c.id === s.id ||
     c.fmId === s.id || c.legacy_fm_id === s.id ||
     c.legacy_supplier_id === s.id || c.legacy_supplier_id === ("sup-" + (s.id || ""))
   );
@@ -15130,6 +15132,8 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
         // Resolution by fmId/legacy_supplier_id/sup-<fmId> covers all the
         // supplier-key formats Round 5 introduced.
         const findCo = (s) => (companies || []).find(c =>
+          // [fix/fm-findco-uuid] c.id pierwsze — realne firmy maja UUID jako klucz FM
+          c.id === s.id ||
           c.fmId === s.id || c.legacy_fm_id === s.id ||
           c.legacy_supplier_id === s.id || c.legacy_supplier_id === ("sup-" + (s.id || ""))
         );
