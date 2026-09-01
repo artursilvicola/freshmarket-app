@@ -1192,6 +1192,29 @@ export async function uploadBrandLogo(file) {
   return { ok: true, url };
 }
 
+// [feat/footer-partners] Upload logotypu partnera/sponsora do bucketa
+// "brand-assets" (ten sam co logo Fresh Market: publiczny odczyt, zapis admin).
+// W przeciwienstwie do uploadBrandLogo NIE zapisuje nic w fm_settings —
+// zwraca tylko URL, ktory admin osadza w ui_content.partners przez saveUiContent.
+export async function uploadPartnerLogo(file) {
+  if (!file) return { ok: false, error: i18n.t("legacy:errors.db.upload_no_file") };
+  const ext = (file.name?.split(".").pop() || "png").toLowerCase();
+  const objectPath = `partners/logo-${Date.now()}.${ext}`;
+  const { error: upErr } = await supabase.storage
+    .from("brand-assets")
+    .upload(objectPath, file, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || `image/${ext}`,
+    });
+  if (upErr) return { ok: false, error: upErr.message };
+
+  const { data: pub } = supabase.storage.from("brand-assets").getPublicUrl(objectPath);
+  const url = pub?.publicUrl || null;
+  if (!url) return { ok: false, error: i18n.t("legacy:errors.db.public_url_fetch_failed") };
+  return { ok: true, url };
+}
+
 // [feat/admin-instructions-announcements]
 // Treści sterowane z panelu admina (Branding) i widoczne w panelach kupca/dostawcy:
 //   • instructions — instrukcja pomocy (osobno supplier/buyer, PL/EN),
@@ -1209,6 +1232,10 @@ export function emptyUiContent() {
       supplier: { pl: "", en: "", enabled: false, type: "bar", dateFrom: null, dateTo: null },
       buyer: { pl: "", en: "", enabled: false, type: "bar", dateFrom: null, dateTo: null },
     },
+    // [feat/footer-partners] Logotypy sponsorow/partnerow w stopce paneli.
+    // Kolejnosc w tablicy = kolejnosc wyswietlania. Kazdy wpis:
+    //   { id, name, logoUrl, url, enabled }
+    partners: [],
   };
 }
 
@@ -1228,6 +1255,17 @@ export function normalizeUiContent(raw) {
       supplier: { ...base.announcements.supplier, ...(ann.supplier || {}) },
       buyer: { ...base.announcements.buyer, ...(ann.buyer || {}) },
     },
+    // [feat/footer-partners] Tolerujemy starsze rekordy bez klucza partners
+    // (wtedy pusta lista) i odsiewamy wpisy bez logo — bez URL nie ma co renderowac.
+    partners: (Array.isArray(r.partners) ? r.partners : [])
+      .filter(p => p && typeof p === "object" && p.logoUrl)
+      .map((p, i) => ({
+        id: String(p.id || `p${i}`),
+        name: String(p.name || ""),
+        logoUrl: String(p.logoUrl),
+        url: p.url ? String(p.url) : "",
+        enabled: p.enabled !== false,
+      })),
   };
 }
 
