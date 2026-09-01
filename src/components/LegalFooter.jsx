@@ -20,7 +20,7 @@ import { normalizeLocale } from "../i18n/locale";
  * [B2B Round prod-rollout / i18n MVP — Krok 5]
  * Stopka jest bilingual — labelki + URL-e zależne od aktualnego locale
  * (z react-i18next). Email kontaktowy zostaje literalnym tekstem
- * "hello@freshmarket.eu" (nazwa własna; nie wymaga tłumaczenia).
+ * "support@freshmarket.eu" (nazwa własna; nie wymaga tłumaczenia).
  * Klucze: common.footer.{terms,privacy,copyright}.
  */
 export default function LegalFooter() {
@@ -80,10 +80,10 @@ export default function LegalFooter() {
         </a>
         <span style={{ color: "#cbd5e1" }}>·</span>
         <a
-          href="mailto:hello@freshmarket.eu"
+          href="mailto:support@freshmarket.eu"
           style={{ color: "#0d9488", textDecoration: "none", fontWeight: 600 }}
         >
-          hello@freshmarket.eu
+          support@freshmarket.eu
         </a>
       </div>
     </footer>

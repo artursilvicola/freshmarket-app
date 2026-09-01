@@ -164,7 +164,7 @@ export default function LoginPage() {
           <span style={{ margin: "0 8px", color: "#cbd5e1" }}>·</span>
           <a href={privacyHref} target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>{t("login.footer_privacy")}</a>
           <span style={{ margin: "0 8px", color: "#cbd5e1" }}>·</span>
-          <a href="mailto:hello@freshmarket.eu" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>{t("login.footer_contact")}</a>
+          <a href="mailto:support@freshmarket.eu" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>{t("login.footer_contact")}</a>
         </div>
       </div>
     </div>
