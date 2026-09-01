@@ -2824,16 +2824,22 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   );
   const fmSuppliers = useMemo(() =>
     companies
-      .filter(co => co.fmId)
+      // [fix/fm-real-companies] Do modułu FM wchodzą firmy dopuszczone przez
+      // admina (fm_b2b_enabled) i aktywne. Poprzedni filtr `co.fmId` wymagał
+      // legacy_fm_id, którego ŻADNA realna firma nie ma — lista wychodziła
+      // pusta i buildFMData po cichu podstawiał 30 firm demo (FM_SUPPLIERS).
+      // Identyfikatorem realnej firmy w module FM jest jej UUID (co.id);
+      // fmId zostaje tylko jako fallback dla ewentualnych seedów.
+      .filter(co => co.fm_b2b_enabled === true && (co.account_status || "active") === "active")
       .map((co, idx) => ({
-        id:          co.fmId,
+        id:          co.fmId || co.id,
         name:        co.name,
-        // [B2B Round prod-rollout / FM scheduling v2] Realny mapping pakietów:
-        //   prem_10 → Premium (uczestnik FM B2B z umawianymi spotkaniami)
-        //   std_*   → Standard (BEZ umawianych spotkań — wykluczony w algorytmie)
-        // Pakiet "Business" istnieje w kompendium jako pośredni tier, ale w kodzie
-        // aplikacji nie ma jeszcze osobnego ID — dodać gdy biznes zdefiniuje.
-        pkg:         co.pkg === "prem_10" ? "Premium" : "Standard",
+        // [fix/fm-real-companies] pkg_plan (std_5/prem_10) to pakiet KREDYTÓW
+        // PreConnect — NIE pakiet eventowy. O udziale w spotkaniach decyduje
+        // wyłącznie fm_b2b_enabled + fm_b2b_packages (admin, Firmy). Firmy z
+        // tego filtra są z definicji uczestnikami FM B2B → tier "Business",
+        // żeby FM_EXCLUDED_PACKAGES ("Standard") ich nie wykluczał.
+        pkg:         "Business",
         country:     co.country,
         products:    co.products || "",
         companyId:   co.id,
@@ -2937,7 +2943,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if (firstSupplier) switchAccount(firstSupplier);
   }, [runtimeAccounts]); // eslint-disable-line
 
-  const onFMRegenerate = useCallback(() => { const d=genFMData(fmSuppliers, fmChains); setFmPrefs(d.p); setFmResps(d.r); }, [fmSuppliers, fmChains]);
+  const onFMRegenerate = useCallback(() => {
+    // [fix/fm-real-companies] Randomizer demo tylko dev/staging — na produkcji
+    // nadpisałby realne preferencje firm losowymi wartościami.
+    if (import.meta.env.PROD) return;
+    const d=genFMData(fmSuppliers, fmChains); setFmPrefs(d.p); setFmResps(d.r);
+  }, [fmSuppliers, fmChains]);
   // [B2B Round 2.1] fmSchedule: load from fm_settings.schedule (Supabase).
   const [fmSchedule, setFmSchedule] = useState(null);
   useEffect(() => {
@@ -3724,8 +3735,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
-      ? <PageSupplierFM fmId={account.fmId||"s1"} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
-      : <PageBuyerFM chainId={account.chainId||"ch5"} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
+      ? <PageSupplierFM fmId={account.fmId||account.id} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
+      : <PageBuyerFM chainId={(retailers.find(r=>r.id===account.retailerId)?.fm26ChainId)||account.chainId} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
     if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
     // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
     // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.
@@ -8330,7 +8341,7 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           const _phLabel = t(`fm.phases.${_ph.id}.label`, { defaultValue: _ph.label });
           const _phSub = t(`fm.phases.${_ph.id}.sub`, { defaultValue: _ph.sub });
           const _phDates = t(`fm.phases.${_ph.id}.dates`, { defaultValue: _ph.dates });
-          const _suppliers = fmSuppliers || FM_SUPPLIERS;
+          const _suppliers = fmSuppliers || [];
           const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=5).length;
           const _fmRetailers = (retailers||[]).filter(r => r.fm26Active && r.active!==false && r.fm26ChainId);
           const _cr = _fmRetailers.filter(r => Object.values(fmResps[r.fm26ChainId]||{}).some(hasBuyerResponse)).length;
@@ -8448,7 +8459,7 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         const _phLabel = t(`fm.phases.${_ph.id}.label`, { defaultValue: _ph.label });
         const _phSub = t(`fm.phases.${_ph.id}.sub`, { defaultValue: _ph.sub });
         const _phDates = t(`fm.phases.${_ph.id}.dates`, { defaultValue: _ph.dates });
-        const _suppliers = fmSuppliers || FM_SUPPLIERS;
+        const _suppliers = fmSuppliers || [];
         const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=5).length;
         // FM chains: use fm26ChainId for fmResps lookup (keys are chX, not numeric retailer IDs)
         const _fmRetailers = (retailers||[]).filter(r => r.fm26Active && r.active!==false && r.fm26ChainId);
@@ -13231,8 +13242,9 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
     c.fmId === s.id || c.legacy_fm_id === s.id ||
     c.legacy_supplier_id === s.id || c.legacy_supplier_id === ("sup-" + (s.id || ""))
   );
-  const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
-  const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
+  // [fix/fm-real-companies] bez fallbacku do danych demo
+  const _chains    = fmChains    || [];
+  const _suppliers = fmSuppliers || [];
   const [subView, setSubView] = useState("suppliers"); // "suppliers" | "chains"
   const [selSup, setSelSup] = useState(_suppliers[0]?.id||"s1");
   const [selChain, setSelChain] = useState(_chains[0]?.id||"ch1");
@@ -13559,9 +13571,12 @@ function RetailerPreviewModal({ retailer, onClose }) {
 ═══════════════════════════════════════════════════════════════ */
 function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers, accountId, confirmFmSelection }) {
   const { t, i18n } = useTranslation("legacy");
-  const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
-  const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
-  const sid = fmId || "s1";
+  // [fix/fm-real-companies] bez fallbacku do danych demo
+  const _chains    = fmChains    || [];
+  const _suppliers = fmSuppliers || [];
+  // [fix/fm-real-companies] sid = legacy fmId albo UUID firmy (z routingu);
+  // twardy fallback "s1" maskował brak identyfikatora i gubił zapisy wyborów.
+  const sid = fmId;
   const phase = fmSettings.currentPhase;
   const pub   = fmSettings.planPublished;
   const [previewFirm, setPreviewFirm] = useState(null);
@@ -13850,8 +13865,9 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
-  const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
-  const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
+  // [fix/fm-real-companies] bez fallbacku do danych demo
+  const _chains    = fmChains    || [];
+  const _suppliers = fmSuppliers || [];
   const phase = fmSettings.currentPhase;
   const pub   = fmSettings.planPublished;
   const [previewFirm, setPreviewFirm] = useState(null);
@@ -14316,8 +14332,10 @@ function fmNZ(n) {
 //     cq:  {cid: [sid|null array indexed by slot-1]} }
 // ═════════════════════════════════════════════════════════════════════════
 function buildFMData(prefs, resps, chains, suppliers) {
-  const _chains    = chains    || FM_CHAINS;
-  const _suppliers = (suppliers && suppliers.length > 0) ? suppliers : FM_SUPPLIERS;
+  // [fix/fm-real-companies] BEZ fallbacku do FM_SUPPLIERS/FM_CHAINS — pusta
+  // lista ma dawać pusty plan, a nie 30 firm demo udających produkcję.
+  const _chains    = chains    || [];
+  const _suppliers = suppliers || [];
 
   // FAZA 0 — TWARDE WYKLUCZENIA (przed jakimkolwiek scoringiem)
   // Filtr per-supplier: Standard + brak fm_b2b_enabled → out z algorytmu całkowicie.
@@ -14505,8 +14523,9 @@ function buildFMData(prefs, resps, chains, suppliers) {
 ═══════════════════════════════════════════════════════════════ */
 function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains, fmSuppliers, fmWishlists, fmResps }) {
   const { t } = useTranslation("legacy");
-  const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
-  const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
+  // [fix/fm-real-companies] bez fallbacku do danych demo
+  const _chains    = fmChains    || [];
+  const _suppliers = fmSuppliers || [];
   const _resps     = fmResps || {};
   const [selA, setSelA] = useState(null);
   const [swapLog, setSwapLog] = useState([]);
@@ -14852,8 +14871,9 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
 ═══════════════════════════════════════════════════════════════ */
 function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmAlgo, retailers, fmChains, fmSuppliers }) {
   const { t } = useTranslation("legacy");
-  const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
-  const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
+  // [fix/fm-real-companies] bez fallbacku do danych demo
+  const _chains    = fmChains    || [];
+  const _suppliers = fmSuppliers || [];
   const [running, setRunning] = useState(false);
   const [done, setDone] = useState(false);
   const phase = fmSettings.currentPhase;
@@ -14970,8 +14990,9 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
-  const _chains    = (fmChains    && fmChains.length    > 0) ? fmChains    : FM_CHAINS;
-  const _suppliers = (fmSuppliers && fmSuppliers.length > 0) ? fmSuppliers : FM_SUPPLIERS;
+  // [fix/fm-real-companies] bez fallbacku do danych demo
+  const _chains    = fmChains    || [];
+  const _suppliers = fmSuppliers || [];
   const [tab, setTab] = useState("zarzadzanie");
   const phase = fmSettings.currentPhase;
   // Full data with slot numbers for Faza 4 admin correction grid
