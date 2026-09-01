@@ -71,6 +71,8 @@ import {
   getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
   // [feat/admin-instructions-announcements] treści sterowane z Brandingu
   getUiContent as dbGetUiContent, saveUiContent as dbSaveUiContent, emptyUiContent as dbEmptyUiContent,
+  // [feat/footer-partners] logotypy sponsorow w stopce (Branding -> Partnerzy)
+  uploadPartnerLogo as dbUploadPartnerLogo,
   // [B2B Round prod-rollout / admin-team] zarządzanie zespołem administratorów
   getAllAdmins as dbGetAllAdmins, promoteToAdmin as dbPromoteToAdmin,
   demoteFromAdmin as dbDemoteFromAdmin, setSuperAdmin as dbSetSuperAdmin,
@@ -15552,6 +15554,62 @@ function PageAdminBranding({ fl }) {
     finally { setSavingUi(false); }
   };
 
+  // [feat/footer-partners] Partnerzy/sponsorzy w stopce paneli.
+  // Logo trafia do bucketa brand-assets od razu przy wyborze pliku, ale wpis
+  // zapisuje sie w bazie dopiero po "Zapisz" (jak reszta ui_content).
+  const [partnerBusy, setPartnerBusy] = useState(false);
+  const partnerInputRef = useRef(null);
+  const partners = ui.partners || [];
+  const setPartners = (next) => setUi(p => ({ ...p, partners: next }));
+  const setPartnerField = (id, field, val) =>
+    setPartners(partners.map(p => (p.id === id ? { ...p, [field]: val } : p)));
+  const removePartner = (id) => setPartners(partners.filter(p => p.id !== id));
+  const movePartner = (id, dir) => {
+    const i = partners.findIndex(p => p.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= partners.length) return;
+    const next = [...partners];
+    [next[i], next[j]] = [next[j], next[i]];
+    setPartners(next);
+  };
+  const onPickPartnerLogo = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const allowed = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
+    if (!allowed.includes(f.type)) {
+      fl?.(t("admin.branding.toast_invalid_format"), "error");
+      if (partnerInputRef.current) partnerInputRef.current.value = "";
+      return;
+    }
+    if (f.size > 1024 * 1024) {
+      fl?.(t("admin.branding.toast_too_large"), "error");
+      if (partnerInputRef.current) partnerInputRef.current.value = "";
+      return;
+    }
+    setPartnerBusy(true);
+    try {
+      const res = await dbUploadPartnerLogo(f);
+      if (!res.ok) {
+        fl?.(t("admin.branding.toast_upload_error_format", { error: res.error || t("admin.branding.toast_upload_error_unknown") }), "error");
+        return;
+      }
+      const name = (f.name || "").replace(/\.[^.]+$/, "");
+      setPartners([...partners, {
+        id: "p" + Date.now(),
+        name,
+        logoUrl: res.url,
+        url: "",
+        enabled: true,
+      }]);
+      fl?.(t("admin.branding.partners_toast_added"), "success");
+    } catch (err) {
+      fl?.(t("admin.branding.toast_upload_exception_format", { message: err?.message || String(err) }), "error");
+    } finally {
+      setPartnerBusy(false);
+      if (partnerInputRef.current) partnerInputRef.current.value = "";
+    }
+  };
+
   return (
     <div style={{ maxWidth: 720 }}>
       <div style={{ marginBottom: 18 }}>
@@ -15719,6 +15777,65 @@ function PageAdminBranding({ fl }) {
           {(ui.instructions[prevRole][prevLang] || "").trim()
             ? <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, padding: "8px 10px", fontSize: 13, color: "#334155" }} dangerouslySetInnerHTML={{ __html: ui.instructions[prevRole][prevLang] }} />
             : <div style={{ fontSize: 12, color: "#94a3b8" }}>{t("admin.branding.ui_preview_empty")}</div>}
+        </div>
+
+        <Btn primary onClick={saveUi} disabled={savingUi}>{savingUi ? t("admin.branding.ui_saving") : t("admin.branding.ui_save_btn")}</Btn>
+      </Card>
+
+      {/* [feat/footer-partners] Partnerzy - logotypy w stopce panelu kupca i dostawcy */}
+      <Card title={t("admin.branding.partners_title")} icon={Award}>
+        <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>{t("admin.branding.partners_desc")}</div>
+
+        {partners.length === 0 && (
+          <div style={{ fontSize: 12, color: "#94a3b8", padding: "10px 0 14px" }}>{t("admin.branding.partners_empty")}</div>
+        )}
+
+        {partners.map((p, idx) => (
+          <div key={p.id} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 0", borderBottom: "1px solid #f1f5f9" }}>
+            <div style={{ width: 120, height: 46, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 6 }}>
+              <img src={p.logoUrl} alt={p.name || ""} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block" }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <Inp label={t("admin.branding.partners_field_name")} value={p.name} onChange={e => setPartnerField(p.id, "name", e.target.value)} />
+                <Inp label={t("admin.branding.partners_field_url")} value={p.url} placeholder="https://" onChange={e => setPartnerField(p.id, "url", e.target.value)} />
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#334155", cursor: "pointer", marginTop: 2 }}>
+                <input type="checkbox" checked={p.enabled !== false} onChange={e => setPartnerField(p.id, "enabled", e.target.checked)} style={{ accentColor: "#0d9488" }} />
+                {t("admin.branding.partners_field_enabled")}
+              </label>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
+              <button onClick={() => movePartner(p.id, -1)} disabled={idx === 0} title={t("admin.branding.partners_move_up")}
+                style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 6px", cursor: idx === 0 ? "default" : "pointer", opacity: idx === 0 ? 0.4 : 1 }}><ChevronUp size={13} /></button>
+              <button onClick={() => movePartner(p.id, 1)} disabled={idx === partners.length - 1} title={t("admin.branding.partners_move_down")}
+                style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 6, padding: "3px 6px", cursor: idx === partners.length - 1 ? "default" : "pointer", opacity: idx === partners.length - 1 ? 0.4 : 1 }}><ChevronDown size={13} /></button>
+              <button onClick={() => removePartner(p.id)} title={t("admin.branding.partners_remove")}
+                style={{ background: "white", border: "1px solid #fecaca", color: "#dc2626", borderRadius: 6, padding: "3px 6px", cursor: "pointer" }}><X size={13} /></button>
+            </div>
+          </div>
+        ))}
+
+        <div style={{ marginTop: 14, marginBottom: 14 }}>
+          <input ref={partnerInputRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" onChange={onPickPartnerLogo} style={{ display: "none" }} />
+          <Btn outline onClick={() => partnerInputRef.current?.click()} disabled={partnerBusy}>
+            <Upload size={13} /> {partnerBusy ? t("admin.branding.partners_uploading") : t("admin.branding.partners_add_btn")}
+          </Btn>
+          <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 6 }}>{t("admin.branding.partners_file_hint")}</div>
+        </div>
+
+        {/* Podglad paska tak jak zobaczy go kupiec/dostawca w stopce */}
+        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: "#64748b", marginBottom: 8 }}>{t("admin.branding.partners_preview_label")}</div>
+          <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 14px", display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#94a3b8" }}>{t("admin.branding.partners_strip_label")}</span>
+            {partners.filter(p => p.enabled !== false).map(p => (
+              <img key={p.id} src={p.logoUrl} alt={p.name || ""} style={{ height: 30, width: "auto", maxWidth: 190, objectFit: "contain", display: "block" }} />
+            ))}
+            {partners.filter(p => p.enabled !== false).length === 0 && (
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>{t("admin.branding.ui_preview_empty")}</span>
+            )}
+          </div>
         </div>
 
         <Btn primary onClick={saveUi} disabled={savingUi}>{savingUi ? t("admin.branding.ui_saving") : t("admin.branding.ui_save_btn")}</Btn>

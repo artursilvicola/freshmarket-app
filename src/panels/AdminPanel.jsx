@@ -4,6 +4,7 @@ import PanelTopBar from "../components/PanelTopBar";
 import FreshMarketLogo from "../components/FreshMarketLogo";
 import LegalFooter from "../components/LegalFooter";
 import MobilePortraitNotice from "../components/MobilePortraitNotice";
+import PartnersStrip from "../components/PartnersStrip";
 
 /**
  * AdminPanel — wrapper na istniejącą aplikację z wymuszonym kontekstem admina.
@@ -33,7 +34,13 @@ export default function AdminPanel() {
         <LegacyApp initialRole="admin" currentUser={profile} />
       </div>
       <MobilePortraitNotice />
-      <LegalFooter />
+      {/* [feat/footer-partners] Pasek sponsorow + stopka prawna jako jeden blok
+          dociskany do dolu (marginTop:auto na wrapperze — wewnatrz zwyklego
+          diva auto-marginesy obu dzieci sa neutralne). */}
+      <div style={{ marginTop: "auto" }}>
+        <PartnersStrip />
+        <LegalFooter />
+      </div>
     </div>
   );
 }

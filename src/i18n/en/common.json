@@ -73,6 +73,9 @@
   "language_switcher": {
     "title": "Zmień język / Change language"
   },
+  "partners": {
+    "title": "Fresh Market 2026 Partners"
+  },
   "uploader": {
     "click_or_drag": "Click or drag photos",
     "hint_full": "JPG, PNG, WebP, GIF · max 5 MB · up to {{max}} photos",

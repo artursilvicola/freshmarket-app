@@ -4,6 +4,7 @@ import PanelTopBar from "../components/PanelTopBar";
 import EntityLogo from "../components/EntityLogo";
 import LegalFooter from "../components/LegalFooter";
 import MobilePortraitNotice from "../components/MobilePortraitNotice";
+import PartnersStrip from "../components/PartnersStrip";
 
 export default function BuyerPanel() {
   const { user, profile, signOut } = useAuth();
@@ -28,7 +29,13 @@ export default function BuyerPanel() {
         <LegacyApp initialRole="buyer" currentUser={profile} />
       </div>
       <MobilePortraitNotice />
-      <LegalFooter />
+      {/* [feat/footer-partners] Pasek sponsorow + stopka prawna jako jeden blok
+          dociskany do dolu (marginTop:auto na wrapperze — wewnatrz zwyklego
+          diva auto-marginesy obu dzieci sa neutralne). */}
+      <div style={{ marginTop: "auto" }}>
+        <PartnersStrip />
+        <LegalFooter />
+      </div>
     </div>
   );
 }
