@@ -150,6 +150,8 @@ export async function updateCompany(id, patch) {
     "account_status", "preconnect_enabled", "fm_b2b_enabled",
     // [feat/fm-b2b-packages] liczba pakietów Business (1-5) → pula spotkań FM
     "fm_b2b_packages",
+    // [feat/fm-b2b-tier] poziom pakietu eventowego (business/premium, migracja 050)
+    "fm_b2b_tier",
     "approved_at", "approved_by", "status_note",
   ];
   const row = {};

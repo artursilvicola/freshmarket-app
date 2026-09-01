@@ -2915,12 +2915,13 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       .map((co, idx) => ({
         id:          co.fmId || co.id,
         name:        co.name,
-        // [fix/fm-real-companies] pkg_plan (std_5/prem_10) to pakiet KREDYTÓW
-        // PreConnect — NIE pakiet eventowy. O udziale w spotkaniach decyduje
-        // wyłącznie fm_b2b_enabled + fm_b2b_packages (admin, Firmy). Firmy z
-        // tego filtra są z definicji uczestnikami FM B2B → tier "Business",
-        // żeby FM_EXCLUDED_PACKAGES ("Standard") ich nie wykluczał.
-        pkg:         "Business",
+        // [feat/fm-b2b-tier] pkg_plan (std_5/prem_10) to pakiet KREDYTÓW
+        // PreConnect — NIE pakiet eventowy. Poziom eventowy trzyma osobna
+        // kolumna fm_b2b_tier (migracja 050, default business) ustawiana przez
+        // admina w Firmach. Premium wygrywa remis w tie-breakerze FAZY 3.
+        // Firmy z tego filtra nigdy nie dostają "Standard" → FM_EXCLUDED_PACKAGES
+        // ich nie wyklucza.
+        pkg:         co.fm_b2b_tier === "premium" ? "Premium" : "Business",
         country:     co.country,
         products:    co.products || "",
         companyId:   co.id,
@@ -11180,6 +11181,14 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
     fl(t("admin.firmy.toast_fm_b2b_packages_format", { name: firmCo.name, count: next, meetings: next * 5 }));
   }
 
+  // [feat/fm-b2b-tier] Poziom pakietu eventowego (business/premium) → Premium
+  // wygrywa remis w tie-breakerze algorytmu FM (FAZA 3, pkgTier).
+  function setFmTierFor(firmCo, tier) {
+    const next = tier === "premium" ? "premium" : "business";
+    patchCompany(firmCo.id, { fm_b2b_tier: next });
+    fl(t("admin.firmy.toast_fm_b2b_tier_format", { name: firmCo.name, tier: next === "premium" ? "Premium" : "Business" }));
+  }
+
   // [Admin Companies 2.0 / Branch 1] Helper do quick contact actions.
   // Używa Clipboard API z fallbackiem na document.execCommand("copy") dla
   // starszych przeglądarek (Safari/IE) oraz kontekstów bez HTTPS, w których
@@ -11424,6 +11433,13 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                         <select value={pk} onChange={(e)=>setFmPackagesFor(firmCo, e.target.value)}
                           style={{ padding:"3px 6px",border:"1px solid #ddd6fe",borderRadius:6,fontSize:11,fontFamily:"inherit",background:"white" }}>
                           {[1,2,3,4,5].map(n=><option key={n} value={n}>{n}</option>)}
+                        </select>
+                        {/* [feat/fm-b2b-tier] Premium przed Business przy remisie w algorytmie */}
+                        <select value={firmCo.fm_b2b_tier === "premium" ? "premium" : "business"} onChange={(e)=>setFmTierFor(firmCo, e.target.value)}
+                          title={t("admin.firmy.fm_b2b_tier_tooltip")}
+                          style={{ padding:"3px 6px",border:"1px solid #ddd6fe",borderRadius:6,fontSize:11,fontFamily:"inherit",background:firmCo.fm_b2b_tier==="premium"?"#faf5ff":"white",color:firmCo.fm_b2b_tier==="premium"?"#7c3aed":"#0f172a",fontWeight:firmCo.fm_b2b_tier==="premium"?700:400 }}>
+                          <option value="business">Business</option>
+                          <option value="premium">Premium</option>
                         </select>
                         <span style={{ fontSize:10,color:"#64748b" }}>{t("admin.firmy.fm_b2b_packages_hint_format", { count: pk * 5 })}</span>
                       </span>
