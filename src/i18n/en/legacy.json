@@ -1935,6 +1935,8 @@
       "list_fm_b2b": "· FM B2B",
       "fm_b2b_packages_label": "Packages:",
       "fm_b2b_packages_hint_format": "= up to {{count}} meetings",
+      "toast_fm_b2b_tier_format": "{{name}}: FM B2B package tier → {{tier}}.",
+      "fm_b2b_tier_tooltip": "Event package tier. Premium wins ties in the meeting queue.",
       "toast_fm_b2b_packages_format": "{{name}}: Business packages = {{count}} (pool of up to {{meetings}} B2B meetings).",
       "list_used_unit": "submissions",
       "status_section_title": "Status & access",

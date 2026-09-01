@@ -1935,6 +1935,8 @@
       "list_fm_b2b": "· FM B2B",
       "fm_b2b_packages_label": "Pakiety:",
       "fm_b2b_packages_hint_format": "= do {{count}} spotkań",
+      "toast_fm_b2b_tier_format": "{{name}}: poziom pakietu FM B2B → {{tier}}.",
+      "fm_b2b_tier_tooltip": "Poziom pakietu eventowego. Premium ma pierwszeństwo przy remisie w kolejce spotkań.",
       "toast_fm_b2b_packages_format": "{{name}}: pakiety Business = {{count}} (pula do {{meetings}} spotkań B2B).",
       "list_used_unit": "wysyłek",
       "status_section_title": "Status & dostęp",
