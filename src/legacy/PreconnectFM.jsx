@@ -2843,7 +2843,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         country:     co.country,
         products:    co.products || "",
         companyId:   co.id,
-        paymentDate: co.paymentDate || co.paidAt || null, // real payment date for scheduling priority
+        // [feat/fm-payment-tiebreaker] fm_payment_date (migracja 049, import
+        // ~16.09) > legacy pola. NULL = "9999-99-99" w sortowaniu (koniec remisu).
+        paymentDate: co.fm_payment_date || co.paymentDate || co.paidAt || null,
         // [B2B Round prod-rollout / FM scheduling v2 — Zasada 0]
         // fm_b2b_enabled = admin per-supplier flag dopuszczający firmę do FM B2B.
         // Brak akceptacji → twarde wykluczenie z algorytmu (FAZA 0 w buildFMData).
