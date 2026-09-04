@@ -7816,7 +7816,7 @@ function PageSupplierProfile({ account, co, fl }) {
       // [P2-5 i18n] Raw e.message z dbUpdateOwnSupplierProfile jest już
       // bilingual (P2-2c). Wrapper "Błąd zapisu: " i fallback "nieznany"
       // tłumaczone tutaj.
-      fl(t("supplier.profile.toasts.save_error_format", { message: e?.message || t("supplier.profile.toasts.save_error_fallback") }));
+      fl(t("supplier.profile.toasts.save_error_format", { message: e?.message || t("supplier.profile.toasts.save_error_fallback") }), "error");
     } finally {
       setSaving(false);
     }
