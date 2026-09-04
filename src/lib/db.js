@@ -470,7 +470,15 @@ export async function updateOwnSupplierProfile(id, patch) {
   // (same teksty walidacji "Full name is required"). Caller PageSupplierProfile
   // dalej PL w UI (zostaje na P2-3 supplier flow), ale jeśli kiedyś użyje
   // i18n.language='en' to ten error też będzie po angielsku.
-  if (!id) throw new Error(i18n.t("legacy:errors.db.buyer_profile_id_required"));
+  //
+  // [fix/supplier-profile-save] Dla dostawcy UI przekazuje account.id = COMPANY_ID
+  // (patrz PreconnectFM: account.id := currentUser.company_id), a NIE id profilu.
+  // Stąd wcześniejsze `update profiles where id = <company_id>` trafiało w 0 wierszy
+  // → PostgREST .single() rzucał "Cannot coerce the result to a single JSON object".
+  // Profil to auth user — bierzemy jego id z sesji, ignorując (błędny) argument.
+  const { data: authData, error: authErr } = await supabase.auth.getUser();
+  const uid = authData?.user?.id;
+  if (authErr || !uid) throw new Error(i18n.t("legacy:errors.db.password_no_session"));
   const row = {
     name: normalizeText(patch.name),
     phone: normalizeText(patch.phone),
@@ -481,7 +489,7 @@ export async function updateOwnSupplierProfile(id, patch) {
   const { data, error } = await supabase
     .from("profiles")
     .update(row)
-    .eq("id", id)
+    .eq("id", uid)
     .select()
     .single();
   if (error) throw error;
