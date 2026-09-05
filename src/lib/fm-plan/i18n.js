@@ -54,7 +54,7 @@ export const T = {
     how_intro: "Spotkania odbywają się w wydzielonej strefie spotkań. Prowadzą do niej dwa oznaczone wejścia: GATE 1 i GATE 2. Przy każdym wejściu znajdziesz logotypy sieci obsługiwanych przez daną bramkę.",
     how_steps: [
       "Sprawdź w tabeli, z którą siecią masz spotkanie i jaki jest jego numer.",
-      "Idź do wejścia z kolumny „Wejście" — logo sieci będzie przy Gate 1 albo Gate 2.",
+      "Idź do wejścia z kolumny „Wejście” — logo sieci będzie przy Gate 1 albo Gate 2.",
       `Śledź numer swojego spotkania: numery aktualnie obsługiwane widać w aplikacji ${EVENT.app} i na dużym ekranie w sali spotkań.`,
     ],
     how_time_h: "Czas i kolejność",
@@ -114,9 +114,10 @@ export const T = {
   },
 };
 
-// Linia kontaktów w stopce — język karty pierwszy.
-export function contactsLine(lang) {
-  const a = EVENT.contacts[lang], b = EVENT.contacts[lang === "pl" ? "en" : "pl"];
+// Kontakty w stopce — dwie linie, język karty pierwszy.
+export function contactsLines(lang) {
+  const other = lang === "pl" ? "en" : "pl";
   const fmt = (c, tag) => `${c.name} (${tag}) · ${c.email} · ${c.phone}`;
-  return `${fmt(a, lang.toUpperCase())}   ·   ${fmt(b, (lang === "pl" ? "en" : "pl").toUpperCase())}`;
+  return [fmt(EVENT.contacts[lang], lang.toUpperCase()), fmt(EVENT.contacts[other], other.toUpperCase())];
 }
+export const contactsLine = (lang) => contactsLines(lang).join("   ·   ");

@@ -35,7 +35,7 @@ export function buildMasterWorkbook(model) {
     "Karta": s.card, "Dostawca": s.name, "Kraj": s.country, "Język": s.lang.toUpperCase(), "Pakiet": s.pkg,
     "Liczba spotkań": s.meetings.length, "Numery": s.meetings.map((m) => m.nr).join(", "),
     "Sieci": s.meetings.map((m) => m.chain.name).join("; "),
-    "Osoba": s.contact.name, "Telefon": s.contact.phone, "E-maile kont": s.emails.join("; "), "Logo": s.logoUrl ? "tak" : "brak",
+    "Osoba": s.contact.name, "Telefon": s.contact.phone, "E-maile kont": s.emails.join("; "), "Logo": s.logoUrl ? "tak" : "brak", "Opis PL": s.hasDescPl ? "tak" : "brak", "Opis EN": s.hasDescEn ? "tak" : "BRAK — przetłumacz w panelu",
   }));
   const chainRows = model.chains.map((c) => ({
     "Karta": c.card, "Sieć": c.name, "Kraj": c.country, "Język": c.lang.toUpperCase(), "Gate": c.gate || "",
@@ -51,7 +51,7 @@ export function buildMasterWorkbook(model) {
     XLSX.utils.book_append_sheet(wb, ws, name);
   };
   add(meetingRows, "Spotkania", [6, 22, 8, 6, 30, 34, 8, 12, 24, 18, 28, 34, 8, 8, 8, 40]);
-  add(supplierRows, "Dostawcy", [7, 36, 6, 6, 12, 8, 22, 50, 24, 18, 40, 6]);
+  add(supplierRows, "Dostawcy", [7, 36, 6, 6, 12, 8, 22, 50, 24, 18, 40, 6, 8, 26]);
   add(chainRows, "Sieci", [7, 24, 6, 6, 6, 8, 60, 50, 6]);
   const meta = [
     { Pole: "Wygenerowano", Wartość: model.generatedAt },

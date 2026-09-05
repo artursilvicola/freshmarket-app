@@ -26,3 +26,6 @@ npm-debug.log*
 
 # Audit script output (regenerated on demand by scripts/pl-audit.cjs)
 pl-audit.json
+
+# [feat/fm-plan-export] wyniki generatora kart (PDF/Excel) — nie do repo
+out/

@@ -48,6 +48,7 @@ function simulatePairs(companies, retailers, prefs) {
   const chainOf = new Map(retailers.map((r) => [r.id, r]));
   const perChainNext = new Map(retailers.map((r) => [r.fm26_chain_id, 1]));
   const pairs = []; // {sid, cid, nr}
+  const usedBySupplier = new Map(); // sid -> Set(nr) — jak FM_MIN_GAP: numery jednej firmy nie stykają się
   for (const co of companies) {
     const cap = 5 * Math.max(1, Math.min(5, Number(co.fm_b2b_packages) || 1));
     const wanted = prefs.filter((p) => p.company_id === co.id).sort((a, b) => (b.priority || 0) - (a.priority || 0))
@@ -58,7 +59,10 @@ function simulatePairs(companies, retailers, prefs) {
     for (const r of rest) if (pool.length < cap) pool.push(r);
     for (const r of pool.slice(0, cap)) {
       const cid = r.fm26_chain_id; if (!cid) continue;
-      const nr = perChainNext.get(cid) || 1; perChainNext.set(cid, nr + 1);
+      const used = usedBySupplier.get(co.id) || new Set();
+      let nr = perChainNext.get(cid) || 1;
+      while ([...used].some((u) => Math.abs(u - nr) < 2)) nr++;
+      perChainNext.set(cid, nr + 1); used.add(nr); usedBySupplier.set(co.id, used);
       pairs.push({ sid: co.id, cid, nr });
     }
   }
@@ -123,6 +127,7 @@ export function buildPlanModel(raw, { simulate = false } = {}) {
       name: norm(co.name), country: norm(co.country).toUpperCase(), countryName: countryName(co.country, lang),
       contact, pkg: pkgLabel(co), logoUrl: norm(co.logo_url) || null, initials: initials(co.name),
       products: norm(co.products), desc: shortDescription(co, lang),
+      hasDescPl: !!(norm(co.description_short) || norm(co.description)), hasDescEn: !!(norm(co.description_short_en) || norm(co.description_en)),
       emails: (profilesByCompany.get(co.id) || []).map((p) => p.email),
       meetings: my,
     };

@@ -5,19 +5,19 @@
 //   (dontBreakRows), • nazwa firmy/sieci w nagłówku i stopce KAŻDEJ strony,
 //   • karta dostawcy bez danych kupców; karta sieci z logo/krajem/opisem/kontaktem dostawcy,
 //   • GATE 1 = pełna plakietka, GATE 2 = obrys (czytelne w druku cz-b).
-import { T, EVENT, contactsLine } from "./i18n.js";
+import { T, EVENT, contactsLines } from "./i18n.js";
 import { FM_LOGO_DATA_URI, SPONSOR_LOGOS } from "./assets.js";
 
 const C = { ink: "#14211a", ink2: "#3d4a43", mute: "#6c7a72", rule: "#d9e2dc", ruleStrong: "#b9c6be",
   brand: "#1f8f4e", brandDeep: "#166b3b", tint: "#eaf5ee", warn: "#b45309", warnTint: "#fdf3e4", warnInk: "#5a3d12" };
 const MM = 2.8346; // pt na mm
-const PAGE = { w: 595.28, h: 841.89, left: 13 * MM, right: 13 * MM, top: 30 * MM, bottom: 16 * MM };
+const PAGE = { w: 595.28, h: 841.89, left: 13 * MM, right: 13 * MM, top: 33 * MM, bottom: 17 * MM };
 
 const noBorders = { hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 0, paddingBottom: () => 0 };
 const rowLines = {
   hLineWidth: (i, node) => (i === 0 ? 0 : i === 1 || i === node.table.body.length ? 1.2 : 0.6),
   hLineColor: (i, node) => (i === 1 || i === node.table.body.length ? C.ink : C.rule),
-  vLineWidth: () => 0, paddingLeft: (i) => (i === 0 ? 0 : 5), paddingRight: () => 5, paddingTop: () => 6, paddingBottom: () => 6,
+  vLineWidth: () => 0, paddingLeft: (i) => (i === 0 ? 0 : 5), paddingRight: () => 5, paddingTop: () => 4.5, paddingBottom: () => 4.5,
 };
 
 function logoTile(dataUri, fallbackText, w, h, color) {
@@ -98,10 +98,10 @@ function identityBand(card, t, kind) {
     left.push({ text: card.buyers.map((b) => `${b.name}${b.position ? " — " + b.position : ""}${b.cats && b.cats.length ? " (" + b.cats.join(", ") + ")" : ""}`).join("   ·   "), fontSize: 9, color: C.ink2, margin: [0, 3, 0, 0] });
   }
   const right = kind === "supplier"
-    ? { width: "auto", alignment: "right", stack: [{ text: t.pkg, fontSize: 8.5, color: C.ink2 }, { text: card.pkg, bold: true, fontSize: 9.5, margin: [0, 2, 0, 0] }] }
-    : { width: "auto", alignment: "right", stack: [{ text: t.gate, fontSize: 8.5, color: C.ink2, margin: [0, 0, 0, 3] }, gatePill(card.gate)] };
+    ? { alignment: "right", stack: [{ text: t.pkg, fontSize: 8.5, color: C.ink2 }, { text: card.pkg, bold: true, fontSize: 9.5, margin: [0, 2, 0, 0] }] }
+    : { alignment: "right", stack: [{ text: t.gate, fontSize: 8.5, color: C.ink2, margin: [0, 0, 0, 3] }, gatePill(card.gate)] };
   return {
-    table: { widths: ["*", "auto"], body: [[{ stack: left, border: [true, false, false, false] }, right]] },
+    table: { widths: ["*", 92], body: [[{ stack: left, border: [true, false, false, false] }, right]] },
     layout: { hLineWidth: () => 0, vLineWidth: (i) => (i === 0 ? 3 : 0), vLineColor: () => C.brand, fillColor: () => C.tint, paddingLeft: (i) => (i === 0 ? 10 : 6), paddingRight: () => 10, paddingTop: () => 8, paddingBottom: () => 8 },
     margin: [0, 0, 0, 4 * MM],
   };
@@ -114,20 +114,20 @@ export function supplierDoc(card, { mode = "final" } = {}) {
   const rows = card.meetings.map((m) => [
     { text: String(m.nr).padStart(2, "0"), font: "Barlow", bold: true, fontSize: 20, lineHeight: 0.9, margin: [0, 2, 0, 0] },
     { columns: [
-      { width: 62, ...logoTile(m.chain.logo, m.chain.name, 60, 26, m.chain.color) },
+      { width: 62, ...logoTile(m.chain.logo, m.chain.name, 60, 24, m.chain.color) },
       { width: "*", stack: [{ text: m.chain.name, bold: true, fontSize: 11, lineHeight: 1.05 }, { text: m.chain.countryName, fontSize: 8, color: C.mute, margin: [0, 2, 0, 0] }], margin: [4, 3, 0, 0] },
     ], columnGap: 4 },
     { text: m.chain.cats.join(" · "), fontSize: 9.5, margin: [0, 6, 0, 0] },
     { ...gatePill(m.chain.gate), margin: [0, 4, 0, 0] },
   ]);
   const table = rows.length ? {
-    table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: [42, "*", 140, 60],
-      body: [[th(t.th_nr), th(t.th_chain), th(t.th_cat), th(t.th_gate, "right")], ...rows] },
+    table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: [40, "*", 140, 60],
+      body: [[th("NR"), th(t.th_chain), th(t.th_cat), th(t.th_gate, "right")], ...rows] },
     layout: rowLines,
   } : { text: "—", color: C.mute };
 
   const how = {
-    unbreakable: true, margin: [0, 6 * MM, 0, 0],
+    margin: [0, 5 * MM, 0, 0],
     table: { widths: ["*"], body: [[{
       columns: [
         { width: "58%", stack: [
@@ -143,10 +143,10 @@ export function supplierDoc(card, { mode = "final" } = {}) {
         ] },
       ], columnGap: 14,
     }]] },
-    layout: { hLineWidth: () => 0.8, vLineWidth: () => 0.8, hLineColor: () => C.ruleStrong, vLineColor: () => C.ruleStrong, paddingLeft: () => 11, paddingRight: () => 11, paddingTop: () => 9, paddingBottom: () => 9 },
+    layout: { hLineWidth: () => 0.8, vLineWidth: () => 0.8, hLineColor: () => C.ruleStrong, vLineColor: () => C.ruleStrong, paddingLeft: () => 11, paddingRight: () => 11, paddingTop: () => 7, paddingBottom: () => 7 },
   };
 
-  return docDefinition(card, t, "supplier", [titleBlock(card, t, "supplier"), identityBand(card, t, "supplier"), table, how, contactsBlock(t)], mode);
+  return docDefinition(card, t, "supplier", [titleBlock(card, t, "supplier"), identityBand(card, t, "supplier"), table, { unbreakable: true, stack: [how, contactsBlock(t)] }], mode);
 }
 
 export function chainDoc(card, { mode = "final" } = {}) {
@@ -168,12 +168,12 @@ export function chainDoc(card, { mode = "final" } = {}) {
   });
   const table = rows.length ? {
     table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: [36, "*", 130],
-      body: [[th(t.th_nr), th(t.th_sup), th(t.th_person)], ...rows] },
+      body: [[th("NR"), th(t.th_sup), th(t.th_person)], ...rows] },
     layout: { ...rowLines, paddingTop: () => 5, paddingBottom: () => 5 },
   } : { text: "—", color: C.mute };
 
   const info = {
-    unbreakable: true, margin: [0, 6 * MM, 0, 0],
+    margin: [0, 5 * MM, 0, 0],
     table: { widths: ["*"], body: [[{
       columns: [
         { width: "60%", stack: [
@@ -186,20 +186,22 @@ export function chainDoc(card, { mode = "final" } = {}) {
         ] },
       ], columnGap: 14,
     }]] },
-    layout: { hLineWidth: () => 0.8, vLineWidth: () => 0.8, hLineColor: () => C.ruleStrong, vLineColor: () => C.ruleStrong, paddingLeft: () => 11, paddingRight: () => 11, paddingTop: () => 9, paddingBottom: () => 9 },
+    layout: { hLineWidth: () => 0.8, vLineWidth: () => 0.8, hLineColor: () => C.ruleStrong, vLineColor: () => C.ruleStrong, paddingLeft: () => 11, paddingRight: () => 11, paddingTop: () => 7, paddingBottom: () => 7 },
   };
 
-  return docDefinition(card, t, "chain", [titleBlock(card, t, "chain"), identityBand(card, t, "chain"), table, info, contactsBlock(t)], mode);
+  return docDefinition(card, t, "chain", [titleBlock(card, t, "chain"), identityBand(card, t, "chain"), table, { unbreakable: true, stack: [info, contactsBlock(t)] }], mode);
 }
 
 function contactsBlock(t) {
+  const lines = contactsLines(t === T.pl ? "pl" : "en");
   return {
-    unbreakable: true, margin: [0, 5 * MM, 0, 0],
+    margin: [0, 4 * MM, 0, 0],
     stack: [
       { canvas: [{ type: "line", x1: 0, y1: 0, x2: PAGE.w - PAGE.left - PAGE.right, y2: 0, lineWidth: 0.8, lineColor: C.ruleStrong }] },
       { columns: [
         { width: "*", stack: [
-          { text: [{ text: t.help + ": ", bold: true }, contactsLine(t === T.pl ? "pl" : "en")], fontSize: 8, color: C.ink2, lineHeight: 1.35 },
+          { text: t.help.toUpperCase(), fontSize: 6.8, characterSpacing: 0.6, color: C.mute, bold: true, margin: [0, 0, 0, 2] },
+          ...lines.map((l) => ({ text: l, fontSize: 8, color: C.ink2, lineHeight: 1.3 })),
           { text: [t.live + ": ", { text: EVENT.app, bold: true }, ` · ${EVENT.support}`], fontSize: 8, color: C.ink2, lineHeight: 1.35 },
         ], margin: [0, 6, 0, 0] },
         { width: "auto", columns: [
@@ -219,7 +221,13 @@ function docDefinition(card, t, kind, content, mode) {
     info: { title: `${kind === "supplier" ? t.title : t.title_chain} — ${card.name}`, author: "Fresh Market", subject: "Fresh Market 2026 · B2B" },
     header: (page, pages) => {
       const h = headerBlock(card, t);
-      if (page > 1) h.stack.splice(1, 0, { text: `${card.name} · ${kind === "supplier" ? t.title : t.title_chain} ${t.cont} · ${t.page(page, pages)}`, fontSize: 8, color: C.mute, alignment: "right", margin: [0, 3, 0, 0] });
+      if (page > 1) {
+        const short = card.name.length > 64 ? card.name.slice(0, 62).replace(/\s+\S*$/, "") + "…" : card.name;
+        h.stack.splice(1, 0, { columns: [
+          { text: short, fontSize: 8.5, bold: true, color: C.ink2, margin: [0, 3, 0, 0] },
+          { text: `${kind === "supplier" ? t.title : t.title_chain} ${t.cont} · ${t.page(page, pages)}`, fontSize: 8, color: C.mute, alignment: "right", width: "auto", margin: [8, 3, 0, 0] },
+        ] });
+      }
       return h;
     },
     footer: (page, pages) => footerLine(card, t, page, pages),

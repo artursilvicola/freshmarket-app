@@ -42,13 +42,22 @@ async function loadRaw(src) {
   }
   return JSON.parse(await fs.readFile(src, "utf-8"));
 }
+let sharp = null;
+try { sharp = require("sharp"); } catch { /* bez sharp: WebP/SVG → fallback inicjały */ }
+const imgStats = { ok: 0, converted: 0, failed: 0 };
 async function imageToDataUri(url) {
   const r = await fetch(url);
-  if (!r.ok) return null;
+  if (!r.ok) { imgStats.failed++; return null; }
   const ct = (r.headers.get("content-type") || "").split(";")[0].trim();
-  if (!/^image\/(png|jpe?g)$/.test(ct)) return null; // pdfmake: tylko PNG/JPEG (SVG/WebP → fallback inicjały)
-  const b = Buffer.from(await r.arrayBuffer());
-  return `data:${ct};base64,${b.toString("base64")}`;
+  let b = Buffer.from(await r.arrayBuffer());
+  if (/^image\/(png|jpe?g)$/.test(ct)) { imgStats.ok++; return `data:${ct};base64,${b.toString("base64")}`; }
+  // pdfmake czyta tylko PNG/JPEG — uploader zapisuje logotypy jako WebP, wiec konwertujemy
+  if (!sharp) { imgStats.failed++; return null; }
+  try {
+    b = await sharp(b, { density: 300 }).resize({ width: 600, height: 300, fit: "inside", withoutEnlargement: true }).png().toBuffer();
+    imgStats.converted++;
+    return `data:image/png;base64,${b.toString("base64")}`;
+  } catch { imgStats.failed++; return null; }
 }
 const slug = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/&amp;/g, "and").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
 
@@ -73,7 +82,7 @@ console.log(`Tryb: ${model.mode} · dostawców ${model.suppliers.length} · siec
 if (!model.pairs.length) { console.error("Brak par spotkań (plan niezatwierdzony). Użyj --simulate dla podglądu."); process.exit(2); }
 process.stdout.write("Pobieram logotypy… ");
 await resolveImages(model, imageToDataUri);
-console.log("ok");
+console.log(`ok (png/jpeg ${imgStats.ok}, skonwertowane ${imgStats.converted}, nieudane ${imgStats.failed})`);
 
 await fs.mkdir(path.join(OUT, "karty", "dostawcy"), { recursive: true });
 await fs.mkdir(path.join(OUT, "karty", "sieci"), { recursive: true });
