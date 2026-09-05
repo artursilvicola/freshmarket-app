@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback, useEffect, Fragment } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Suspense } from "react";
 import {
   Home, Building2, Store, Send, Tag, Plus, Clock, Edit, CheckCircle, Receipt,
   X, ArrowLeft, Search, Info, AlertTriangle, Bot, Leaf, Award, Users,
@@ -79,6 +79,9 @@ import {
 // [feat/shared-countries] Jedno źródło listy krajów (panel + rejestracja dostawcy).
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
+// [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
+// laduja sie dopiero w zakladce "Plan spotkan" admina, nie w glownym bundle.
+const FmPlanExport = lazy(() => import("../components/admin/FmPlanExport"));
 import FreshMarketLogo from "../components/FreshMarketLogo";
 // [B2B Round prod-rollout / email-open-tracking] Potrzebny do auth.getSession()
 // gdy wołamy /.netlify/functions/notify-supplier-read z auth tokenem.
@@ -2477,6 +2480,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
             return {
               ...r,
               fm26ChainId: r.fm26_chain_id || r.fm26ChainId || RETAILER_TO_CHAIN[r.id] || null,
+              // [feat/fm-plan-export] wejscie do strefy spotkan (migracja 051)
+              fmGate: (r.fm_gate ?? r.fmGate) == null ? null : Number(r.fm_gate ?? r.fmGate),
               fm26Active:  !!(r.fm26_active ?? r.fm26Active ?? RETAILER_TO_CHAIN[r.id]),
               active: r.active !== false,
               // [retailer-requirements] alias camelCase (kolumna z migracji 039)
@@ -3740,7 +3745,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||account.id} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
       : <PageBuyerFM chainId={(retailers.find(r=>r.id===account.retailerId)?.fm26ChainId)||account.chainId} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
-    if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies}/>;
+    if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} onRegenerate={onFMRegenerate} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
     // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
     // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.
     if(pg==="a-branding") {
@@ -10412,6 +10417,15 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
                   <input type="checkbox" checked={r.fm26Active||false} onChange={e=>quickToggleRetailer(r.id,{fm26Active:e.target.checked})} style={{display:"none"}}/>
                   {r.fm26Active?t("admin.retailers.list_fm26_active_badge"):t("admin.retailers.list_fm26_inactive_badge")}
                 </label>
+                {/* [feat/fm-plan-export] GATE 1/2 — przy ktorym wejsciu stoi logo sieci; drukowane na kartach dostawcow */}
+                {r.fm26Active&&(
+                  <select value={r.fmGate||""} onClick={e=>e.stopPropagation()} onChange={e=>quickToggleRetailer(r.id,{fmGate:e.target.value?Number(e.target.value):null})} title={t("admin.retailers.gate_hint")}
+                    style={{padding:"4px 8px",borderRadius:20,fontSize:11,fontWeight:700,fontFamily:"inherit",border:`1px solid ${r.fmGate?"#0f172a":"#fbbf24"}`,background:r.fmGate?"#0f172a":"#fffbeb",color:r.fmGate?"white":"#92400e",cursor:"pointer"}}>
+                    <option value="">{t("admin.retailers.gate_label")}: {t("admin.retailers.gate_none")}</option>
+                    <option value="1">GATE 1</option>
+                    <option value="2">GATE 2</option>
+                  </select>
+                )}
                 <span style={{fontSize:16,color:"#94a3b8"}}>{isExpanded?"▲":"▼"}</span>
               </div>
             </div>
@@ -15006,7 +15020,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   );
 }
 
-function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, onRegenerate, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies }) {
+function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, onRegenerate, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies, fl }) {
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
@@ -15193,6 +15207,10 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
       {/* ══ TAB: PLAN SPOTKAŃ ══ */}
       {tab==="plan" && (
         <div>
+          {/* [feat/fm-plan-export] Karty PDF / Excel / wysylka — po zatwierdzeniu planu */}
+          <Suspense fallback={<div style={{ fontSize:12,color:"#64748b",padding:"10px 0" }}>…</div>}>
+            <FmPlanExport fl={fl} adminEmail={(runtimeAccounts||[]).find(a=>a.role==="admin")?.email||null}/>
+          </Suspense>
           <AlgorithmTriggerCard fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} setFmSchedule={setFmSchedule}/>
           {/* [B2B Round prod-rollout / FM scheduling v2] Warnings z algorytmu —
               admin widzi listę problemów do rozważenia (swap_star_thumb, no_meetings). */}
