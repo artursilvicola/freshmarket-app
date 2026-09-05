@@ -294,6 +294,8 @@ function toRetailerDbRow(r = {}) {
     // oferty). Osobne od `description` (wewnetrzna notatka admina). Wymaga
     // migracji 039. camelCase ze state'u UI ma priorytet nad snake_case z DB.
     supplier_requirements: r.supplierRequirements ?? r.supplier_requirements ?? null,
+    // [feat/fm-plan-export] wejscie do strefy spotkan (1/2) — migracja 051; null = nie ustawione
+    fm_gate: (r.fmGate ?? r.fm_gate) == null ? null : Number(r.fmGate ?? r.fm_gate),
   };
 }
 

@@ -114,6 +114,11 @@ export const T = {
   },
 };
 
+// Tytuł/opis nazwy pliku karty (do nazw plików w ZIP i załączników).
+export function cardFileLabel(kind, lang) {
+  return kind === "chain" ? (lang === "pl" ? "kolejka-spotkan" : "meeting-queue") : (lang === "pl" ? "plan-spotkan" : "meeting-schedule");
+}
+
 // Kontakty w stopce — dwie linie, język karty pierwszy.
 export function contactsLines(lang) {
   const other = lang === "pl" ? "en" : "pl";
