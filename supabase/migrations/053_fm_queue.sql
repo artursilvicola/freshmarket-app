@@ -486,12 +486,15 @@ BEGIN
   IF public.fm_queue_idem_done(p_idem) THEN RETURN jsonb_build_object('id', m.id, 'status', m.status, 'return_after_nr', m.return_after_nr); END IF;
   IF m.status <> 'no_show' THEN RAISE EXCEPTION 'FM_BAD_STATUS' USING ERRCODE = '22023'; END IF;
   SELECT * INTO g FROM public.fm_queue_groups WHERE id = m.queue_group_id FOR UPDATE;
-  -- bariera = drugie spotkanie liczac od biezacego (biezace = last_called_nr, kolejne = pierwsze planned powyzej)
-  SELECT x.nr INTO v_barrier FROM (
+  -- bariera = "po biezacym i kolejnym": wiekszy z dwoch najblizszych numerow
+  -- (biezace wywolane + pierwsze planned; gdy stanowisko wolne: dwa pierwsze planned;
+  --  gdy zostal jeden: ten jeden; pusta kolejka: NULL = mozna obsluzyc od razu)
+  SELECT max(x.nr) INTO v_barrier FROM (
     SELECT nr FROM public.fm_queue_meetings WHERE queue_group_id = g.id AND status IN ('called','in_progress') AND nr = g.last_called_nr
     UNION ALL
-    SELECT nr FROM public.fm_queue_meetings WHERE queue_group_id = g.id AND status = 'planned' AND nr > g.last_called_nr ORDER BY nr LIMIT 2
-  ) x ORDER BY x.nr OFFSET 1 LIMIT 1;
+    SELECT nr FROM public.fm_queue_meetings WHERE queue_group_id = g.id AND status = 'planned' AND nr > g.last_called_nr
+    ORDER BY nr LIMIT 2
+  ) x;
   UPDATE public.fm_queue_meetings SET status = 'returned_waiting', return_after_nr = v_barrier, version = version + 1 WHERE id = m.id;
   PERFORM public.fm_queue_log_write(v_op, g.id, m.station_id, m.id, 'mark_returned', 'no_show', 'returned_waiting', m.nr, p_idem, jsonb_build_object('return_after_nr', v_barrier));
   RETURN jsonb_build_object('id', m.id, 'status', 'returned_waiting', 'return_after_nr', v_barrier);
@@ -594,7 +597,10 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(st.queue_group_id);
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
-  SELECT * INTO l FROM public.fm_queue_log WHERE station_id = st.id AND action IN ('call_next','start','finish','no_show') ORDER BY ts DESC, id DESC LIMIT 1;
+  SELECT * INTO l FROM public.fm_queue_log l0
+    WHERE l0.station_id = st.id AND l0.action IN ('call_next','start','finish','no_show')
+      AND NOT EXISTS (SELECT 1 FROM public.fm_queue_log u WHERE u.action LIKE 'undo\_%' AND (u.payload->>'undone_log_id')::bigint = l0.id)  -- juz cofniete
+    ORDER BY l0.ts DESC, l0.id DESC LIMIT 1;
   IF NOT FOUND OR l.ts < now() - interval '30 seconds' THEN RAISE EXCEPTION 'FM_UNDO_EXPIRED' USING ERRCODE = '22023'; END IF;
   IF EXISTS (SELECT 1 FROM public.fm_queue_log x WHERE x.station_id = st.id AND x.id > l.id AND x.action NOT LIKE 'undo%') THEN RAISE EXCEPTION 'FM_UNDO_NOT_LAST' USING ERRCODE = '22023'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = l.meeting_id FOR UPDATE;
@@ -718,9 +724,15 @@ RETURNS jsonb LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public, pg_
 $$;
 
 -- ── 7. uprawnienia ───────────────────────────────────────────────────────────
-REVOKE ALL ON public.fm_queue_board_v FROM PUBLIC;
+-- Widok tablicy: security_invoker = false (domyslnie) — CELOWO: anon czyta TYLKO tę
+-- projekcję (siec, stanowisko, tryb, numery), a nie tabele pod spodem.
+REVOKE ALL ON public.fm_queue_board_v FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.fm_queue_board_v TO anon, authenticated;
 
+-- Supabase nadaje nowym funkcjom EXECUTE dla anon/authenticated przez ALTER DEFAULT
+-- PRIVILEGES — dlatego najpierw odbieramy WSZYSTKO (PUBLIC, anon, authenticated),
+-- a potem nadajemy jawnie. Helpery (assert/log/idem) zostaja bez grantow:
+-- wywoluja je tylko funkcje SECURITY DEFINER (wlasciciel = postgres).
 DO $$ DECLARE f text; BEGIN
   FOREACH f IN ARRAY ARRAY[
     'fm_queue_assert_operator(uuid)', 'fm_queue_log_write(uuid,uuid,uuid,uuid,text,text,text,int,text,jsonb)', 'fm_queue_idem_done(text)',
@@ -729,10 +741,9 @@ DO $$ DECLARE f text; BEGIN
     'fm_queue_mark_returned(uuid,text)', 'fm_queue_serve_returnee(uuid,uuid,int,text)', 'fm_queue_finish_returnee(uuid,int,text)',
     'fm_queue_add_exception(uuid,text,text)', 'fm_queue_set_mode(uuid,text,int,text)', 'fm_queue_undo(uuid,int,text)',
     'fm_queue_open_day(date,boolean)', 'fm_queue_close_all(date)', 'fm_queue_assign_retailer(uuid,int,date,boolean)',
-    'fm_queue_my_stations(date)', 'fm_queue_public_snapshot(date)', 'is_staff()'
+    'fm_queue_my_stations(date)', 'fm_queue_public_snapshot(date)', 'is_staff()', 'fm_queue_touch()'
   ] LOOP
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%s FROM PUBLIC', f);
-    EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%s FROM anon', f);
+    EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%s FROM PUBLIC, anon, authenticated', f);
   END LOOP;
   -- zalogowani (admin/staff/dostawca): wywolania sprawdzaja role w srodku
   FOREACH f IN ARRAY ARRAY[
