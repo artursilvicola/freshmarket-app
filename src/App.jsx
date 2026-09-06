@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
@@ -12,6 +12,12 @@ import AdminPanel from "./panels/AdminPanel";
 import SupplierPanel from "./panels/SupplierPanel";
 import BuyerPanel from "./panels/BuyerPanel";
 import { isSupabaseConfigured } from "./lib/supabase";
+
+// [feat/fm-queue] Moduł kolejek dnia eventu — ładowany leniwie, nie obciąża
+// głównego bundla paneli. /obsluga sam obsługuje logowanie (kod + PIN),
+// /tablica jest publiczna (snapshot bez nazw firm).
+const StaffPanel = lazy(() => import("./staff/StaffPanel"));
+const FmBoardPage = lazy(() => import("./pages/FmBoardPage"));
 
 export default function App() {
   if (!isSupabaseConfigured) {
@@ -69,6 +75,10 @@ export default function App() {
             }
           />
 
+          {/* [feat/fm-queue] Dzień eventu: panel obsługi (staff/admin) i publiczna tablica. */}
+          <Route path="/obsluga/*" element={<Suspense fallback={<LazyFallback />}><StaffPanel /></Suspense>} />
+          <Route path="/tablica" element={<Suspense fallback={<LazyFallback />}><FmBoardPage /></Suspense>} />
+
           {/* Root: przekieruj według roli */}
           <Route path="/" element={<RoleRedirect />} />
           <Route path="*" element={<RoleRedirect />} />
@@ -102,6 +112,8 @@ function RoleRedirect() {
   if (role === "admin") return <Navigate to="/admin" replace />;
   if (role === "supplier") return <Navigate to="/dostawca" replace />;
   if (role === "buyer") return <Navigate to="/kupiec" replace />;
+  // [feat/fm-queue] obsługa eventu ma tylko panel operatora
+  if (role === "staff") return <Navigate to="/obsluga" replace />;
 
   // [fix/auth-no-role-recovery] Brak roli, ale sesja istnieje — to ślepa
   // uliczka bez wyjścia. Dajemy recovery: wyloguj → /login (priorytet) oraz
@@ -146,6 +158,11 @@ function RoleRedirect() {
       </div>
     </div>
   );
+}
+
+function LazyFallback() {
+  const { t } = useTranslation("common");
+  return <div style={{ padding: 40, textAlign: "center", color: "#64748b" }}>{t("loading")}</div>;
 }
 
 function ConfigError() {

@@ -16,7 +16,8 @@
     "admin": "Admin",
     "super_admin": "Super admin",
     "supplier": "Supplier",
-    "buyer": "Buyer"
+    "buyer": "Buyer",
+    "staff": "Staff"
   },
   "mobile_portrait": {
     "title": "Portrait view may be less comfortable",

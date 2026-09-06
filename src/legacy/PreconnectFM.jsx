@@ -86,6 +86,9 @@ import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
 // laduja sie dopiero w zakladce "Plan spotkan" admina, nie w glownym bundle.
 const FmPlanExport = lazy(() => import("../components/admin/FmPlanExport"));
+// [feat/fm-queue] Dzień wydarzenia (admin) i „Twoja kolej” (dostawca) — leniwie.
+const FmEventDay = lazy(() => import("../components/admin/FmEventDay"));
+const FmMyQueue = lazy(() => import("../components/supplier/FmMyQueue"));
 import FreshMarketLogo from "../components/FreshMarketLogo";
 // [B2B Round prod-rollout / email-open-tracking] Potrzebny do auth.getSession()
 // gdy wołamy /.netlify/functions/notify-supplier-read z auth tokenem.
@@ -3715,7 +3718,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||account.id} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
       : <PageBuyerFM chainId={(retailers.find(r=>r.id===account.retailerId)?.fm26ChainId)||account.chainId} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
-    if(pg==="a-fm")         return <PageAdminFM fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
+    if(pg==="a-fm")         return <PageAdminFM onQueueConfigChanged={reloadFmStationCaps} fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
     // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
     // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.
     if(pg==="a-branding") {
@@ -13859,6 +13862,8 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
           <div style={{ fontSize:13,color:"rgba(255,255,255,0.55)" }}>{t("fm.supplier.wyniki_hero_meta_format", { date: t("fm.event_date", { defaultValue: FM_DATE }), venue: FM_VENUE })}</div>
           <div style={{ marginTop:12 }}><Badge color="#6ee7b7" bg="rgba(5,150,105,0.2)">{t("fm.supplier.wyniki_hero_badge")}</Badge></div>
         </div>
+        {/* [feat/fm-queue] „Twoja kolej” — renderuje się tylko, gdy admin zaimportował plan do kolejek (dzień eventu). */}
+        <Suspense fallback={null}><FmMyQueue lang={i18n.language}/></Suspense>
         <Card title={t("fm.supplier.wyniki_card_title")} icon={Calendar}>
           {rows.length===0
             ? <div style={{ padding:30,textAlign:"center",color:"#94a3b8" }}>{t("fm.supplier.wyniki_empty")}</div>
@@ -14820,7 +14825,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   );
 }
 
-function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies, fl }) {
+function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies, fl, onQueueConfigChanged }) {
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
@@ -14844,10 +14849,18 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
           ["dane", t("fm.admin.tab_data")],
           ["plan", t("fm.admin.tab_plan")],
           ["korekty", t("fm.admin.tab_corrections")],
+          ["dzien", t("fm.admin.tab_event_day")],
         ].map(([tabKey,l])=>(
           <button key={tabKey} onClick={()=>setTab(tabKey)} style={{ padding:"8px 18px",borderRadius:8,border:"none",background:tab===tabKey?"white":"transparent",fontWeight:tab===tabKey?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:tab===tabKey?"#1e293b":"#64748b",boxShadow:tab===tabKey?"0 1px 4px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
+
+      {/* ══ TAB: DZIEŃ WYDARZENIA (kolejki / numerki na żywo) ══ */}
+      {tab==="dzien" && (
+        <Suspense fallback={<div style={{ padding:20,color:"#64748b" }}>…</div>}>
+          <FmEventDay retailers={retailers} eventDate={fmSettings.event_date || fmSettings.eventDate || "2026-09-24"} onQueueConfigChanged={onQueueConfigChanged}/>
+        </Suspense>
+      )}
 
       {/* ══ TAB: ZARZĄDZANIE ══ */}
       {tab==="zarzadzanie" && (
