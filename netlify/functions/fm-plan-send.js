@@ -8,17 +8,64 @@
  * (pdfmake/sharp) po stronie serwera, a renderer jest jeden (przeglądarka admina).
  *
  * Body (JSON):
- *   kind: "supplier" | "chain", id: uuid|int, name, lang: "pl"|"en",
- *   to: [emails], filename: "….pdf", pdfBase64, test?: boolean (nie oznacza wysyłki)
+ *   kind: "supplier" | "chain", id: uuid|int, lang: "pl"|"en",
+ *   filename: "….pdf", pdfBase64, test?: boolean
  * Auth: Bearer JWT admina (profiles.role = 'admin').
- * Po sukcesie (gdy !test): companies/retailers.fm_plan_sent_at = now() (migracja 051;
- * brak kolumny jest ignorowany).
+ * Adresaci są zawsze ustalani po stronie serwera z przypisanego rekordu,
+ * nigdy z danych przesłanych przez przeglądarkę. Test trafia wyłącznie do
+ * zalogowanego administratora. Produkcyjna wysyłka wymaga opublikowanego planu.
  */
 import { createClient } from "@supabase/supabase-js";
 import { resolveEnvConfig, missingEnvNames, envErrorPayload } from "./_shared/function-env.js";
 
 const json = (statusCode, body) => ({ statusCode, headers: { "Content-Type": "application/json; charset=utf-8" }, body: JSON.stringify(body) });
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PUBLISHED_PHASES = new Set(["published", "final_published", "event_day"]);
+
+const uniqueEmails = (rows) => [...new Set((rows || []).map((row) => String(row.email || "").trim().toLowerCase()).filter((email) => EMAIL_RE.test(email)))];
+
+async function resolveCardRecipient(db, kind, id) {
+  if (kind === "supplier") {
+    const { data: company, error } = await db
+      .from("companies")
+      .select("id, name, fm_b2b_enabled, account_status, fm_plan_sent_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) return { error: "company_lookup_failed" };
+    if (!company || company.fm_b2b_enabled !== true || ["suspended", "rejected"].includes(company.account_status)) return { error: "supplier_not_eligible" };
+    const { data: profiles, error: profilesError } = await db
+      .from("profiles")
+      .select("email, role, active")
+      .eq("company_id", company.id)
+      .eq("role", "supplier");
+    if (profilesError) return { error: "supplier_recipients_lookup_failed" };
+    return { name: company.name, recipients: uniqueEmails((profiles || []).filter((profile) => profile.active !== false)) };
+  }
+
+  const retailerId = Number(id);
+  if (!Number.isInteger(retailerId) || retailerId <= 0) return { error: "invalid_retailer_id" };
+  const { data: retailer, error } = await db
+    .from("retailers")
+    .select("id, name, fm26_active, fm_plan_sent_at")
+    .eq("id", retailerId)
+    .maybeSingle();
+  if (error) return { error: "retailer_lookup_failed" };
+  if (!retailer || retailer.fm26_active !== true) return { error: "retailer_not_eligible" };
+  const { data: profiles, error: profilesError } = await db
+    .from("profiles")
+    .select("email, role, active, fm26_active")
+    .eq("retailer_id", retailer.id)
+    .eq("role", "buyer");
+  if (profilesError) return { error: "buyer_recipients_lookup_failed" };
+  return { name: retailer.name, recipients: uniqueEmails((profiles || []).filter((profile) => profile.active !== false && profile.fm26_active !== false)) };
+}
+
+async function planIsPublished(db) {
+  const { data, error } = await db.from("fm_settings").select("algo_phase").order("updated_at", { ascending: false }).limit(1).maybeSingle();
+  if (error) return { error: "plan_phase_lookup_failed" };
+  return { published: PUBLISHED_PHASES.has(String(data?.algo_phase || "").trim().toLowerCase()) };
+}
 
 const MAIL = {
   pl: {
@@ -65,14 +112,27 @@ export async function handler(event) {
   // ── body ───────────────────────────────────────────────────────────────
   let body;
   try { body = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "invalid_json" }); }
-  const kind = body.kind === "chain" ? "chain" : "supplier";
+  if (body.kind !== "supplier" && body.kind !== "chain") return json(400, { error: "invalid_kind" });
+  const kind = body.kind;
   const lang = body.lang === "pl" ? "pl" : "en";
-  const name = String(body.name || "").slice(0, 200);
-  const to = Array.isArray(body.to) ? body.to.map((e) => String(e).trim()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) : [];
   const pdfBase64 = String(body.pdfBase64 || "");
   const filename = String(body.filename || "karta.pdf").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
-  if (!to.length) return json(400, { error: "no_recipients" });
   if (!pdfBase64 || pdfBase64.length * 0.75 > MAX_PDF_BYTES) return json(400, { error: "pdf_missing_or_too_large" });
+  const pdf = Buffer.from(pdfBase64, "base64");
+  if (!pdf.length || pdf.length > MAX_PDF_BYTES || pdf.subarray(0, 5).toString() !== "%PDF-") return json(400, { error: "invalid_pdf" });
+
+  const test = body.test === true;
+  if (!test) {
+    const phase = await planIsPublished(db);
+    if (phase.error) return json(500, { error: phase.error });
+    if (!phase.published) return json(409, { error: "plan_not_published" });
+  }
+
+  const card = await resolveCardRecipient(db, kind, body.id);
+  if (card.error) return json(400, { error: card.error });
+  const to = test ? uniqueEmails([{ email: profile.email }]) : card.recipients;
+  if (!to.length) return json(400, { error: test ? "admin_email_missing" : "no_canonical_recipients" });
+  const name = String(card.name || "").slice(0, 200);
 
   // ── Resend ─────────────────────────────────────────────────────────────
   const m = MAIL[lang];
@@ -83,10 +143,10 @@ export async function handler(event) {
       from: "Fresh Market <newsletter@freshmarket.eu>",
       reply_to: "support@freshmarket.eu",
       to,
-      subject: (body.test ? "[TEST] " : "") + m.subject(kind),
+      subject: (test ? "[TEST] " : "") + m.subject(kind),
       html: m.body(kind, name),
-      attachments: [{ filename, content: pdfBase64 }],
-      tags: [{ name: "fm2026", value: body.test ? "plan-card-test" : `plan-card-${kind}` }],
+      attachments: [{ filename, content: pdf.toString("base64") }],
+      tags: [{ name: "fm2026", value: test ? "plan-card-test" : `plan-card-${kind}` }],
     }),
   });
   if (!res.ok) {
@@ -95,12 +155,12 @@ export async function handler(event) {
   }
   const sent = await res.json().catch(() => ({}));
 
-  // ── znacznik wysyłki (kolumna z migracji 051; brak kolumny = ignoruj) ──
+  // ── znacznik wysyłki (migracja 051 jest wymaganym warunkiem operacyjnym) ──
   let marked = false;
-  if (!body.test && body.id != null) {
+  if (!test && body.id != null) {
     const table = kind === "chain" ? "retailers" : "companies";
     const { error } = await db.from(table).update({ fm_plan_sent_at: new Date().toISOString() }).eq("id", body.id);
     marked = !error;
   }
-  return json(200, { ok: true, id: sent.id || null, to, marked });
+  return json(200, { ok: true, id: sent.id || null, recipient_count: to.length, marked });
 }

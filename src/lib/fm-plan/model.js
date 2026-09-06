@@ -91,18 +91,18 @@ export function buildPlanModel(raw, { simulate = false } = {}) {
   const prefs = raw.prefs || [];
   const profilesByCompany = new Map();
   for (const p of raw.supplier_profiles || []) {
-    if (!p.company_id || !p.email || p.active === false) continue;
+    if (!p.company_id || !p.email || p.active === false || p.role !== "supplier") continue;
     if (!profilesByCompany.has(p.company_id)) profilesByCompany.set(p.company_id, []);
     profilesByCompany.get(p.company_id).push(p);
   }
 
   let pairs = pairsFromSchedule(raw.settings && raw.settings.schedule, companies);
-  let mode = "final";
+  let mode = "working";
   if (!pairs) {
     if (!simulate) pairs = [];
     else { pairs = simulatePairs(companies, retailers, prefs); mode = "simulation"; }
-  } else if (raw.settings && raw.settings.algo_phase && !/publish|final/i.test(String(raw.settings.algo_phase))) {
-    mode = "working";
+  } else if (/^(published|final_published|event_day)$/i.test(String(raw.settings?.algo_phase || "").trim())) {
+    mode = "final";
   }
 
   const chainByCid = new Map(retailers.map((r) => [r.fm26_chain_id, r]));
@@ -145,7 +145,7 @@ export function buildPlanModel(raw, { simulate = false } = {}) {
           logoUrl: norm(m.co.logo_url) || null, initials: initials(m.co.name), contact: pickContact(m.co),
         },
       }));
-    const buyers = (r.buyers || []).filter((b) => b.active !== false && (b.role == null || b.role === "buyer"));
+    const buyers = (r.buyers || []).filter((b) => b.active !== false && b.fm26_active !== false && b.role === "buyer");
     return {
       kind: "chain", id: r.id, cid: r.fm26_chain_id, card: `S-${String(idx + 1).padStart(2, "0")}`, lang,
       ...chainView(r, lang),

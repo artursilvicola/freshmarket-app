@@ -110,17 +110,17 @@ export default function FmPlanExport({ fl, adminEmail }) {
   }
   function preview(c) { window.open(URL.createObjectURL(c.blob), "_blank", "noopener"); }
 
-  async function sendOne(c, to, test) {
+  async function sendOne(c, test) {
     const token = await getToken();
     const r = await fetch("/.netlify/functions/fm-plan-send", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ kind: c.kind, id: c.id, name: c.name, lang: c.lang, to, filename: c.filename, pdfBase64: await blobToBase64(c.blob), test }) });
+      body: JSON.stringify({ kind: c.kind, id: c.id, lang: c.lang, filename: c.filename, pdfBase64: await blobToBase64(c.blob), test }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error ? `${j.error}${j.detail ? " — " + j.detail : ""}` : `HTTP ${r.status}`);
     return j;
   }
   async function sendTest() {
     const c = cards[0]; if (!c || !adminEmail) return;
-    try { setPhase("sending"); await sendOne(c, [adminEmail], true); fl?.(t("fm_plan.test_sent", { email: adminEmail }), "success"); }
+    try { setPhase("sending"); await sendOne(c, true); fl?.(t("fm_plan.test_sent", { email: adminEmail }), "success"); }
     catch (e) { fl?.(t("fm_plan.error", { message: e?.message || String(e) }), "error"); }
     finally { setPhase("ready"); }
   }
@@ -134,7 +134,7 @@ export default function FmPlanExport({ fl, adminEmail }) {
     for (let i = 0; i < withEmail.length; i++) {
       if (abortRef.current) break;
       const c = withEmail[i];
-      try { await sendOne(c, c.emails, false); c.status = "ok"; c.sentAt = new Date().toISOString(); ok++; }
+      try { await sendOne(c, false); c.status = "ok"; c.sentAt = new Date().toISOString(); ok++; }
       catch (e) { c.status = "err:" + (e?.message || e); err++; }
       setProgress({ done: i + 1, total: withEmail.length }); setCards([...cards]);
     }
