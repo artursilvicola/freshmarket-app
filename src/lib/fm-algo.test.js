@@ -47,7 +47,8 @@ describe("scoreMatch — hierarchia A–F", () => {
 });
 
 describe("chainCapacity — pojemność = spotkania/stanowisko × aktywne stanowiska", () => {
-  it("1 → 5, 2 → 10, 3 → 15 przy domyślnym parametrze", () => {
+  it("1 → 60, 2 → 120, 3 → 180 przy domyślnym parametrze (60/stanowisko)", () => {
+    expect(FM_MEETINGS_PER_STATION).toBe(60);
     expect(chainCapacity(chain("c1", { stations: 1 })).cap).toBe(1 * FM_MEETINGS_PER_STATION);
     expect(chainCapacity(chain("c1", { stations: 2 })).cap).toBe(2 * FM_MEETINGS_PER_STATION);
     expect(chainCapacity(chain("c1", { stations: 3 })).cap).toBe(3 * FM_MEETINGS_PER_STATION);
@@ -72,8 +73,8 @@ describe("chainCapacity — pojemność = spotkania/stanowisko × aktywne stanow
 });
 
 describe("buildFMData — pojemność sieci", () => {
-  it("sieć z 1 stanowiskiem przyjmuje dokładnie 5 spotkań, reszta dostaje ostrzeżenie chain_full", () => {
-    const chains = [chain("c1", { stations: 1 })];
+  it("sieć z 1 stanowiskiem i 5 spotk./stan. przyjmuje dokładnie 5, reszta dostaje ostrzeżenie chain_full", () => {
+    const chains = [chain("c1", { stations: 1, meetingsPerStation: 5 })];
     const suppliers = Array.from({ length: 8 }, (_, i) => supp(`s${i + 1}`, { paymentDate: `2026-08-0${i + 1}` }));
     const { prefs, resps } = mutualAll(suppliers, chains);
     const out = buildFMData(prefs, resps, chains, suppliers);
@@ -86,18 +87,28 @@ describe("buildFMData — pojemność sieci", () => {
     expect(out.cs.c1.list).toEqual(["s1", "s2", "s3", "s4", "s5"]);
     expect(out.warnings.filter(w => w.type === "no_meetings").map(w => w.supplierId)).toEqual(["s6", "s7", "s8"]);
   });
-  it("2 stanowiska (parallel, np. Auchan ×2) → 10 spotkań", () => {
+  it("2 stanowiska (parallel, np. Auchan ×2) → 120 miejsc; 70 firm wchodzi w całości", () => {
     const chains = [chain("c1", { stations: 2 })];
-    const suppliers = Array.from({ length: 12 }, (_, i) => supp(`s${i + 1}`));
+    const suppliers = Array.from({ length: 70 }, (_, i) => supp(`s${i + 1}`));
     const { prefs, resps } = mutualAll(suppliers, chains);
     const out = buildFMData(prefs, resps, chains, suppliers);
-    expect(out.cs.c1.n).toBe(10);
+    expect(out.cs.c1.cap).toBe(120);
+    expect(out.cs.c1.n).toBe(70);
+    expect(out.warnings.some(w => w.type === "chain_full")).toBe(false);
+  });
+  it("1 stanowisko (60) przy 70 chętnych → 60 wchodzi, ostrzeżenie chain_full z liczbą odrzuconych", () => {
+    const chains = [chain("c1", { stations: 1 })];
+    const suppliers = Array.from({ length: 70 }, (_, i) => supp(`s${i + 1}`));
+    const { prefs, resps } = mutualAll(suppliers, chains);
+    const out = buildFMData(prefs, resps, chains, suppliers);
+    expect(out.cs.c1.n).toBe(60);
+    expect(out.warnings.find(w => w.type === "chain_full")?.rejected).toBe(10);
   });
   it("stanowiska z opts.stationsByChain (konfiguracja po fm26_chain_id)", () => {
     const chains = [chain("c1")];
     const suppliers = Array.from({ length: 12 }, (_, i) => supp(`s${i + 1}`));
     const { prefs, resps } = mutualAll(suppliers, chains);
-    const out = buildFMData(prefs, resps, chains, suppliers, { stationsByChain: { c1: 2 } });
+    const out = buildFMData(prefs, resps, chains, suppliers, { stationsByChain: { c1: 2 }, meetingsPerStation: 5 });
     expect(out.cs.c1.n).toBe(10);
     expect(out.warnings.some(w => w.type === "no_station_config")).toBe(false);
   });

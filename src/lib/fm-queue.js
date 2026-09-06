@@ -166,6 +166,7 @@ export const fmQueueRpc = {
   undo:             (stationId, version, idem = newIdemKey()) => rpc("fm_queue_undo", { p_station_id: stationId, p_expected_version: version, p_idem: idem }),
   openDay:          (eventDate, force = false) => rpc("fm_queue_open_day", { p_event_date: eventDate, p_force: force }),
   closeAll:         (eventDate) => rpc("fm_queue_close_all", { p_event_date: eventDate }),
+  resetDay:         (eventDate) => rpc("fm_queue_reset_day", { p_event_date: eventDate, p_confirm: `RESET ${eventDate}` }),
   assignRetailer:   (operatorId, retailerId, eventDate, assign = true) => rpc("fm_queue_assign_retailer", { p_operator_id: operatorId, p_retailer_id: retailerId, p_event_date: eventDate, p_assign: assign }),
   publicSnapshot:   (eventDate = null) => rpc("fm_queue_public_snapshot", { p_event_date: eventDate }),
 };

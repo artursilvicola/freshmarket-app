@@ -2826,7 +2826,9 @@
         "chain_group_label_format": "{{label}} ({{count}})",
         "chain_empty": "No signups for this retailer."
       },
-      "tab_event_day": "Event day"
+      "tab_event_day": "Event day",
+      "plan_warn_capacity_title": "Retailer capacity (desks × meetings per desk)",
+      "plan_warn_capacity_hint": "Desk configuration: tab “Event day” → Desks. Re-run the algorithm after changes."
     },
     "corrections": {
       "empty_data": "Data not generated yet",

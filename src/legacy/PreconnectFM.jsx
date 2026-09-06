@@ -15026,8 +15026,22 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
             if (!warnings.length) return null;
             const noMeetings = warnings.filter(w => w.type === "no_meetings");
             const swaps = warnings.filter(w => w.type === "swap_star_thumb");
+            // [feat/fm-queue] pojemność sieci z konfiguracji stanowisk („Dzień wydarzenia”)
+            const capacity = warnings.filter(w => w.type === "chain_full" || w.type === "no_station_config");
             return (
               <div style={{ marginTop:14, marginBottom:6 }}>
+                {capacity.length > 0 && (
+                  <div style={{ background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"12px 14px",marginBottom:8 }}>
+                    <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6 }}>
+                      <AlertTriangle size={14} color="#ea580c"/>
+                      <strong style={{ fontSize:13,color:"#9a3412" }}>{t("fm.admin.plan_warn_capacity_title", { defaultValue: "Pojemność sieci (stanowiska × spotkania/stanowisko)" })}</strong>
+                    </div>
+                    <ul style={{ margin:0,paddingLeft:18,fontSize:11.5,color:"#7c2d12",lineHeight:1.6 }}>
+                      {capacity.map((w, i) => <li key={i}>{w.message}</li>)}
+                    </ul>
+                    <div style={{ fontSize:11,color:"#9a3412",marginTop:6 }}>{t("fm.admin.plan_warn_capacity_hint", { defaultValue: "Konfiguracja stanowisk: zakładka „Dzień wydarzenia” → Stanowiska. Po zmianie uruchom algorytm ponownie." })}</div>
+                  </div>
+                )}
                 {noMeetings.length > 0 && (
                   <div style={{ background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"12px 14px",marginBottom:8 }}>
                     <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:6 }}>

@@ -1,13 +1,14 @@
 /**
  * Netlify Function: admin-staff
- * POST /.netlify/functions/admin-staff   (JWT admina)
+ * POST /.netlify/functions/admin-staff   (JWT SUPER admina: profiles.role='admin' AND admin_level='super')
  *
  * Body: { action: "create" | "reset_pin" | "block" | "unblock" | "delete", ... }
- *   create:    { code, display_name?, kind?: "operator"|"board", event_date }
- *              → tworzy użytkownika Auth (role=staff) + wiersz fm_staff, zwraca PIN JEDEN RAZ
- *   reset_pin: { id }  → nowy PIN (zwracany jeden raz), kasuje lockout
- *   block:     { id }  → fm_staff.blocked=true + ban w Auth (nowe logowania niemożliwe;
- *                        RPC odrzuca natychmiast przez is_staff())
+ *   create:    { code, display_name?, event_date }
+ *              → użytkownik Auth (app_metadata.role='staff' — jedyna droga nadania roli
+ *                uprzywilejowanej, patrz handle_new_user) + wiersz fm_staff; PIN zwracany JEDEN RAZ
+ *   reset_pin: { id }  → nowy PIN (raz), unieważnienie wszystkich sesji, odpięcie urządzenia,
+ *                        pin_rotated_at (stare tokeny odrzucane przez is_staff()), kasuje lockout
+ *   block:     { id }  → fm_staff.blocked=true + ban w Auth + unieważnienie sesji
  *   unblock:   { id }
  *   delete:    { id }  → usuwa użytkownika Auth (kaskada: profiles → fm_staff)
  *
@@ -34,16 +35,16 @@ export const handler = async (event) => {
   const pepper = pepperFromEnv();
   if (!pepper) return errJson(500, { error: "Brak konfiguracji STAFF_PIN_PEPPER (Netlify env, min. 32 znaki)." });
 
-  // 1. Autoryzacja: admin
+  // 1. Autoryzacja: SUPER admin
   const authHeader = event.headers.authorization || event.headers.Authorization;
   if (!authHeader?.startsWith("Bearer ")) return errJson(401, "Brak nagłówka Authorization");
   const token = authHeader.slice(7);
   const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
   if (uErr || !userData?.user) return errJson(401, "Nieprawidłowy token");
-  const svc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
-  const { data: caller } = await svc.from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
-  if (caller?.role !== "admin") return errJson(403, "Tylko admin może zarządzać kontami obsługi.");
+  const svc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey, { auth: { persistSession: false } });
+  const { data: caller } = await svc.from("profiles").select("role, admin_level").eq("id", userData.user.id).maybeSingle();
+  if (caller?.role !== "admin" || caller?.admin_level !== "super") return errJson(403, "Kontami obsługi zarządza tylko super administrator.");
 
   let body;
   try { body = JSON.parse(event.body || "{}"); } catch { return errJson(400, "Niepoprawny JSON"); }
@@ -51,8 +52,8 @@ export const handler = async (event) => {
 
   if (action === "create") {
     const code = normalizeStaffCode(body.code);
-    const kind = body.kind === "board" ? "board" : "operator";
     const eventDate = String(body.event_date || "").slice(0, 10);
+    const displayName = String(body.display_name || "").trim().slice(0, 80) || null;
     if (!code || code.length < 3) return errJson(400, "Kod operatora: min. 3 znaki (litery, cyfry, myślnik).");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return errJson(400, "Podaj datę eventu (YYYY-MM-DD).");
     const { data: exists } = await svc.from("fm_staff").select("id").eq("code", code).maybeSingle();
@@ -63,21 +64,22 @@ export const handler = async (event) => {
       email: staffEmailFor(code),
       password: staffPassword(pepper, code, pin),
       email_confirm: true,
-      user_metadata: { role: "staff", staff_code: code },
+      app_metadata: { role: "staff", staff_code: code },   // rola uprzywilejowana TYLKO tędy
+      user_metadata: { staff_code: code },
     });
     if (cErr || !created?.user) return errJson(500, `Nie udało się utworzyć konta: ${cErr?.message || "?"}`);
     const uid = created.user.id;
 
-    // profil (trigger handle_new_user powinien go założyć; dopinamy defensywnie)
-    await svc.from("profiles").upsert({ id: uid, email: staffEmailFor(code), role: "staff", name: body.display_name || code }, { onConflict: "id" });
+    // profil zakłada trigger handle_new_user (z app_metadata); dopinamy defensywnie
+    await svc.from("profiles").upsert({ id: uid, email: staffEmailFor(code), role: "staff", name: displayName || code }, { onConflict: "id" });
     const { error: sErr } = await svc.from("fm_staff").insert({
-      id: uid, code, display_name: body.display_name || null, kind, event_date: eventDate, pin_rotated_at: new Date().toISOString(),
+      id: uid, code, display_name: displayName, event_date: eventDate, pin_rotated_at: new Date().toISOString(),
     });
     if (sErr) {
       await svc.auth.admin.deleteUser(uid).catch(() => {});
       return errJson(500, `Nie udało się zapisać obsługi: ${sErr.message}`);
     }
-    return okJson({ id: uid, code, kind, pin }); // PIN tylko tu, jeden raz
+    return okJson({ id: uid, code, pin }); // PIN tylko tu, jeden raz
   }
 
   const id = String(body.id || "");
@@ -89,14 +91,16 @@ export const handler = async (event) => {
     const pin = generatePin();
     const { error } = await svc.auth.admin.updateUserById(id, { password: staffPassword(pepper, staff.code, pin) });
     if (error) return errJson(500, `Reset PIN nieudany: ${error.message}`);
-    await svc.from("fm_staff").update({ failed_logins: 0, locked_until: null, pin_rotated_at: new Date().toISOString() }).eq("id", id);
-    return okJson({ id, code: staff.code, pin });
+    const { data: rev, error: rErr } = await svc.rpc("fm_staff_revoke_sessions", { p_user: id, p_rotate_pin: true });
+    if (rErr) return errJson(500, `PIN zmieniony, ale nie udało się unieważnić sesji: ${rErr.message}`);
+    return okJson({ id, code: staff.code, pin, sessions_revoked: rev?.sessions_revoked ?? null });
   }
   if (action === "block" || action === "unblock") {
     const blocked = action === "block";
     const { error } = await svc.auth.admin.updateUserById(id, { ban_duration: blocked ? "87600h" : "none" });
     if (error) return errJson(500, `Zmiana blokady nieudana: ${error.message}`);
     await svc.from("fm_staff").update({ blocked }).eq("id", id);
+    if (blocked) await svc.rpc("fm_staff_revoke_sessions", { p_user: id, p_rotate_pin: false });
     return okJson({ id, code: staff.code, blocked });
   }
   if (action === "delete") {

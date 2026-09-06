@@ -3,6 +3,7 @@
 // przypisania, Otwórz dzień (import planu), podgląd na żywo, ustawienia tablicy, log.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { useAuth } from "../../auth/AuthProvider";
 import {
   deleteFmQueueGroup, deleteFmStation, fmQueueRpc, getFmQueueSettings, listFmQueueGroups, listFmQueueLog, listFmStaff,
   saveFmQueueSettings, subscribeFmQueue, updateFmStaff, upsertFmQueueGroup, upsertFmStation,
@@ -25,6 +26,10 @@ async function adminStaffCall(body) {
 }
 
 export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueueConfigChanged }) {
+  // Kontami obsługi (tworzenie/PIN/blokada/usunięcie) zarządza TYLKO super admin — funkcja
+  // admin-staff sprawdza to po stronie serwera; UI tylko chowa przyciski.
+  const { profile } = useAuth();
+  const isSuper = Boolean(profile?.is_super_admin);
   const [eventDate, setEventDate] = useState(eventDateProp || "2026-09-24");
   const [sub, setSub] = useState("stanowiska");
   const [groups, setGroups] = useState([]);
@@ -35,6 +40,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   const [msg, setMsg] = useState(null); // {tone, text}
   const [busy, setBusy] = useState(false);
   const [pinModal, setPinModal] = useState(null); // {code, pin}
+  const [dayReport, setDayReport] = useState(null);
   const [dbMissing, setDbMissing] = useState(false);
 
   const say = (text, tone = "ok") => { setMsg({ text, tone }); setTimeout(() => setMsg(m => (m?.text === text ? null : m)), 6000); };
@@ -105,14 +111,14 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   };
 
   // ── obsługa ──
-  const [newStaff, setNewStaff] = useState({ code: "", display_name: "", kind: "operator" });
+  const [newStaff, setNewStaff] = useState({ code: "", display_name: "" });
   async function createStaff() {
     const code = newStaff.code.trim().toUpperCase();
     if (code.length < 3) { say("Kod: min. 3 znaki.", "error"); return; }
     await run(async () => {
-      const j = await adminStaffCall({ action: "create", code, display_name: newStaff.display_name.trim() || null, kind: newStaff.kind, event_date: eventDate });
+      const j = await adminStaffCall({ action: "create", code, display_name: newStaff.display_name.trim() || null, event_date: eventDate });
       setPinModal({ code: j.code, pin: j.pin });
-      setNewStaff({ code: "", display_name: "", kind: "operator" });
+      setNewStaff({ code: "", display_name: "" });
     });
   }
   const staffAction = (row, action) => run(async () => {
@@ -147,7 +153,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
       {sub === "stanowiska" && (
         <div>
           <p style={{ color: "#64748b", margin: "0 0 10px", lineHeight: 1.5 }}>
-            Pojemność sieci w algorytmie = <b>spotkania/stanowisko × aktywne stanowiska</b> (domyślnie {FM_MEETINGS_PER_STATION}/stanowisko). Sieć bez konfiguracji liczona jest jako 1 stanowisko i dostaje ostrzeżenie w planie.
+            Pojemność sieci w algorytmie = <b>spotkania/stanowisko × aktywne stanowiska</b> (domyślnie {FM_MEETINGS_PER_STATION}/stanowisko: 1 stanowisko → {FM_MEETINGS_PER_STATION}, 2 równoległe → {2 * FM_MEETINGS_PER_STATION}). Sieć bez konfiguracji liczona jest jako 1 stanowisko i dostaje ostrzeżenie w planie; plan ponad pojemność → ostrzeżenie „pojemność wyczerpana” przed zatwierdzeniem.
             Osobna grupa (np. Dino · Kwiaty) = osobna kolejka i numeracja; kilka stanowisk w jednej grupie = wspólna kolejka (Auchan ×2).
           </p>
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -169,7 +175,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                     <td style={td}><input defaultValue={g.label || ""} placeholder="(główna)" onBlur={e => e.target.value !== (g.label || "") && patchGroup(g, { label: e.target.value })} style={{ ...inp, width: 100 }} /></td>
                     <td style={td}><select value={g.gate ?? ""} onChange={e => patchGroup(g, { gate: e.target.value ? Number(e.target.value) : null })} style={inp}><option value="">—</option><option value="1">1</option><option value="2">2</option></select></td>
                     <td style={td}><input defaultValue={(g.categories || []).join(", ")} placeholder="wszystkie" onBlur={e => patchGroup(g, { categories: e.target.value.split(",").map(s => s.trim()).filter(Boolean) })} style={{ ...inp, width: 130 }} /></td>
-                    <td style={td}><input type="number" min={1} max={60} defaultValue={g.meetings_per_station} onBlur={e => Number(e.target.value) !== g.meetings_per_station && patchGroup(g, { meetings_per_station: Math.max(1, Math.min(60, Number(e.target.value) || 1)) })} style={{ ...inp, width: 60 }} /></td>
+                    <td style={td}><input type="number" min={1} max={200} defaultValue={g.meetings_per_station} onBlur={e => Number(e.target.value) !== g.meetings_per_station && patchGroup(g, { meetings_per_station: Math.max(1, Math.min(200, Number(e.target.value) || 1)) })} style={{ ...inp, width: 60 }} /></td>
                     <td style={td}>
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
                         {g.fm_stations.map(s => (
@@ -198,16 +204,18 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
       {sub === "obsluga" && (
         <div>
           <p style={{ color: "#64748b", margin: "0 0 10px", lineHeight: 1.5 }}>
-            Konto obsługi = kod + 6-cyfrowy PIN (pokazywany <b>tylko raz</b> przy utworzeniu / resecie). Logowanie: <code>b2b.freshmarket.eu/obsluga</code>. Przypisz operatora do sieci — widzi i obsługuje tylko ich stanowiska.
+            Konto obsługi = kod + 6-cyfrowy PIN (pokazywany <b>tylko raz</b> przy utworzeniu / resecie; reset unieważnia sesje i odpina tablet). Konto działa <b>tylko w dniu eventu</b> ({eventDate}) i tylko na tablecie, na którym zalogowano się pierwszy raz. Logowanie: <code>b2b.freshmarket.eu/obsluga</code>. Przypisz operatora do sieci — widzi i obsługuje tylko ich stanowiska.
+            {!isSuper && <><br /><b style={{ color: "#b45309" }}>Tworzenie, reset PIN-u, blokada i usuwanie kont wymagają uprawnień super administratora.</b></>}
           </p>
+          {isSuper && (
           <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap", marginBottom: 12, padding: 10, background: "#f8fafc", borderRadius: 10 }}>
             <label>Kod<br /><input value={newStaff.code} onChange={e => setNewStaff(s => ({ ...s, code: e.target.value.toUpperCase() }))} placeholder="OBSLUGA-1" style={inp} /></label>
             <label>Imię (opcjonalnie)<br /><input value={newStaff.display_name} onChange={e => setNewStaff(s => ({ ...s, display_name: e.target.value }))} style={inp} /></label>
-            <label>Typ<br /><select value={newStaff.kind} onChange={e => setNewStaff(s => ({ ...s, kind: e.target.value }))} style={inp}><option value="operator">operator (tablet)</option><option value="board">tablica (kiosk)</option></select></label>
             <Btn onClick={createStaff} disabled={busy || dbMissing}>Utwórz konto → pokaż PIN</Btn>
           </div>
+          )}
           <table style={tbl}>
-            <thead><tr>{["Kod", "Imię", "Typ", "Status", "Ostatnie logowanie", "Przypisane sieci", ""].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <thead><tr>{["Kod", "Imię", "Dzień", "Status", "Ostatnie logowanie / tablet", "Przypisane sieci", ""].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
               {staff.map(row => {
                 const asg = assignedRetailers(row);
@@ -216,11 +224,11 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                   <tr key={row.id}>
                     <td style={td}><b>{row.code}</b></td>
                     <td style={td}><input defaultValue={row.display_name || ""} onBlur={e => e.target.value !== (row.display_name || "") && run(() => updateFmStaff(row.id, { display_name: e.target.value || null }))} style={{ ...inp, width: 110 }} /></td>
-                    <td style={td}>{row.kind}</td>
+                    <td style={td}>{row.event_date}</td>
                     <td style={td}>{row.blocked ? <b style={{ color: "#dc2626" }}>zablokowane</b> : locked ? <span style={{ color: "#b45309" }}>lockout do {new Date(row.locked_until).toLocaleTimeString("pl-PL")}</span> : <span style={{ color: "#059669" }}>aktywne</span>}</td>
-                    <td style={td}>{row.last_login_at ? new Date(row.last_login_at).toLocaleString("pl-PL") : "—"}</td>
+                    <td style={td}>{row.last_login_at ? new Date(row.last_login_at).toLocaleString("pl-PL") : "—"}{row.device_id ? <div style={{ fontSize: 10, color: "#64748b" }}>tablet przypięty</div> : null}</td>
                     <td style={td}>
-                      {row.kind === "operator" && (
+                      {(
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 360 }}>
                           {fmRetailers.filter(r => groupsByRetailer[r.id]?.length).map(r => (
                             <label key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 999, border: `1px solid ${asg.has(r.id) ? "#99f6e4" : "#e2e8f0"}`, background: asg.has(r.id) ? "#f0fdfa" : "white", fontSize: 11, cursor: "pointer" }}>
@@ -231,9 +239,11 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                       )}
                     </td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
-                      <Btn sm ghost disabled={busy} onClick={() => staffAction(row, "reset_pin")}>nowy PIN</Btn>{" "}
-                      <Btn sm ghost disabled={busy} onClick={() => staffAction(row, row.blocked ? "unblock" : "block")}>{row.blocked ? "odblokuj" : "zablokuj"}</Btn>{" "}
-                      <Btn sm ghost disabled={busy} onClick={() => staffAction(row, "delete")}>usuń</Btn>
+                      {isSuper && <>
+                        <Btn sm ghost disabled={busy} onClick={() => staffAction(row, "reset_pin")}>nowy PIN</Btn>{" "}
+                        <Btn sm ghost disabled={busy} onClick={() => staffAction(row, row.blocked ? "unblock" : "block")}>{row.blocked ? "odblokuj" : "zablokuj"}</Btn>{" "}
+                        <Btn sm ghost disabled={busy} onClick={() => staffAction(row, "delete")}>usuń</Btn>
+                      </>}
                     </td>
                   </tr>
                 );
@@ -278,10 +288,24 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <div style={box}>
             <h4 style={h4}>Dzień eventu</h4>
-            <p style={{ color: "#64748b", lineHeight: 1.5 }}>„Otwórz dzień” importuje <b>zatwierdzony plan</b> (numerki z fm_settings.schedule) do kolejek — dla każdej sieci jej spotkania w kolejności numerów. Grupy, które mają już spotkania, są pomijane. Stanowiska pozostają ZAMKNIĘTE — otwiera je obsługa ręcznie.</p>
+            <p style={{ color: "#64748b", lineHeight: 1.5 }}>„Otwórz dzień” importuje <b>opublikowany plan</b> dla tej daty (fm_settings z fazą „opublikowany”, numerki ze <code>schedule.nums</code>) do kolejek — każdą parę firma × sieć z jej numerem. Grupy, które mają już spotkania z planu, są pomijane; „Synchronizuj (force)” dopisuje nowe pary i aktualizuje zmienione numery tylko dla spotkań jeszcze niewywołanych, konflikty numerów raportuje. Stanowiska pozostają ZAMKNIĘTE — otwiera je obsługa ręcznie.</p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Btn disabled={busy || dbMissing} onClick={() => window.confirm(`Zaimportować plan spotkań do kolejek na ${eventDate}?`) && run(() => fmQueueRpc.openDay(eventDate, false), (r) => `Import: ${r.meetings} spotkań, ${r.groups_created} nowych grup, pominięte grupy: ${r.skipped_existing}${r.missing?.length ? `, nieznane: ${r.missing.length}` : ""}.`)}>Otwórz dzień (import planu)</Btn>
+              <Btn disabled={busy || dbMissing} onClick={() => window.confirm(`Zaimportować opublikowany plan spotkań do kolejek na ${eventDate}?`) && run(() => fmQueueRpc.openDay(eventDate, false).then(r => { setDayReport(r); return r; }), (r) => `Import: ${r.inserted} spotkań, ${r.groups_created} nowych grup, pominięte grupy: ${r.skipped_groups}, problemy: ${r.problems?.length || 0}.`)}>Otwórz dzień (import planu)</Btn>
+              <Btn ghost disabled={busy || dbMissing} onClick={() => window.confirm(`Zsynchronizować plan z kolejkami na ${eventDate}? Zmienione numery zostaną zaktualizowane tylko dla spotkań jeszcze niewywołanych.`) && run(() => fmQueueRpc.openDay(eventDate, true).then(r => { setDayReport(r); return r; }), (r) => `Synchronizacja: +${r.inserted} nowych, ${r.updated} zmienionych numerów, ${r.unchanged} bez zmian, problemy: ${r.problems?.length || 0}.`)}>Synchronizuj (force)</Btn>
               <Btn ghost disabled={busy || dbMissing} onClick={() => window.confirm("Zamknąć WSZYSTKIE stanowiska (koniec spotkań 17:00)?") && run(() => fmQueueRpc.closeAll(eventDate), (r) => `Zamknięto ${r.closed} stanowisk.`)}>Zamknij wszystkie stanowiska</Btn>
+            </div>
+            {dayReport?.problems?.length > 0 && (
+              <div style={{ marginTop: 10, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px", maxHeight: 220, overflow: "auto" }}>
+                <b>Do decyzji admina ({dayReport.problems.length}):</b>
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                  {dayReport.problems.map((p, i) => <li key={i}><code>{p.reason}</code> — firma {String(p.sid || "").slice(0, 8)}… × sieć {p.cid}, nr {p.nr}</li>)}
+                </ul>
+                <div style={{ color: "#64748b", marginTop: 4 }}>unrouted = split bez jednoznacznej kategorii (uzupełnij kategorie firmy/grupy i uruchom „Synchronizuj”); nr_conflict = numer zajęty przez inną firmę; missing_supplier/chain = brak mapowania; locked_status = spotkanie już wywołane.</div>
+              </div>
+            )}
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
+              <Btn ghost disabled={busy || dbMissing} onClick={() => { const c = window.prompt(`Reset dnia ${eventDate} (TYLKO próba generalna / dzień testowy): usuwa wszystkie spotkania kolejek i zeruje numery. Wpisz dokładnie: RESET ${eventDate}`); if (c === `RESET ${eventDate}`) run(() => fmQueueRpc.resetDay(eventDate), (r) => `Reset: usunięto ${r.deleted_meetings} spotkań.`); }}>Reset dnia testowego…</Btn>
+              <span style={{ color: "#64748b", marginLeft: 8 }}>zablokowany, gdy w tym dniu były już wywołania</span>
             </div>
             {settings?.day_opened_at && <div style={{ marginTop: 8, color: "#64748b" }}>Dzień otwarty: {new Date(settings.day_opened_at).toLocaleString("pl-PL")}{settings.closed_all_at ? ` · zamknięty: ${new Date(settings.closed_all_at).toLocaleString("pl-PL")}` : ""}</div>}
           </div>

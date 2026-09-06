@@ -2826,7 +2826,9 @@
         "chain_group_label_format": "{{label}} ({{count}})",
         "chain_empty": "Brak zgłoszeń dla tej sieci."
       },
-      "tab_event_day": "Dzień wydarzenia"
+      "tab_event_day": "Dzień wydarzenia",
+      "plan_warn_capacity_title": "Pojemność sieci (stanowiska × spotkania/stanowisko)",
+      "plan_warn_capacity_hint": "Konfiguracja stanowisk: zakładka „Dzień wydarzenia” → Stanowiska. Po zmianie uruchom algorytm ponownie."
     },
     "corrections": {
       "empty_data": "Dane nie są jeszcze wygenerowane",

@@ -1,4 +1,5 @@
 // [feat/fm-queue] Wspólne drobiazgi UI panelu obsługi i tablicy (bez zależności od PreconnectFM).
+import { STAFF_DICT, fmErrorText, pickLang } from "./staffI18n";
 
 export const C = {
   teal: "#0d9488", tealDark: "#0f766e", ink: "#0f172a", slate: "#475569", muted: "#94a3b8",
@@ -7,24 +8,22 @@ export const C = {
   blue: "#2563eb", blueBg: "#eff6ff",
 };
 
+// Etykiety trybów: zawsze obie wersje (tablica pokazuje PL / EN równocześnie)
 export const MODE_LABEL = {
-  closed: { pl: "ZAMKNIĘTE", en: "CLOSED", color: C.muted, bg: "#e2e8f0" },
-  open: { pl: "OTWARTE", en: "OPEN", color: C.green, bg: C.greenBg },
-  paused: { pl: "PRZERWA", en: "BREAK", color: C.amber, bg: C.amberBg },
-  free_entry: { pl: "WOLNE WEJŚCIE", en: "WALK-IN", color: C.blue, bg: C.blueBg },
+  closed: { pl: STAFF_DICT.pl.mode.closed, en: STAFF_DICT.en.mode.closed, color: C.muted, bg: "#e2e8f0" },
+  open: { pl: STAFF_DICT.pl.mode.open, en: STAFF_DICT.en.mode.open, color: C.green, bg: C.greenBg },
+  paused: { pl: STAFF_DICT.pl.mode.paused, en: STAFF_DICT.en.mode.paused, color: C.amber, bg: C.amberBg },
+  free_entry: { pl: STAFF_DICT.pl.mode.free_entry, en: STAFF_DICT.en.mode.free_entry, color: C.blue, bg: C.blueBg },
 };
 
-export const STATUS_LABEL = {
-  planned: "zaplanowane", called: "wywołane", in_progress: "w trakcie", done: "zakończone",
-  no_show: "nieobecny", skipped: "pominięte", cancelled: "anulowane",
-  returned_waiting: "powrócił — czeka", returned_in_progress: "powrócił — w trakcie",
-};
+export const statusLabel = (lang, s) => STAFF_DICT[pickLang(lang)].status[s] || s;
 
+// Identyfikator urządzenia (tablet) — wymagany przy logowaniu obsługi, przypinany do konta.
 export function deviceId() {
   try {
     let id = localStorage.getItem("fm_device_id");
-    if (!id) {
-      id = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`).slice(0, 64);
+    if (!id || id.length < 8) {
+      id = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`).slice(0, 64);
       localStorage.setItem("fm_device_id", id);
     }
     return id;
@@ -49,27 +48,4 @@ export function splitPages(items, perPage) {
   return out;
 }
 
-export function humanFmError(e) {
-  const code = e?.fmCode || e?.code || "";
-  const map = {
-    FM_CONFLICT: "Stan stanowiska zmienił się w międzyczasie — odświeżono.",
-    FM_STATION_NOT_OPEN: "Stanowisko nie jest otwarte.",
-    FM_STATION_BUSY: "Na stanowisku trwa spotkanie — najpierw je zakończ.",
-    FM_STATION_BUSY_RETURNEE: "Trwa obsługa powracającego — najpierw ją zakończ.",
-    FM_QUEUE_EMPTY: "Kolejka pusta — brak kolejnych zaplanowanych spotkań.",
-    FM_NO_CALLED_MEETING: "Brak wywołanego spotkania.",
-    FM_NO_ACTIVE_MEETING: "Brak aktywnego spotkania.",
-    FM_NO_RETURNEE: "Brak obsługiwanego powracającego.",
-    FM_RETURNEE_BARRIER: "Powracający może wejść dopiero po zakończeniu spotkania z bariery.",
-    FM_BAD_STATUS: "Ta operacja nie pasuje do stanu spotkania.",
-    FM_UNDO_EXPIRED: "Cofnięcie możliwe tylko do 30 s po operacji.",
-    FM_UNDO_NOT_LAST: "Po tej operacji zaszło już coś innego — nie można cofnąć.",
-    FM_NOT_ASSIGNED: "Nie masz przypisania do tej sieci.",
-    FM_FORBIDDEN: "Brak uprawnień.",
-    FM_AUTH_REQUIRED: "Sesja wygasła — zaloguj się ponownie.",
-    FM_STATION_INACTIVE: "Stanowisko jest nieaktywne.",
-    FM_NAME_REQUIRED: "Podaj nazwę firmy.",
-    FM_NO_SCHEDULE: "Brak zatwierdzonego planu spotkań (fm_settings.schedule).",
-  };
-  return map[code] || e?.message || "Nieznany błąd.";
-}
+export function humanFmError(e, lang = "pl") { return fmErrorText(lang, e); }

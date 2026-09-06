@@ -12,10 +12,12 @@
 //   5) Standard nie idzie do matchingu
 //   6) min odstęp ≥ FM_MIN_GAP między spotkaniami tej samej firmy
 //
-// Pojemność sieci (decyzja 7 z docs/production/FM_KOLEJKI_NUMERKI_PROPOZYCJA.md §14):
+// Pojemność sieci (decyzja 7 §14 + review Codexa 6.09: 60 na stanowisko):
 //   pojemność = FM_MEETINGS_PER_STATION × liczba AKTYWNYCH stanowisk sieci
-//   (1 → 5, 2 → 10, 3 → 15). Brak konfiguracji stanowisk → jawny fallback 1
-//   stanowisko + ostrzeżenie `no_station_config` dla admina.
+//   (1 → 60, 2 równoległe → 120). FM_MAX_M=5 to limit spotkań NA PAKIET DOSTAWCY,
+//   nie pojemność kupca. Brak konfiguracji stanowisk → jawny fallback 1
+//   stanowisko + ostrzeżenie `no_station_config`; plan ponad pojemność →
+//   ostrzeżenie `chain_full` (admin widzi je przed zatwierdzeniem).
 //   FM_MAX_S pozostaje wyłącznie przestrzenią numeracji (rozmiar startowy cq),
 //   NIE limitem spotkań.
 //
@@ -30,10 +32,10 @@
 export const FM_MAX_M = 5;   // maks. spotkań jednej firmy na 1 pakiet
 export const FM_MAX_S = 60;  // przestrzeń numeracji (startowa długość kolejki sieci)
 
-// Ile spotkań mieści jedno fizyczne stanowisko sieci w ciągu dnia.
+// Ile spotkań mieści jedno fizyczne stanowisko sieci w ciągu dnia (2025: do 53).
 // Parametr konfigurowalny: nadpisanie per sieć przez `chain.meetingsPerStation`
 // (z fm_queue_groups.meetings_per_station) lub globalnie przez opts.meetingsPerStation.
-export const FM_MEETINGS_PER_STATION = 5;
+export const FM_MEETINGS_PER_STATION = 60;
 
 export const FM_SCORE = {
   MUTUAL_STAR_WANT:     6000, // A — firma ⭐ + sieć ✅
