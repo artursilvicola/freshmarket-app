@@ -225,19 +225,18 @@ CREATE POLICY fm_staff_self_select ON public.fm_staff FOR SELECT USING (id = aut
 
 DROP POLICY IF EXISTS fm_groups_admin_all ON public.fm_queue_groups;
 CREATE POLICY fm_groups_admin_all ON public.fm_queue_groups FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
+-- grupy i stanowiska NIE zawieraja danych wrazliwych (siec, etykieta, gate, liczba
+-- stanowisk) — czytaja wszyscy zalogowani: algorytm (pojemnosc = stanowiska × spotkania)
+-- musi dawac ten sam wynik u admina, dostawcy i kupca; anon nadal nic (tylko widok tablicy).
 DROP POLICY IF EXISTS fm_groups_staff_select ON public.fm_queue_groups;
-CREATE POLICY fm_groups_staff_select ON public.fm_queue_groups FOR SELECT USING (
-  public.is_staff() AND (
-    EXISTS (SELECT 1 FROM public.fm_staff s WHERE s.id = auth.uid() AND s.kind = 'board')
-    OR EXISTS (SELECT 1 FROM public.fm_queue_assignments a WHERE a.operator_id = auth.uid() AND a.queue_group_id = fm_queue_groups.id)));
+DROP POLICY IF EXISTS fm_groups_auth_select ON public.fm_queue_groups;
+CREATE POLICY fm_groups_auth_select ON public.fm_queue_groups FOR SELECT TO authenticated USING (true);
 
 DROP POLICY IF EXISTS fm_stations_admin_all ON public.fm_stations;
 CREATE POLICY fm_stations_admin_all ON public.fm_stations FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
 DROP POLICY IF EXISTS fm_stations_staff_select ON public.fm_stations;
-CREATE POLICY fm_stations_staff_select ON public.fm_stations FOR SELECT USING (
-  public.is_staff() AND (
-    EXISTS (SELECT 1 FROM public.fm_staff s WHERE s.id = auth.uid() AND s.kind = 'board')
-    OR EXISTS (SELECT 1 FROM public.fm_queue_assignments a WHERE a.operator_id = auth.uid() AND a.queue_group_id = fm_stations.queue_group_id)));
+DROP POLICY IF EXISTS fm_stations_auth_select ON public.fm_stations;
+CREATE POLICY fm_stations_auth_select ON public.fm_stations FOR SELECT TO authenticated USING (true);
 
 -- spotkania: operator widzi nazwy firm TYLKO w przypisanych grupach; konto 'board' nie widzi spotkan wcale
 DROP POLICY IF EXISTS fm_meetings_admin_all ON public.fm_queue_meetings;

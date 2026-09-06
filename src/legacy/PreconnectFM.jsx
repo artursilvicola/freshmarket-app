@@ -80,6 +80,8 @@ import {
 } from "../lib/db";
 // [feat/shared-countries] Jedno źródło listy krajów (panel + rejestracja dostawcy).
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
+import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, scoreMatch, buildFMData } from "../lib/fm-algo.js";
+import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
 // laduja sie dopiero w zakladce "Plan spotkan" admina, nie w glownym bundle.
@@ -1268,101 +1270,8 @@ const FM_PHASES=[
   {id:3,label:"Algorytm + Korekty",  sub:"Admin uruchamia algorytm i koryguje plan (17–21 września)",    dates:"17–21 września",      color:"#0d9488"},
   {id:4,label:"Publikacja i event",  sub:"Finalna lista 22 wrz. · Event 24 wrz.",                        dates:"22–24 września",      color:"#059669"},
 ];
-const FM_MAX_M=5,FM_MAX_S=60;
-
-// ═════════════════════════════════════════════════════════════════════════
-// [B2B Round prod-rollout / FM scheduling v2] Konfiguracja algorytmu
-// Hierarchia priorytetów spotkań B2B (zatwierdzona przez biznes):
-//   1) mutual match wygrywa z jednostronnym ZAWSZE
-//   2) w obrębie tej samej kategorii: payment_date ASC (kto wcześniej zapłacił)
-//   3) sieci główne (⭐) przed zapasowymi (👍)
-//   4) Standard nie idzie do matchingu
-//   5) min odstęp ≥ FM_MIN_GAP między spotkaniami tej samej firmy
-//   6) progi stref widoczne i edytowalne tutaj (nie hardcoded głębiej)
-// ═════════════════════════════════════════════════════════════════════════
-const FM_SCORE = {
-  // Kategoria A — supplier wybrał sieć jako GŁÓWNĄ + sieć wybrała firmę (✅)
-  MUTUAL_STAR_WANT:     6000,
-  // Kategoria B — supplier wybrał sieć jako REZERWOWĄ + sieć wybrała firmę (✅)
-  MUTUAL_THUMB_WANT:    5000,
-  // Kategoria D — supplier wybrał sieć jako GŁÓWNĄ + sieć daje szansę (🤝)
-  MUTUAL_STAR_CHANCE:   4000,
-  // Kategoria E — supplier wybrał sieć jako REZERWOWĄ + sieć daje szansę (🤝)
-  MUTUAL_THUMB_CHANCE:  3000,
-  // Kategoria C — sieć aktywnie chce firmę, ale firma jej nie wybrała
-  //   (jednostronne zainteresowanie ze strony sieci — wciąż wartościowe)
-  ONE_SIDE_WANT:        2000,
-  // Kategoria F — sieć daje szansę firmie której nie wybrała (1-side, low)
-  ONE_SIDE_CHANCE:      1000,
-};
-// Minimalny odstęp numerów między spotkaniami tej samej firmy.
-// 2 = firma z 1 i 3 OK, ale 1 i 2 zabronione (musi zdążyć fizycznie).
-const FM_MIN_GAP = 2;
-// Pakiety wykluczone z matchmakingu (Standard nie ma umawianych spotkań —
-// jedynie networking + Speed Dating wg kompendium EVENT §5.9, §21.1).
-const FM_EXCLUDED_PACKAGES = new Set(["Standard"]);
-// Progi stref kolorystycznych (kolejność numerków):
-//   ≤ FM_ZONE_GREEN_MAX  → 🟢 zielona (wysoka szansa rozmowy)
-//   ≤ FM_ZONE_ORANGE_MAX → 🟠 pomarańczowa (środkowa kolejka)
-//   wyższe              → 🔴 czerwona (jeśli wolny czas)
-const FM_ZONE_GREEN_MAX = 25;
-const FM_ZONE_ORANGE_MAX = 35;
-
-// ═════════════════════════════════════════════════════════════════════════
-// [B2B Round prod-rollout / FM scheduling v2 — Zasada 0]
-// ZASADA 0 — TWARDE WYKLUCZENIA (przed jakimkolwiek scoringiem).
-//
-// Para firma ↔ sieć nie może wejść do automatycznego grafiku, jeśli:
-//   • sieć oznaczyła firmę jako remove / rejected / nie chcę spotkania,
-//   • firma ręcznie wykluczyła tę sieć (supplierPref === "exclude" / "reject"),
-//   • firma ma pakiet Standard (FM_EXCLUDED_PACKAGES),
-//   • firma nie jest dopuszczona do FM B2B (fm_b2b_enabled === false).
-//
-// Dopiero PO przejściu tych filtrów algorytm liczy scoring (kategorie A-F).
-// ═════════════════════════════════════════════════════════════════════════
-
-// Helper: czy SAMA FIRMA jest dopuszczona do algorytmu (filtr per-supplier).
-// Jeśli false → wszystkie pary tej firmy są wykluczone przed scoringiem.
-function isSupplierEligible(supplier) {
-  if (!supplier) return false;
-  // Pakiet Standard nie ma umawianych spotkań (kompendium EVENT §21.1)
-  if (FM_EXCLUDED_PACKAGES.has(supplier.pkg)) return false;
-  // Admin nie dopuścił firmy do FM B2B
-  if (supplier.fmB2bEnabled === false) return false;
-  return true;
-}
-
-// Helper: czy POJEDYNCZA PARA jest wykluczona przed scoringiem (filtr per-pair).
-// Wartości "remove"/"rejected"/"exclude" pochodzą z:
-//   chainResp: response kupca w fm_resps.zone (UI buyer: ❌ Nie chcę)
-//   supplierPref: pref firmy w fm_prefs (UI supplier: ❌ Nie chcę — przyszłościowo,
-//     obecnie supplier może tylko star/thumb/usunąć)
-function isPairExcluded(supplierPref, chainResp) {
-  // Sieć aktywnie odrzuca firmę
-  if (chainResp === "remove" || chainResp === "rejected") return true;
-  // Firma aktywnie wyklucza sieć (przyszłościowo, gdy UI supplier doda 4. stan)
-  if (supplierPref === "exclude" || supplierPref === "rejected" || supplierPref === "remove") return true;
-  return false;
-}
-
-// Helper: ocena pojedynczej pary (supplier, chain) wg hierarchii biznesowej.
-// Wywoływany TYLKO po przejściu Zasady 0 — tu nie obsługujemy wykluczeń.
-// Zwraca 0 jeśli para nie pasuje do żadnej kategorii (chainResp = null/undefined).
-function scoreMatch(supplierPref, chainResp) {
-  if (!chainResp) return 0;  // sieć nie odpowiedziała wcale → brak spotkania
-  const isWant   = chainResp === "want";
-  const isChance = chainResp === "chance";
-  const isStar   = supplierPref === "star";
-  const isThumb  = supplierPref === "thumb";
-  const isMutual = isStar || isThumb;
-  if (isMutual && isWant   && isStar)  return FM_SCORE.MUTUAL_STAR_WANT;    // A
-  if (isMutual && isWant   && isThumb) return FM_SCORE.MUTUAL_THUMB_WANT;   // B
-  if (isMutual && isChance && isStar)  return FM_SCORE.MUTUAL_STAR_CHANCE;  // D
-  if (isMutual && isChance && isThumb) return FM_SCORE.MUTUAL_THUMB_CHANCE; // E
-  if (!isMutual && isWant)   return FM_SCORE.ONE_SIDE_WANT;                 // C
-  if (!isMutual && isChance) return FM_SCORE.ONE_SIDE_CHANCE;               // F
-  return 0;
-}
+// [feat/fm-queue] Algorytm dopasowania (stałe, Zasada 0, scoring, buildFMData)
+// żyje w src/lib/fm-algo.js (czysty moduł + testy vitest). Tu tylko import.
 
 // runFMAlgo removed — buildFMData is canonical
 function genFMData(suppliers, chains){
@@ -1373,7 +1282,7 @@ function genFMData(suppliers, chains){
   _s.forEach(s=>{_c.forEach(c=>{if(p[s.id]?.[c.id]){const x=Math.random();r[c.id][s.id]=x<0.40?"want":x<0.78?"chance":"remove";}});});
   return{p,r};
 }
-function getFMZone(pos){if(pos==null)return"blocked";if(pos<=FM_ZONE_GREEN_MAX)return"green";if(pos<=FM_ZONE_ORANGE_MAX)return"orange";return"red";}
+// getFMZone → src/lib/fm-algo.js
 const FM_ZONE_COLORS={
   green: {c:"#059669",bg:"#f0fdf4",b:"#bbf7d0",l:"Wysoka szansa",i:"🟢"},
   orange:{c:"#d97706",bg:"#fffbeb",b:"#fde68a",l:"Środkowa kolejka",i:"🟠"},
@@ -2709,6 +2618,14 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [fmPrefs, setFmPrefs] = useState({});
   const [fmResps, setFmResps] = useState({});
   const [fmRespsLoaded, setFmRespsLoaded] = useState(false);
+  // [feat/fm-queue] Pojemność sieci dla algorytmu = Σ(aktywne stanowiska × spotkania/stanowisko)
+  // z modułu kolejek (fm_queue_groups + fm_stations, migracja 053). Brak konfiguracji
+  // → buildFMData przyjmuje 1 stanowisko i wystawia ostrzeżenie `no_station_config`.
+  const [fmStationCaps, setFmStationCaps] = useState({});
+  const reloadFmStationCaps = useCallback(() => {
+    dbGetFmQueueCapacityByRetailer().then(setFmStationCaps).catch(e => console.warn("[fm-queue caps]", e));
+  }, []);
+  useEffect(() => { if (retailersLoaded && account.role) reloadFmStationCaps(); }, [retailersLoaded, account.role, reloadFmStationCaps]);
   const fmRespsSavePrimedRef = useRef(false);
   useEffect(() => {
     if (!companiesLoaded || !retailersLoaded) return;
@@ -2905,8 +2822,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         color: r.color || "#0d9488",
         bg: r.bg || "#f0fdfa",
         initials: r.initials || (r.name || "?").split(/\s+/).map(x=>x[0]).join("").slice(0,3).toUpperCase(),
+        // [feat/fm-queue] pojemność z konfiguracji stanowisk (null = brak → fallback 1 w algorytmie)
+        stations: fmStationCaps[r.id]?.stations ?? null,
+        capacity: fmStationCaps[r.id]?.capacity ?? null,
       })),
-    [retailers]
+    [retailers, fmStationCaps]
   );
   const fmSuppliers = useMemo(() =>
     companies
@@ -14430,220 +14350,7 @@ function fmNZ(n) {
   return "red";
 }
 
-// ═════════════════════════════════════════════════════════════════════════
-// [B2B Round prod-rollout / FM scheduling v2] Nowy algorytm matchingu
-//
-// ZASADA 0 — twarde wykluczenia (PRZED rankingiem):
-//   • sieć oznaczyła firmę: remove / rejected
-//   • firma wykluczyła sieć: exclude / rejected / remove
-//   • firma w pakiecie Standard (FM_EXCLUDED_PACKAGES)
-//   • firma bez fm_b2b_enabled (admin nie dopuścił)
-//
-// Hierarchia priorytetów (PO przejściu Zasady 0):
-//   1. Mutual match (obie strony chcą) ZAWSZE bije jednostronne
-//   2. W obrębie kategorii (kat A-F): payment_date ASC tie-breaker
-//   3. ⭐ przed 👍 wewnątrz mutual (score MUTUAL_STAR_* > MUTUAL_THUMB_*)
-//   4. Pakiet Premium > Business (tie-breaker po payment_date)
-//   5. Standard wykluczony z matchmakingu (FM_EXCLUDED_PACKAGES)
-//
-// Constraints podczas numerowania:
-//   - jeden supplier nie ma dwóch tych samych numerów
-//   - jedna sieć nie przekracza FM_MAX_S slotów
-//   - jeden supplier nie przekracza FM_MAX_M spotkań
-//   - spotkania jednej firmy mają odstęp ≥ FM_MIN_GAP numerów
-//
-// Output format (niezmieniony — backward compat z PageSupplierFM/Buyer/Admin):
-//   { res: {sid: {m: [cid...], r: {cid: score}}},
-//     cs:  {cid: {n: count, list: [sid...]}},
-//     nums:{sid: {cid: slotNumber}},
-//     cq:  {cid: [sid|null array indexed by slot-1]} }
-// ═════════════════════════════════════════════════════════════════════════
-function buildFMData(prefs, resps, chains, suppliers) {
-  // [fix/fm-real-companies] BEZ fallbacku do FM_SUPPLIERS/FM_CHAINS — pusta
-  // lista ma dawać pusty plan, a nie 30 firm demo udających produkcję.
-  const _chains    = chains    || [];
-  const _suppliers = suppliers || [];
-
-  // FAZA 0 — TWARDE WYKLUCZENIA (przed jakimkolwiek scoringiem)
-  // Filtr per-supplier: Standard + brak fm_b2b_enabled → out z algorytmu całkowicie.
-  // Filtr per-pair (remove/rejected/exclude) odbywa się w FAZA 2 razem ze scoringiem.
-  const eligible = _suppliers.filter(isSupplierEligible);
-
-  // Init wynikowych struktur dla WSZYSTKICH supplerów (także wykluczonych —
-  // UI może czytać res[sid] dla wszystkich; wykluczeni zostaną z m: [])
-  const res = {};
-  const cs  = {};
-  const nums = {};
-  const cq  = {};
-  const used = {};  // sid -> Set(slot numbers tej firmy globalnie)
-  _suppliers.forEach(s => { res[s.id] = { m: [], r: {} }; nums[s.id] = {}; used[s.id] = new Set(); });
-  _chains.forEach(ch => {
-    cs[ch.id] = { n: 0, list: [] };
-    cq[ch.id] = new Array(Math.max(60, FM_MAX_S)).fill(null);
-  });
-
-  // FAZA 2 — zbierz wszystkich kandydatów (pary supplier×chain z score > 0)
-  // Zasada 0 per-pair: isPairExcluded blokuje wszystkie remove/rejected/exclude
-  // PRZED policzeniem score (czyste oddzielenie wykluczeń od scoringu).
-  const candidates = [];
-  eligible.forEach(s => {
-    _chains.forEach(ch => {
-      const sPref = prefs[s.id]?.[ch.id];
-      const cResp = resps[ch.id]?.[s.id];
-      // ZASADA 0 — twarde wykluczenia per-pair
-      if (isPairExcluded(sPref, cResp)) return;
-      const score = scoreMatch(sPref, cResp);
-      if (score <= 0) return;
-      candidates.push({
-        supplier: s,
-        chain: ch,
-        score,
-        // Tie-breakery sortowania:
-        paymentDate: s.paymentDate || s.paidAt || "9999-99-99",
-        pkgTier: s.pkg === "Premium" ? 0 : s.pkg === "Business" ? 1 : 2,
-        sortIdx: s._sortIdx ?? 999,
-      });
-    });
-  });
-
-  // FAZA 3 — globalne sortowanie kandydatów: score DESC → payment ASC → pkg → idx
-  candidates.sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    if (a.paymentDate !== b.paymentDate) {
-      // ASC: wcześniejsza data wcześniej. Brak daty traktujemy jak "9999" (na koniec)
-      return a.paymentDate < b.paymentDate ? -1 : 1;
-    }
-    if (a.pkgTier !== b.pkgTier) return a.pkgTier - b.pkgTier;
-    if (a.sortIdx !== b.sortIdx) return a.sortIdx - b.sortIdx;
-    return String(a.supplier.id).localeCompare(String(b.supplier.id));
-  });
-
-  // FAZA 4 — przypisywanie multi-pass do puli spotkań per firma.
-  // [feat/fm-b2b-packages] Pula = FM_MAX_M × liczba pakietów Business (1-5).
-  // Default 1 → zachowanie identyczne jak dotychczas. Spotkania NIE są
-  // równoległe — FM_MIN_GAP w FAZIE 5 pozostaje bez zmian (osoby z jednej
-  // firmy zwykle chodzą na spotkania razem).
-  // Każdy pass dodaje jedną kolejną parę firmie (round-robin po liczbie spotkań).
-  // Iterujemy candidates w global sorted order — naturalnie pierwsze idą
-  // mutual A (6000), potem mutual B (5000) itd.
-  const capOf = (s) => FM_MAX_M * Math.max(1, Math.min(5, Number(s?.fmPackages) || 1));
-  const maxPass = eligible.reduce((m, s) => Math.max(m, capOf(s)), FM_MAX_M);
-  const pairsAssigned = new Set();  // "sid::cid" żeby uniknąć duplikatów
-  for (let pass = 1; pass <= maxPass; pass++) {
-    for (const cand of candidates) {
-      const sid = cand.supplier.id;
-      const cid = cand.chain.id;
-      // Pomijamy jeśli firma wyczerpała swoją pulę (5 × pakiety)
-      if (res[sid].m.length >= capOf(cand.supplier)) continue;
-      // Pomijamy jeśli firma już ma >= pass spotkań (czyli wzięła wcześniej)
-      if (res[sid].m.length >= pass) continue;
-      // Pomijamy jeśli firma ma < pass-1 (nie nadrabiamy z opóźnieniem)
-      if (res[sid].m.length < pass - 1) continue;
-      // Pomijamy jeśli sieć pełna
-      if (cs[cid].n >= FM_MAX_S) continue;
-      // Pomijamy jeśli para już przypisana
-      if (pairsAssigned.has(`${sid}::${cid}`)) continue;
-      // Przypisz
-      res[sid].m.push(cid);
-      res[sid].r[cid] = cand.score;  // zapisujemy score zamiast round (numerek info)
-      cs[cid].n++;
-      cs[cid].list.push(sid);
-      pairsAssigned.add(`${sid}::${cid}`);
-    }
-  }
-
-  // FAZA 5 — numerowanie z respektowaniem FM_MIN_GAP
-  //
-  // Iterujemy jeszcze raz candidates w sortowanej kolejności (ten sam porządek
-  // co przy assignmencie). Dla każdej przypisanej pary znajdź najmniejszy wolny
-  // slot w sieci taki że:
-  //   - slot wolny w tej sieci (cq[cid][slot-1] === null)
-  //   - żadne z istniejących spotkań tej firmy nie jest bliżej niż FM_MIN_GAP
-  //
-  // Wynik: firmy z najwyższym score (mutual A) dostają najmniejsze numerki.
-  for (const cand of candidates) {
-    const sid = cand.supplier.id;
-    const cid = cand.chain.id;
-    if (!pairsAssigned.has(`${sid}::${cid}`)) continue;  // ta para nie wzięta
-    if (nums[sid][cid] != null) continue;                // już ma slot (raz każda para)
-
-    // Znajdź najmniejszy n taki że spełnia constraints
-    let n = 1;
-    let safety = 0;  // safety break — never iterate more than 1000
-    while (safety++ < 1000) {
-      const idx = n - 1;
-      // Rozszerz tablicę cq jeśli za krótka
-      if (idx >= cq[cid].length) cq[cid].push(null);
-      // Slot zajęty w sieci?
-      if (cq[cid][idx] !== null) { n++; continue; }
-      // Konflikt z innym spotkaniem tej firmy (gap)?
-      let hasNearby = false;
-      for (const prev of used[sid]) {
-        if (Math.abs(n - prev) < FM_MIN_GAP) { hasNearby = true; break; }
-      }
-      if (hasNearby) { n++; continue; }
-      break;  // n jest dobre
-    }
-
-    cq[cid][n - 1] = sid;
-    used[sid].add(n);
-    nums[sid][cid] = n;
-  }
-
-  // FAZA 6 — wykryj warnings dla admina (do wyświetlenia w Korektach)
-  //
-  // Case 1: "Sieć rezerwowa lepszym numerem niż główna"
-  //   Jeśli firma ma sieć GŁÓWNĄ (⭐) w czerwonej strefie (>FM_ZONE_ORANGE_MAX)
-  //   ALE ma sieć REZERWOWĄ (👍) w zielonej (<= FM_ZONE_GREEN_MAX),
-  //   admin może chcieć zamienić priorytet ręcznie.
-  //
-  // Case 2: "Firma bez spotkań mimo pełnej opłaty" (Premium/Business)
-  //   Firmie nie udało się dopasować żadnej sieci — admin musi reagować
-  //   ręcznie albo dodać alternatywy.
-  const warnings = [];
-  for (const s of eligible) {
-    const sid = s.id;
-    const mtgs = res[sid].m;
-    if (mtgs.length === 0) {
-      warnings.push({
-        type: "no_meetings",
-        supplierId: sid,
-        supplierName: s.name,
-        message: `Firma ${s.name} (${s.pkg}) nie ma żadnych spotkań — sprawdź czy sieci ją odrzuciły lub dodaj alternatywy ręcznie.`,
-      });
-      continue;
-    }
-    // Case 1: star w czerwonej, thumb w zielonej
-    const starRed = mtgs.filter(cid => {
-      const score = res[sid].r[cid];
-      const num = nums[sid][cid];
-      const isStar = score === FM_SCORE.MUTUAL_STAR_WANT || score === FM_SCORE.MUTUAL_STAR_CHANCE;
-      return isStar && num > FM_ZONE_ORANGE_MAX;
-    });
-    const thumbGreen = mtgs.filter(cid => {
-      const score = res[sid].r[cid];
-      const num = nums[sid][cid];
-      const isThumb = score === FM_SCORE.MUTUAL_THUMB_WANT || score === FM_SCORE.MUTUAL_THUMB_CHANCE;
-      return isThumb && num <= FM_ZONE_GREEN_MAX;
-    });
-    if (starRed.length > 0 && thumbGreen.length > 0) {
-      const starCid = starRed[0];
-      const thumbCid = thumbGreen[0];
-      const starCh = _chains.find(c => c.id === starCid);
-      const thumbCh = _chains.find(c => c.id === thumbCid);
-      warnings.push({
-        type: "swap_star_thumb",
-        supplierId: sid,
-        supplierName: s.name,
-        message: `Firma ${s.name}: sieć GŁÓWNA ${starCh?.name || starCid} ma numer ${nums[sid][starCid]} (czerwona), a REZERWOWA ${thumbCh?.name || thumbCid} ma numer ${nums[sid][thumbCid]} (zielona). Rozważ zamianę priorytetu w korektach.`,
-        starChainId: starCid,
-        thumbChainId: thumbCid,
-      });
-    }
-  }
-
-  return { res, cs, nums, cq, warnings };
-}
+// buildFMData → src/lib/fm-algo.js (pojemność sieci = spotkania/stanowisko × stanowiska)
 
 /* ═══════════════════════════════════════════════════════════════
    FM ADMIN CORRECTION PANEL — interaktywny grid
