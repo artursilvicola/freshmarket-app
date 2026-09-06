@@ -176,6 +176,65 @@ realnych tabletach i rzutniku · hotspot LTE jako łącze zapasowe · papier = k
 9. **Tablica dwujęzyczna** (PL/EN nagłówki) — tak; nazwy sieci jak w bazie.
 10. **Po 17:00** — tryb `closed` dla wszystkich jednym przyciskiem admina.
 
+## 12. Decyzje Artura (6.09.2026) — wiążące dla implementacji
+
+1. **Rzutnik jest stary, słabej jakości** → tablica projektowana pod niską rozdzielczość (baza: 1024×768,
+   4:3): ciemne tło, białe/zielone/bursztynowe numery o wysokim kontraście, nazwa sieci dużym tekstem
+   zamiast logo, mniej pozycji na stronie (przy 4:3 ok. 2 kolumny × 6 = 12 stanowisk/stronę), paginacja
+   z rotacją. Rzeczywistą rozdzielczość zmierzymy na próbie generalnej; układ liczy się z niej automatycznie.
+2. **Obsługa: zwykle 1 osoba na 4 sieci, ale elastycznie** (mniej/więcej) — przypisanie stanowisk do osób
+   robimy przed eventem w panelu admina; brak sztywnej liczby w kodzie.
+3. **Wi-Fi obiektu** → twarde zabezpieczenia offline: blokada przycisków bez połączenia, bufor stanu na
+   tablicy, auto-reconnect, akcje idempotentne (podwójne dotknięcie / ponowienie nie robi dwóch operacji).
+   Rekomendacja: jeden hotspot LTE jako zapas dla komputera tablicy.
+4. **Stanowiska sieci — dwa tryby**:
+   - **`split`** (np. Dino Owoce / Dino Kwiaty): osobne kolejki per stanowisko; przy „Otwórz dzień"
+     spotkania z planu trafiają na stanowisko wg kategorii dostawcy (reguła, admin może przenieść);
+     dostawca jest zapraszany do konkretnego stanowiska;
+   - **`parallel`** (np. Auchan × 2): jedna wspólna kolejka, dwa stanowiska pobierają z niej kolejne
+     numery; tablica pokazuje dwa numery „TERAZ" i jeden „NASTĘPNY"; **pojemność sieci w algorytmie
+     = 5 × liczba stanowisk** (zmiana w `buildFMData`, przed uruchomieniem algorytmu 17.09).
+5. **Numery idą tylko do przodu.** Tablica nigdy nie pokazuje mniejszego numeru jako TERAZ/NASTĘPNY.
+   Kto przegapił, sam podchodzi do obsługi; obsługa wpuszcza go **po bieżącym i kolejnym** spotkaniu
+   jako obsługę „poza tablicą" (status `returned` → `in_progress` na stanowisku, bez zmiany wskaźnika
+   na tablicy; timer działa, przycisk „Wywołaj następny" jest w tym czasie zablokowany).
+6. **Brak numerów bez umówionego spotkania.** Wyjątek podejmuje obsługa na miejscu: akcja „Dodaj spotkanie
+   (wyjątek)" z wpisaną nazwą firmy i potwierdzeniem; numer = kolejny do przodu (`max + 1`), źródło `exception`.
+7. **Start ręczny, z zera, per stanowisko** — operator klika „Otwórz stanowisko", bo część sieci zaczyna
+   o 9:00, część o 11:00. Zero automatów czasowych. „Zamknij wszystkie" o 17:00 — jeden przycisk admina.
+
+## 13. Plan wdrożenia v2 (co zostanie zbudowane)
+
+**Migracja 052 (`fm_queue`)** — aplikowana ręcznie:
+`fm_stations` (retailer_id, idx, label, categories[], mode single|parallel|split) ·
+`fm_queue_meetings` (event_date, retailer_id, station_id, company_id, exception_name, nr, sort_key,
+status, called_at/started_at/ended_at, operator_id, source plan|exception, version) ·
+`fm_queue_station_state` (station_id, mode closed|open|paused|free_entry, current_meeting_id, version) ·
+`fm_queue_chain_state` (retailer_id, event_date, last_called_nr) ·
+`fm_queue_log` (append-only audyt) · `fm_queue_assignments` (operator_id, retailer_id) ·
+`profiles.role` += `staff` + RLS (staff pisze tylko do przypisanych sieci; tablica: publiczny odczyt
+stanów bez nazw firm).
+
+**Przejścia stanów jako RPC (SECURITY DEFINER), nie zapisy z klienta**: `fm_queue_open_station`,
+`fm_queue_call_next`, `fm_queue_start`, `fm_queue_finish_and_call_next`, `fm_queue_no_show`,
+`fm_queue_serve_returnee`, `fm_queue_add_exception`, `fm_queue_set_mode`, `fm_queue_undo` (≤30 s),
+`fm_queue_open_day` (import z planu, tylko admin). Każda RPC: sprawdza `version` (konflikt = 409),
+egzekwuje „tylko do przodu", pisze do logu, jest idempotentna po kluczu operacji. Dzięki temu
+tablet, admin i tablica nie mogą się rozjechać.
+
+**Widoki**: `/obsluga` (StaffPanel: kafelki przypisanych stanowisk, jeden duży przycisk stanu, akcje
+drugorzędne z potwierdzeniem, timer 10/12 min, pasek OFFLINE) · admin „Dzień eventu" (stanowiska,
+przypisania, Otwórz dzień, siatka podglądu, przejęcie, ustawienia tablicy, log CSV, Zamknij wszystkie) ·
+`/tablica` (kiosk, Realtime + polling, sekcje GATE 1/2, paginacja/rotacja/przypinanie, `?screen=1of2`,
+ciemny motyw wysokokontrastowy, PL/EN nagłówki) · `/tablica` mobilnie (jedna kolumna, filtr bramki,
+ulubione) · „Twoje spotkania" u dostawcy z kolumną TERAZ i etykietą „za N / Twoja kolej".
+
+**Harmonogram**: Etap 1 (do 12.09): migracja 052 + RPC + rola staff + konfiguracja stanowisk/przypisań
++ pojemność w algorytmie + Otwórz dzień + panel operatora (rdzeń) + tablica z Realtime.
+Etap 2 (do 18.09): powroty poza tablicą, wyjątki, tryby, cofnij, paginacja/przypinanie/2 ekrany, log CSV,
+„Twoja kolej", widok mobilny. **Próba generalna 21–22.09** (tryb testowy na planie roboczym, realne
+tablety, rzutnik — pomiar rozdzielczości). 23.09: import zatwierdzonego planu. 24.09: event.
+
 ## 11. Gdzie zgadzam się z Codexem, a gdzie proponuję inaczej
 
 Zgoda: cztery widoki na wspólnej bazie; hybryda; jednoznaczne statusy; audyt; idempotencja i kontrola
