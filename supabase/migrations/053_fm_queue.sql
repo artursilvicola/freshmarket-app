@@ -811,6 +811,12 @@ BEGIN
 
   -- wstawianie / synchronizacja
   FOR r IN SELECT t.* FROM t_imp t WHERE t.reason IS NULL ORDER BY t.group_id, t.nr LOOP
+    -- firma ma juz spotkanie w INNEJ grupie tej samej sieci (zmiana routingu split) -> decyzja admina
+    IF EXISTS (SELECT 1 FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g2 ON g2.id = m.queue_group_id
+               JOIN public.fm_queue_groups g1 ON g1.id = r.group_id
+               WHERE m.company_id = r.company_id AND m.queue_group_id <> r.group_id AND g2.retailer_id = g1.retailer_id AND g2.event_date = g1.event_date) THEN
+      UPDATE t_imp SET reason = 'group_changed' WHERE rid = r.rid; CONTINUE;
+    END IF;
     SELECT * INTO v_existing FROM public.fm_queue_meetings WHERE queue_group_id = r.group_id AND company_id = r.company_id;
     IF FOUND THEN
       IF v_existing.nr = r.nr THEN UPDATE t_imp SET reason = 'unchanged' WHERE rid = r.rid; CONTINUE; END IF;
@@ -846,7 +852,7 @@ DECLARE v_uid uuid := auth.uid(); v_n int;
 BEGIN
   IF NOT public.is_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
   PERFORM 1 FROM public.fm_queue_groups WHERE event_date = p_event_date ORDER BY id FOR UPDATE;
-  UPDATE public.fm_stations st SET mode = 'closed', free_entry_started_at = NULL, version = version + 1, updated_by = v_uid
+  UPDATE public.fm_stations st SET mode = 'closed', free_entry_started_at = NULL, version = st.version + 1, updated_by = v_uid
     FROM public.fm_queue_groups g WHERE g.id = st.queue_group_id AND g.event_date = p_event_date AND st.mode <> 'closed';
   GET DIAGNOSTICS v_n = ROW_COUNT;
   UPDATE public.fm_queue_settings SET closed_all_at = now(), updated_by = v_uid WHERE event_date = p_event_date;
@@ -868,7 +874,7 @@ BEGIN
   END IF;
   PERFORM set_config('fm.allow_reset', 'on', true);
   PERFORM 1 FROM public.fm_queue_groups WHERE event_date = p_event_date ORDER BY id FOR UPDATE;
-  UPDATE public.fm_stations st SET mode = 'closed', current_meeting_id = NULL, active_returnee_id = NULL, free_entry_started_at = NULL, version = version + 1, updated_by = v_uid
+  UPDATE public.fm_stations st SET mode = 'closed', current_meeting_id = NULL, active_returnee_id = NULL, free_entry_started_at = NULL, version = st.version + 1, updated_by = v_uid
     FROM public.fm_queue_groups g WHERE g.id = st.queue_group_id AND g.event_date = p_event_date;
   DELETE FROM public.fm_queue_meetings m USING public.fm_queue_groups g WHERE g.id = m.queue_group_id AND g.event_date = p_event_date;
   GET DIAGNOSTICS v_n = ROW_COUNT;
@@ -978,7 +984,12 @@ END $$;
 -- projekcje (siec, stanowisko, tryb, numery), a nie tabele pod spodem.
 REVOKE ALL ON public.fm_queue_board_v FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.fm_queue_board_v TO anon, authenticated;
-REVOKE ALL ON public.fm_login_attempts FROM PUBLIC, anon, authenticated;
+-- anon NIE ma zadnych grantow na tabele modulu (RLS to druga warstwa; jedyna publiczna
+-- powierzchnia to widok + snapshot). authenticated: RLS; log i proby logowania — bez zapisu.
+REVOKE ALL ON public.fm_staff, public.fm_login_attempts, public.fm_queue_groups, public.fm_stations, public.fm_queue_meetings,
+  public.fm_queue_assignments, public.fm_queue_log, public.fm_queue_settings FROM PUBLIC, anon;
+REVOKE ALL ON public.fm_login_attempts FROM authenticated;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON public.fm_queue_log FROM authenticated;
 
 -- Supabase nadaje nowym funkcjom EXECUTE dla anon/authenticated (ALTER DEFAULT PRIVILEGES)
 -- — odbieramy WSZYSTKO i nadajemy jawnie. Helpery i *_unsafe zostaja bez grantow.

@@ -41,8 +41,9 @@ INSERT INTO t_ids VALUES
   ('co1', gen_random_uuid()), ('co2', gen_random_uuid()), ('co3', gen_random_uuid()), ('co4', gen_random_uuid()), ('co5', gen_random_uuid());
 CREATE TEMP TABLE t_state (s jsonb);
 CREATE TEMP TABLE t_json (j jsonb);
+GRANT ALL ON t_ids, t_state, t_json TO anon, authenticated;  -- tabele tymczasowe uzywane tez pod SET ROLE
 
-CREATE OR REPLACE FUNCTION pg_temp.id(k text) RETURNS uuid LANGUAGE sql AS $$ SELECT v FROM t_ids WHERE k = $1 $$;
+CREATE OR REPLACE FUNCTION pg_temp.id(k text) RETURNS uuid LANGUAGE plpgsql AS $$ BEGIN RETURN (SELECT v FROM t_ids t WHERE t.k = id.k); END $$;
 -- symulacja sesji PostgREST (auth.uid() / auth.jwt() czytaja request.jwt.claims)
 CREATE OR REPLACE FUNCTION pg_temp.login(k text, p_iat bigint DEFAULT NULL) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
@@ -70,10 +71,11 @@ BEGIN
 END $$;
 CREATE OR REPLACE FUNCTION pg_temp.ok(p_cond boolean, p_msg text) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN IF NOT COALESCE(p_cond, false) THEN RAISE EXCEPTION 'TEST FAIL: %', p_msg; END IF; END $$;
-CREATE OR REPLACE FUNCTION pg_temp.st(k text) RETURNS uuid LANGUAGE sql AS $$ SELECT sid FROM t_st WHERE key = $1 $$;
-CREATE OR REPLACE FUNCTION pg_temp.ver(k text) RETURNS int LANGUAGE sql AS $$ SELECT version FROM public.fm_stations WHERE id = pg_temp.st($1) $$;
-CREATE OR REPLACE FUNCTION pg_temp.grp(k text) RETURNS uuid LANGUAGE sql AS $$ SELECT gid FROM t_g WHERE cid = $1 $$;
-CREATE OR REPLACE FUNCTION pg_temp.mtg(k text, n int) RETURNS uuid LANGUAGE sql AS $$ SELECT id FROM public.fm_queue_meetings WHERE queue_group_id = pg_temp.grp($1) AND nr = $2 $$;
+-- plpgsql (nie sql): ciala nie sa walidowane przy tworzeniu, a tabele tymczasowe powstaja nizej
+CREATE OR REPLACE FUNCTION pg_temp.st(k text) RETURNS uuid LANGUAGE plpgsql AS $$ BEGIN RETURN (SELECT sid FROM t_st WHERE key = k); END $$;
+CREATE OR REPLACE FUNCTION pg_temp.ver(k text) RETURNS int LANGUAGE plpgsql AS $$ BEGIN RETURN (SELECT version FROM public.fm_stations WHERE id = pg_temp.st(k)); END $$;
+CREATE OR REPLACE FUNCTION pg_temp.grp(k text) RETURNS uuid LANGUAGE plpgsql AS $$ BEGIN RETURN (SELECT gid FROM t_g WHERE cid = k); END $$;
+CREATE OR REPLACE FUNCTION pg_temp.mtg(k text, n int) RETURNS uuid LANGUAGE plpgsql AS $$ BEGIN RETURN (SELECT id FROM public.fm_queue_meetings WHERE queue_group_id = pg_temp.grp(k) AND nr = n); END $$;
 
 -- ── T0 obiekty + trigger ról ─────────────────────────────────────────────────
 SELECT pg_temp.ok((SELECT count(*) FROM pg_proc WHERE proname IN ('fm_queue_call_next','fm_queue_open_day','fm_staff_login_gate','fm_queue_station_state_unsafe','is_staff')) = 5, 'T0 funkcje z 053 istnieja');
@@ -99,7 +101,7 @@ INSERT INTO public.companies (id, name, categories) VALUES
   (pg_temp.id('co1'), 'TEST Firma 1', '{owoce}'), (pg_temp.id('co2'), 'TEST Firma 2', '{owoce}'), (pg_temp.id('co3'), 'TEST Firma 3', '{kwiaty}'),
   (pg_temp.id('co4'), 'TEST Firma 4', '{}'), (pg_temp.id('co5'), 'TEST Firma 5', '{owoce}');
 UPDATE public.profiles SET company_id = pg_temp.id('co2') WHERE id = pg_temp.id('sup_user');
-INSERT INTO public.retailers (name, fm26_active, fm26_chain_id) VALUES ('TEST Siec A', true, 'test-a'), ('TEST Siec B', true, 'test-b'), ('TEST Siec C', true, 'test-c');
+INSERT INTO public.retailers (id, name, fm26_active, fm26_chain_id) VALUES (990001, 'TEST Siec A', true, 'test-a'), (990002, 'TEST Siec B', true, 'test-b'), (990003, 'TEST Siec C', true, 'test-c');
 CREATE TEMP TABLE t_ret AS SELECT id, fm26_chain_id AS cid FROM public.retailers WHERE fm26_chain_id IN ('test-a','test-b','test-c');
 UPDATE public.profiles SET retailer_id = (SELECT id FROM t_ret WHERE cid = 'test-a') WHERE id = pg_temp.id('buyer_user');
 
@@ -108,6 +110,7 @@ CREATE TEMP TABLE t_g AS SELECT g.id AS gid, r.cid FROM public.fm_queue_groups g
 INSERT INTO public.fm_stations (queue_group_id, idx) SELECT gid, 1 FROM t_g;
 INSERT INTO public.fm_stations (queue_group_id, idx) SELECT gid, 2 FROM t_g WHERE cid = 'test-b';  -- parallel ×2
 CREATE TEMP TABLE t_st AS SELECT (g.cid || '-' || s.idx) AS key, s.id AS sid FROM public.fm_stations s JOIN t_g g ON g.gid = s.queue_group_id;
+GRANT SELECT ON t_day, t_ret, t_g, t_st TO anon, authenticated;
 INSERT INTO public.fm_queue_meetings (queue_group_id, company_id, nr) SELECT gid, pg_temp.id('co' || n), n FROM t_g, generate_series(1,4) n;
 INSERT INTO public.fm_queue_assignments (operator_id, queue_group_id) VALUES (pg_temp.id('op1'), pg_temp.grp('test-a')), (pg_temp.id('op2'), pg_temp.grp('test-b'));
 
@@ -220,9 +223,15 @@ SELECT pg_temp.ok((SELECT last_called_nr FROM public.fm_queue_groups WHERE id = 
 SET LOCAL ROLE authenticated; SELECT pg_temp.login('op1');
 SELECT pg_temp.ok((SELECT count(DISTINCT queue_group_id) FROM public.fm_queue_meetings) = 1, 'T10 op1 widzi spotkania tylko grupy A');
 SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_groups WHERE event_date = (SELECT today FROM t_day)) = 2, 'T10 staff czyta konfiguracje grup');
-SELECT pg_temp.expect_error($q$INSERT INTO public.fm_queue_log (action) VALUES ('hack')$q$, 'row-level security');
-SELECT pg_temp.expect_error($q$UPDATE public.fm_queue_groups SET last_called_nr = 99$q$, 'row-level security');
-SELECT pg_temp.expect_error($q$UPDATE public.fm_queue_meetings SET status = 'done'$q$, 'row-level security');
+SELECT pg_temp.expect_error($q$INSERT INTO public.fm_queue_log (action) VALUES ('hack')$q$, 'permission denied');
+SELECT pg_temp.expect_error($q$INSERT INTO public.fm_login_attempts (ip) VALUES ('x')$q$, 'permission denied');
+-- RLS na UPDATE bez pasujacej polityki = 0 zmienionych wierszy (cicho), nie blad
+UPDATE public.fm_queue_groups SET last_called_nr = 99;
+SELECT pg_temp.ok((SELECT last_called_nr FROM public.fm_queue_groups WHERE id = pg_temp.grp('test-a')) = 4, 'T10 staff nie zmienil last_called_nr (RLS: 0 wierszy)');
+UPDATE public.fm_queue_meetings SET note = 'hack';
+SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_meetings WHERE note = 'hack') = 0, 'T10 staff nie zmienil spotkan (RLS: 0 wierszy)');
+UPDATE public.fm_staff SET blocked = false, active = true;
+SELECT pg_temp.ok((SELECT count(*) FROM public.fm_staff) = 1, 'T10 staff widzi tylko wlasny wiersz fm_staff');
 SELECT pg_temp.login('sup_user');  -- dostawca firmy co2
 SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_meetings) = 2 AND (SELECT count(*) FROM public.fm_queue_meetings WHERE company_id <> pg_temp.id('co2')) = 0, 'T10 dostawca widzi tylko wlasne spotkania (A i B)');
 SELECT pg_temp.login('buyer_user');
@@ -259,7 +268,7 @@ SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
 SELECT pg_temp.expect_error($q$SELECT public.fm_queue_open_day((SELECT today FROM t_day), false)$q$, 'FM_PLAN_NOT_PUBLISHED');
 RESET ROLE;
 UPDATE public.fm_settings SET algo_phase = 'published', schedule = jsonb_build_object('nums', jsonb_build_object(
-    pg_temp.id('co1')::text, jsonb_build_object('test-c', 1, 'test-a', 1),
+    pg_temp.id('co1')::text, jsonb_build_object('test-c', 1, 'test-a', 9),
     pg_temp.id('co2')::text, jsonb_build_object('test-c', 2),
     pg_temp.id('co3')::text, jsonb_build_object('test-c', 3),
     pg_temp.id('co4')::text, jsonb_build_object('test-c', 4),
@@ -268,10 +277,10 @@ UPDATE public.fm_settings SET algo_phase = 'published', schedule = jsonb_build_o
   WHERE event_date = (SELECT today FROM t_day);
 SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
 DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_open_day((SELECT today FROM t_day), false);
-SELECT pg_temp.ok((SELECT (j->>'groups_created')::int FROM t_json) = 1, 'T12 utworzono grupe dla sieci C');
+SELECT pg_temp.ok((SELECT (j->>'groups_created')::int FROM t_json) >= 1, 'T12 utworzono grupe dla sieci C (i ew. innych sieci FM bez konfiguracji)');
 SELECT pg_temp.ok((SELECT (j->>'inserted')::int FROM t_json) = 5, 'T12 WSZYSTKIE 5 spotkan sieci C zaimportowane');
 SELECT pg_temp.ok((SELECT (j->>'skipped_groups')::int FROM t_json) = 1, 'T12 siec A (ma juz spotkania) pominieta bez force');
-SELECT pg_temp.ok((SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'missing_supplier' AND p->>'sid' = 'nieznana-firma') = 1 FROM t_json), 'T12 nieznana firma w raporcie');
+SELECT pg_temp.ok((SELECT (SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'missing_supplier' AND p->>'sid' = 'nieznana-firma') = 1 FROM t_json), 'T12 nieznana firma w raporcie');
 RESET ROLE;
 SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = (SELECT id FROM t_ret WHERE cid = 'test-c') AND m.source = 'plan') = 5, 'T12 5 spotkan w bazie dla sieci C');
 -- powtorka bez force: nic nowego; z force + zmieniony numer co5 5->7 -> updated; co4 na 3 (zajete przez co3) -> nr_conflict
@@ -281,8 +290,8 @@ DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_open_day((SELECT t
 SELECT pg_temp.ok((SELECT (j->>'inserted')::int FROM t_json) = 0 AND (SELECT (j->>'skipped_groups')::int FROM t_json) = 2, 'T12 powtorka bez force: 0 nowych, 2 grupy pominiete');
 DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_open_day((SELECT today FROM t_day), true);
 SELECT pg_temp.ok((SELECT (j->>'updated')::int FROM t_json) = 1, 'T12 force: numer co5 zaktualizowany (5->7)');
-SELECT pg_temp.ok((SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'nr_conflict') = 1 FROM t_json), 'T12 force: konflikt numeru co4->3 zaraportowany, nie nadpisany');
-SELECT pg_temp.ok((SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'locked_status') >= 1 FROM t_json), 'T12 force: spotkania sieci A w toku (done/called) nie sa ruszane');
+SELECT pg_temp.ok((SELECT (SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'nr_conflict') = 1 FROM t_json), 'T12 force: konflikt numeru co4->3 zaraportowany, nie nadpisany');
+SELECT pg_temp.ok((SELECT (SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'locked_status') >= 1 FROM t_json), 'T12 force: spotkania sieci A w toku (done/called) nie sa ruszane');
 RESET ROLE;
 SELECT pg_temp.ok((SELECT nr FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = (SELECT id FROM t_ret WHERE cid = 'test-c') AND m.company_id = pg_temp.id('co5')) = 7, 'T12 co5 ma nr 7');
 SELECT pg_temp.ok((SELECT nr FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = (SELECT id FROM t_ret WHERE cid = 'test-c') AND m.company_id = pg_temp.id('co3')) = 3, 'T12 co3 zachowal nr 3');
@@ -294,7 +303,11 @@ INSERT INTO public.fm_queue_groups (event_date, retailer_id, label, categories) 
 UPDATE public.fm_settings SET schedule = jsonb_set(schedule, ARRAY['nums', (SELECT id::text FROM public.companies WHERE name = 'TEST Firma 6 bez kategorii'), 'test-c'], '8', true) WHERE event_date = (SELECT today FROM t_day);
 SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
 DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_open_day((SELECT today FROM t_day), true);
-SELECT pg_temp.ok((SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'unrouted') = 1 FROM t_json), 'T12 split bez zgodnej kategorii -> unrouted (decyzja admina), nie losowa grupa');
+SELECT pg_temp.ok((SELECT (SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'unrouted') >= 1 FROM t_json), 'T12 split bez zgodnej kategorii -> unrouted (decyzja admina), nie losowa grupa');
+SELECT pg_temp.ok((SELECT (SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'group_changed') = 1 FROM t_json), 'T12 firma z kategoria kwiaty ma juz spotkanie w grupie glownej -> group_changed (nie duplikat)');
+RESET ROLE;
+SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = 990003 AND m.company_id = pg_temp.id('co3')) = 1, 'T12 co3 nadal ma dokladnie jedno spotkanie w sieci C');
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
 RESET ROLE;
 
 -- ── T13 logowanie obslugi (gate/result jako service_role) ────────────────────

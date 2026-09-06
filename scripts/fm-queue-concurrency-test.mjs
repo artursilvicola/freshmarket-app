@@ -37,7 +37,8 @@ const created = { users: [], retailer: null };
 try {
   const op = await makeOperator("CONC-TEST-OP");
   created.users.push(op.id);
-  const { data: ret } = await svc.from("retailers").insert({ name: "CONC-TEST Siec", fm26_active: true, fm26_chain_id: "conc-test" }).select().single();
+  const { data: ret, error: rErr } = await svc.from("retailers").insert({ id: 990009, name: "CONC-TEST Siec", fm26_active: true, fm26_chain_id: "conc-test" }).select().single();
+  if (rErr) throw rErr;
   created.retailer = ret.id;
   const { data: g } = await svc.from("fm_queue_groups").insert({ event_date: op.today, retailer_id: ret.id }).select().single();
   const { data: st } = await svc.from("fm_stations").insert([{ queue_group_id: g.id, idx: 1 }, { queue_group_id: g.id, idx: 2 }]).select();
