@@ -1,5 +1,5 @@
 -- ============================================================================
--- 053_fm_queue.sql  (v4.1 — po review Codexa v4 z 7.09.2026)
+-- 053_fm_queue.sql  (v4.2 — po tescie hostowanym Codexa z 7.09.2026: fail-fast, lock_timeout, advisor)
 -- [feat/fm-queue] Modul kolejek / numerkow spotkan B2B na zywo (FM 2026).
 -- Specyfikacja: docs/production/FM_KOLEJKI_NUMERKI_PROPOZYCJA.md, sekcja 14.
 -- Review i kontrpropozycja: docs/production/NOTATKA_DLA_CODEX_2026-09-06_KOLEJKI_REVIEW.md
@@ -169,6 +169,13 @@ CREATE TABLE IF NOT EXISTS public.fm_queue_settings (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- indeksy kluczy obcych (Supabase Advisor: unindexed_foreign_keys)
+CREATE INDEX IF NOT EXISTS fm_queue_meetings_station ON public.fm_queue_meetings (station_id);
+CREATE INDEX IF NOT EXISTS fm_stations_current_meeting ON public.fm_stations (current_meeting_id);
+CREATE INDEX IF NOT EXISTS fm_stations_active_returnee ON public.fm_stations (active_returnee_id);
+CREATE INDEX IF NOT EXISTS fm_queue_groups_retailer ON public.fm_queue_groups (retailer_id);
+CREATE INDEX IF NOT EXISTS fm_queue_assignments_group ON public.fm_queue_assignments (queue_group_id);
+
 -- ── 2. TRIGGERY INTEGRALNOSCI ────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.fm_queue_touch() RETURNS trigger
 LANGUAGE plpgsql SET search_path = '' AS $$
@@ -274,15 +281,36 @@ LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
 $$;
 
 -- Blokady ZAWSZE w kolejnosci: grupa -> stanowisko (-> spotkanie w wywolujacym).
--- Zwraca zablokowany wiersz stanowiska; blokady trwaja do konca transakcji.
-CREATE OR REPLACE FUNCTION public.fm_queue_lock_station(p_station_id uuid)
-RETURNS public.fm_stations LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE v_gid uuid; st public.fm_stations;
+-- Anty-konwoj (test 20x rownoczesnych wywolan na free tier): czekanie na blokade ma limit
+-- (lock_timeout 3 s -> FM_BUSY, klient ponawia raz), a nieaktualna wersja stanowiska jest
+-- odrzucana PRZED czekaniem (FM_CONFLICT bez zajmowania puli polaczen). Po zdobyciu blokady
+-- wywolujacy i tak sprawdza wersje ponownie.
+CREATE OR REPLACE FUNCTION public.fm_queue_lock_group(p_group_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 BEGIN
-  SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
+  PERFORM set_config('lock_timeout', '3000', true);
+  BEGIN
+    PERFORM 1 FROM public.fm_queue_groups WHERE id = p_group_id FOR UPDATE;
+  EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION 'FM_BUSY' USING ERRCODE = '55P03';
+  END;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
-  PERFORM 1 FROM public.fm_queue_groups WHERE id = v_gid FOR UPDATE;
-  SELECT * INTO st FROM public.fm_stations WHERE id = p_station_id FOR UPDATE;
+END; $$;
+
+CREATE OR REPLACE FUNCTION public.fm_queue_lock_station(p_station_id uuid, p_expected_version int DEFAULT NULL)
+RETURNS public.fm_stations LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE v_gid uuid; v_ver int; st public.fm_stations;
+BEGIN
+  SELECT queue_group_id, version INTO v_gid, v_ver FROM public.fm_stations WHERE id = p_station_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  -- fail-fast: nieaktualne zadanie nie czeka na blokade
+  IF p_expected_version IS NOT NULL AND v_ver <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  PERFORM public.fm_queue_lock_group(v_gid);
+  BEGIN
+    SELECT * INTO st FROM public.fm_stations WHERE id = p_station_id FOR UPDATE;
+  EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION 'FM_BUSY' USING ERRCODE = '55P03';
+  END;
   RETURN st;
 END; $$;
 
@@ -451,6 +479,10 @@ JOIN public.retailers r ON r.id = g.retailer_id
 JOIN public.fm_stations st ON st.queue_group_id = g.id
 LEFT JOIN public.fm_queue_meetings cm ON cm.id = st.current_meeting_id
 WHERE g.active;
+-- security_invoker: widok NIE omija RLS (Advisor 0010). anon nie ma do niego dostepu — publiczna
+-- powierzchnia to wylacznie fm_queue_public_snapshot (SECURITY DEFINER, owner=postgres, czyta widok
+-- z pelnymi uprawnieniami). Zalogowani czytaja widok pod RLS (admin: wszystko, staff: przypisane).
+ALTER VIEW public.fm_queue_board_v SET (security_invoker = true);
 
 CREATE OR REPLACE FUNCTION public.fm_queue_public_snapshot(p_event_date date DEFAULT NULL)
 RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
@@ -476,8 +508,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   IF NOT st.active THEN RAISE EXCEPTION 'FM_STATION_INACTIVE' USING ERRCODE = '22023'; END IF;
   IF public.fm_queue_day_closed(st.queue_group_id) THEN RAISE EXCEPTION 'FM_DAY_CLOSED' USING ERRCODE = '22023'; END IF;
@@ -493,8 +527,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   SELECT * INTO g FROM public.fm_queue_groups WHERE id = st.queue_group_id;  -- juz zablokowana
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   IF st.mode <> 'open' THEN RAISE EXCEPTION 'FM_STATION_NOT_OPEN' USING ERRCODE = '22023'; END IF;
@@ -520,8 +556,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = st.current_meeting_id AND status = 'called' FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_CALLED_MEETING' USING ERRCODE = '22023'; END IF;
@@ -539,8 +577,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = st.current_meeting_id AND status IN ('called','in_progress') FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_ACTIVE_MEETING' USING ERRCODE = '22023'; END IF;
@@ -564,8 +604,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = st.current_meeting_id AND status IN ('called','in_progress') FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_ACTIVE_MEETING' USING ERRCODE = '22023'; END IF;
@@ -584,7 +626,7 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_queue_meetings WHERE id = p_meeting_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  PERFORM 1 FROM public.fm_queue_groups WHERE id = v_gid FOR UPDATE;
+  PERFORM public.fm_queue_lock_group(v_gid);
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = p_meeting_id FOR UPDATE;
   IF public.fm_queue_idem_done(v_idem) THEN RETURN jsonb_build_object('id', m.id, 'status', m.status); END IF;
   IF m.status NOT IN ('planned','returned_waiting') THEN RAISE EXCEPTION 'FM_BAD_STATUS' USING ERRCODE = '22023'; END IF;
@@ -601,7 +643,8 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_queue_meetings WHERE id = p_meeting_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  SELECT * INTO g FROM public.fm_queue_groups WHERE id = v_gid FOR UPDATE;
+  PERFORM public.fm_queue_lock_group(v_gid);
+  SELECT * INTO g FROM public.fm_queue_groups WHERE id = v_gid;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = p_meeting_id FOR UPDATE;
   IF public.fm_queue_idem_done(v_idem) THEN RETURN jsonb_build_object('id', m.id, 'status', m.status, 'return_after_nr', m.return_after_nr); END IF;
   IF m.status <> 'no_show' THEN RAISE EXCEPTION 'FM_BAD_STATUS' USING ERRCODE = '22023'; END IF;
@@ -626,8 +669,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   IF st.mode <> 'open' THEN RAISE EXCEPTION 'FM_STATION_NOT_OPEN' USING ERRCODE = '22023'; END IF;
   IF st.active_returnee_id IS NOT NULL THEN RAISE EXCEPTION 'FM_STATION_BUSY_RETURNEE' USING ERRCODE = '22023'; END IF;
@@ -651,8 +696,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = st.active_returnee_id AND status = 'returned_in_progress' FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_RETURNEE' USING ERRCODE = '22023'; END IF;
@@ -670,8 +717,8 @@ DECLARE g public.fm_queue_groups; v_op uuid; v_nr int; v_id uuid; v_prev jsonb; 
 BEGIN
   v_op := public.fm_queue_assert_operator(p_group_id);
   IF COALESCE(btrim(p_name), '') = '' THEN RAISE EXCEPTION 'FM_NAME_REQUIRED' USING ERRCODE = '22023'; END IF;
-  SELECT * INTO g FROM public.fm_queue_groups WHERE id = p_group_id FOR UPDATE;
-  IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  PERFORM public.fm_queue_lock_group(p_group_id);
+  SELECT * INTO g FROM public.fm_queue_groups WHERE id = p_group_id;
   IF public.fm_queue_idem_done(v_idem) THEN
     SELECT jsonb_build_object('id', l.meeting_id, 'nr', l.nr, 'status', 'planned') INTO v_prev FROM public.fm_queue_log l WHERE l.idempotency_key = v_idem;
     RETURN v_prev;
@@ -693,8 +740,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   v_busy := st.active_returnee_id IS NOT NULL OR (st.current_meeting_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.id = st.current_meeting_id AND x.status IN ('called','in_progress')));
   IF p_mode IN ('free_entry','closed') AND v_busy THEN RAISE EXCEPTION 'FM_STATION_BUSY' USING ERRCODE = '22023'; END IF;
@@ -715,8 +764,10 @@ BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   v_op := public.fm_queue_assert_operator(v_gid);
-  st := public.fm_queue_lock_station(p_station_id);
+  -- powtorka z tym samym kluczem (retry po utracie sieci) ma zwrocic stan — nawet ze stara wersja i bez czekania
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
+  st := public.fm_queue_lock_station(p_station_id, p_expected_version);
+  IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   -- ostatnia operacja stanowiska (dowolna) — cofac mozna tylko, gdy jest ostatnia i niecofnieta
   SELECT * INTO l FROM public.fm_queue_log l0
@@ -991,7 +1042,10 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   IF v_from = p_target_group_id THEN RAISE EXCEPTION 'FM_BAD_STATUS' USING ERRCODE = '22023'; END IF;
   -- blokady grup w stalej kolejnosci (po id), potem spotkanie
-  PERFORM 1 FROM public.fm_queue_groups WHERE id IN (v_from, p_target_group_id) ORDER BY id FOR UPDATE;
+  PERFORM set_config('lock_timeout', '3000', true);
+  BEGIN
+    PERFORM 1 FROM public.fm_queue_groups WHERE id IN (v_from, p_target_group_id) ORDER BY id FOR UPDATE;
+  EXCEPTION WHEN lock_not_available THEN RAISE EXCEPTION 'FM_BUSY' USING ERRCODE = '55P03'; END;
   SELECT * INTO g_from FROM public.fm_queue_groups WHERE id = v_from;
   SELECT * INTO g_to FROM public.fm_queue_groups WHERE id = p_target_group_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
@@ -1160,6 +1214,8 @@ END; $$;
 
 DROP FUNCTION IF EXISTS public.fm_staff_login_result(text, text, boolean, text);
 
+DROP FUNCTION IF EXISTS public.fm_queue_lock_station(uuid);
+
 -- ── 10. REALTIME + GRANTY ────────────────────────────────────────────────────
 -- Supabase Realtime (postgres_changes) wysyla zmiany tylko z tabel w publikacji.
 DO $$ BEGIN
@@ -1179,10 +1235,10 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Widok tablicy: security_invoker = false (domyslnie) — CELOWO: anon czyta TYLKO te
--- projekcje (siec, stanowisko, tryb, numery), a nie tabele pod spodem.
+-- Widok tablicy (security_invoker = true): anon BEZ dostepu (uzywa fm_queue_public_snapshot),
+-- authenticated pod RLS tabel.
 REVOKE ALL ON public.fm_queue_board_v FROM PUBLIC, anon, authenticated;
-GRANT SELECT ON public.fm_queue_board_v TO anon, authenticated;
+GRANT SELECT ON public.fm_queue_board_v TO authenticated;
 -- anon NIE ma zadnych grantow na tabele modulu (RLS to druga warstwa; jedyna publiczna
 -- powierzchnia to widok + snapshot). authenticated: RLS; log i proby logowania — bez zapisu.
 REVOKE ALL ON public.fm_staff, public.fm_login_attempts, public.fm_queue_groups, public.fm_stations, public.fm_queue_meetings,
@@ -1196,7 +1252,7 @@ DO $$ DECLARE f text; BEGIN
   FOREACH f IN ARRAY ARRAY[
     'is_staff()',
     'fm_queue_assert_operator(uuid)', 'fm_queue_require_idem(text)', 'fm_queue_idem_done(text)',
-    'fm_queue_log_write(uuid,uuid,uuid,uuid,text,text,text,int,text,jsonb)', 'fm_queue_lock_station(uuid)',
+    'fm_queue_log_write(uuid,uuid,uuid,uuid,text,text,text,int,text,jsonb)', 'fm_queue_lock_station(uuid,int)', 'fm_queue_lock_group(uuid)',
     'fm_queue_station_state_unsafe(uuid)', 'fm_queue_station_state(uuid)',
     'fm_queue_open_station(uuid,int,text)', 'fm_queue_call_next(uuid,int,text)', 'fm_queue_start(uuid,int,text)',
     'fm_queue_finish_and_call_next(uuid,int,text,boolean)', 'fm_queue_no_show(uuid,int,text)', 'fm_queue_skip(uuid,text)',

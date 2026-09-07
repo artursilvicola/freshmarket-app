@@ -107,6 +107,8 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
         } catch (e) {
           const network = e?.message && /fetch|network|Failed to fetch|Load failed/i.test(e.message) && !e.fmCode;
           if (network && attempt < 2) { attempt++; await new Promise(r => setTimeout(r, 1500)); continue; }
+          // FM_BUSY = blokada wiersza zajęta > 3 s (konwój) — ponów raz z tym samym kluczem (bezpieczne)
+          if (e?.fmCode === "FM_BUSY" && attempt < 1) { attempt++; await new Promise(r => setTimeout(r, 400)); continue; }
           if (e?.fmCode === "FM_CONFLICT") await refreshState();
           showToast(humanFmError(e, lang));
           return null;

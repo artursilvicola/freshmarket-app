@@ -130,7 +130,8 @@ INSERT INTO public.fm_queue_assignments (operator_id, queue_group_id) VALUES (pg
 -- ── T1 anon ──────────────────────────────────────────────────────────────────
 SELECT pg_temp.login(NULL);
 SET LOCAL ROLE anon;
-SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_board_v WHERE event_date = (SELECT today FROM t_day)) = 3, 'T1 anon widzi 3 stanowiska w widoku');
+SELECT pg_temp.expect_error('SELECT count(*) FROM public.fm_queue_board_v', 'permission denied');
+SELECT pg_temp.ok(jsonb_array_length(public.fm_queue_public_snapshot((SELECT today FROM t_day))->'stations') = 3, 'T1 anon widzi 3 stanowiska w snapshotcie (jedyna publiczna powierzchnia)');
 SELECT pg_temp.ok(NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'fm_queue_board_v' AND column_name IN ('company_id','name','exception_name','operator_id')), 'T1 widok bez kolumn z firma/operatorem');
 SELECT pg_temp.expect_error('SELECT count(*) FROM public.fm_queue_meetings', 'permission denied');
 SELECT pg_temp.expect_error('SELECT count(*) FROM public.fm_staff', 'permission denied');
@@ -236,6 +237,7 @@ SELECT pg_temp.ok((SELECT last_called_nr FROM public.fm_queue_groups WHERE id = 
 SET LOCAL ROLE authenticated; SELECT pg_temp.login('op1');
 SELECT pg_temp.ok((SELECT count(DISTINCT queue_group_id) FROM public.fm_queue_meetings) = 1, 'T10 op1 widzi spotkania tylko grupy A');
 SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_groups WHERE event_date = (SELECT today FROM t_day)) = 2, 'T10 staff czyta konfiguracje grup');
+SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_board_v WHERE event_date = (SELECT today FROM t_day)) = 3, 'T10 widok pod security_invoker: staff widzi stanowiska (tabele pod RLS)');
 SELECT pg_temp.expect_error($q$INSERT INTO public.fm_queue_log (action) VALUES ('hack')$q$, 'permission denied');
 SELECT pg_temp.expect_error($q$INSERT INTO public.fm_login_attempts (ip) VALUES ('x')$q$, 'permission denied');
 -- RLS na UPDATE bez pasujacej polityki = 0 zmienionych wierszy (cicho), nie blad

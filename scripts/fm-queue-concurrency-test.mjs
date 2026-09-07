@@ -105,8 +105,11 @@ try {
   // (3) zalew 20 rownoczesnych call_next
   const fin = await rpc1("fm_queue_finish_and_call_next", { p_station_id: s1.id, p_expected_version: a.data.version, p_idem: idem(), p_call_next: false });
   const flood = await Promise.all(Array.from({ length: 20 }, () => rpc1("fm_queue_call_next", { p_station_id: s1.id, p_expected_version: fin.data.version, p_idem: idem() })));
-  const successes = flood.filter(r => !r.error).length, conflicts = flood.filter(r => r.error && /FM_CONFLICT|FM_STATION_BUSY/.test(r.error.message)).length;
-  ok(successes === 1 && conflicts === 19, `(3) zalew: 1 sukces, 19 konfliktow (jest ${successes}/${conflicts})`);
+  const successes = flood.filter(r => !r.error).length;
+  const conflicts = flood.filter(r => r.error && /FM_CONFLICT|FM_STATION_BUSY/.test(r.error.message)).length;
+  const busy = flood.filter(r => r.error && /FM_BUSY/.test(r.error.message)).length;
+  const other = flood.filter(r => r.error && !/FM_CONFLICT|FM_STATION_BUSY|FM_BUSY/.test(r.error.message)).map(r => `${r.error.code || ""} ${r.error.message}`.trim().slice(0, 60));
+  ok(successes === 1 && conflicts + busy === 19 && other.length === 0, `(3) zalew 20x: 1 sukces, ${conflicts} FM_CONFLICT (fail-fast), ${busy} FM_BUSY, inne: ${other.length ? other.join(" | ") : "0"}`);
   const { data: g2 } = await svc.from("fm_queue_groups").select("last_called_nr").eq("id", g.id).single();
   ok(g2.last_called_nr === 4, `(3) last_called_nr = 4 (jest ${g2.last_called_nr})`);
 
