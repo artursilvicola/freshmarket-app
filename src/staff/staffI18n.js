@@ -1,7 +1,7 @@
 // [feat/fm-queue] PL/EN dla panelu obsługi (/obsluga) i logowania.
 // Osobny, mały słownik zamiast namespace'ów i18next: obsługa nie ma profilu
 // z locale — język wybiera na ekranie logowania (zapamiętany w localStorage
-// i w i18n aplikacji), tablica /tablica jest zawsze dwujęzyczna.
+// i w i18n aplikacji), tablica /tablice jest zawsze dwujęzyczna.
 import { useCallback, useEffect, useState } from "react";
 import i18n from "../i18n";
 

@@ -1,4 +1,4 @@
-// [feat/fm-queue] /tablica — publiczna tablica numerków (rzutnik 1024×768 + telefony).
+// [feat/fm-queue] /tablice — publiczna tablica numerków (rzutnik 1024×768 + telefony).
 // Dane: WYŁĄCZNIE publiczny snapshot (bez nazw firm): /.netlify/functions/fm-queue-snapshot
 // (CDN cache 5 s) z fallbackiem na RPC fm_queue_public_snapshot przez anon.
 // Parametry URL: ?gate=1|2  ?rotate=9 (s)  ?perPage=12  ?page=N (bez rotacji)  ?date=YYYY-MM-DD

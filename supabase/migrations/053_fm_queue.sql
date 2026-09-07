@@ -1,5 +1,5 @@
 -- ============================================================================
--- 053_fm_queue.sql  (v4.2 — po tescie hostowanym Codexa z 7.09.2026: fail-fast, lock_timeout, advisor)
+-- 053_fm_queue.sql  (v4.4 — fail-fast bez retriable SQLSTATE, lock_timeout, advisor)
 -- [feat/fm-queue] Modul kolejek / numerkow spotkan B2B na zywo (FM 2026).
 -- Specyfikacja: docs/production/FM_KOLEJKI_NUMERKI_PROPOZYCJA.md, sekcja 14.
 -- Review i kontrpropozycja: docs/production/NOTATKA_DLA_CODEX_2026-09-06_KOLEJKI_REVIEW.md
@@ -304,7 +304,8 @@ BEGIN
   SELECT queue_group_id, version INTO v_gid, v_ver FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   -- fail-fast: nieaktualne zadanie nie czeka na blokade
-  IF p_expected_version IS NOT NULL AND v_ver <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  -- PT409 daje HTTP 409, ale nie uruchamia automatycznych retry PostgREST jak SQLSTATE 40001.
+  IF p_expected_version IS NOT NULL AND v_ver <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   PERFORM public.fm_queue_lock_group(v_gid);
   BEGIN
     SELECT * INTO st FROM public.fm_stations WHERE id = p_station_id FOR UPDATE;
@@ -512,7 +513,7 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   IF NOT st.active THEN RAISE EXCEPTION 'FM_STATION_INACTIVE' USING ERRCODE = '22023'; END IF;
   IF public.fm_queue_day_closed(st.queue_group_id) THEN RAISE EXCEPTION 'FM_DAY_CLOSED' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_stations SET mode = 'open', free_entry_started_at = NULL, version = version + 1, updated_by = v_op WHERE id = st.id;
@@ -532,7 +533,7 @@ BEGIN
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
   SELECT * INTO g FROM public.fm_queue_groups WHERE id = st.queue_group_id;  -- juz zablokowana
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   IF st.mode <> 'open' THEN RAISE EXCEPTION 'FM_STATION_NOT_OPEN' USING ERRCODE = '22023'; END IF;
   IF st.active_returnee_id IS NOT NULL THEN RAISE EXCEPTION 'FM_STATION_BUSY_RETURNEE' USING ERRCODE = '22023'; END IF;
   IF st.current_meeting_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.id = st.current_meeting_id AND x.status IN ('called','in_progress')) THEN
@@ -560,7 +561,7 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = st.current_meeting_id AND status = 'called' FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_CALLED_MEETING' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_queue_meetings SET status = 'in_progress', started_at = now(), version = version + 1 WHERE id = m.id;
@@ -581,7 +582,7 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = st.current_meeting_id AND status IN ('called','in_progress') FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_ACTIVE_MEETING' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_queue_meetings SET status = 'done', ended_at = now(), started_at = COALESCE(started_at, now()), version = version + 1 WHERE id = m.id;
@@ -608,7 +609,7 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = st.current_meeting_id AND status IN ('called','in_progress') FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_ACTIVE_MEETING' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_queue_meetings SET status = 'no_show', ended_at = now(), version = version + 1 WHERE id = m.id;
@@ -673,7 +674,7 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   IF st.mode <> 'open' THEN RAISE EXCEPTION 'FM_STATION_NOT_OPEN' USING ERRCODE = '22023'; END IF;
   IF st.active_returnee_id IS NOT NULL THEN RAISE EXCEPTION 'FM_STATION_BUSY_RETURNEE' USING ERRCODE = '22023'; END IF;
   IF st.current_meeting_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.id = st.current_meeting_id AND x.status IN ('called','in_progress')) THEN
@@ -700,7 +701,7 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = st.active_returnee_id AND status = 'returned_in_progress' FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_RETURNEE' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_queue_meetings SET status = 'done', ended_at = now(), version = version + 1 WHERE id = m.id;
@@ -744,7 +745,7 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   v_busy := st.active_returnee_id IS NOT NULL OR (st.current_meeting_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.id = st.current_meeting_id AND x.status IN ('called','in_progress')));
   IF p_mode IN ('free_entry','closed') AND v_busy THEN RAISE EXCEPTION 'FM_STATION_BUSY' USING ERRCODE = '22023'; END IF;
   IF p_mode <> 'closed' AND public.fm_queue_day_closed(st.queue_group_id) THEN RAISE EXCEPTION 'FM_DAY_CLOSED' USING ERRCODE = '22023'; END IF;
@@ -768,7 +769,7 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   st := public.fm_queue_lock_station(p_station_id, p_expected_version);
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;  -- ponownie pod blokada
-  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
+  IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = 'PT409'; END IF;
   -- ostatnia operacja stanowiska (dowolna) — cofac mozna tylko, gdy jest ostatnia i niecofnieta
   SELECT * INTO l FROM public.fm_queue_log l0
     WHERE l0.station_id = st.id AND l0.action NOT LIKE 'undo\_%'

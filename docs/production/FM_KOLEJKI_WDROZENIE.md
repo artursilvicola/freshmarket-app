@@ -1,9 +1,9 @@
 # Kolejki / numerki spotkań B2B — runbook wdrożenia (FM 2026, 24.09)
 
-Stan: **kod v4.3 na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane na produkcji. Codex: AKCEPTACJA WARUNKOWA (7.09).**
-Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 → v4.2. Test hostowany Codexa na testowym Supabase + deploy preview: T0–T16, logowanie 2 operatorów, idempotencja, 2 stanowiska równolegle, Realtime 2 tablety, 2 urządzenia naraz, brute force 40× + lockout, reset PIN + stare tokeny, block/unblock, Advisor (widok, indeksy) — **wszystko ✅**. Jedyne zastrzeżenie: **zalew 20× (i nawet 5×) równoczesnych RPC na darmowym Supabase kończy się `PGRST003`/„upstream request timeout”** (pula połączeń Data API free tier), przy poprawnej numeracji i dokładnie jednej wykonanej operacji — uznane za ograniczenie infrastruktury, nie logiki.
+Stan: **kod v4.4 na osobnej gałęzi Codexa, NIE wdrożony na main, migracje NIE zaaplikowane na produkcji. Testy hostowane na płatnej gałęzi Supabase: ZIELONE (7.09).**
+Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 → v4.2 → v4.4. T0–T16, logowanie 2 operatorów, idempotencja, 2 stanowiska równolegle, Realtime 2 tablety, 2 urządzenia naraz, brute force 40× + lockout, reset PIN + stare tokeny, block/unblock — **wszystko ✅**. Zalew 5×: 1 sukces w 69 ms + 4 konflikty, całość 212 ms. Zalew 20×: 1 sukces w 83 ms + 19 konfliktów, całość 261 ms; **0 `PGRST003`, 0 timeoutów, dokładnie jedna wykonana operacja**.
 
-**Warunki Codexa przed próbą generalną / produkcją:** powtórka testu 20× na projekcie z większą pulą (compute jak produkcja). **Pytanie do organizatora:** na jakim planie/compute jest produkcyjny projekt Supabase (`sklyfuvzjikkqerxtulo`)? W dniu eventu 6–8 tabletów + admin to maksymalnie ~10 równoczesnych RPC; tablet nigdy nie wysyła równolegle (`busy`), a od v4.3 każde RPC ma limit 10 s i ponowienie z tym samym kluczem idempotencji, więc zawieszony request nie blokuje obsługi — ale pulę trzeba sprawdzić na tym samym compute.
+Warunek testu 20× jest spełniony. Wcześniejszy timeout nie wynikał z pojemności puli: `FM_CONFLICT` używał SQLSTATE `40001`, a PostgREST 14.5 automatycznie ponawia błędy serializacji. v4.4 używa oficjalnego kodu `PT409` (HTTP 409), więc konflikt wraca natychmiast i nie uruchamia retry infrastruktury.
 
 ## 1. Co powstało
 
@@ -17,7 +17,7 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 | Algorytm | `src/lib/fm-algo.js` + `fm-algo.test.js` | czysty moduł; pojemność = **60**/stanowisko × stanowiska (2 równoległe = 120), edytowalne per grupa; `npm test` (18 testów) |
 | Dane | `src/lib/fm-queue.js` | konfiguracja (RLS admin), wrappery RPC, snapshot, Realtime |
 | Funkcje | `netlify/functions/staff-login.js`, `admin-staff.js`, `fm-queue-snapshot.js`, `_shared/staff-auth.js` | logowanie kod+PIN, konta obsługi, cache'owany snapshot dla telefonów |
-| UI | `src/staff/*` (`/obsluga`), `src/pages/FmBoardPage.jsx` (`/tablica`), `src/components/admin/FmEventDay.jsx` (admin → Spotkania B2B → **Dzień wydarzenia**), `src/components/supplier/FmMyQueue.jsx` („Twoja kolej” u dostawcy) | |
+| UI | `src/staff/*` (`/obsluga`), `src/pages/FmBoardPage.jsx` (`/tablice`; stare `/tablica` przekierowuje z parametrami), `src/components/admin/FmEventDay.jsx` (admin → Spotkania B2B → **Dzień wydarzenia**), `src/components/supplier/FmMyQueue.jsx` („Twoja kolej” u dostawcy) | |
 
 ## 2. Kolejność wdrożenia (po akceptacji review)
 
@@ -27,12 +27,12 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 2. **Migracja 052** — SQL Editor, osobne uruchomienie: `ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'staff';`
 3. **Migracja 053** — SQL Editor, całość (BEGIN…COMMIT). Kontrola: `select proname, prosecdef from pg_proc where proname like 'fm_queue%';`
 4. **Testy** — od pustej bazy: `DATABASE_URL=… node scripts/fm-queue-sql-test.mjs --shim` (goły Postgres 15+) albo na projekcie testowym Supabase z 052/053: `… --only-test`; potem `scripts/fm-queue-concurrency-test.mjs` (`TEST_SUPABASE_URL`, `TEST_SERVICE_ROLE_KEY`, `TEST_ANON_KEY`, `STAFF_LOGIN_URL`). **Test (3) zalew 20× powtórzyć na projekcie z pulą jak produkcja** (free tier: `PGRST003`).
-5. Merge gałęzi → `main` → Netlify deploy. Frontend jest odporny na brak tabel (przed 053 zakładka „Dzień wydarzenia” pokazuje ostrzeżenie, `/tablica` „nieaktywna”, „Twoja kolej” nie renderuje się).
+5. Merge gałęzi → `main` → Netlify deploy. Frontend jest odporny na brak tabel (przed 053 zakładka „Dzień wydarzenia” pokazuje ostrzeżenie, `/tablice` „nieaktywna”, „Twoja kolej” nie renderuje się).
 6. Admin → Spotkania B2B → Dzień wydarzenia → **Stanowiska → „Utwórz grupy dla sieci FM”**, ustaw gate, liczbę stanowisk, split (Dino · Kwiaty), `spotkania/stanowisko`.
    **PRZED 17.09 (uruchomienie algorytmu)** — bez tego każda sieć liczona jest jako 1 stanowisko (ostrzeżenie `no_station_config` w planie).
 7. Obsługa → utwórz konta (`OBSLUGA-1…`), zapisz PIN-y (pokazywane raz), przypisz sieci.
 8. **23.09** po zatwierdzeniu planu: **Tablica i dzień → „Otwórz dzień (import planu)”**. Stanowiska zostają ZAMKNIĘTE.
-9. **24.09**: obsługa loguje się na `/obsluga`, otwiera swoje stanowiska ręcznie; rzutnik: `/tablica?gate=1` i `/tablica?gate=2`; 17:00 → „Zamknij wszystkie stanowiska”.
+9. **24.09**: obsługa loguje się na `/obsluga`, otwiera swoje stanowiska ręcznie; rzutnik: `/tablice?gate=1` i `/tablice?gate=2`; 17:00 → „Zamknij wszystkie stanowiska”.
 
 ## 2a. Test przed zgodą na produkcję — tymczasowa gałąź Supabase (plan Codexa, 7.09)
 
@@ -84,9 +84,9 @@ Produkcja: plan **Pro**, compute **Nano** (`t4g.nano`, ~21/60 połączeń, 62–
 
 ## 6. Kiosk (rzutnik 1024×768)
 
-- Windows: Edge/Chrome `msedge.exe --kiosk "https://b2b.freshmarket.eu/tablica?gate=1" --edge-kiosk-type=fullscreen` (lub Windows „Dostęp przypisany” z Edge). Parametry: `?rotate=8`, `?perPage=10`, `?page=2` (stała strona, drugi ekran).
+- Windows: Edge/Chrome `msedge.exe --kiosk "https://b2b.freshmarket.eu/tablice?gate=1" --edge-kiosk-type=fullscreen` (lub Windows „Dostęp przypisany” z Edge). Parametry: `?rotate=8`, `?perPage=10`, `?page=2` (stała strona, drugi ekran).
 - Tablica odpytuje `/.netlify/functions/fm-queue-snapshot` co 5 s (CDN cache 5 s), fallback RPC anon. Brak sieci > 20 s → czerwony pasek.
-- Telefony uczestników: ta sama strona (`/tablica`) w układzie mobilnym + „Twoja kolej” w panelu dostawcy (co 8 s).
+- Telefony uczestników: ta sama strona (`/tablice`) w układzie mobilnym + „Twoja kolej” w panelu dostawcy (co 8 s). Stary adres `/tablica` przekierowuje na `/tablice`, zachowując query i hash.
 
 ## 7. Test przed eventem (próba generalna 21–22.09)
 

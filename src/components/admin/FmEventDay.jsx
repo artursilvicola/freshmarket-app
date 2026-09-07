@@ -307,7 +307,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
           <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
             <Btn ghost onClick={reloadLive}>Odśwież</Btn>
             <span style={{ color: "#64748b" }}>{snapshot?.generated_at ? `stan z ${new Date(snapshot.generated_at).toLocaleTimeString("pl-PL")}` : "—"}</span>
-            <a href="/tablica" target="_blank" rel="noreferrer" style={{ marginLeft: "auto", color: T, fontWeight: 700 }}>otwórz tablicę ↗</a>
+            <a href="/tablice" target="_blank" rel="noreferrer" style={{ marginLeft: "auto", color: T, fontWeight: 700 }}>otwórz tablicę ↗</a>
           </div>
           <table style={tbl}>
             <thead><tr>{["Gate", "Sieć", "Stanowisko", "Tryb", "Ostatnio wywołany", "TERAZ", "NASTĘPNY", "Powracający"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
@@ -372,8 +372,8 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
               <Btn disabled={busy || dbMissing} onClick={() => run(() => saveFmQueueSettings({ event_date: eventDate, board_rotation_s: Number(document.getElementById("fmq-rot").value) || 9, board_items_per_page: Number(document.getElementById("fmq-pp").value) || 12 }), "Zapisano.")}>Zapisz</Btn>
             </div>
             <div style={{ marginTop: 10, lineHeight: 1.8 }}>
-              Linki: <a href="/tablica" target="_blank" rel="noreferrer">/tablica</a> (wszystko) · <a href="/tablica?gate=1" target="_blank" rel="noreferrer">/tablica?gate=1</a> · <a href="/tablica?gate=2" target="_blank" rel="noreferrer">/tablica?gate=2</a><br />
-              <span style={{ color: "#64748b" }}>Parametry: <code>?rotate=8</code> sekundy, <code>?perPage=10</code>, <code>?page=2</code> (stała strona, bez rotacji). Kiosk: Edge/Chrome <code>--kiosk https://b2b.freshmarket.eu/tablica?gate=1</code>.</span>
+              Linki: <a href="/tablice" target="_blank" rel="noreferrer">/tablice</a> (wszystko) · <a href="/tablice?gate=1" target="_blank" rel="noreferrer">/tablice?gate=1</a> · <a href="/tablice?gate=2" target="_blank" rel="noreferrer">/tablice?gate=2</a><br />
+              <span style={{ color: "#64748b" }}>Parametry: <code>?rotate=8</code> sekundy, <code>?perPage=10</code>, <code>?page=2</code> (stała strona, bez rotacji). Kiosk: Edge/Chrome <code>--kiosk https://b2b.freshmarket.eu/tablice?gate=1</code>.</span>
             </div>
           </div>
         </div>

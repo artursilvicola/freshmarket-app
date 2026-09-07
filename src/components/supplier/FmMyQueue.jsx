@@ -63,7 +63,7 @@ export default function FmMyQueue({ lang }) {
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <div style={{ fontSize: 17, fontWeight: 800 }}>{t.title}</div>
         <div style={{ fontSize: 12, color: "#94a3b8" }}>{t.sub}</div>
-        <a href="/tablica" target="_blank" rel="noreferrer" style={{ marginLeft: "auto", color: "#5eead4", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>{t.board}</a>
+        <a href="/tablice" target="_blank" rel="noreferrer" style={{ marginLeft: "auto", color: "#5eead4", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>{t.board}</a>
       </div>
       {stale && <div style={{ marginTop: 8, color: "#fca5a5", fontSize: 12, fontWeight: 700 }}>{t.offline}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginTop: 12 }}>

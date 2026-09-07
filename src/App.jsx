@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
@@ -15,7 +15,7 @@ import { isSupabaseConfigured } from "./lib/supabase";
 
 // [feat/fm-queue] Moduł kolejek dnia eventu — ładowany leniwie, nie obciąża
 // głównego bundla paneli. /obsluga sam obsługuje logowanie (kod + PIN),
-// /tablica jest publiczna (snapshot bez nazw firm).
+// /tablice jest publiczna (snapshot bez nazw firm); /tablica to stary alias.
 const StaffPanel = lazy(() => import("./staff/StaffPanel"));
 const FmBoardPage = lazy(() => import("./pages/FmBoardPage"));
 
@@ -77,7 +77,8 @@ export default function App() {
 
           {/* [feat/fm-queue] Dzień eventu: panel obsługi (staff/admin) i publiczna tablica. */}
           <Route path="/obsluga/*" element={<Suspense fallback={<LazyFallback />}><StaffPanel /></Suspense>} />
-          <Route path="/tablica" element={<Suspense fallback={<LazyFallback />}><FmBoardPage /></Suspense>} />
+          <Route path="/tablice" element={<Suspense fallback={<LazyFallback />}><FmBoardPage /></Suspense>} />
+          <Route path="/tablica" element={<LegacyBoardRedirect />} />
 
           {/* Root: przekieruj według roli */}
           <Route path="/" element={<RoleRedirect />} />
@@ -86,6 +87,11 @@ export default function App() {
       </BrowserRouter>
     </AuthProvider>
   );
+}
+
+function LegacyBoardRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate to={`/tablice${search}${hash}`} replace />;
 }
 
 /** Po zalogowaniu kieruje do właściwego panelu wg roli z profilu. */
