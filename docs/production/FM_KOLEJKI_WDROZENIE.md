@@ -1,6 +1,6 @@
 # Kolejki / numerki spotkań B2B — runbook wdrożenia (FM 2026, 24.09)
 
-Stan: **kod v4.4 na osobnej gałęzi Codexa, NIE wdrożony na main, migracje NIE zaaplikowane na produkcji. Testy hostowane na płatnej gałęzi Supabase: ZIELONE (7.09).**
+Stan: **v4.4 zmergowane do `feat/admin-instructions-announcements` (= commit Codexa `1ea67d2`). Codex: AKCEPTACJA KOŃCOWA (7.09). NIE na main, migracje NIE na produkcji.** Do zgody „wdrażaj”: upgrade produkcji Nano → Micro w spokojnym oknie (< 2 min przerwy). Gałąź testowa Supabase usunięta (~0,013 USD).
 Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 → v4.2 → v4.4. T0–T16, logowanie 2 operatorów, idempotencja, 2 stanowiska równolegle, Realtime 2 tablety, 2 urządzenia naraz, brute force 40× + lockout, reset PIN + stare tokeny, block/unblock — **wszystko ✅**. Zalew 5×: 1 sukces w 69 ms + 4 konflikty, całość 212 ms. Zalew 20×: 1 sukces w 83 ms + 19 konfliktów, całość 261 ms; **0 `PGRST003`, 0 timeoutów, dokładnie jedna wykonana operacja**.
 
 Warunek testu 20× jest spełniony. Wcześniejszy timeout nie wynikał z pojemności puli: `FM_CONFLICT` używał SQLSTATE `40001`, a PostgREST 14.5 automatycznie ponawia błędy serializacji. v4.4 używa oficjalnego kodu `PT409` (HTTP 409), więc konflikt wraca natychmiast i nie uruchamia retry infrastruktury.
