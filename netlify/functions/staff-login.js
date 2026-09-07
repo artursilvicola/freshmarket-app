@@ -24,7 +24,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import { CORS, envConfig, json, langOf, missingOf, readJson, trustedIp } from "./_shared/netlify-modern.js";
-import { isValidPin, normalizeStaffCode, staffEmailFor, staffPassword } from "./_shared/staff-auth.js";
+import { classifyAuthError, isValidPin, normalizeStaffCode, staffEmailFor, staffPassword } from "./_shared/staff-auth.js";
 
 const MSG = {
   pl: {
@@ -58,15 +58,6 @@ const MSG = {
 };
 const msg = (lang, code, arg) => { const m = MSG[lang][code] || MSG[lang].FM_BAD_CREDENTIALS; return typeof m === "function" ? m(arg) : m; };
 const STATUS = { FM_LOCKED: 423, FM_RATE_LIMIT: 423, FM_BUSY: 423, FM_BAD_CREDENTIALS: 401, FM_SYSTEM_ERROR: 503, FM_DB: 500 };
-
-// GoTrue: 400 "Invalid login credentials" = zły PIN; wszystko inne (5xx, sieć, timeout) = awaria
-function classifyAuthError(err) {
-  if (!err) return "success";
-  const status = Number(err.status || 0);
-  const m = String(err.message || "");
-  if (status === 400 || /invalid login credentials|invalid_credentials|invalid_grant/i.test(m)) return "invalid_credentials";
-  return "system_error";
-}
 
 export default async (request, context) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
@@ -104,7 +95,7 @@ export default async (request, context) => {
     const anon = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const r = await anon.auth.signInWithPassword({ email: staffEmailFor(code), password: staffPassword(cfg.staffPinPepper, code, pin) });
     auth = r.data;
-    outcome = r.error ? classifyAuthError(r.error) : (r.data?.session ? "success" : "system_error");
+    outcome = classifyAuthError(r.error, r.data?.session);
   } catch {
     outcome = "system_error";
   }
@@ -118,7 +109,10 @@ export default async (request, context) => {
     await revoke();
     return json(503, { error: msg(lang, "FM_SYSTEM_ERROR"), code: "FM_SYSTEM_ERROR" });
   }
-  if (outcome === "system_error") return json(503, { error: msg(lang, "FM_SYSTEM_ERROR"), code: "FM_SYSTEM_ERROR" });
+  if (outcome === "system_error") {
+    await revoke();  // defensywnie: gdyby GoTrue mimo bledu zwrocilo sesje, nie zostawiamy jej zywej
+    return json(503, { error: msg(lang, "FM_SYSTEM_ERROR"), code: "FM_SYSTEM_ERROR" });
+  }
   if (outcome === "invalid_credentials") {
     if (res?.locked) return json(423, { error: msg(lang, "FM_LOCKED", res.retry_after_s), code: "FM_LOCKED", retry_after_s: res.retry_after_s || 900 });
     return json(401, { error: msg(lang, "FM_BAD_CREDENTIALS"), code: "FM_BAD_CREDENTIALS", attempts_left: res?.attempts_left ?? undefined });

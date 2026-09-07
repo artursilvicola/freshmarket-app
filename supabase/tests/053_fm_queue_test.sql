@@ -358,7 +358,13 @@ SELECT pg_temp.ok((SELECT count(*) FROM t_att WHERE k LIKE 'b%' AND id IS NOT NU
 SELECT public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'b' || g), 'invalid_credentials', 'dev-tablet-0001') FROM generate_series(1,4) g;
 SELECT pg_temp.ok((public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'b5'), 'invalid_credentials', 'dev-tablet-0001')->>'locked')::boolean, 'T13 5. bledny PIN = lockout');
 SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.11', 'dev-tablet-0001')->>'reason') = 'FM_LOCKED', 'T13 gate: FM_LOCKED');
-UPDATE public.fm_staff SET locked_until = NULL, failed_logins = 0 WHERE code = 'TEST-OP1';  -- uplyw 15 min
+-- uplyw 15 minut: locked_until w przeszlosci, failed_logins nadal 5 -> gate MUSI wyzerowac i przepuscic (nie FM_BUSY)
+UPDATE public.fm_staff SET locked_until = now() - interval '1 second' WHERE code = 'TEST-OP1';
+INSERT INTO t_att SELECT 'd1', (public.fm_staff_login_gate('TEST-OP1', '10.0.0.13', 'dev-tablet-0001')->>'attempt_id')::bigint;
+SELECT pg_temp.ok((SELECT id IS NOT NULL FROM t_att WHERE k = 'd1'), 'T13 po wygasnieciu lockoutu logowanie znow dozwolone');
+SELECT pg_temp.ok((SELECT failed_logins = 0 AND locked_until IS NULL FROM public.fm_staff WHERE code = 'TEST-OP1'), 'T13 wygasly lockout wyzerowal licznik');
+SELECT public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'd1'), 'system_error', 'dev-tablet-0001');
+UPDATE public.fm_staff SET locked_until = NULL, failed_logins = 0 WHERE code = 'TEST-OP1';
 SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.12', 'dev-tablet-INNY')->>'reason') = 'FM_DEVICE_MISMATCH', 'T13 inne urzadzenie odrzucone w gate');
 -- wygasanie nierozliczonej rezerwacji (funkcja Netlify padla): po 60 s nie blokuje kolejnych prob
 INSERT INTO t_att SELECT 'c' || g, (public.fm_staff_login_gate('TEST-OP2', '10.0.0.2', 'dev-tablet-A000')->>'attempt_id')::bigint FROM generate_series(1,5) g;
@@ -382,10 +388,19 @@ INSERT INTO auth.sessions (id, user_id, created_at, updated_at) VALUES (gen_rand
 DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_staff_set_blocked(pg_temp.id('op2'), true);
 SELECT pg_temp.ok((SELECT (j->>'blocked')::boolean AND (j->>'sessions_revoked')::int = 1 FROM t_json), 'T13 set_blocked: zablokowane + sesja uniewazniona atomowo');
 SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP2', '10.0.0.2', 'dev-tablet-A000')->>'reason') = 'FM_BLOCKED', 'T13 zablokowane konto nie loguje sie');
-SET LOCAL ROLE authenticated; SELECT pg_temp.login('op2');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.login('op2', extract(epoch FROM now() - interval '1 hour')::bigint);  -- token sprzed blokady
+SELECT pg_temp.ok(NOT public.is_staff(), 'T13 zablokowane konto: stary token odrzucony');
+SELECT pg_temp.login('op2');  -- nawet swiezy token: konto zablokowane
 SELECT pg_temp.ok(NOT public.is_staff(), 'T13 zablokowane konto: is_staff() = false (RPC/RLS odciete)');
 RESET ROLE;
 SELECT public.fm_staff_set_blocked(pg_temp.id('op2'), false);
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.login('op2', extract(epoch FROM now() - interval '1 hour')::bigint);  -- ten sam stary token po odblokowaniu
+SELECT pg_temp.ok(NOT public.is_staff(), 'T13 po odblokowaniu stary token NADAL odrzucony (prog tokens_valid_from)');
+SELECT pg_temp.login('op2');  -- nowe logowanie (iat > prog)
+SELECT pg_temp.ok(public.is_staff(), 'T13 po odblokowaniu nowy token dziala');
+RESET ROLE;
 SELECT pg_temp.expect_error($q$SELECT public.fm_staff_set_blocked(gen_random_uuid(), true)$q$, 'FM_NOT_FOUND');
 -- revoke_sessions + rotacja PIN: stare tokeny (iat <= sekunda rotacji) i tokeny bez iat sa odrzucane
 INSERT INTO auth.sessions (id, user_id, created_at, updated_at) VALUES (gen_random_uuid(), pg_temp.id('op1'), now(), now());

@@ -49,6 +49,23 @@ export function pepperFromEnv() {
   return p.length >= 32 ? p : null;
 }
 
+/**
+ * Klasyfikacja wyniku GoTrue signInWithPassword:
+ *   'invalid_credentials' — TYLKO jednoznaczny sygnal zlego hasla/PIN-u (error.code z GoTrue
+ *                           albo dokladny komunikat "Invalid login credentials" przy HTTP 400),
+ *   'system_error'        — wszystko inne (5xx, siec, timeout, nieznane 400, brak sesji).
+ * Tylko 'invalid_credentials' zwieksza licznik lockoutu.
+ */
+export function classifyAuthError(err, session) {
+  if (!err) return session ? "success" : "system_error";
+  const code = String(err.code || err.error_code || "").toLowerCase();
+  if (code === "invalid_credentials" || code === "invalid_grant") return "invalid_credentials";
+  const status = Number(err.status || 0);
+  const message = String(err.message || "").trim().toLowerCase();
+  if (status === 400 && message === "invalid login credentials") return "invalid_credentials";
+  return "system_error";
+}
+
 export function clientIp(event) {
   const h = event.headers || {};
   const raw = h["x-nf-client-connection-ip"] || h["x-forwarded-for"] || h["client-ip"] || "";

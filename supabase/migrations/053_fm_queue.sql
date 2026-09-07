@@ -1,5 +1,5 @@
 -- ============================================================================
--- 053_fm_queue.sql  (v4 — po review Codexa v3 z 7.09.2026)
+-- 053_fm_queue.sql  (v4.1 — po review Codexa v4 z 7.09.2026)
 -- [feat/fm-queue] Modul kolejek / numerkow spotkan B2B na zywo (FM 2026).
 -- Specyfikacja: docs/production/FM_KOLEJKI_NUMERKI_PROPOZYCJA.md, sekcja 14.
 -- Review i kontrpropozycja: docs/production/NOTATKA_DLA_CODEX_2026-09-06_KOLEJKI_REVIEW.md
@@ -49,7 +49,8 @@ CREATE TABLE IF NOT EXISTS public.fm_staff (
   device_label text,
   failed_logins int NOT NULL DEFAULT 0,
   locked_until timestamptz,
-  pin_rotated_at timestamptz,                -- sesje wydane wczesniej sa niewazne dla RPC
+  pin_rotated_at timestamptz,                -- audyt: ostatnia rotacja PIN-u
+  tokens_valid_from timestamptz,             -- prog uniewaznienia tokenow (rotacja PIN-u, blokada): iat musi byc > tej sekundy
   last_login_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -210,11 +211,12 @@ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = '' AS $$
   SELECT COALESCE((
     SELECT p.role = 'staff' AND s.active AND NOT s.blocked
        AND s.event_date = (now() AT TIME ZONE 'Europe/Warsaw')::date
-       -- po rotacji PIN-u token MUSI byc wystawiony PO rotacji (iat > pelna sekunda rotacji);
-       -- brak iat = odrzucenie; zadnej tolerancji
-       AND (s.pin_rotated_at IS NULL
+       -- token MUSI byc wystawiony PO ostatnim progu uniewaznienia (rotacja PIN-u LUB blokada):
+       -- iat > pelna sekunda progu; brak iat = odrzucenie; zadnej tolerancji.
+       -- Po odblokowaniu stare tokeny NIE odzywaja (prog zostaje).
+       AND (GREATEST(s.pin_rotated_at, s.tokens_valid_from) IS NULL
             OR (NULLIF(auth.jwt()->>'iat', '') IS NOT NULL
-                AND (auth.jwt()->>'iat')::bigint > floor(extract(epoch FROM s.pin_rotated_at))::bigint))
+                AND (auth.jwt()->>'iat')::bigint > floor(extract(epoch FROM GREATEST(s.pin_rotated_at, s.tokens_valid_from)))::bigint))
     FROM public.profiles p JOIN public.fm_staff s ON s.id = p.id
     WHERE p.id = auth.uid()), false);
 $$;
@@ -1063,6 +1065,11 @@ BEGIN
   IF s.locked_until IS NOT NULL AND s.locked_until > now() THEN
     RETURN jsonb_build_object('allowed', false, 'reason', 'FM_LOCKED', 'retry_after_s', GREATEST(1, ceil(extract(epoch FROM s.locked_until - now())))::int);
   END IF;
+  -- lockout wygasl (albo licznik osierocony bez lockoutu): zerujemy pod ta sama blokada i idziemy dalej
+  IF s.locked_until IS NOT NULL OR s.failed_logins >= 5 THEN
+    UPDATE public.fm_staff SET failed_logins = 0, locked_until = NULL WHERE id = s.id;
+    s.failed_logins := 0; s.locked_until := NULL;
+  END IF;
   IF s.event_date <> v_today THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_WRONG_DAY', 'event_date', s.event_date); END IF;
   IF v_dev IS NULL OR length(v_dev) < 8 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_DEVICE_REQUIRED'); END IF;
   IF s.device_id IS NOT NULL AND s.device_id <> v_dev THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_DEVICE_MISMATCH'); END IF;
@@ -1125,7 +1132,8 @@ CREATE OR REPLACE FUNCTION public.fm_staff_set_blocked(p_user uuid, p_blocked bo
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE v_n int := 0; v_found boolean;
 BEGIN
-  UPDATE public.fm_staff SET blocked = p_blocked WHERE id = p_user;
+  -- blokada = takze prog uniewaznienia tokenow: po odblokowaniu stare (niewygasle) tokeny NIE odzywaja
+  UPDATE public.fm_staff SET blocked = p_blocked, tokens_valid_from = CASE WHEN p_blocked THEN now() ELSE tokens_valid_from END WHERE id = p_user;
   v_found := FOUND;
   IF NOT v_found THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
   IF p_blocked THEN
@@ -1145,6 +1153,7 @@ BEGIN
   DELETE FROM auth.sessions WHERE user_id = p_user;
   GET DIAGNOSTICS v_n = ROW_COUNT;
   UPDATE public.fm_staff SET device_id = NULL, device_bound_at = NULL, failed_logins = 0, locked_until = NULL,
+    tokens_valid_from = now(),
     pin_rotated_at = CASE WHEN p_rotate_pin THEN now() ELSE pin_rotated_at END WHERE id = p_user;
   RETURN jsonb_build_object('sessions_revoked', v_n);
 END; $$;

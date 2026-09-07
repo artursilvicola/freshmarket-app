@@ -160,8 +160,15 @@ try {
   const blockedRpc = await rpc2("fm_queue_my_stations", { p_event_date: today });
   ok(blockedRpc.error && /FM_FORBIDDEN/.test(blockedRpc.error.message), "(8) zablokowane konto: stary token -> FM_FORBIDDEN");
   const unb = await post(adminUrl, { action: "unblock", id: op2.id }, adminToken);
+  await new Promise(r => setTimeout(r, 1100));
+  const afterUnblock = await rpc2("fm_queue_my_stations", { p_event_date: today });
+  ok(afterUnblock.error && /FM_FORBIDDEN/.test(afterUnblock.error.message), "(8) po odblokowaniu ten sam stary token NADAL odrzucony");
   const relog2 = await login(op2.code, op2.pin, "conc-tablet-op2-0002");
   ok(unb.status === 200 && relog2.status === 200, `(8) unblock + ponowne logowanie (${unb.status}/${relog2.status})`);
+  if (relog2.status === 200) {
+    const fresh = await rpcAs(asToken(relog2.body.access_token))("fm_queue_my_stations", { p_event_date: today });
+    ok(!fresh.error, "(8) nowa sesja po odblokowaniu dziala");
+  }
 } catch (e) {
   fail(e.message || String(e));
 } finally {
