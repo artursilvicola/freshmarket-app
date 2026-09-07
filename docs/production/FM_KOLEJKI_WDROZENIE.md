@@ -91,3 +91,24 @@ Produkcja: plan **Pro**, compute **Nano** (`t4g.nano`, ~21/60 połączeń, 62–
 ## 7. Test przed eventem (próba generalna 21–22.09)
 
 1. Test SQL (pkt 2.4). 2. Super admin: **Włącz tryb testowy** dla daty próby (nie dla 24.09). 3. Utwórz 2 konta obsługi **z datą próby** (konto działa tylko w swoim dniu), przypisz sieci, zaloguj na tablecie (Chrome/Safari). 4. „Otwórz dzień” (w trybie testowym bierze najnowszy opublikowany plan, nie rusza produkcyjnych ustawień FM); po próbie „Reset dnia testowego”, potem „Wyłącz tryb testowy”. 5. Przejdź scenariusz: otwórz → wywołaj → rozpocznij → zakończ+następny → nieobecny → wrócił → obsłuż powracającego → wyjątek → cofnij → przerwa → wolne wejście → „Zamknij wszystkie” przy trwającym spotkaniu (closing) → dokończ. 6. Rzutnik 1024×768: czytelność z 10 m, rotacja stron, GATE. 7. Test obciążeniowy snapshotu (300 klientów × 8 s ≈ 40 req/s na CDN, ~0.2 req/s na Supabase).
+
+## 8. Wykonano na produkcji — 7.09.2026 (wdrożenie v4.4, zgoda Artura, 14 kroków)
+
+| Krok | Czas (UTC) | Wynik |
+|---|---|---|
+| 1. Stan wyjściowy | 14:0x | `origin/main` 7f06dc2, feat c3742bd (zawiera 1ea67d2 = PT409); tag rollback `prod-rollback-2026-09-07` = 7f06dc2; Auth/REST 200; Realtime SUBSCRIBED 745 ms |
+| 2. Compute Nano → Micro | 14:26–14:30 | dashboard „Free upgrade” (+0 USD), restart ~4 min (REST 521 → 200 o 14:29:58); po restarcie `t4g.micro`, Auth 200, REST 200, Storage 200, Realtime SUBSCRIBED 808 ms |
+| 3. Kontrola 053 v4.4 | — | `PT409` ×11, `ERRCODE '40001'` = 0 (tylko komentarz), `/tablice` kanoniczna, `/tablica` przekierowuje z parametrami |
+| 4. Merge | 14:27 | worktree main: `5901af2` = merge `feat/admin-instructions-announcements` (--no-ff); drzewo identyczne z feat (cherry-pick 7f06dc2 bez konfliktu) |
+| 5. Testy na zmergowanym main | 14:29 | migracje 001→053 od zera + `053_fm_queue_test.sql` T0–T16 na embedded Postgres 17 ✅; `npm test` 25/25 ✅; `npm run build` ✅ (24,7 s) |
+| 6. Push + Netlify | 14:31:51 | deploy produkcyjny **`6a9ecad899e8850008683109`** (ready 14:32:20, 27 s, 24 funkcje, 8 przekierowań); bundle `index-Dn_vRZ-X.js` zawiera `/obsluga`, `/tablice`, chunki `FmBoardPage`, `StaffPanel`, `FmEventDay` |
+| 7. Kontrole przed migracją | 14:34 | `/tablice` renderuje (snapshot 502 → „Brak połączenia” — oczekiwane przed 053); `/tablica?gate=1#x` → `/tablice?gate=1#x` (GATE 1); `/obsluga` ekran logowania PL/EN; `/admin` → `/login` (kontrola panelu admina wymaga sesji Artura) |
+| 8. `052_staff_role.sql` | 14:36 | osobne uruchomienie → `enum_range(user_role)` = `{admin,supplier,buyer,staff}`; PostgreSQL 17.6 |
+| 9. `053_fm_queue.sql` | 14:44 | treść pobrana z GitHub raw commitu 5901af2, SHA-256 zgodne z blobem (`045d539e…`, 92 317 B); dialog „destructive operations” (= `DROP … IF EXISTS`) → Run → **Success** |
+| 10. `053_fm_queue_test.sql` na prod | 14:47–14:49 | `BEGIN … ROLLBACK`, dialog „Run without RLS” → **„✅ OK — wszystkie testy 053_fm_queue_test (T0–T16) przeszly”**; po teście: 0 wierszy w 8 tabelach modułu, 0 firm/sieci `TEST %`, `fm_settings` 1 wiersz (2026-09-24 / preferences_open), companies 79, retailers 43, auth.users 150, profiles 147 |
+| 11. Kontrole po wdrożeniu | 14:45–14:52 | 39 funkcji `fm_queue*`/`fm_staff*`/`is_staff`, 14 polityk, RLS 8/8 tabel, publikacja `supabase_realtime` = fm_queue_groups + fm_stations, anon 0 grantów; `fm_queue_public_snapshot` (anon) 200; Netlify `fm-queue-snapshot` 200; `staff-login` zły kod → 401 `FM_BAD_CREDENTIALS` (wpis `TEST-NOPE:rejected` w `fm_login_attempts` = ta kontrola, nie test); `/tablice` bez błędów konsoli; 0 aktywnych backendów poza edytorem |
+| 12. Stanowiska | 14:56 | `docs/production/sql/2026-09-07_fm_queue_konfiguracja_stanowisk.sql` (odpowiednik „Utwórz grupy”): **23 grupy / 24 stanowiska** (Dino · Owoce + Dino · Kwiaty `{kwiaty}`, Auchan ×2, reszta ×1), 60 spotk./stan., wszystkie `closed`, **gate NULL** (do decyzji); snapshot: 24 stanowiska, bez nazw firm; tablica pokazuje sieci jako ZAMKNIĘTE |
+| 13. Konta obsługi | — | **nie wykonane** — wymaga sesji super admina w UI (PIN pokazywany raz Arturowi) |
+| 14. `chore/npm-audit-2026-09` | — | osobno, po stabilizacji kolejek |
+
+Dzień produkcyjny NIE został otwarty, plan NIE został zaimportowany. Nie sprawdzono z zewnątrz: logowanie istniejących użytkowników i panel admina (brak sesji), Realtime z tokenem obsługi (próba generalna), logi Netlify/Supabase w dashboardzie (strona logów nie renderowała się w automatyzacji — do zerknięcia ręcznie).
