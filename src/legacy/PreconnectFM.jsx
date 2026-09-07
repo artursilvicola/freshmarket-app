@@ -2630,52 +2630,74 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }, []);
   useEffect(() => { if (retailersLoaded && account.role) reloadFmStationCaps(); }, [retailersLoaded, account.role, reloadFmStationCaps]);
   const fmRespsSavePrimedRef = useRef(false);
+  // [feat/fm-admin-autorefresh] Wybory dostawców (company_target_retailers) i odpowiedzi
+  // sieci (fm_resps) — jedna funkcja ładująca: start + (admin) co 60 s i po powrocie do karty,
+  // żeby „Dane wejściowe” nie pokazywały stanu sprzed godzin. Odświeżenie u admina ZASTĘPUJE
+  // stan (usunięte wybory znikają); zapis fmResps do bazy działa tylko dla kupca, więc
+  // odświeżanie nic nie nadpisuje.
+  const loadFmInputs = useCallback(async ({ replace = false } = {}) => {
+    const targets = await dbGetAllCompanyTargetRetailers();
+    const groupedPrefs = {};
+    for (const row of targets || []) {
+      const coRow = companies.find(c => c.id === row.company_id);
+      const supKey = coRow?.fmId || coRow?.legacy_fm_id || row.company_id;
+      const chainKey = resolveChainIdFromRetailer(row.retailer_id, retailers, { note: row.note });
+      if (!supKey || !chainKey) continue;
+      if (!groupedPrefs[supKey]) groupedPrefs[supKey] = {};
+      groupedPrefs[supKey][chainKey] = Number(row.priority || 0) >= 1000 ? "star" : "thumb";
+    }
+    // fmResps from fm_resps table (admin sees all rows)
+    const rows = await dbGetFmResps();
+    const grouped = {};
+    for (const r of rows || []) {
+      if (!r.retailer_id) continue;
+      const chainKey = resolveChainIdFromRetailer(r.retailer_id, retailers, r.meta || {});
+      const supCompany = companies.find(c => c.id === r.supplier_company_id);
+      const supKey = (r.meta && r.meta.supplier_legacy_id) || supCompany?.fmId || r.supplier_company_id;
+      if (!chainKey || !supKey) continue;
+      if (!grouped[chainKey]) grouped[chainKey] = {};
+      grouped[chainKey][supKey] = r.zone || r.status || null;
+    }
+    return { groupedPrefs, grouped };
+  }, [companies, retailers]);
   useEffect(() => {
     if (!companiesLoaded || !retailersLoaded) return;
     let canceled = false;
     (async () => {
       try {
-        const targets = await dbGetAllCompanyTargetRetailers();
+        const { groupedPrefs, grouped } = await loadFmInputs();
         if (canceled) return;
-        if (targets && targets.length > 0) {
-          const groupedPrefs = {};
-          for (const row of targets) {
-            const coRow = companies.find(c => c.id === row.company_id);
-            const supKey = coRow?.fmId || coRow?.legacy_fm_id || row.company_id;
-            const chainKey = resolveChainIdFromRetailer(row.retailer_id, retailers, { note: row.note });
-            if (!supKey || !chainKey) continue;
-            if (!groupedPrefs[supKey]) groupedPrefs[supKey] = {};
-            groupedPrefs[supKey][chainKey] = Number(row.priority || 0) >= 1000 ? "star" : "thumb";
-          }
-          if (Object.keys(groupedPrefs).length) {
-            setFmPrefs(prev => ({ ...prev, ...groupedPrefs }));
-          }
-        }
-
-        // fmResps from fm_resps table (admin sees all rows)
-        const rows = await dbGetFmResps();
-        if (canceled) return;
-        if (rows && rows.length > 0) {
-          // Convert flat rows to keyed structure expected by PreconnectFM
-          const grouped = {};
-          for (const r of rows) {
-            if (!r.retailer_id) continue;
-            const chainKey = resolveChainIdFromRetailer(r.retailer_id, retailers, r.meta || {});
-            const supCompany = companies.find(c => c.id === r.supplier_company_id);
-            const supKey = (r.meta && r.meta.supplier_legacy_id) || supCompany?.fmId || r.supplier_company_id;
-            if (!chainKey || !supKey) continue;
-            if (!grouped[chainKey]) grouped[chainKey] = {};
-            grouped[chainKey][supKey] = r.zone || r.status || null;
-          }
-          if (Object.keys(grouped).length) setFmResps(grouped);
-        }
+        if (Object.keys(groupedPrefs).length) setFmPrefs(prev => ({ ...prev, ...groupedPrefs }));
+        if (Object.keys(grouped).length) setFmResps(grouped);
         try { localStorage.removeItem("fm_fmResps"); } catch(e){}
         try { localStorage.removeItem("fm_fmPrefs"); } catch(e){}
       } catch (e) { console.warn("[load fmResps]", e); }
       finally { if (!canceled) setFmRespsLoaded(true); }
     })();
     return () => { canceled = true; };
-  }, [companiesLoaded, retailersLoaded, companies, retailers]);
+  }, [companiesLoaded, retailersLoaded, loadFmInputs]);
+  // Admin: auto-odświeżanie co 60 s + natychmiast po powrocie do karty (visibilitychange).
+  const [fmInputsRefreshedAt, setFmInputsRefreshedAt] = useState(null);
+  useEffect(() => {
+    if (account.role !== "admin" || !companiesLoaded || !retailersLoaded) return;
+    let canceled = false, busy = false;
+    const refresh = async () => {
+      if (busy || document.visibilityState === "hidden") return;
+      busy = true;
+      try {
+        const { groupedPrefs, grouped } = await loadFmInputs({ replace: true });
+        if (canceled) return;
+        setFmPrefs(groupedPrefs);
+        setFmResps(grouped);
+        setFmInputsRefreshedAt(new Date());
+      } catch (e) { console.warn("[refresh fm inputs]", e); }
+      finally { busy = false; }
+    };
+    const t = setInterval(refresh, 60_000);
+    const onVis = () => { if (document.visibilityState === "visible") refresh(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { canceled = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [account.role, companiesLoaded, retailersLoaded, loadFmInputs]);
   useEffect(() => {
     if (!retailersLoaded) return;
     if (!["admin", "buyer"].includes(account.role)) {
