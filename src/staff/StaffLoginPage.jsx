@@ -44,7 +44,7 @@ export default function StaffLoginPage({ onLoggedIn }) {
       try { localStorage.setItem("fm_staff_code", cleanCode); } catch { /* noop */ }
       onLoggedIn?.(j.staff);
     } catch {
-      setErr(t.err_network);
+      setErr(lang === "en" ? "No connection to the server. Check Wi-Fi and try again." : "Brak połączenia z serwerem. Sprawdź Wi-Fi i spróbuj ponownie.");
     } finally {
       setBusy(false);
     }

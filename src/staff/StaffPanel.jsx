@@ -105,8 +105,9 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
           setLastAction({ ts: Date.now(), label, nr: prevNr });
           return st;
         } catch (e) {
-          const network = e?.message && /fetch|network|Failed to fetch|Load failed/i.test(e.message) && !e.fmCode;
+          const network = e?.network || (e?.message && /fetch|network|Failed to fetch|Load failed|timeout|abort/i.test(e.message) && !e.fmCode);
           if (network && attempt < 2) { attempt++; await new Promise(r => setTimeout(r, 1500)); continue; }
+          if (network) { await refreshState(); showToast(t.err_network); return null; }
           // FM_BUSY = blokada wiersza zajęta > 3 s (konwój) — ponów raz z tym samym kluczem (bezpieczne)
           if (e?.fmCode === "FM_BUSY" && attempt < 1) { attempt++; await new Promise(r => setTimeout(r, 400)); continue; }
           if (e?.fmCode === "FM_CONFLICT") await refreshState();

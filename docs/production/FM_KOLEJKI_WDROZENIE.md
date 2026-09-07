@@ -1,7 +1,9 @@
 # Kolejki / numerki spotkań B2B — runbook wdrożenia (FM 2026, 24.09)
 
-Stan: **kod v4.2 na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane na produkcji.**
-Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 → **test hostowany Codexa (7.09) na projekcie testowym + deploy preview: logowanie, 2 urządzenia, brute force, reset PIN, blokady, Realtime ✅; zalew 20× → v4.2 (fail-fast + lock_timeout)** (`NOTATKA_DLA_CODEX_2026-09-07_KOLEJKI_REVIEW_v4_2.md`). Do końcowej akceptacji: powtórka testu 20× na v4.2.
+Stan: **kod v4.3 na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane na produkcji. Codex: AKCEPTACJA WARUNKOWA (7.09).**
+Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 → v4.2. Test hostowany Codexa na testowym Supabase + deploy preview: T0–T16, logowanie 2 operatorów, idempotencja, 2 stanowiska równolegle, Realtime 2 tablety, 2 urządzenia naraz, brute force 40× + lockout, reset PIN + stare tokeny, block/unblock, Advisor (widok, indeksy) — **wszystko ✅**. Jedyne zastrzeżenie: **zalew 20× (i nawet 5×) równoczesnych RPC na darmowym Supabase kończy się `PGRST003`/„upstream request timeout”** (pula połączeń Data API free tier), przy poprawnej numeracji i dokładnie jednej wykonanej operacji — uznane za ograniczenie infrastruktury, nie logiki.
+
+**Warunki Codexa przed próbą generalną / produkcją:** powtórka testu 20× na projekcie z większą pulą (compute jak produkcja). **Pytanie do organizatora:** na jakim planie/compute jest produkcyjny projekt Supabase (`sklyfuvzjikkqerxtulo`)? W dniu eventu 6–8 tabletów + admin to maksymalnie ~10 równoczesnych RPC; tablet nigdy nie wysyła równolegle (`busy`), a od v4.3 każde RPC ma limit 10 s i ponowienie z tym samym kluczem idempotencji, więc zawieszony request nie blokuje obsługi — ale pulę trzeba sprawdzić na tym samym compute.
 
 ## 1. Co powstało
 
@@ -24,7 +26,7 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 1. **Netlify env** (zrobione 6.09): `STAFF_PIN_PEPPER` (secret, production). Bez niego `staff-login`/`admin-staff` odpowiadają 500 z jasnym komunikatem.
 2. **Migracja 052** — SQL Editor, osobne uruchomienie: `ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'staff';`
 3. **Migracja 053** — SQL Editor, całość (BEGIN…COMMIT). Kontrola: `select proname, prosecdef from pg_proc where proname like 'fm_queue%';`
-4. **Testy** — od pustej bazy: `DATABASE_URL=… node scripts/fm-queue-sql-test.mjs --shim` (goły Postgres 15+) albo na branchu Supabase z 052/053: `… --only-test`; potem `scripts/fm-queue-concurrency-test.mjs` (`TEST_SUPABASE_URL`, `TEST_SERVICE_ROLE_KEY`).
+4. **Testy** — od pustej bazy: `DATABASE_URL=… node scripts/fm-queue-sql-test.mjs --shim` (goły Postgres 15+) albo na projekcie testowym Supabase z 052/053: `… --only-test`; potem `scripts/fm-queue-concurrency-test.mjs` (`TEST_SUPABASE_URL`, `TEST_SERVICE_ROLE_KEY`, `TEST_ANON_KEY`, `STAFF_LOGIN_URL`). **Test (3) zalew 20× powtórzyć na projekcie z pulą jak produkcja** (free tier: `PGRST003`).
 5. Merge gałęzi → `main` → Netlify deploy. Frontend jest odporny na brak tabel (przed 053 zakładka „Dzień wydarzenia” pokazuje ostrzeżenie, `/tablica` „nieaktywna”, „Twoja kolej” nie renderuje się).
 6. Admin → Spotkania B2B → Dzień wydarzenia → **Stanowiska → „Utwórz grupy dla sieci FM”**, ustaw gate, liczbę stanowisk, split (Dino · Kwiaty), `spotkania/stanowisko`.
    **PRZED 17.09 (uruchomienie algorytmu)** — bez tego każda sieć liczona jest jako 1 stanowisko (ostrzeżenie `no_station_config` w planie).

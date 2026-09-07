@@ -138,12 +138,29 @@ export async function listMyFmQueueMeetings() {
 }
 
 // ── RPC ──────────────────────────────────────────────────────────────────────
-async function rpc(name, params) {
-  const { data, error } = await supabase.rpc(name, params);
+// Kazde RPC ma limit czasu (domyslnie 10 s): gdy Data API nie odpowiada (np. wyczerpana pula
+// polaczen — PGRST003 / "upstream request timeout"), tablet dostaje blad sieciowy i ponawia
+// z TYM SAMYM kluczem idempotencji zamiast wisiec do timeoutu bramy (60 s).
+export const RPC_TIMEOUT_MS = 10_000;
+async function rpc(name, params, { timeoutMs = RPC_TIMEOUT_MS } = {}) {
+  let q = supabase.rpc(name, params);
+  try {
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") q = q.abortSignal(AbortSignal.timeout(timeoutMs));
+  } catch { /* starsza przegladarka — bez limitu */ }
+  let res;
+  try {
+    res = await q;
+  } catch (err) {
+    const e = new Error(/abort|timeout/i.test(String(err?.name || err?.message)) ? "network timeout" : (err?.message || "network error"));
+    e.fmCode = null; e.network = true;
+    throw e;
+  }
+  const { data, error } = res;
   if (error) {
     const e = new Error(error.message || name);
     e.code = error.code;
     e.fmCode = /FM_[A-Z_]+/.exec(error.message || "")?.[0] || null;
+    e.network = /abort|timeout|PGRST003|upstream/i.test(`${error.code || ""} ${error.message || ""}`);
     throw e;
   }
   return data;
