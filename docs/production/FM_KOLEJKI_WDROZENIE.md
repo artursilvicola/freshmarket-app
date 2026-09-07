@@ -1,7 +1,7 @@
 # Kolejki / numerki spotkań B2B — runbook wdrożenia (FM 2026, 24.09)
 
-Stan: **kod v4 (po review Codexa v3 z 7.09) na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane.**
-Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 („prawie OK”) → v3 (kolejki OK, logowanie do poprawy) → v4 (`NOTATKA_DLA_CODEX_2026-09-07_KOLEJKI_REVIEW_v4.md`). Do końcowej akceptacji brakuje **testów hostowanych na projekcie testowym Supabase + deploy preview**.
+Stan: **kod v4.1 (po review Codexa v4 z 7.09) na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane.**
+Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 (`NOTATKA_DLA_CODEX_2026-09-07_KOLEJKI_REVIEW_v4_1.md`). Do końcowej akceptacji brakuje **testów hostowanych na projekcie testowym Supabase + deploy preview**.
 
 ## 1. Co powstało
 
@@ -18,6 +18,8 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 | UI | `src/staff/*` (`/obsluga`), `src/pages/FmBoardPage.jsx` (`/tablica`), `src/components/admin/FmEventDay.jsx` (admin → Spotkania B2B → **Dzień wydarzenia**), `src/components/supplier/FmMyQueue.jsx` („Twoja kolej” u dostawcy) | |
 
 ## 2. Kolejność wdrożenia (po akceptacji review)
+
+0. **Lista przedwdrożeniowa (poza modułem):** `npm audit --omit=dev` → 6 podatności (3 high): `sharp` (tylko CLI eksportu kart — nie w funkcjach/bundlu), `ws`, `@remix-run/router` (`npm audit fix`), `xlsx` (brak fixa upstream; eksport Excela dla admina). Osobny commit, decyzja: `sharp` 0.35 / `xlsx` → `exceljs`.
 
 1. **Netlify env** (zrobione 6.09): `STAFF_PIN_PEPPER` (secret, production). Bez niego `staff-login`/`admin-staff` odpowiadają 500 z jasnym komunikatem.
 2. **Migracja 052** — SQL Editor, osobne uruchomienie: `ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'staff';`
@@ -54,7 +56,8 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 
 - Konto Auth z e-mailem `<kod>@obsluga.freshmarket.eu`, rola `staff` nadana przez `app_metadata` (tylko service_role; `handle_new_user` ignoruje role uprzywilejowane z `user_metadata`). Hasło GoTrue = `HMAC-SHA256(STAFF_PIN_PEPPER, "KOD:PIN")` — klient nigdy nie woła GoTrue z PIN-em.
 - Bramka w bazie (`fm_staff_login_gate`, service_role, IP z zaufanego `context.ip`): limit **IP + kod + urządzenie** (10/15 min; tablety mogą wychodzić jednym IP Wi-Fi) + globalny IP 300/15 min, blokada, lockout, **konto działa tylko w dniu `event_date` (Europe/Warsaw)**, `device_id` wymagany i zgodny z przypiętym, **rezerwacja próby (`attempt_id`)**: równolegle tyle prób, ile zostało do lockoutu (nadmiar → `FM_BUSY`), nierozliczone wygasają po 60 s. Rozliczenie (`fm_staff_login_result(attempt_id, outcome)`), każda próba raz: `success` zeruje licznik i przypina tablet jednym `UPDATE` (drugi tablet naraz → `FM_DEVICE_MISMATCH`, funkcja unieważnia jego świeżą sesję); `invalid_credentials` +1, **5. faktycznie błędny PIN = lockout 15 min**; `system_error` (awaria GoTrue/sieci) **nie liczy się** — obsługa nie zostanie zablokowana przez awarię.
-- `is_staff()` przy każdym RPC/RLS: `active AND NOT blocked AND event_date = dziś AND iat > pełna sekunda ostatniej rotacji PIN-u` (bez tolerancji; token bez `iat` po rotacji = odrzucony).
+- `is_staff()` przy każdym RPC/RLS: `active AND NOT blocked AND event_date = dziś AND iat > pełna sekunda progu unieważnienia` (`GREATEST(pin_rotated_at, tokens_valid_from)` — próg ustawia rotacja PIN-u **i blokada**, więc po odblokowaniu stare tokeny nie odżywają; bez tolerancji; token bez `iat` = odrzucony). Lockout wygasa po 15 min: bramka zeruje licznik pod blokadą wiersza.
+- Klasyfikacja wyniku GoTrue: zły PIN tylko przy jednoznacznym `error.code = invalid_credentials` (lub dokładnym „Invalid login credentials” przy 400); inne 400/5xx/sieć = awaria, bez wpływu na lockout.
 - Blokada konta (`admin-staff` block) jest **fail-closed**: najpierw `fm_staff_set_blocked` w bazie (blocked + sesje w jednej transakcji), potem ban w Auth; przy częściowym błędzie konto zostaje zablokowane, panel pokazuje błąd.
 - PIN: `crypto.randomInt`, bez trywialnych ciągów, zwracany **raz** (create/reset_pin), nie zapisywany, nie logowany. Reset PIN-u / blokada = unieważnienie wszystkich sesji (`fm_staff_revoke_sessions`) + odpięcie tabletu. Kontami zarządza **tylko super admin**.
 
