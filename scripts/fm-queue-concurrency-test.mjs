@@ -8,7 +8,9 @@
 //
 //   (1) dwa rownoczesne zadania z TYM SAMYM kluczem idempotencji = jedna operacja, jeden wpis logu
 //   (2) dwa stanowiska rownolegle wywoluja rozne numery
-//   (3) zalew 20 rownoczesnych call_next na jednym stanowisku = dokladnie 1 sukces
+//   (3) zalew N rownoczesnych call_next na jednym stanowisku (FLOOD_N, domyslnie 20) = dokladnie 1 sukces;
+//       z rozgrzewka i pomiarem czasu KAZDEGO zadania — rozroznia "pula zajeta" (PGRST003 przy szybkim
+//       zwyciezcy) od "wolna transakcja" (zwyciezca > 2 s). FLOOD_N=5,10,20 pozwala znalezc sufit puli.
 //   (4) pelna sciezka Netlify -> GoTrue -> RPC: rownoczesne pierwsze logowanie z 2 urzadzen = jeden dostaje tokeny
 //   (5) brute force przez prawdziwy endpoint: 40 x zly PIN naraz -> max 5 sprawdzonych (FM_BAD_CREDENTIALS),
 //       potem poprawny PIN -> FM_LOCKED; osobne konto: 4 zle + poprawny przy 5. probie = 200
@@ -102,16 +104,29 @@ try {
   const nrs = [a.data?.current?.nr, b.data?.current?.nr].sort();
   ok(!a.error && !b.error && nrs.join(",") === "2,3", `(2) rownolegle stanowiska dostaly rozne numery: ${nrs.join(",")}`);
 
-  // (3) zalew 20 rownoczesnych call_next
+  // (3) zalew N rownoczesnych call_next — z rozgrzewka i czasem kazdego zadania
   const fin = await rpc1("fm_queue_finish_and_call_next", { p_station_id: s1.id, p_expected_version: a.data.version, p_idem: idem(), p_call_next: false });
-  const flood = await Promise.all(Array.from({ length: 20 }, () => rpc1("fm_queue_call_next", { p_station_id: s1.id, p_expected_version: fin.data.version, p_idem: idem() })));
-  const successes = flood.filter(r => !r.error).length;
-  const conflicts = flood.filter(r => r.error && /FM_CONFLICT|FM_STATION_BUSY/.test(r.error.message)).length;
-  const busy = flood.filter(r => r.error && /FM_BUSY/.test(r.error.message)).length;
-  const other = flood.filter(r => r.error && !/FM_CONFLICT|FM_STATION_BUSY|FM_BUSY/.test(r.error.message)).map(r => `${r.error.code || ""} ${r.error.message}`.trim().slice(0, 60));
-  ok(successes === 1 && conflicts + busy === 19 && other.length === 0, `(3) zalew 20x: 1 sukces, ${conflicts} FM_CONFLICT (fail-fast), ${busy} FM_BUSY, inne: ${other.length ? other.join(" | ") : "0"}`);
+  const FLOOD_N = Math.max(2, Number(process.env.FLOOD_N) || 20);
+  // rozgrzewka: 3 sekwencyjne, celowo NIEAKTUALNE wersje (FM_CONFLICT) — plan cache/JIT bez zmiany stanu
+  const warm = [];
+  for (let i = 0; i < 3; i++) { const t0 = Date.now(); const r = await rpc1("fm_queue_call_next", { p_station_id: s1.id, p_expected_version: fin.data.version - 1, p_idem: idem() }); warm.push(`${Date.now() - t0}ms/${r.error ? (/FM_CONFLICT/.test(r.error.message) ? "conflict" : r.error.code || "err") : "OK?"}`); }
+  console.log(`     rozgrzewka (oczekiwane conflict): ${warm.join(", ")}`);
+  const timed = (p) => { const t0 = Date.now(); return p.then(r => ({ ...r, ms: Date.now() - t0 })); };
+  const tFlood = Date.now();
+  const flood = await Promise.all(Array.from({ length: FLOOD_N }, () => timed(rpc1("fm_queue_call_next", { p_station_id: s1.id, p_expected_version: fin.data.version, p_idem: idem() }))));
+  const totalMs = Date.now() - tFlood;
+  const winners = flood.filter(r => !r.error);
+  const conflicts = flood.filter(r => r.error && /FM_CONFLICT|FM_STATION_BUSY/.test(r.error.message));
+  const busy = flood.filter(r => r.error && /FM_BUSY/.test(r.error.message));
+  const other = flood.filter(r => r.error && !/FM_CONFLICT|FM_STATION_BUSY|FM_BUSY/.test(r.error.message));
+  const ms = (arr) => arr.map(r => r.ms).sort((x, y) => x - y);
+  const fmt = (arr) => (arr.length ? `min ${ms(arr)[0]} / med ${ms(arr)[Math.floor(arr.length / 2)]} / max ${ms(arr)[arr.length - 1]} ms` : "—");
+  console.log(`     zalew ${FLOOD_N}x: calosc ${totalMs} ms | zwyciezca ${fmt(winners)} | FM_CONFLICT ${conflicts.length} (${fmt(conflicts)}) | FM_BUSY ${busy.length} (${fmt(busy)}) | inne ${other.length} (${fmt(other)})`);
+  if (other.length) console.log(`     inne bledy: ${[...new Set(other.map(r => `${r.error.code || ""} ${r.error.message}`.trim().slice(0, 70)))].join(" | ")}`);
+  if (winners.length === 1 && winners[0].ms > 2000) console.log(`     UWAGA: zwyciezca trwal ${winners[0].ms} ms — to wolna transakcja/DB, nie tylko pula polaczen`);
+  ok(winners.length === 1 && conflicts.length + busy.length === FLOOD_N - 1 && other.length === 0, `(3) zalew ${FLOOD_N}x: 1 sukces, ${conflicts.length} FM_CONFLICT (fail-fast), ${busy.length} FM_BUSY, inne ${other.length} (oczekiwane 0)`);
   const { data: g2 } = await svc.from("fm_queue_groups").select("last_called_nr").eq("id", g.id).single();
-  ok(g2.last_called_nr === 4, `(3) last_called_nr = 4 (jest ${g2.last_called_nr})`);
+  ok(g2.last_called_nr === 4, `(3) last_called_nr = 4 — dokladnie jedna operacja (jest ${g2.last_called_nr})`);
 
   // (7) Realtime: oba niezalezne konta dostaly aktualizacje
   await new Promise(r => setTimeout(r, 3000));

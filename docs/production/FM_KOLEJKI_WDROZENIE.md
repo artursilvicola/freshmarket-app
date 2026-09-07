@@ -34,6 +34,25 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 8. **23.09** po zatwierdzeniu planu: **Tablica i dzień → „Otwórz dzień (import planu)”**. Stanowiska zostają ZAMKNIĘTE.
 9. **24.09**: obsługa loguje się na `/obsluga`, otwiera swoje stanowiska ręcznie; rzutnik: `/tablica?gate=1` i `/tablica?gate=2`; 17:00 → „Zamknij wszystkie stanowiska”.
 
+## 2a. Test przed zgodą na produkcję — tymczasowa gałąź Supabase (plan Codexa, 7.09)
+
+Produkcja: plan **Pro**, compute **Nano** (`t4g.nano`, ~21/60 połączeń, 62–65% RAM). Bezpłatny upgrade do **Micro** (2× RAM, ten sam limit połączeń, < 2 min przerwy) — zalecany przez Supabase dla organizacji płatnych.
+
+1. Utworzyć tymczasową gałąź Supabase w organizacji Pro (0,01344 USD/h) — compute Micro.
+2. Na gałęzi: `052_staff_role.sql` (osobno) → `053_fm_queue.sql`; kontrola: `select proname from pg_proc where proname like 'fm_queue%';`.
+3. Netlify → Deploy Preview gałęzi `feat/admin-instructions-announcements` (v4.3+) z env gałęzi Supabase: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `STAFF_PIN_PEPPER` (testowy, ≥ 32 znaki) — **tylko kontekst Deploy Preview**.
+4. Testy (PowerShell, w repo):
+   ```
+   $env:TEST_SUPABASE_URL="https://<ref-galezi>.supabase.co"; $env:TEST_SERVICE_ROLE_KEY="…"; $env:TEST_ANON_KEY="…"
+   $env:DATABASE_URL="postgres://…galaz…"; node scripts/fm-queue-sql-test.mjs --only-test        # T0–T16 (ROLLBACK)
+   $env:STAFF_LOGIN_URL="https://deploy-preview-…--freshmarketb2b.netlify.app/.netlify/functions/staff-login"
+   $env:FLOOD_N="5";  node scripts/fm-queue-concurrency-test.mjs
+   $env:FLOOD_N="20"; node scripts/fm-queue-concurrency-test.mjs
+   ```
+   Skrypt drukuje czas zwycięzcy i rozkład `FM_CONFLICT`/`FM_BUSY`/inne. Interpretacja: **zwycięzca < 500 ms i reszta `FM_CONFLICT`** = OK; **inne = `PGRST003`** przy szybkim zwycięzcy = sufit puli Data API dla tego compute (test dla 5/10 pokaże, ile równoczesnych żądań mieści pula); **zwycięzca > 2 s** = wolna transakcja po stronie bazy — zgłosić, to nie jest problem puli.
+5. Zielono na Micro → zgoda „wdrażaj” → upgrade produkcji Nano → Micro w spokojnym oknie (< 2 min przerwy, poza godzinami pracy kupców) → wdrożenie wg pkt 2 → próba generalna 21–22.09 z 6–8 prawdziwymi tabletami (tryb testowy) → usunąć gałąź.
+6. Jeśli 20× nie przejdzie na Micro: **Small na tydzień eventu** (Codex), albo uznać 20× za test platformy — realne obciążenie w dniu eventu to ≤ 10 równoczesnych RPC (tablet wysyła jedno naraz; od v4.3 z limitem 10 s i ponowieniem).
+
 ## 3. Reguły egzekwowane w bazie (nie w UI)
 
 - numer publiczny grupy (`last_called_nr`) idzie tylko do przodu — **trigger w bazie**, nie do obejścia nawet przez admina; „Cofnij” (≤ 30 s): rozpoczęcie zawsze, nieobecny/zakończenie **tylko gdy przywracany numer jest nadal ostatnio wywołanym w grupie** (stanowiska równoległe nie pokażą starszego numeru); wywołania numeru nie da się cofnąć; jedyny reset: „Reset dnia testowego” — **super admin, tylko dzień w trybie testowym, nigdy data produkcyjna** (`fm_settings.event_date`), potwierdzenie `RESET YYYY-MM-DD`, wpis w logu;
