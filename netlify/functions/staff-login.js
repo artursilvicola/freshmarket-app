@@ -8,12 +8,15 @@
  * którą klient ustawia przez supabase.auth.setSession().
  *
  * Kolejność:
- *   1. fm_staff_login_gate (service_role): limit per IP, kod istnieje, blokada,
- *      lockout, konto ważne TYLKO w dniu eventu (Europe/Warsaw), urządzenie
- *      wymagane i zgodne z przypiętym.
+ *   1. fm_staff_login_gate (service_role): limit ip+kod+urządzenie (10/15 min) i globalny IP,
+ *      kod istnieje, blokada, lockout, konto ważne TYLKO w dniu eventu (Europe/Warsaw),
+ *      urządzenie wymagane i zgodne z przypiętym, **atomowa rezerwacja próby** pod blokadą
+ *      wiersza operatora (5. równoległa próba = lockout, nie ma wyścigu).
  *   2. GoTrue signInWithPassword(hasło = HMAC(pepper, kod:PIN)).
- *   3. fm_staff_login_result (service_role): atomowy licznik/lockout,
- *      przypięcie urządzenia przy pierwszym logowaniu.
+ *   3. fm_staff_login_result (service_role): sukces = zerowanie licznika + przypięcie
+ *      urządzenia w JEDNYM UPDATE (tylko gdy puste/zgodne). Jeśli RPC zawiedzie albo
+ *      zwróci inne urządzenie — właśnie utworzona sesja jest unieważniana i tokeny
+ *      NIE są zwracane (dwa tablety naraz przy pustym device_id: wygrywa jeden).
  *   PIN nigdy nie jest logowany ani zwracany. Komunikaty PL/EN wg Accept-Language.
  * [feat/fm-queue]
  */
@@ -34,7 +37,7 @@ const MSG = {
     FM_BAD_CREDENTIALS: "Nieprawidłowy kod lub PIN.",
     FM_BLOCKED: "Konto obsługi jest zablokowane. Zgłoś się do organizatora.",
     FM_LOCKED: (s) => `Za dużo prób. Spróbuj ponownie za ${Math.ceil(s / 60)} min.`,
-    FM_RATE_LIMIT: "Za dużo prób z tego urządzenia/sieci. Odczekaj 15 minut.",
+    FM_RATE_LIMIT: "Za dużo prób z tego urządzenia. Odczekaj 15 minut.",
     FM_WRONG_DAY: (d) => `To konto działa tylko w dniu wydarzenia (${d}).`,
     FM_DEVICE_MISMATCH: "To konto jest przypisane do innego urządzenia. Poproś organizatora o reset PIN-u.",
     FM_DB: "Błąd bazy przy logowaniu.",
@@ -46,7 +49,7 @@ const MSG = {
     FM_BAD_CREDENTIALS: "Invalid code or PIN.",
     FM_BLOCKED: "This staff account is blocked. Contact the organiser.",
     FM_LOCKED: (s) => `Too many attempts. Try again in ${Math.ceil(s / 60)} min.`,
-    FM_RATE_LIMIT: "Too many attempts from this device/network. Wait 15 minutes.",
+    FM_RATE_LIMIT: "Too many attempts from this device. Wait 15 minutes.",
     FM_WRONG_DAY: (d) => `This account only works on the event day (${d}).`,
     FM_DEVICE_MISMATCH: "This account is bound to another device. Ask the organiser for a PIN reset.",
     FM_DB: "Database error during login.",
@@ -77,7 +80,7 @@ export const handler = async (event) => {
 
   const svc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey, { auth: { persistSession: false } });
 
-  // 1. bramka w bazie (limit IP, blokada, lockout, dzień eventu, urządzenie)
+  // 1. bramka w bazie (limity, blokada, lockout, dzień eventu, urządzenie, rezerwacja próby)
   const { data: gate, error: gErr } = await svc.rpc("fm_staff_login_gate", { p_code: code, p_ip: ip, p_device: deviceId });
   if (gErr || !gate) return errJson(500, { error: msg(lang, "FM_DB"), code: "FM_DB" });
   if (!gate.allowed) {
@@ -90,11 +93,17 @@ export const handler = async (event) => {
   const { data: auth, error: aErr } = await anon.auth.signInWithPassword({ email: staffEmailFor(code), password: staffPassword(pepper, code, pin) });
   const success = Boolean(!aErr && auth?.session);
 
-  // 3. atomowy wynik (licznik/lockout/urządzenie)
-  const { data: res } = await svc.rpc("fm_staff_login_result", { p_code: code, p_ip: ip, p_success: success, p_device: deviceId });
+  // 3. wynik w bazie — sukces liczy się TYLKO, gdy RPC potwierdzi przypięcie tego urządzenia
+  const { data: res, error: rErr } = await svc.rpc("fm_staff_login_result", { p_code: code, p_ip: ip, p_success: success, p_device: deviceId });
   if (!success) {
     if (res?.locked) return errJson(423, { error: msg(lang, "FM_LOCKED", res.retry_after_s || 900), code: "FM_LOCKED", retry_after_s: res.retry_after_s || 900 });
     return errJson(401, { error: msg(lang, "FM_BAD_CREDENTIALS"), code: "FM_BAD_CREDENTIALS", attempts_left: res?.attempts_left ?? undefined });
+  }
+  if (rErr || !res?.ok || res.device_id !== deviceId) {
+    // sesja już istnieje w GoTrue — unieważniamy ją (tylko tę jedną) i nie oddajemy tokenów
+    await svc.auth.admin.signOut(auth.session.access_token, "local").catch(() => {});
+    const reason = res?.reason === "FM_DEVICE_MISMATCH" || (!rErr && res?.device_id && res.device_id !== deviceId) ? "FM_DEVICE_MISMATCH" : "FM_DB";
+    return errJson(reason === "FM_DB" ? 500 : 403, { error: msg(lang, reason), code: reason });
   }
 
   return okJson({

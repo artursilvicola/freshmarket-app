@@ -167,6 +167,9 @@ export const fmQueueRpc = {
   openDay:          (eventDate, force = false) => rpc("fm_queue_open_day", { p_event_date: eventDate, p_force: force }),
   closeAll:         (eventDate) => rpc("fm_queue_close_all", { p_event_date: eventDate }),
   resetDay:         (eventDate) => rpc("fm_queue_reset_day", { p_event_date: eventDate, p_confirm: `RESET ${eventDate}` }),
+  setTestMode:      (eventDate, on) => rpc("fm_queue_set_test_mode", { p_event_date: eventDate, p_on: on }),
+  reopenDay:        (eventDate) => rpc("fm_queue_reopen_day", { p_event_date: eventDate }),
+  moveMeeting:      (meetingId, targetGroupId, nr = null) => rpc("fm_queue_move_meeting", { p_meeting_id: meetingId, p_target_group_id: targetGroupId, p_nr: nr }),
   assignRetailer:   (operatorId, retailerId, eventDate, assign = true) => rpc("fm_queue_assign_retailer", { p_operator_id: operatorId, p_retailer_id: retailerId, p_event_date: eventDate, p_assign: assign }),
   publicSnapshot:   (eventDate = null) => rpc("fm_queue_public_snapshot", { p_event_date: eventDate }),
 };

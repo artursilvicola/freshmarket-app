@@ -26,7 +26,8 @@ const DICT = {
     exc_title: "Spotkanie wyjątkowe", exc_desc: "Firma bez umówionego spotkania dostaje numer NA KOŃCU kolejki. Nie ma walk-inów bez decyzji obsługi.",
     exc_name: "Nazwa firmy", exc_confirm: (n, nr) => `Dodać „${n}” jako numer ${nr}?`, exc_add: "Dodaj numer", exc_cancel: "Anuluj", exc_next_nr: "następny wolny numer",
     conflict_refreshed: "Stan stanowiska zmienił się w międzyczasie — odświeżono.",
-    mode: { closed: "ZAMKNIĘTE", open: "OTWARTE", paused: "PRZERWA", free_entry: "WOLNE WEJŚCIE" },
+    mode: { closed: "ZAMKNIĘTE", open: "OTWARTE", paused: "PRZERWA", free_entry: "WOLNE WEJŚCIE", closing: "ZAMYKANIE" },
+    day_closed_now: "Dzień zamknięty — dokończ trwające spotkanie, nowe numery nie będą wywoływane.", undo_nr_hint: "cofnięcie możliwe tylko dla ostatnio wywołanego numeru w grupie",
     status: { planned: "zaplanowane", called: "wywołane", in_progress: "w trakcie", done: "zakończone", no_show: "nieobecny", skipped: "pominięte", cancelled: "anulowane", returned_waiting: "powrócił — czeka", returned_in_progress: "powrócił — w trakcie" },
     fm: {
       FM_CONFLICT: "Stan stanowiska zmienił się w międzyczasie — odświeżono.", FM_STATION_NOT_OPEN: "Stanowisko nie jest otwarte.",
@@ -38,7 +39,9 @@ const DICT = {
       FM_NOT_ASSIGNED: "Nie masz przypisania do tej sieci.", FM_FORBIDDEN: "Brak uprawnień (konto obsługi działa tylko w dniu wydarzenia).", FM_AUTH_REQUIRED: "Sesja wygasła — zaloguj się ponownie.",
       FM_STATION_INACTIVE: "Stanowisko jest nieaktywne.", FM_NAME_REQUIRED: "Podaj nazwę firmy.", FM_IDEM_REQUIRED: "Błąd klienta (brak klucza operacji) — odśwież stronę.",
       FM_NO_SCHEDULE: "Brak zatwierdzonego planu spotkań.", FM_PLAN_NOT_PUBLISHED: "Plan spotkań dla tej daty nie jest opublikowany.", FM_FORWARD_ONLY: "Numer nie może się zmniejszyć.",
-      FM_CONFIRM_REQUIRED: "Niepoprawne potwierdzenie.", FM_RESET_LIVE_DAY: "Nie można resetować dnia, w którym trwają spotkania.", FM_NOT_FOUND: "Nie znaleziono.", unknown: "Nieznany błąd.",
+      FM_CONFIRM_REQUIRED: "Niepoprawne potwierdzenie.", FM_RESET_LIVE_DAY: "Nie można resetować dnia, w którym trwają spotkania.", FM_NOT_FOUND: "Nie znaleziono.",
+      FM_DAY_CLOSED: "Dzień został zamknięty — nie można otwierać stanowisk ani wywoływać numerów.", FM_NOT_TEST_MODE: "Ten dzień nie jest w trybie testowym.", FM_PRODUCTION_DATE: "To data produkcyjnego wydarzenia — tryb testowy/reset niedozwolony.",
+      FM_NR_CONFLICT: "Numer jest zajęty (lub firma ma już spotkanie w grupie docelowej).", FM_BAD_TARGET: "Grupa docelowa musi należeć do tej samej sieci i daty i być aktywna.", unknown: "Nieznany błąd.",
     },
   },
   en: {
@@ -61,7 +64,8 @@ const DICT = {
     exc_title: "Exception meeting", exc_desc: "A company without a scheduled meeting gets a number AT THE END of the queue. No walk-ins without a staff decision.",
     exc_name: "Company name", exc_confirm: (n, nr) => `Add “${n}” as number ${nr}?`, exc_add: "Add number", exc_cancel: "Cancel", exc_next_nr: "next free number",
     conflict_refreshed: "The desk state changed meanwhile — refreshed.",
-    mode: { closed: "CLOSED", open: "OPEN", paused: "BREAK", free_entry: "WALK-IN" },
+    mode: { closed: "CLOSED", open: "OPEN", paused: "BREAK", free_entry: "WALK-IN", closing: "CLOSING" },
+    day_closed_now: "Day closed — finish the ongoing meeting, no new numbers will be called.", undo_nr_hint: "undo is possible only for the most recently called number in the group",
     status: { planned: "planned", called: "called", in_progress: "in progress", done: "finished", no_show: "no-show", skipped: "skipped", cancelled: "cancelled", returned_waiting: "returned — waiting", returned_in_progress: "returned — in progress" },
     fm: {
       FM_CONFLICT: "The desk state changed meanwhile — refreshed.", FM_STATION_NOT_OPEN: "The desk is not open.",
@@ -73,7 +77,9 @@ const DICT = {
       FM_NOT_ASSIGNED: "You are not assigned to this retailer.", FM_FORBIDDEN: "No permission (staff accounts work only on the event day).", FM_AUTH_REQUIRED: "Session expired — sign in again.",
       FM_STATION_INACTIVE: "The desk is inactive.", FM_NAME_REQUIRED: "Enter the company name.", FM_IDEM_REQUIRED: "Client error (missing operation key) — reload the page.",
       FM_NO_SCHEDULE: "No approved meeting plan.", FM_PLAN_NOT_PUBLISHED: "The plan for this date is not published.", FM_FORWARD_ONLY: "The number cannot decrease.",
-      FM_CONFIRM_REQUIRED: "Invalid confirmation.", FM_RESET_LIVE_DAY: "Cannot reset a day with live meetings.", FM_NOT_FOUND: "Not found.", unknown: "Unknown error.",
+      FM_CONFIRM_REQUIRED: "Invalid confirmation.", FM_RESET_LIVE_DAY: "Cannot reset a day with live meetings.", FM_NOT_FOUND: "Not found.",
+      FM_DAY_CLOSED: "The day has been closed — desks cannot be opened and no numbers can be called.", FM_NOT_TEST_MODE: "This day is not in test mode.", FM_PRODUCTION_DATE: "This is the production event date — test mode/reset not allowed.",
+      FM_NR_CONFLICT: "The number is taken (or the company already has a meeting in the target group).", FM_BAD_TARGET: "Target group must belong to the same retailer and date and be active.", unknown: "Unknown error.",
     },
   },
 };

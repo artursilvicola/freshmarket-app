@@ -122,14 +122,16 @@ function ColHead({ isMobile }) {
 function BoardRow({ s, isMobile, showGate }) {
   const ml = MODE_LABEL[s.mode] || MODE_LABEL.closed;
   const open = s.mode === "open";
-  const nowNr = open && s.current_nr ? s.current_nr : null;
+  // 'closing' = dzień zamknięty, ale trwa ostatnie spotkanie: TERAZ widoczne, NASTĘPNY nie
+  const showNow = open || s.mode === "closing";
+  const nowNr = showNow && s.current_nr ? s.current_nr : null;
   const nextNr = open ? s.next_nr : null;
   const name = `${s.retailer_name}${s.group_label ? ` · ${s.group_label}` : ""}`;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 72px 64px" : "1fr 130px 110px 150px", gap: 10, alignItems: "center", background: open ? "#0f172a" : "#0b1120", border: `1.5px solid ${open ? "#1e3a8a" : "#1e293b"}`, borderRadius: 14, padding: isMobile ? "8px 10px" : "8px 12px", minHeight: isMobile ? 56 : 68 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 72px 64px" : "1fr 130px 110px 150px", gap: 10, alignItems: "center", background: showNow ? "#0f172a" : "#0b1120", border: `1.5px solid ${showNow ? "#1e3a8a" : "#1e293b"}`, borderRadius: 14, padding: isMobile ? "8px 10px" : "8px 12px", minHeight: isMobile ? 56 : 68 }}>
       <div style={{ minWidth: 0 }}>
         {showGate && s.gate && <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 800, letterSpacing: "0.12em" }}>GATE {s.gate}</div>}
-        <div style={{ fontSize: isMobile ? 16 : 22, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: open ? "#f8fafc" : "#94a3b8" }}>{name}</div>
+        <div style={{ fontSize: isMobile ? 16 : 22, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: showNow ? "#f8fafc" : "#94a3b8" }}>{name}</div>
         {s.station_label && <div style={{ fontSize: 12, color: "#64748b" }}>{s.station_label}</div>}
       </div>
       <div style={{ textAlign: "center", fontSize: isMobile ? 34 : 54, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums", color: nowNr ? "#4ade80" : "#334155" }}>{nowNr ?? "—"}</div>

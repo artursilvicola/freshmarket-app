@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../auth/AuthProvider";
 import {
-  deleteFmQueueGroup, deleteFmStation, fmQueueRpc, getFmQueueSettings, listFmQueueGroups, listFmQueueLog, listFmStaff,
+  deleteFmQueueGroup, deleteFmStation, fmQueueRpc, getFmQueueSettings, listFmQueueGroups, listFmQueueLog, listFmQueueMeetings, listFmStaff,
   saveFmQueueSettings, subscribeFmQueue, updateFmStaff, upsertFmQueueGroup, upsertFmStation,
 } from "../../lib/fm-queue";
 import { FM_MEETINGS_PER_STATION } from "../../lib/fm-algo";
@@ -41,6 +41,9 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   const [busy, setBusy] = useState(false);
   const [pinModal, setPinModal] = useState(null); // {code, pin}
   const [dayReport, setDayReport] = useState(null);
+  const [meetGroupId, setMeetGroupId] = useState("");
+  const [meetings, setMeetings] = useState([]);
+  const testMode = Boolean(settings?.test_mode);
   const [dbMissing, setDbMissing] = useState(false);
 
   const say = (text, tone = "ok") => { setMsg({ text, tone }); setTimeout(() => setMsg(m => (m?.text === text ? null : m)), 6000); };
@@ -68,6 +71,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
     return () => { unsub(); clearInterval(t); };
   }, [sub, reloadLive]);
   useEffect(() => { if (sub === "log") listFmQueueLog(eventDate, 300).then(setLog).catch(() => {}); }, [sub, eventDate]);
+  useEffect(() => { if (sub === "spotkania" && meetGroupId) listFmQueueMeetings(meetGroupId).then(setMeetings).catch(() => setMeetings([])); else setMeetings([]); }, [sub, meetGroupId, groups]);
 
   const run = async (fn, okText) => {
     if (busy) return;
@@ -143,12 +147,56 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <label>Data eventu <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} style={inp} /></label>
         <div style={{ display: "flex", gap: 0, background: "#f1f5f9", borderRadius: 8, padding: 3 }}>
-          {[["stanowiska", "Stanowiska"], ["obsluga", "Obsługa"], ["live", "Na żywo"], ["ustawienia", "Tablica i dzień"], ["log", "Log"]].map(([k, l]) => (
+          {[["stanowiska", "Stanowiska"], ["spotkania", "Spotkania"], ["obsluga", "Obsługa"], ["live", "Na żywo"], ["ustawienia", "Tablica i dzień"], ["log", "Log"]].map(([k, l]) => (
             <button key={k} onClick={() => setSub(k)} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: sub === k ? "white" : "transparent", fontWeight: sub === k ? 700 : 500, cursor: "pointer", fontFamily: "inherit", fontSize: 12, color: sub === k ? "#1e293b" : "#64748b" }}>{l}</button>
           ))}
         </div>
+        {testMode && <span style={{ padding: "4px 10px", borderRadius: 999, background: "#fef3c7", color: "#92400e", fontWeight: 800, fontSize: 11, letterSpacing: "0.06em" }}>TRYB TESTOWY</span>}
+        {settings?.closed_all_at && <span style={{ padding: "4px 10px", borderRadius: 999, background: "#e2e8f0", color: "#334155", fontWeight: 800, fontSize: 11, letterSpacing: "0.06em" }}>DZIEŃ ZAMKNIĘTY</span>}
         {msg && <span style={{ marginLeft: "auto", padding: "6px 10px", borderRadius: 8, background: msg.tone === "error" ? "#fef2f2" : "#ecfdf5", color: msg.tone === "error" ? "#991b1b" : "#065f46", fontWeight: 600 }}>{msg.text}</span>}
       </div>
+
+      {sub === "spotkania" && (
+        <div>
+          <p style={{ color: "#64748b", margin: "0 0 10px", lineHeight: 1.5 }}>
+            Spotkania zaimportowane do kolejek. <b>Przeniesienie</b> między grupami tej samej sieci (np. Dino Owoce → Dino Kwiaty) tylko dla spotkań <b>zaplanowanych, jeszcze niewywołanych</b>; numer zostaje, jeśli wolny w grupie docelowej, inaczej dostaje kolejny wolny (raport w logu).
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+            <label>Grupa <select value={meetGroupId} onChange={e => setMeetGroupId(e.target.value)} style={inp}>
+              <option value="">— wybierz —</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{retailerName(g.retailer_id)}{g.label ? ` · ${g.label}` : ""}</option>)}
+            </select></label>
+            <Btn ghost onClick={() => meetGroupId && listFmQueueMeetings(meetGroupId).then(setMeetings)}>Odśwież</Btn>
+          </div>
+          <table style={tbl}>
+            <thead><tr>{["Nr", "Firma", "Status", "Źródło", "Przenieś do"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {meetings.map(m => {
+                const g = groups.find(x => x.id === m.queue_group_id);
+                const targets = groups.filter(x => g && x.retailer_id === g.retailer_id && x.event_date === g.event_date && x.id !== g.id && x.active);
+                const movable = m.status === "planned" && !m.called_at;
+                return (
+                  <tr key={m.id}>
+                    <td style={{ ...td, fontWeight: 800 }}>{m.nr}</td>
+                    <td style={td}>{m.companies?.name || m.exception_name || "—"}</td>
+                    <td style={td}>{m.status}</td>
+                    <td style={td}>{m.source}</td>
+                    <td style={td}>
+                      {movable && targets.length > 0 ? (
+                        <select defaultValue="" disabled={busy} onChange={e => { const t = e.target.value; e.target.value = ""; if (t && window.confirm(`Przenieść nr ${m.nr} (${m.companies?.name || m.exception_name || "?"}) do grupy „${groups.find(x => x.id === t)?.label || "główna"}”?`)) run(() => fmQueueRpc.moveMeeting(m.id, t, null).then(r => { listFmQueueMeetings(meetGroupId).then(setMeetings); return r; }), (r) => `Przeniesiono, numer w nowej grupie: ${r.nr}.`); }} style={inp}>
+                          <option value="">— wybierz grupę —</option>
+                          {targets.map(t => <option key={t.id} value={t.id}>{t.label || "(główna)"}</option>)}
+                        </select>
+                      ) : <span style={{ color: "#94a3b8" }}>{movable ? "brak innych grup" : "już wywołane"}</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+              {meetGroupId && meetings.length === 0 && <tr><td style={td} colSpan={5}><span style={{ color: "#94a3b8" }}>Brak spotkań w tej grupie (dzień nieotwarty?).</span></td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {sub === "stanowiska" && (
         <div>
@@ -288,11 +336,12 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <div style={box}>
             <h4 style={h4}>Dzień eventu</h4>
-            <p style={{ color: "#64748b", lineHeight: 1.5 }}>„Otwórz dzień” importuje <b>opublikowany plan</b> dla tej daty (fm_settings z fazą „opublikowany”, numerki ze <code>schedule.nums</code>) do kolejek — każdą parę firma × sieć z jej numerem. Grupy, które mają już spotkania z planu, są pomijane; „Synchronizuj (force)” dopisuje nowe pary i aktualizuje zmienione numery tylko dla spotkań jeszcze niewywołanych, konflikty numerów raportuje. Stanowiska pozostają ZAMKNIĘTE — otwiera je obsługa ręcznie.</p>
+            <p style={{ color: "#64748b", lineHeight: 1.5 }}>„Otwórz dzień” importuje <b>opublikowany plan</b> dla tej daty (fm_settings z fazą „opublikowany”, numerki ze <code>schedule.nums</code>) do kolejek — każdą parę firma × sieć z jej numerem. Grupy, które mają już spotkania z planu, są pomijane; „Synchronizuj (force)” dopisuje nowe pary i aktualizuje zmienione numery tylko dla spotkań jeszcze niewywołanych, konflikty numerów raportuje. Stanowiska pozostają ZAMKNIĘTE — otwiera je obsługa ręcznie. W <b>trybie testowym</b> import bierze najnowszy opublikowany plan niezależnie od daty (produkcyjne ustawienia FM nie są ruszane).</p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <Btn disabled={busy || dbMissing} onClick={() => window.confirm(`Zaimportować opublikowany plan spotkań do kolejek na ${eventDate}?`) && run(() => fmQueueRpc.openDay(eventDate, false).then(r => { setDayReport(r); return r; }), (r) => `Import: ${r.inserted} spotkań, ${r.groups_created} nowych grup, pominięte grupy: ${r.skipped_groups}, problemy: ${r.problems?.length || 0}.`)}>Otwórz dzień (import planu)</Btn>
               <Btn ghost disabled={busy || dbMissing} onClick={() => window.confirm(`Zsynchronizować plan z kolejkami na ${eventDate}? Zmienione numery zostaną zaktualizowane tylko dla spotkań jeszcze niewywołanych.`) && run(() => fmQueueRpc.openDay(eventDate, true).then(r => { setDayReport(r); return r; }), (r) => `Synchronizacja: +${r.inserted} nowych, ${r.updated} zmienionych numerów, ${r.unchanged} bez zmian, problemy: ${r.problems?.length || 0}.`)}>Synchronizuj (force)</Btn>
-              <Btn ghost disabled={busy || dbMissing} onClick={() => window.confirm("Zamknąć WSZYSTKIE stanowiska (koniec spotkań 17:00)?") && run(() => fmQueueRpc.closeAll(eventDate), (r) => `Zamknięto ${r.closed} stanowisk.`)}>Zamknij wszystkie stanowiska</Btn>
+              <Btn ghost disabled={busy || dbMissing} onClick={() => window.confirm("Zamknąć WSZYSTKIE stanowiska (koniec spotkań 17:00)? Trwające spotkania zostaną dokończone (tryb „zamykanie”), nowe numery nie będą wywoływane.") && run(() => fmQueueRpc.closeAll(eventDate), (r) => `Zamknięto ${r.closed} stanowisk.`)}>Zamknij wszystkie stanowiska</Btn>
+              {settings?.closed_all_at && <Btn ghost disabled={busy} onClick={() => window.confirm("Otworzyć dzień ponownie (cofnąć „Zamknij wszystkie”)? Obsługa będzie mogła znów otwierać stanowiska.") && run(() => fmQueueRpc.reopenDay(eventDate), "Dzień otwarty ponownie.")}>Otwórz dzień ponownie</Btn>}
             </div>
             {dayReport?.problems?.length > 0 && (
               <div style={{ marginTop: 10, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px", maxHeight: 220, overflow: "auto" }}>
@@ -303,10 +352,16 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                 <div style={{ color: "#64748b", marginTop: 4 }}>unrouted = split bez jednoznacznej kategorii (uzupełnij kategorie firmy/grupy i uruchom „Synchronizuj”); nr_conflict = numer zajęty przez inną firmę; missing_supplier/chain = brak mapowania; locked_status = spotkanie już wywołane.</div>
               </div>
             )}
-            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
-              <Btn ghost disabled={busy || dbMissing} onClick={() => { const c = window.prompt(`Reset dnia ${eventDate} (TYLKO próba generalna / dzień testowy): usuwa wszystkie spotkania kolejek i zeruje numery. Wpisz dokładnie: RESET ${eventDate}`); if (c === `RESET ${eventDate}`) run(() => fmQueueRpc.resetDay(eventDate), (r) => `Reset: usunięto ${r.deleted_meetings} spotkań.`); }}>Reset dnia testowego…</Btn>
-              <span style={{ color: "#64748b", marginLeft: 8 }}>zablokowany, gdy w tym dniu były już wywołania</span>
-            </div>
+            {isSuper && (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #e2e8f0" }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>Próba generalna (tylko super admin)</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <Btn ghost disabled={busy || dbMissing} onClick={() => window.confirm(testMode ? `Wyłączyć tryb testowy dla ${eventDate}?` : `Włączyć TRYB TESTOWY dla ${eventDate}? Dozwolone tylko dla daty innej niż produkcyjne wydarzenie. W tym trybie „Otwórz dzień” bierze najnowszy opublikowany plan, a reset dnia jest możliwy także po wywołaniach.`) && run(() => fmQueueRpc.setTestMode(eventDate, !testMode), (r) => `Tryb testowy: ${r.test_mode ? "WŁĄCZONY" : "wyłączony"}.`)}>{testMode ? "Wyłącz tryb testowy" : "Włącz tryb testowy…"}</Btn>
+                  {testMode && <Btn ghost disabled={busy || dbMissing} onClick={() => { const c = window.prompt(`Reset dnia TESTOWEGO ${eventDate}: usuwa wszystkie spotkania kolejek tego dnia, zeruje numery i stanowiska (także po wywołaniach). Operacja zostaje w logu. Wpisz dokładnie: RESET ${eventDate}`); if (c === `RESET ${eventDate}`) run(() => fmQueueRpc.resetDay(eventDate), (r) => `Reset: usunięto ${r.deleted_meetings} spotkań.`); }}>Reset dnia testowego…</Btn>}
+                  <span style={{ color: "#64748b" }}>{testMode ? "reset dostępny tylko w trybie testowym; data produkcyjna nigdy" : "reset dnia widoczny po włączeniu trybu testowego"}</span>
+                </div>
+              </div>
+            )}
             {settings?.day_opened_at && <div style={{ marginTop: 8, color: "#64748b" }}>Dzień otwarty: {new Date(settings.day_opened_at).toLocaleString("pl-PL")}{settings.closed_all_at ? ` · zamknięty: ${new Date(settings.closed_all_at).toLocaleString("pl-PL")}` : ""}</div>}
           </div>
           <div style={box}>

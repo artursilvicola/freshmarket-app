@@ -1,5 +1,5 @@
 -- ============================================================================
--- 053_fm_queue.sql  (v2 — po review Codexa z 6.09.2026)
+-- 053_fm_queue.sql  (v3 — po review Codexa v2 z 7.09.2026)
 -- [feat/fm-queue] Modul kolejek / numerkow spotkan B2B na zywo (FM 2026).
 -- Specyfikacja: docs/production/FM_KOLEJKI_NUMERKI_PROPOZYCJA.md, sekcja 14.
 -- Review i kontrpropozycja: docs/production/NOTATKA_DLA_CODEX_2026-09-06_KOLEJKI_REVIEW.md
@@ -15,7 +15,7 @@
 --      raw_app_meta_data (ustawia wylacznie backend z service_role)
 --   5. RLS (anon: NIC na tabelach)
 --   6. widok publiczny fm_queue_board_v + snapshot (bez nazw firm)
---   7. RPC operatora (SECURITY DEFINER, search_path=public,pg_temp,
+--   7. RPC operatora (SECURITY DEFINER, search_path='' + nazwy kwalifikowane,
 --      blokady w kolejnosci GRUPA -> STANOWISKO -> SPOTKANIE,
 --      klucz idempotencji OBOWIAZKOWY i sprawdzany ponownie POD blokada)
 --   8. RPC admina (open_day z raportem konfliktow, close_all, assign, reset_day)
@@ -60,9 +60,11 @@ CREATE TABLE IF NOT EXISTS public.fm_login_attempts (   -- limit prob per IP / k
   ts timestamptz NOT NULL DEFAULT now(),
   ip text,
   code text,
+  device_id text,
   ok boolean
 );
 CREATE INDEX IF NOT EXISTS fm_login_attempts_ip_ts ON public.fm_login_attempts (ip, ts DESC);
+CREATE INDEX IF NOT EXISTS fm_login_attempts_key_ts ON public.fm_login_attempts (ip, code, device_id, ts DESC);
 
 CREATE TABLE IF NOT EXISTS public.fm_queue_groups (            -- wlasciciel kolejki i numeracji
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -87,7 +89,7 @@ CREATE TABLE IF NOT EXISTS public.fm_stations (                -- fizyczne stano
   idx smallint NOT NULL DEFAULT 1,
   label text,
   active boolean NOT NULL DEFAULT true,
-  mode text NOT NULL DEFAULT 'closed' CHECK (mode IN ('closed', 'open', 'paused', 'free_entry')),
+  mode text NOT NULL DEFAULT 'closed' CHECK (mode IN ('closed', 'open', 'paused', 'free_entry', 'closing')),  -- closing: dzien zamkniety, trwa ostatnie spotkanie
   current_meeting_id uuid,                   -- publicznie wywolane spotkanie (FK nizej)
   active_returnee_id uuid,                   -- powracajacy obslugiwany poza tablica (FK nizej)
   free_entry_started_at timestamptz,
@@ -156,6 +158,7 @@ CREATE TABLE IF NOT EXISTS public.fm_queue_settings (
   board_rotation_s smallint NOT NULL DEFAULT 9 CHECK (board_rotation_s BETWEEN 3 AND 60),
   board_items_per_page smallint NOT NULL DEFAULT 12 CHECK (board_items_per_page BETWEEN 4 AND 40),
   board_pinned_group_ids uuid[] NOT NULL DEFAULT '{}',
+  test_mode boolean NOT NULL DEFAULT false,      -- proba generalna: reset dozwolony, import z najnowszego planu
   day_opened_at timestamptz,
   closed_all_at timestamptz,
   updated_by uuid,
@@ -164,7 +167,7 @@ CREATE TABLE IF NOT EXISTS public.fm_queue_settings (
 
 -- ── 2. TRIGGERY INTEGRALNOSCI ────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.fm_queue_touch() RETURNS trigger
-LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SET search_path = '' AS $$
 BEGIN NEW.updated_at := now(); RETURN NEW; END; $$;
 DO $$ DECLARE t text; BEGIN
   FOREACH t IN ARRAY ARRAY['fm_staff','fm_queue_groups','fm_stations','fm_queue_meetings','fm_queue_settings'] LOOP
@@ -175,7 +178,7 @@ DO $$ DECLARE t text; BEGIN
 -- Numer publiczny NIGDY nie maleje. Jedyny wyjatek: swiadomy reset dnia przez admina
 -- (fm_queue_reset_day ustawia lokalnie fm.allow_reset='on' w swojej transakcji).
 CREATE OR REPLACE FUNCTION public.fm_queue_groups_forward_only() RETURNS trigger
-LANGUAGE plpgsql SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql SET search_path = '' AS $$
 BEGIN
   IF NEW.last_called_nr < OLD.last_called_nr AND COALESCE(current_setting('fm.allow_reset', true), '') <> 'on' THEN
     RAISE EXCEPTION 'FM_FORWARD_ONLY' USING ERRCODE = '23514';
@@ -187,23 +190,34 @@ CREATE TRIGGER fm_queue_groups_forward_only BEFORE UPDATE OF last_called_nr ON p
   FOR EACH ROW EXECUTE FUNCTION public.fm_queue_groups_forward_only();
 
 -- ── 3. HELPERY ───────────────────────────────────────────────────────────────
+-- Istniejace helpery RLS (001/031) nie ustawiaja search_path — dziedzicza go od wywolujacego.
+-- Nasze funkcje maja search_path='' (review Codexa), wiec przypinamy im jawnie 'public'
+-- (to takze utwardzenie: nie da sie ich podlozyc przez zmiane search_path sesji).
+DO $$ DECLARE f text; BEGIN
+  FOREACH f IN ARRAY ARRAY['is_admin()', 'is_super_admin()', 'app_role()', 'app_company_id()', 'app_retailer_id()', 'app_supplier_legacy_id()'] LOOP
+    IF to_regprocedure('public.' || f) IS NOT NULL THEN
+      EXECUTE format('ALTER FUNCTION public.%s SET search_path = public', f);
+    END IF;
+  END LOOP; END $$;
+
 -- staff = profil 'staff' + wiersz fm_staff aktywny, nieblokowany, na DZISIEJSZY dzien
 -- eventu, z tokenem wydanym PO ostatniej rotacji PIN-u.
 CREATE OR REPLACE FUNCTION public.is_staff() RETURNS boolean
-LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public, pg_temp AS $$
+LANGUAGE sql SECURITY DEFINER STABLE SET search_path = '' AS $$
   SELECT COALESCE((
     SELECT p.role = 'staff' AND s.active AND NOT s.blocked
        AND s.event_date = (now() AT TIME ZONE 'Europe/Warsaw')::date
+       -- po rotacji PIN-u token MUSI miec iat >= pin_rotated_at; brak iat = odrzucenie
        AND (s.pin_rotated_at IS NULL
-            OR NULLIF(auth.jwt()->>'iat', '') IS NULL
-            OR to_timestamp((auth.jwt()->>'iat')::bigint) >= s.pin_rotated_at - interval '5 seconds')
+            OR (NULLIF(auth.jwt()->>'iat', '') IS NOT NULL
+                AND to_timestamp((auth.jwt()->>'iat')::bigint) >= s.pin_rotated_at - interval '5 seconds'))
     FROM public.profiles p JOIN public.fm_staff s ON s.id = p.id
     WHERE p.id = auth.uid()), false);
 $$;
 
 -- kontrola operatora + przypisania (admin zawsze moze); NIE zaklada blokad
 CREATE OR REPLACE FUNCTION public.fm_queue_assert_operator(p_group_id uuid)
-RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public, pg_temp AS $$
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = '' AS $$
 DECLARE v_uid uuid := auth.uid();
 BEGIN
   IF v_uid IS NULL THEN RAISE EXCEPTION 'FM_AUTH_REQUIRED' USING ERRCODE = '28000'; END IF;
@@ -216,7 +230,7 @@ BEGIN
 END; $$;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_require_idem(p_idem text) RETURNS text
-LANGUAGE plpgsql IMMUTABLE SET search_path = public, pg_temp AS $$
+LANGUAGE plpgsql IMMUTABLE SET search_path = '' AS $$
 BEGIN
   IF p_idem IS NULL OR length(btrim(p_idem)) < 8 OR length(p_idem) > 128 THEN
     RAISE EXCEPTION 'FM_IDEM_REQUIRED' USING ERRCODE = '22023';
@@ -225,14 +239,14 @@ BEGIN
 END; $$;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_idem_done(p_idem text) RETURNS boolean
-LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public, pg_temp AS $$
+LANGUAGE sql SECURITY DEFINER STABLE SET search_path = '' AS $$
   SELECT p_idem IS NOT NULL AND EXISTS (SELECT 1 FROM public.fm_queue_log l WHERE l.idempotency_key = p_idem);
 $$;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_log_write(
   p_operator uuid, p_group uuid, p_station uuid, p_meeting uuid, p_action text,
   p_from text, p_to text, p_nr int, p_idem text, p_payload jsonb DEFAULT NULL)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 BEGIN
   INSERT INTO public.fm_queue_log (operator_id, device_id, queue_group_id, station_id, meeting_id, action, from_status, to_status, nr, idempotency_key, payload)
   VALUES (p_operator,
@@ -240,10 +254,23 @@ BEGIN
           p_group, p_station, p_meeting, p_action, p_from, p_to, p_nr, NULLIF(p_idem, ''), p_payload);
 END; $$;
 
+-- Dzien zamkniety ("Zamknij wszystkie")? Wtedy nie wolno otwierac stanowisk ani wywolywac numerow.
+CREATE OR REPLACE FUNCTION public.fm_queue_day_closed(p_group_id uuid) RETURNS boolean
+LANGUAGE sql SECURITY DEFINER STABLE SET search_path = '' AS $$
+  SELECT EXISTS (SELECT 1 FROM public.fm_queue_settings st JOIN public.fm_queue_groups g ON g.event_date = st.event_date
+                 WHERE g.id = p_group_id AND st.closed_all_at IS NOT NULL);
+$$;
+
+-- Stanowisko w trybie 'closing' zamyka sie samo, gdy zwolni sie po ostatnim spotkaniu.
+CREATE OR REPLACE FUNCTION public.fm_queue_autoclose(p_station_id uuid) RETURNS void
+LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  UPDATE public.fm_stations SET mode = 'closed' WHERE id = p_station_id AND mode = 'closing' AND current_meeting_id IS NULL AND active_returnee_id IS NULL;
+$$;
+
 -- Blokady ZAWSZE w kolejnosci: grupa -> stanowisko (-> spotkanie w wywolujacym).
 -- Zwraca zablokowany wiersz stanowiska; blokady trwaja do konca transakcji.
 CREATE OR REPLACE FUNCTION public.fm_queue_lock_station(p_station_id uuid)
-RETURNS public.fm_stations LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS public.fm_stations LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE v_gid uuid; st public.fm_stations;
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -255,7 +282,7 @@ END; $$;
 
 -- Stan stanowiska (WEWNETRZNY — bez kontroli uprawnien; nigdy nie nadawac grantow)
 CREATE OR REPLACE FUNCTION public.fm_queue_station_state_unsafe(p_station_id uuid)
-RETURNS jsonb LANGUAGE sql SECURITY DEFINER STABLE SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER STABLE SET search_path = '' AS $$
   SELECT jsonb_build_object(
     'station_id', st.id, 'group_id', g.id, 'mode', st.mode, 'version', st.version, 'group_version', g.version,
     'last_called_nr', g.last_called_nr,
@@ -278,7 +305,7 @@ $$;
 
 -- Stan stanowiska (PUBLICZNY dla zalogowanych): tylko admin lub przypisany operator.
 CREATE OR REPLACE FUNCTION public.fm_queue_station_state(p_station_id uuid)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = '' AS $$
 DECLARE v_gid uuid;
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -295,7 +322,7 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 DECLARE
   v_app_role text;
@@ -420,7 +447,7 @@ LEFT JOIN public.fm_queue_meetings cm ON cm.id = st.current_meeting_id
 WHERE g.active;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_public_snapshot(p_event_date date DEFAULT NULL)
-RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
   WITH d AS (SELECT COALESCE(p_event_date, (SELECT max(event_date) FROM public.fm_queue_groups)) AS ev)
   SELECT jsonb_build_object(
     'event_date', (SELECT ev FROM d),
@@ -437,7 +464,7 @@ $$;
 --   -> idem sprawdzony PONOWNIE pod blokada -> version -> zmiana -> log -> stan.
 
 CREATE OR REPLACE FUNCTION public.fm_queue_open_station(p_station_id uuid, p_expected_version int, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE st public.fm_stations; v_gid uuid; v_op uuid; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -447,13 +474,14 @@ BEGIN
   IF public.fm_queue_idem_done(v_idem) THEN RETURN public.fm_queue_station_state_unsafe(p_station_id); END IF;
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   IF NOT st.active THEN RAISE EXCEPTION 'FM_STATION_INACTIVE' USING ERRCODE = '22023'; END IF;
+  IF public.fm_queue_day_closed(st.queue_group_id) THEN RAISE EXCEPTION 'FM_DAY_CLOSED' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_stations SET mode = 'open', free_entry_started_at = NULL, version = version + 1, updated_by = v_op WHERE id = st.id;
   PERFORM public.fm_queue_log_write(v_op, st.queue_group_id, st.id, NULL, 'open_station', st.mode, 'open', NULL, v_idem, NULL);
   RETURN public.fm_queue_station_state_unsafe(p_station_id);
 END; $$;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_call_next(p_station_id uuid, p_expected_version int, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE st public.fm_stations; v_gid uuid; g public.fm_queue_groups; m public.fm_queue_meetings; v_op uuid; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -480,7 +508,7 @@ BEGIN
 END; $$;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_start(p_station_id uuid, p_expected_version int, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE st public.fm_stations; v_gid uuid; m public.fm_queue_meetings; v_op uuid; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -499,7 +527,7 @@ END; $$;
 
 -- Zakoncz biezace (called/in_progress -> done) i od razu wywolaj nastepny — jedna transakcja
 CREATE OR REPLACE FUNCTION public.fm_queue_finish_and_call_next(p_station_id uuid, p_expected_version int, p_idem text, p_call_next boolean DEFAULT true)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE st public.fm_stations; v_gid uuid; m public.fm_queue_meetings; v_op uuid; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -512,6 +540,7 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_ACTIVE_MEETING' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_queue_meetings SET status = 'done', ended_at = now(), started_at = COALESCE(started_at, now()), version = version + 1 WHERE id = m.id;
   UPDATE public.fm_stations SET current_meeting_id = NULL, version = version + 1, updated_by = v_op WHERE id = st.id;
+  PERFORM public.fm_queue_autoclose(st.id);
   PERFORM public.fm_queue_log_write(v_op, st.queue_group_id, st.id, m.id, 'finish', m.status, 'done', m.nr, v_idem, NULL);
   IF p_call_next AND st.mode = 'open' THEN
     BEGIN
@@ -523,7 +552,7 @@ BEGIN
 END; $$;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_no_show(p_station_id uuid, p_expected_version int, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE st public.fm_stations; v_gid uuid; m public.fm_queue_meetings; v_op uuid; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -536,13 +565,14 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_ACTIVE_MEETING' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_queue_meetings SET status = 'no_show', ended_at = now(), version = version + 1 WHERE id = m.id;
   UPDATE public.fm_stations SET current_meeting_id = NULL, version = version + 1, updated_by = v_op WHERE id = st.id;
+  PERFORM public.fm_queue_autoclose(st.id);
   PERFORM public.fm_queue_log_write(v_op, st.queue_group_id, st.id, m.id, 'no_show', m.status, 'no_show', m.nr, v_idem, NULL);
   RETURN public.fm_queue_station_state_unsafe(p_station_id);
 END; $$;
 
 -- Pomin (planned/returned_waiting -> skipped). Blokady: grupa -> spotkanie.
 CREATE OR REPLACE FUNCTION public.fm_queue_skip(p_meeting_id uuid, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE m public.fm_queue_meetings; v_op uuid; v_gid uuid; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_queue_meetings WHERE id = p_meeting_id;
@@ -559,7 +589,7 @@ END; $$;
 
 -- Powracajacy zglosil sie (no_show -> returned_waiting) + bariera "po biezacym i kolejnym"
 CREATE OR REPLACE FUNCTION public.fm_queue_mark_returned(p_meeting_id uuid, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE m public.fm_queue_meetings; g public.fm_queue_groups; v_op uuid; v_gid uuid; v_barrier int; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_queue_meetings WHERE id = p_meeting_id;
@@ -584,7 +614,7 @@ END; $$;
 
 -- Obsluz powracajacego POZA tablica (stanowisko wolne, bariera spelniona); last_called_nr bez zmian
 CREATE OR REPLACE FUNCTION public.fm_queue_serve_returnee(p_station_id uuid, p_meeting_id uuid, p_expected_version int, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE st public.fm_stations; v_gid uuid; m public.fm_queue_meetings; v_op uuid; v_ready boolean; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -609,7 +639,7 @@ BEGIN
 END; $$;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_finish_returnee(p_station_id uuid, p_expected_version int, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE st public.fm_stations; v_gid uuid; m public.fm_queue_meetings; v_op uuid; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
@@ -622,13 +652,14 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NO_RETURNEE' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_queue_meetings SET status = 'done', ended_at = now(), version = version + 1 WHERE id = m.id;
   UPDATE public.fm_stations SET active_returnee_id = NULL, version = version + 1, updated_by = v_op WHERE id = st.id;
+  PERFORM public.fm_queue_autoclose(st.id);
   PERFORM public.fm_queue_log_write(v_op, st.queue_group_id, st.id, m.id, 'finish_returnee', 'returned_in_progress', 'done', m.nr, v_idem, NULL);
   RETURN public.fm_queue_station_state_unsafe(p_station_id);
 END; $$;
 
 -- Spotkanie wyjatkowe: max(nr)+1, nigdy miedzy wczesniejsze numery. Blokada: grupa.
 CREATE OR REPLACE FUNCTION public.fm_queue_add_exception(p_group_id uuid, p_name text, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE g public.fm_queue_groups; v_op uuid; v_nr int; v_id uuid; v_prev jsonb; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   v_op := public.fm_queue_assert_operator(p_group_id);
@@ -649,7 +680,7 @@ BEGIN
 END; $$;
 
 CREATE OR REPLACE FUNCTION public.fm_queue_set_mode(p_station_id uuid, p_mode text, p_expected_version int, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE st public.fm_stations; v_gid uuid; v_op uuid; v_busy boolean; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   IF p_mode NOT IN ('open','paused','free_entry','closed') THEN RAISE EXCEPTION 'FM_BAD_MODE' USING ERRCODE = '22023'; END IF;
@@ -661,6 +692,7 @@ BEGIN
   IF st.version <> p_expected_version THEN RAISE EXCEPTION 'FM_CONFLICT' USING ERRCODE = '40001'; END IF;
   v_busy := st.active_returnee_id IS NOT NULL OR (st.current_meeting_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.id = st.current_meeting_id AND x.status IN ('called','in_progress')));
   IF p_mode IN ('free_entry','closed') AND v_busy THEN RAISE EXCEPTION 'FM_STATION_BUSY' USING ERRCODE = '22023'; END IF;
+  IF p_mode <> 'closed' AND public.fm_queue_day_closed(st.queue_group_id) THEN RAISE EXCEPTION 'FM_DAY_CLOSED' USING ERRCODE = '22023'; END IF;
   UPDATE public.fm_stations SET mode = p_mode,
     free_entry_started_at = CASE WHEN p_mode = 'free_entry' THEN now() ELSE NULL END,
     version = version + 1, updated_by = v_op WHERE id = st.id;
@@ -671,8 +703,8 @@ END; $$;
 -- Cofnij (<= 30 s) WYLACZNIE status spotkania na tym stanowisku: start, no_show, finish.
 -- Publicznego wywolania numeru (call_next) NIE cofamy — numer na tablicy nigdy nie maleje.
 CREATE OR REPLACE FUNCTION public.fm_queue_undo(p_station_id uuid, p_expected_version int, p_idem text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE st public.fm_stations; v_gid uuid; l public.fm_queue_log; m public.fm_queue_meetings; v_op uuid; v_idem text := public.fm_queue_require_idem(p_idem);
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE st public.fm_stations; v_gid uuid; l public.fm_queue_log; m public.fm_queue_meetings; v_op uuid; v_last int; v_idem text := public.fm_queue_require_idem(p_idem);
 BEGIN
   SELECT queue_group_id INTO v_gid FROM public.fm_stations WHERE id = p_station_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
@@ -694,11 +726,18 @@ BEGIN
   SELECT * INTO m FROM public.fm_queue_meetings WHERE id = l.meeting_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_UNDO_NOT_LAST' USING ERRCODE = '22023'; END IF;
   IF l.action = 'start' THEN
+    -- nie zmienia wyswietlanego numeru
     IF m.status <> 'in_progress' OR st.current_meeting_id IS DISTINCT FROM m.id THEN RAISE EXCEPTION 'FM_UNDO_NOT_LAST' USING ERRCODE = '22023'; END IF;
     UPDATE public.fm_queue_meetings SET status = 'called', started_at = NULL, version = version + 1 WHERE id = m.id;
-  ELSE  -- no_show / finish: przywroc spotkanie jako biezace, jesli stanowisko wolne
+  ELSE
+    -- no_show / finish: przywrocenie spotkania jako biezacego pokazuje jego numer na tablicy,
+    -- wiec dozwolone TYLKO gdy ten numer jest nadal najwyzszym wywolanym w grupie
+    -- (stanowiska rownolegle: A ma 1, B ma 2, A konczy 1 -> cofniecie na A zabronione).
     IF st.current_meeting_id IS NOT NULL THEN RAISE EXCEPTION 'FM_UNDO_NOT_LAST' USING ERRCODE = '22023'; END IF;
     IF m.status NOT IN ('no_show','done') THEN RAISE EXCEPTION 'FM_UNDO_NOT_LAST' USING ERRCODE = '22023'; END IF;
+    SELECT last_called_nr INTO v_last FROM public.fm_queue_groups WHERE id = st.queue_group_id;
+    IF m.nr <> v_last THEN RAISE EXCEPTION 'FM_UNDO_FORBIDDEN' USING ERRCODE = '22023'; END IF;
+    IF public.fm_queue_day_closed(st.queue_group_id) AND st.mode = 'closed' THEN RAISE EXCEPTION 'FM_DAY_CLOSED' USING ERRCODE = '22023'; END IF;
     UPDATE public.fm_queue_meetings SET status = l.from_status, ended_at = NULL, station_id = st.id, version = version + 1 WHERE id = m.id;
     UPDATE public.fm_stations SET current_meeting_id = m.id WHERE id = st.id;
   END IF;
@@ -709,7 +748,7 @@ END; $$;
 
 -- Operator: moje stanowiska (przypisane grupy) — jedno zapytanie dla tabletu
 CREATE OR REPLACE FUNCTION public.fm_queue_my_stations(p_event_date date DEFAULT NULL)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = '' AS $$
 DECLARE v_uid uuid := auth.uid(); v_admin boolean; v_ev date;
 BEGIN
   IF v_uid IS NULL THEN RAISE EXCEPTION 'FM_AUTH_REQUIRED' USING ERRCODE = '28000'; END IF;
@@ -736,16 +775,23 @@ END; $$;
 --   p_force=true : kontrolowana synchronizacja — nowe pary dopisywane, zmieniony numer
 --                  aktualizowany TYLKO dla spotkan 'planned', konflikty raportowane.
 CREATE OR REPLACE FUNCTION public.fm_queue_open_day(p_event_date date, p_force boolean DEFAULT false)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE
-  v_uid uuid := auth.uid(); v_sched jsonb; v_ret public.retailers; v_group uuid;
+  v_uid uuid := auth.uid(); v_sched jsonb; v_ret public.retailers; v_group uuid; v_test boolean;
   v_groups int := 0; v_inserted int := 0; v_updated int := 0; v_skipped_groups int := 0;
   r record; v_cnt int; v_match int; v_catchall int; v_existing public.fm_queue_meetings;
 BEGIN
   IF NOT public.is_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
-  SELECT schedule INTO v_sched FROM public.fm_settings
-    WHERE event_date = p_event_date AND algo_phase IN ('published','final_published','event_day')
-    ORDER BY updated_at DESC LIMIT 1;
+  SELECT test_mode INTO v_test FROM public.fm_queue_settings WHERE event_date = p_event_date;
+  IF COALESCE(v_test, false) THEN
+    -- proba generalna: najnowszy OPUBLIKOWANY plan niezaleznie od daty (nie ruszamy fm_settings produkcji)
+    SELECT schedule INTO v_sched FROM public.fm_settings
+      WHERE algo_phase IN ('published','final_published','event_day') ORDER BY updated_at DESC LIMIT 1;
+  ELSE
+    SELECT schedule INTO v_sched FROM public.fm_settings
+      WHERE event_date = p_event_date AND algo_phase IN ('published','final_published','event_day')
+      ORDER BY updated_at DESC LIMIT 1;
+  END IF;
   IF NOT FOUND THEN RAISE EXCEPTION 'FM_PLAN_NOT_PUBLISHED' USING ERRCODE = 'P0002'; END IF;
   IF v_sched IS NULL OR v_sched->'nums' IS NULL OR jsonb_typeof(v_sched->'nums') <> 'object' THEN RAISE EXCEPTION 'FM_NO_SCHEDULE' USING ERRCODE = 'P0002'; END IF;
 
@@ -763,30 +809,30 @@ BEGIN
   -- blokujemy wszystkie grupy dnia (import nie moze sciac sie z operatorem)
   PERFORM 1 FROM public.fm_queue_groups WHERE event_date = p_event_date ORDER BY id FOR UPDATE;
 
-  DROP TABLE IF EXISTS t_imp;
-  CREATE TEMP TABLE t_imp (rid serial PRIMARY KEY, sid text, cid text, nr int, company_id uuid, group_id uuid, reason text) ON COMMIT DROP;
-  INSERT INTO t_imp (sid, cid, nr)
+  DROP TABLE IF EXISTS pg_temp.t_imp;
+  CREATE TEMP TABLE pg_temp.t_imp (rid serial PRIMARY KEY, sid text, cid text, nr int, company_id uuid, group_id uuid, reason text) ON COMMIT DROP;
+  INSERT INTO pg_temp.t_imp (sid, cid, nr)
     SELECT s.key, c.key, NULLIF(c.value, '')::int
     FROM jsonb_each(v_sched->'nums') s, jsonb_each_text(s.value) c
     WHERE jsonb_typeof(s.value) = 'object';
-  UPDATE t_imp SET reason = 'bad_nr' WHERE nr IS NULL OR nr <= 0;
-  UPDATE t_imp t SET company_id = c.id FROM public.companies c WHERE t.reason IS NULL AND (c.id::text = t.sid OR c.legacy_fm_id = t.sid);
-  UPDATE t_imp SET reason = 'missing_supplier' WHERE reason IS NULL AND company_id IS NULL;
+  UPDATE pg_temp.t_imp SET reason = 'bad_nr' WHERE nr IS NULL OR nr <= 0;
+  UPDATE pg_temp.t_imp t SET company_id = c.id FROM public.companies c WHERE t.reason IS NULL AND (c.id::text = t.sid OR c.legacy_fm_id = t.sid);
+  UPDATE pg_temp.t_imp SET reason = 'missing_supplier' WHERE reason IS NULL AND company_id IS NULL;
 
   -- routing do grupy: 1 grupa -> ona; split -> dokladnie jedna zgodna kategoria,
   -- w przeciwnym razie jedyna grupa bez kategorii (catch-all); inaczej 'unrouted'
-  FOR r IN SELECT t.rid, t.cid, t.company_id FROM t_imp t WHERE t.reason IS NULL ORDER BY t.rid LOOP
+  FOR r IN SELECT t.rid, t.cid, t.company_id FROM pg_temp.t_imp t WHERE t.reason IS NULL ORDER BY t.rid LOOP
     SELECT count(*) INTO v_cnt FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id
       WHERE g.event_date = p_event_date AND g.active AND rt.fm26_chain_id = r.cid;
-    IF v_cnt = 0 THEN UPDATE t_imp SET reason = 'missing_chain' WHERE rid = r.rid; CONTINUE; END IF;
+    IF v_cnt = 0 THEN UPDATE pg_temp.t_imp SET reason = 'missing_chain' WHERE rid = r.rid; CONTINUE; END IF;
     IF v_cnt = 1 THEN
-      UPDATE t_imp SET group_id = (SELECT g.id FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id WHERE g.event_date = p_event_date AND g.active AND rt.fm26_chain_id = r.cid) WHERE rid = r.rid;
+      UPDATE pg_temp.t_imp SET group_id = (SELECT g.id FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id WHERE g.event_date = p_event_date AND g.active AND rt.fm26_chain_id = r.cid) WHERE rid = r.rid;
       CONTINUE;
     END IF;
     SELECT count(*) INTO v_match FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id JOIN public.companies c ON c.id = r.company_id
       WHERE g.event_date = p_event_date AND g.active AND rt.fm26_chain_id = r.cid AND cardinality(g.categories) > 0 AND c.categories && g.categories;
     IF v_match = 1 THEN
-      UPDATE t_imp SET group_id = (SELECT g.id FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id JOIN public.companies c ON c.id = r.company_id
+      UPDATE pg_temp.t_imp SET group_id = (SELECT g.id FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id JOIN public.companies c ON c.id = r.company_id
         WHERE g.event_date = p_event_date AND g.active AND rt.fm26_chain_id = r.cid AND cardinality(g.categories) > 0 AND c.categories && g.categories) WHERE rid = r.rid;
       CONTINUE;
     END IF;
@@ -794,68 +840,74 @@ BEGIN
       SELECT count(*) INTO v_catchall FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id
         WHERE g.event_date = p_event_date AND g.active AND rt.fm26_chain_id = r.cid AND cardinality(g.categories) = 0;
       IF v_catchall = 1 THEN
-        UPDATE t_imp SET group_id = (SELECT g.id FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id
+        UPDATE pg_temp.t_imp SET group_id = (SELECT g.id FROM public.fm_queue_groups g JOIN public.retailers rt ON rt.id = g.retailer_id
           WHERE g.event_date = p_event_date AND g.active AND rt.fm26_chain_id = r.cid AND cardinality(g.categories) = 0) WHERE rid = r.rid;
         CONTINUE;
       END IF;
     END IF;
-    UPDATE t_imp SET reason = 'unrouted' WHERE rid = r.rid;  -- decyzja admina (split bez jednoznacznej kategorii)
+    UPDATE pg_temp.t_imp SET reason = 'unrouted' WHERE rid = r.rid;  -- decyzja admina (split bez jednoznacznej kategorii)
   END LOOP;
 
   -- grupy juz zaimportowane (stan SPRZED importu) -> pomijane bez p_force
   IF NOT p_force THEN
-    UPDATE t_imp t SET reason = 'group_already_imported'
+    UPDATE pg_temp.t_imp t SET reason = 'group_already_imported'
       WHERE t.reason IS NULL AND EXISTS (SELECT 1 FROM public.fm_queue_meetings m WHERE m.queue_group_id = t.group_id AND m.source = 'plan');
-    SELECT count(DISTINCT group_id) INTO v_skipped_groups FROM t_imp WHERE reason = 'group_already_imported';
+    SELECT count(DISTINCT group_id) INTO v_skipped_groups FROM pg_temp.t_imp WHERE reason = 'group_already_imported';
   END IF;
 
   -- wstawianie / synchronizacja
-  FOR r IN SELECT t.* FROM t_imp t WHERE t.reason IS NULL ORDER BY t.group_id, t.nr LOOP
+  FOR r IN SELECT t.* FROM pg_temp.t_imp t WHERE t.reason IS NULL ORDER BY t.group_id, t.nr LOOP
     -- firma ma juz spotkanie w INNEJ grupie tej samej sieci (zmiana routingu split) -> decyzja admina
     IF EXISTS (SELECT 1 FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g2 ON g2.id = m.queue_group_id
                JOIN public.fm_queue_groups g1 ON g1.id = r.group_id
                WHERE m.company_id = r.company_id AND m.queue_group_id <> r.group_id AND g2.retailer_id = g1.retailer_id AND g2.event_date = g1.event_date) THEN
-      UPDATE t_imp SET reason = 'group_changed' WHERE rid = r.rid; CONTINUE;
+      UPDATE pg_temp.t_imp SET reason = 'group_changed' WHERE rid = r.rid; CONTINUE;
     END IF;
     SELECT * INTO v_existing FROM public.fm_queue_meetings WHERE queue_group_id = r.group_id AND company_id = r.company_id;
     IF FOUND THEN
-      IF v_existing.nr = r.nr THEN UPDATE t_imp SET reason = 'unchanged' WHERE rid = r.rid; CONTINUE; END IF;
-      IF v_existing.status <> 'planned' THEN UPDATE t_imp SET reason = 'locked_status' WHERE rid = r.rid; CONTINUE; END IF;
+      IF v_existing.nr = r.nr THEN UPDATE pg_temp.t_imp SET reason = 'unchanged' WHERE rid = r.rid; CONTINUE; END IF;
+      IF v_existing.status <> 'planned' THEN UPDATE pg_temp.t_imp SET reason = 'locked_status' WHERE rid = r.rid; CONTINUE; END IF;
       IF EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.queue_group_id = r.group_id AND x.nr = r.nr AND x.id <> v_existing.id) THEN
-        UPDATE t_imp SET reason = 'nr_conflict' WHERE rid = r.rid; CONTINUE;
+        UPDATE pg_temp.t_imp SET reason = 'nr_conflict' WHERE rid = r.rid; CONTINUE;
       END IF;
       UPDATE public.fm_queue_meetings SET nr = r.nr, version = version + 1 WHERE id = v_existing.id;
-      UPDATE t_imp SET reason = 'updated' WHERE rid = r.rid; v_updated := v_updated + 1;
+      UPDATE pg_temp.t_imp SET reason = 'updated' WHERE rid = r.rid; v_updated := v_updated + 1;
     ELSE
       IF EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.queue_group_id = r.group_id AND x.nr = r.nr) THEN
-        UPDATE t_imp SET reason = 'nr_conflict' WHERE rid = r.rid; CONTINUE;
+        UPDATE pg_temp.t_imp SET reason = 'nr_conflict' WHERE rid = r.rid; CONTINUE;
       END IF;
       INSERT INTO public.fm_queue_meetings (queue_group_id, company_id, nr, status, source) VALUES (r.group_id, r.company_id, r.nr, 'planned', 'plan');
-      UPDATE t_imp SET reason = 'inserted' WHERE rid = r.rid; v_inserted := v_inserted + 1;
+      UPDATE pg_temp.t_imp SET reason = 'inserted' WHERE rid = r.rid; v_inserted := v_inserted + 1;
     END IF;
   END LOOP;
 
   PERFORM public.fm_queue_log_write(v_uid, NULL, NULL, NULL, 'open_day', NULL, NULL, NULL, NULL,
     jsonb_build_object('event_date', p_event_date, 'force', p_force, 'groups_created', v_groups, 'inserted', v_inserted, 'updated', v_updated, 'skipped_groups', v_skipped_groups,
-      'problems', (SELECT count(*) FROM t_imp WHERE reason NOT IN ('inserted','updated','unchanged'))));
+      'problems', (SELECT count(*) FROM pg_temp.t_imp WHERE reason NOT IN ('inserted','updated','unchanged'))));
   RETURN jsonb_build_object(
     'groups_created', v_groups, 'inserted', v_inserted, 'updated', v_updated, 'skipped_groups', v_skipped_groups,
-    'unchanged', (SELECT count(*) FROM t_imp WHERE reason = 'unchanged'),
+    'unchanged', (SELECT count(*) FROM pg_temp.t_imp WHERE reason = 'unchanged'),
     'problems', COALESCE((SELECT jsonb_agg(jsonb_build_object('sid', sid, 'cid', cid, 'nr', nr, 'reason', reason) ORDER BY reason, cid, nr)
-                          FROM t_imp WHERE reason NOT IN ('inserted','updated','unchanged','group_already_imported')), '[]'::jsonb));
+                          FROM pg_temp.t_imp WHERE reason NOT IN ('inserted','updated','unchanged','group_already_imported')), '[]'::jsonb));
 END; $$;
 
 -- Zamknij wszystkie stanowiska (17:00), w tym Free entry
 CREATE OR REPLACE FUNCTION public.fm_queue_close_all(p_event_date date)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE v_uid uuid := auth.uid(); v_n int;
 BEGIN
   IF NOT public.is_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
   PERFORM 1 FROM public.fm_queue_groups WHERE event_date = p_event_date ORDER BY id FOR UPDATE;
-  UPDATE public.fm_stations st SET mode = 'closed', free_entry_started_at = NULL, version = st.version + 1, updated_by = v_uid
+  -- zajete stanowisko -> 'closing' (trwajace spotkanie widoczne do konca, bez NASTEPNY); wolne -> 'closed'
+  UPDATE public.fm_stations st SET
+      mode = CASE WHEN st.active_returnee_id IS NOT NULL
+                    OR (st.current_meeting_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.id = st.current_meeting_id AND x.status IN ('called','in_progress')))
+                  THEN 'closing' ELSE 'closed' END,
+      free_entry_started_at = NULL, version = st.version + 1, updated_by = v_uid
     FROM public.fm_queue_groups g WHERE g.id = st.queue_group_id AND g.event_date = p_event_date AND st.mode <> 'closed';
   GET DIAGNOSTICS v_n = ROW_COUNT;
-  UPDATE public.fm_queue_settings SET closed_all_at = now(), updated_by = v_uid WHERE event_date = p_event_date;
+  INSERT INTO public.fm_queue_settings (event_date, closed_all_at, updated_by) VALUES (p_event_date, now(), v_uid)
+    ON CONFLICT (event_date) DO UPDATE SET closed_all_at = now(), updated_by = v_uid;
   PERFORM public.fm_queue_log_write(v_uid, NULL, NULL, NULL, 'close_all', NULL, 'closed', NULL, NULL, jsonb_build_object('event_date', p_event_date, 'stations', v_n));
   RETURN jsonb_build_object('closed', v_n);
 END; $$;
@@ -863,15 +915,36 @@ END; $$;
 -- Reset dnia (TYLKO proba generalna / dzien testowy): usuwa spotkania, zeruje numery.
 -- Jedyna droga zmniejszenia last_called_nr (flaga fm.allow_reset lokalna dla tej transakcji).
 -- Odmawia, gdy dzien byl juz otwarty tego samego dnia kalendarzowego, w ktorym trwa event.
+-- Data produkcyjnego wydarzenia = event_date z fm_settings (jedyny wiersz ustawien FM).
+CREATE OR REPLACE FUNCTION public.fm_queue_is_production_date(p_event_date date) RETURNS boolean
+LANGUAGE sql SECURITY DEFINER STABLE SET search_path = '' AS $$
+  SELECT EXISTS (SELECT 1 FROM public.fm_settings WHERE event_date = p_event_date);
+$$;
+
+-- Tryb testowy dnia (proba generalna): TYLKO super admin, NIGDY dla daty produkcyjnej.
+CREATE OR REPLACE FUNCTION public.fm_queue_set_test_mode(p_event_date date, p_on boolean)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE v_uid uuid := auth.uid();
+BEGIN
+  IF NOT public.is_super_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
+  IF p_on AND public.fm_queue_is_production_date(p_event_date) THEN RAISE EXCEPTION 'FM_PRODUCTION_DATE' USING ERRCODE = '22023'; END IF;
+  INSERT INTO public.fm_queue_settings (event_date, test_mode, updated_by) VALUES (p_event_date, p_on, v_uid)
+    ON CONFLICT (event_date) DO UPDATE SET test_mode = p_on, updated_by = v_uid;
+  PERFORM public.fm_queue_log_write(v_uid, NULL, NULL, NULL, 'set_test_mode', NULL, CASE WHEN p_on THEN 'on' ELSE 'off' END, NULL, NULL, jsonb_build_object('event_date', p_event_date));
+  RETURN jsonb_build_object('event_date', p_event_date, 'test_mode', p_on);
+END; $$;
+
+-- Reset dnia TESTOWEGO: super admin, tylko test_mode=true, nigdy data produkcyjna;
+-- w trybie testowym dozwolony takze po wywolaniach. Jedyna droga zmniejszenia last_called_nr
+-- (flaga fm.allow_reset lokalna dla tej transakcji). Zawsze w append-only logu.
 CREATE OR REPLACE FUNCTION public.fm_queue_reset_day(p_event_date date, p_confirm text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE v_uid uuid := auth.uid(); v_n int;
 BEGIN
-  IF NOT public.is_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
+  IF NOT public.is_super_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
   IF p_confirm IS DISTINCT FROM ('RESET ' || to_char(p_event_date, 'YYYY-MM-DD')) THEN RAISE EXCEPTION 'FM_CONFIRM_REQUIRED' USING ERRCODE = '22023'; END IF;
-  IF p_event_date = (now() AT TIME ZONE 'Europe/Warsaw')::date AND EXISTS (SELECT 1 FROM public.fm_queue_log WHERE action IN ('call_next','start','finish') AND ts > (now() AT TIME ZONE 'Europe/Warsaw')::date) THEN
-    RAISE EXCEPTION 'FM_RESET_LIVE_DAY' USING ERRCODE = '22023';
-  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.fm_queue_settings WHERE event_date = p_event_date AND test_mode) THEN RAISE EXCEPTION 'FM_NOT_TEST_MODE' USING ERRCODE = '22023'; END IF;
+  IF public.fm_queue_is_production_date(p_event_date) THEN RAISE EXCEPTION 'FM_PRODUCTION_DATE' USING ERRCODE = '22023'; END IF;
   PERFORM set_config('fm.allow_reset', 'on', true);
   PERFORM 1 FROM public.fm_queue_groups WHERE event_date = p_event_date ORDER BY id FOR UPDATE;
   UPDATE public.fm_stations st SET mode = 'closed', current_meeting_id = NULL, active_returnee_id = NULL, free_entry_started_at = NULL, version = st.version + 1, updated_by = v_uid
@@ -884,8 +957,52 @@ BEGIN
   RETURN jsonb_build_object('deleted_meetings', v_n);
 END; $$;
 
+-- Otworz dzien ponownie po omylkowym "Zamknij wszystkie" (admin, log).
+CREATE OR REPLACE FUNCTION public.fm_queue_reopen_day(p_event_date date)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE v_uid uuid := auth.uid();
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
+  UPDATE public.fm_queue_settings SET closed_all_at = NULL, updated_by = v_uid WHERE event_date = p_event_date;
+  PERFORM public.fm_queue_log_write(v_uid, NULL, NULL, NULL, 'reopen_day', NULL, NULL, NULL, NULL, jsonb_build_object('event_date', p_event_date));
+  RETURN jsonb_build_object('event_date', p_event_date, 'reopened', true);
+END; $$;
+
+-- Przeniesienie ZAPLANOWANEGO (jeszcze niewywolanego) spotkania miedzy grupami tej samej sieci
+-- (np. Dino Owoce -> Dino Kwiaty). Admin. Numer: ten sam, jesli wolny i > last_called_nr celu;
+-- inaczej p_nr (musi byc wolny) albo max(nr)+1. Log 'move_meeting'.
+CREATE OR REPLACE FUNCTION public.fm_queue_move_meeting(p_meeting_id uuid, p_target_group_id uuid, p_nr int DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE v_uid uuid := auth.uid(); m public.fm_queue_meetings; g_from public.fm_queue_groups; g_to public.fm_queue_groups; v_nr int; v_from uuid;
+BEGIN
+  IF NOT public.is_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
+  SELECT queue_group_id INTO v_from FROM public.fm_queue_meetings WHERE id = p_meeting_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  IF v_from = p_target_group_id THEN RAISE EXCEPTION 'FM_BAD_STATUS' USING ERRCODE = '22023'; END IF;
+  -- blokady grup w stalej kolejnosci (po id), potem spotkanie
+  PERFORM 1 FROM public.fm_queue_groups WHERE id IN (v_from, p_target_group_id) ORDER BY id FOR UPDATE;
+  SELECT * INTO g_from FROM public.fm_queue_groups WHERE id = v_from;
+  SELECT * INTO g_to FROM public.fm_queue_groups WHERE id = p_target_group_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  IF g_to.retailer_id <> g_from.retailer_id OR g_to.event_date <> g_from.event_date OR NOT g_to.active THEN RAISE EXCEPTION 'FM_BAD_TARGET' USING ERRCODE = '22023'; END IF;
+  SELECT * INTO m FROM public.fm_queue_meetings WHERE id = p_meeting_id FOR UPDATE;
+  IF m.status <> 'planned' OR m.called_at IS NOT NULL THEN RAISE EXCEPTION 'FM_BAD_STATUS' USING ERRCODE = '22023'; END IF;
+  IF m.company_id IS NOT NULL AND EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.queue_group_id = g_to.id AND x.company_id = m.company_id) THEN
+    RAISE EXCEPTION 'FM_NR_CONFLICT' USING ERRCODE = '22023';  -- firma juz ma spotkanie w grupie docelowej
+  END IF;
+  v_nr := COALESCE(p_nr, m.nr);
+  IF v_nr <= g_to.last_called_nr OR EXISTS (SELECT 1 FROM public.fm_queue_meetings x WHERE x.queue_group_id = g_to.id AND x.nr = v_nr) THEN
+    IF p_nr IS NOT NULL THEN RAISE EXCEPTION 'FM_NR_CONFLICT' USING ERRCODE = '22023'; END IF;
+    SELECT GREATEST(COALESCE(max(nr), 0) + 1, g_to.last_called_nr + 1) INTO v_nr FROM public.fm_queue_meetings WHERE queue_group_id = g_to.id;
+  END IF;
+  UPDATE public.fm_queue_meetings SET queue_group_id = g_to.id, nr = v_nr, station_id = NULL, version = version + 1 WHERE id = m.id;
+  UPDATE public.fm_queue_groups SET version = version + 1 WHERE id IN (g_from.id, g_to.id);
+  PERFORM public.fm_queue_log_write(v_uid, g_to.id, NULL, m.id, 'move_meeting', 'planned', 'planned', v_nr, NULL, jsonb_build_object('from_group', g_from.id, 'to_group', g_to.id, 'from_nr', m.nr, 'to_nr', v_nr));
+  RETURN jsonb_build_object('id', m.id, 'group_id', g_to.id, 'nr', v_nr);
+END; $$;
+
 CREATE OR REPLACE FUNCTION public.fm_queue_assign_retailer(p_operator_id uuid, p_retailer_id int, p_event_date date, p_assign boolean DEFAULT true)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE v_n int := 0;
 BEGIN
   IF NOT public.is_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
@@ -907,50 +1024,75 @@ END; $$;
 -- gate: limit per IP (30 prob / 15 min), istnienie kodu, blokada, lockout, data eventu,
 -- zgodnosc urzadzenia. Zapisuje probe. NIE weryfikuje PIN-u (to robi GoTrue).
 CREATE OR REPLACE FUNCTION public.fm_staff_login_gate(p_code text, p_ip text, p_device text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE s public.fm_staff; v_ip_n int; v_today date := (now() AT TIME ZONE 'Europe/Warsaw')::date;
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE s public.fm_staff; v_key_n int; v_ip_n int; v_failed int; v_locked timestamptz;
+        v_today date := (now() AT TIME ZONE 'Europe/Warsaw')::date;
+        v_ip text := left(p_ip, 64); v_code text := left(p_code, 32); v_dev text := left(p_device, 64);
 BEGIN
+  -- serializacja rownoleglych prob dla tej samej kombinacji ip+kod+urzadzenie (limit liczy
+  -- tylko zatwierdzone wiersze — bez blokady rownolegle transakcje by sie nie widzialy)
+  PERFORM pg_advisory_xact_lock(hashtext('fm_login:' || COALESCE(v_ip, '') || '|' || COALESCE(v_code, '') || '|' || COALESCE(v_dev, '')));
   DELETE FROM public.fm_login_attempts WHERE ts < now() - interval '2 days';
-  INSERT INTO public.fm_login_attempts (ip, code) VALUES (left(p_ip, 64), left(p_code, 32));
-  SELECT count(*) INTO v_ip_n FROM public.fm_login_attempts WHERE ip = left(p_ip, 64) AND ts > now() - interval '15 minutes';
-  IF p_ip IS NOT NULL AND v_ip_n > 30 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_RATE_LIMIT', 'retry_after_s', 900); END IF;
-  SELECT * INTO s FROM public.fm_staff WHERE code = p_code;
+  INSERT INTO public.fm_login_attempts (ip, code, device_id) VALUES (v_ip, v_code, v_dev);
+  -- podstawowy limit: ip + kod + urzadzenie (wszystkie tablety moga wychodzic jednym IP Wi-Fi)
+  SELECT count(*) INTO v_key_n FROM public.fm_login_attempts
+    WHERE ip IS NOT DISTINCT FROM v_ip AND code IS NOT DISTINCT FROM v_code AND device_id IS NOT DISTINCT FROM v_dev AND ts > now() - interval '15 minutes';
+  IF v_key_n > 10 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_RATE_LIMIT', 'retry_after_s', 900); END IF;
+  -- globalny limit IP (duzo wyzszy)
+  SELECT count(*) INTO v_ip_n FROM public.fm_login_attempts WHERE ip = v_ip AND ts > now() - interval '15 minutes';
+  IF v_ip IS NOT NULL AND v_ip_n > 300 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_RATE_LIMIT', 'retry_after_s', 900); END IF;
+
+  -- wiersz operatora pod blokada: rownolegle proby tego samego kodu ida po kolei
+  SELECT * INTO s FROM public.fm_staff WHERE code = v_code FOR UPDATE;
   IF NOT FOUND THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_BAD_CREDENTIALS'); END IF;
   IF s.blocked OR NOT s.active THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_BLOCKED'); END IF;
   IF s.locked_until IS NOT NULL AND s.locked_until > now() THEN
     RETURN jsonb_build_object('allowed', false, 'reason', 'FM_LOCKED', 'retry_after_s', GREATEST(1, ceil(extract(epoch FROM s.locked_until - now())))::int);
   END IF;
   IF s.event_date <> v_today THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_WRONG_DAY', 'event_date', s.event_date); END IF;
-  IF p_device IS NULL OR length(p_device) < 8 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_DEVICE_REQUIRED'); END IF;
-  IF s.device_id IS NOT NULL AND s.device_id <> p_device THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_DEVICE_MISMATCH'); END IF;
-  RETURN jsonb_build_object('allowed', true, 'id', s.id, 'code', s.code, 'display_name', s.display_name, 'attempts_left', 5 - s.failed_logins);
+  IF v_dev IS NULL OR length(v_dev) < 8 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_DEVICE_REQUIRED'); END IF;
+  IF s.device_id IS NOT NULL AND s.device_id <> v_dev THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_DEVICE_MISMATCH'); END IF;
+
+  -- REZERWACJA proby (atomowo, pod ta sama blokada): licznik rosnie TERAZ; sukces w
+  -- fm_staff_login_result go zeruje, porazka nic juz nie zmienia. 5. rownolegla proba -> lockout.
+  UPDATE public.fm_staff
+    SET failed_logins = failed_logins + 1,
+        locked_until  = CASE WHEN failed_logins + 1 >= 5 THEN now() + interval '15 minutes' ELSE locked_until END
+    WHERE id = s.id RETURNING failed_logins, locked_until INTO v_failed, v_locked;
+  IF v_locked IS NOT NULL AND v_locked > now() THEN
+    RETURN jsonb_build_object('allowed', false, 'reason', 'FM_LOCKED', 'retry_after_s', GREATEST(1, ceil(extract(epoch FROM v_locked - now())))::int);
+  END IF;
+  RETURN jsonb_build_object('allowed', true, 'id', s.id, 'code', s.code, 'display_name', s.display_name, 'attempts_left', 5 - v_failed);
 END; $$;
 
 -- result: atomowa aktualizacja licznika/lockoutu (UPDATE w jednym wyrazeniu — bez wyscigu)
 CREATE OR REPLACE FUNCTION public.fm_staff_login_result(p_code text, p_ip text, p_success boolean, p_device text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
-DECLARE v_failed int; v_locked timestamptz; v_dev text;
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE v_failed int; v_locked timestamptz; v_dev text; v_code text := left(p_code, 32); v_in_dev text := left(p_device, 64);
 BEGIN
-  UPDATE public.fm_login_attempts SET ok = p_success WHERE id = (SELECT max(id) FROM public.fm_login_attempts WHERE code = left(p_code, 32) AND ip IS NOT DISTINCT FROM left(p_ip, 64));
+  UPDATE public.fm_login_attempts SET ok = p_success
+    WHERE id = (SELECT max(id) FROM public.fm_login_attempts WHERE code IS NOT DISTINCT FROM v_code AND ip IS NOT DISTINCT FROM left(p_ip, 64) AND device_id IS NOT DISTINCT FROM v_in_dev);
   IF p_success THEN
+    -- przypiecie urzadzenia w JEDNYM UPDATE: tylko gdy puste albo zgodne. Dwa tablety
+    -- rownoczesnie przy pustym device_id -> wygrywa pierwszy, drugi dostaje FM_DEVICE_MISMATCH
+    -- (funkcja Netlify uniewaznia wtedy wlasnie utworzona sesje).
     UPDATE public.fm_staff SET failed_logins = 0, locked_until = NULL, last_login_at = now(),
-      device_id = COALESCE(device_id, left(p_device, 64)), device_bound_at = COALESCE(device_bound_at, now())
-      WHERE code = p_code RETURNING device_id INTO v_dev;
+      device_id = COALESCE(device_id, v_in_dev), device_bound_at = COALESCE(device_bound_at, now())
+      WHERE code = v_code AND (device_id IS NULL OR device_id = v_in_dev) RETURNING device_id INTO v_dev;
+    IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'reason', 'FM_DEVICE_MISMATCH'); END IF;
     RETURN jsonb_build_object('ok', true, 'device_id', v_dev);
   END IF;
-  UPDATE public.fm_staff
-    SET failed_logins = CASE WHEN failed_logins + 1 >= 5 THEN 0 ELSE failed_logins + 1 END,
-        locked_until  = CASE WHEN failed_logins + 1 >= 5 THEN now() + interval '15 minutes' ELSE locked_until END
-    WHERE code = p_code RETURNING failed_logins, locked_until INTO v_failed, v_locked;
+  -- porazka: proba byla juz zarezerwowana w gate — tylko odczyt stanu
+  SELECT failed_logins, locked_until INTO v_failed, v_locked FROM public.fm_staff WHERE code = v_code;
   RETURN jsonb_build_object('ok', false,
     'locked', v_locked IS NOT NULL AND v_locked > now(),
     'retry_after_s', CASE WHEN v_locked IS NOT NULL AND v_locked > now() THEN GREATEST(1, ceil(extract(epoch FROM v_locked - now())))::int ELSE NULL END,
-    'attempts_left', CASE WHEN v_locked IS NOT NULL AND v_locked > now() THEN 0 ELSE 5 - v_failed END);
+    'attempts_left', CASE WHEN v_locked IS NOT NULL AND v_locked > now() THEN 0 ELSE GREATEST(0, 5 - COALESCE(v_failed, 0)) END);
 END; $$;
 
 -- reset PIN / blokada: uniewaznij sesje (refresh tokeny + sesje) i odepnij urzadzenie
 CREATE OR REPLACE FUNCTION public.fm_staff_revoke_sessions(p_user uuid, p_rotate_pin boolean DEFAULT false)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE v_n int;
 BEGIN
   DELETE FROM auth.refresh_tokens WHERE user_id = p_user::text;
@@ -1005,6 +1147,8 @@ DO $$ DECLARE f text; BEGIN
     'fm_queue_add_exception(uuid,text,text)', 'fm_queue_set_mode(uuid,text,int,text)', 'fm_queue_undo(uuid,int,text)',
     'fm_queue_my_stations(date)', 'fm_queue_public_snapshot(date)',
     'fm_queue_open_day(date,boolean)', 'fm_queue_close_all(date)', 'fm_queue_reset_day(date,text)', 'fm_queue_assign_retailer(uuid,int,date,boolean)',
+    'fm_queue_day_closed(uuid)', 'fm_queue_autoclose(uuid)', 'fm_queue_is_production_date(date)',
+    'fm_queue_set_test_mode(date,boolean)', 'fm_queue_reopen_day(date)', 'fm_queue_move_meeting(uuid,uuid,int)',
     'fm_staff_login_gate(text,text,text)', 'fm_staff_login_result(text,text,boolean,text)', 'fm_staff_revoke_sessions(uuid,boolean)'
   ] LOOP
     EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%s FROM PUBLIC, anon, authenticated', f);
@@ -1017,7 +1161,8 @@ DO $$ DECLARE f text; BEGIN
     'fm_queue_mark_returned(uuid,text)', 'fm_queue_serve_returnee(uuid,uuid,int,text)', 'fm_queue_finish_returnee(uuid,int,text)',
     'fm_queue_add_exception(uuid,text,text)', 'fm_queue_set_mode(uuid,text,int,text)', 'fm_queue_undo(uuid,int,text)',
     'fm_queue_my_stations(date)',
-    'fm_queue_open_day(date,boolean)', 'fm_queue_close_all(date)', 'fm_queue_reset_day(date,text)', 'fm_queue_assign_retailer(uuid,int,date,boolean)'
+    'fm_queue_open_day(date,boolean)', 'fm_queue_close_all(date)', 'fm_queue_reset_day(date,text)', 'fm_queue_assign_retailer(uuid,int,date,boolean)',
+    'fm_queue_set_test_mode(date,boolean)', 'fm_queue_reopen_day(date)', 'fm_queue_move_meeting(uuid,uuid,int)'
   ] LOOP
     EXECUTE format('GRANT EXECUTE ON FUNCTION public.%s TO authenticated', f);
   END LOOP;

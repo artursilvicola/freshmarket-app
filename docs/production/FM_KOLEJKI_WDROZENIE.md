@@ -1,7 +1,7 @@
 # Kolejki / numerki spotkań B2B — runbook wdrożenia (FM 2026, 24.09)
 
-Stan: **kod v2 (po kontrpropozycji Codexa z 6.09) na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane.**
-Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: `NOTATKA_DLA_CODEX_2026-09-06_KOLEJKI_REVIEW.md` (v1, odrzucona) → odpowiedź `NOTATKA_DLA_CODEX_2026-09-06_KOLEJKI_REVIEW_v2.md` (co poprawiono, wyniki testów).
+Stan: **kod v3 (po review Codexa v2 z 7.09) na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane.**
+Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (`…_REVIEW.md`, odrzucona) → v2 (`…_REVIEW_v2.md`, „prawie OK”) → v3 (`NOTATKA_DLA_CODEX_2026-09-07_KOLEJKI_REVIEW_v3.md`, do końcowej akceptacji).
 
 ## 1. Co powstało
 
@@ -9,8 +9,8 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 |---|---|---|
 | Migracja | `supabase/migrations/052_staff_role.sql` | ENUM `user_role` + `staff` (osobne uruchomienie) |
 | Migracja | `supabase/migrations/053_fm_queue.sql` | tabele, RLS, widok publiczny, RPC SECURITY DEFINER, granty, `handle_new_user` z `staff` |
-| Testy SQL | `supabase/tests/053_fm_queue_test.sql` + `000_supabase_shim.sql` + `scripts/fm-queue-sql-test.mjs` | T0–T14 (ROLLBACK); instalacja od pustej bazy 001→053 na gołym Postgresie — **przechodzi** |
-| Test współbieżności | `scripts/fm-queue-concurrency-test.mjs` | ten sam klucz idempotencji ×2 równocześnie, 2 stanowiska, zalew 20× — wymaga branchu Supabase |
+| Testy SQL | `supabase/tests/053_fm_queue_test.sql` + `000_supabase_shim.sql` + `scripts/fm-queue-sql-test.mjs` | T0–T16 (ROLLBACK); instalacja od pustej bazy 001→053 na gołym Postgresie — **przechodzi** |
+| Testy na Supabase | `scripts/fm-queue-concurrency-test.mjs` | idem ×2 równocześnie, 2 stanowiska, zalew 20×, 2 urządzenia naraz, brute force 40×, reset PIN (stare tokeny), Realtime 2 tablety — wymaga projektu testowego Supabase |
 | Algorytm | `src/lib/fm-algo.js` + `fm-algo.test.js` | czysty moduł; pojemność = **60**/stanowisko × stanowiska (2 równoległe = 120), edytowalne per grupa; `npm test` (18 testów) |
 | Dane | `src/lib/fm-queue.js` | konfiguracja (RLS admin), wrappery RPC, snapshot, Realtime |
 | Funkcje | `netlify/functions/staff-login.js`, `admin-staff.js`, `fm-queue-snapshot.js`, `_shared/staff-auth.js` | logowanie kod+PIN, konta obsługi, cache'owany snapshot dla telefonów |
@@ -31,7 +31,9 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 
 ## 3. Reguły egzekwowane w bazie (nie w UI)
 
-- numer publiczny grupy (`last_called_nr`) idzie tylko do przodu — **trigger w bazie**, nie do obejścia nawet przez admina; „Cofnij” (≤ 30 s) dotyczy tylko statusu spotkania (rozpoczęcie / nieobecny / zakończenie), wywołania numeru nie da się cofnąć; jedyny reset: „Reset dnia testowego” (potwierdzenie `RESET YYYY-MM-DD`, zablokowany gdy w tym dniu były wywołania);
+- numer publiczny grupy (`last_called_nr`) idzie tylko do przodu — **trigger w bazie**, nie do obejścia nawet przez admina; „Cofnij” (≤ 30 s): rozpoczęcie zawsze, nieobecny/zakończenie **tylko gdy przywracany numer jest nadal ostatnio wywołanym w grupie** (stanowiska równoległe nie pokażą starszego numeru); wywołania numeru nie da się cofnąć; jedyny reset: „Reset dnia testowego” — **super admin, tylko dzień w trybie testowym, nigdy data produkcyjna** (`fm_settings.event_date`), potwierdzenie `RESET YYYY-MM-DD`, wpis w logu;
+- „Zamknij wszystkie” (17:00): stanowisko z trwającym spotkaniem przechodzi w **`closing`** — tablica pokazuje TERAZ bez NASTĘPNY, operator kończy normalnie, potem stanowisko zamyka się samo; nowych numerów nie wolno wywoływać, stanowisk otwierać (`FM_DAY_CLOSED`); omyłkę cofa „Otwórz dzień ponownie”;
+- przeniesienie spotkania między grupami tej samej sieci (split, np. Dino Owoce → Dino Kwiaty): zakładka **Spotkania**, tylko zaplanowane i niewywołane, numer zachowany gdy wolny, inaczej kolejny wolny, wpis `move_meeting`;
 - „Zakończ i wywołaj następny” = jedna transakcja z blokadą wiersza stanowiska i grupy (parallel ×2 bezpieczne);
 - powracający: `no_show → returned_waiting` z barierą `return_after_nr` = większy z dwóch najbliższych numerów (bieżący + kolejny); obsługa poza tablicą (`active_returnee_id`), `last_called_nr` bez zmian;
 - wyjątek = `max(nr)+1`; walk-inów brak;
@@ -50,8 +52,8 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 ## 5. Logowanie obsługi
 
 - Konto Auth z e-mailem `<kod>@obsluga.freshmarket.eu`, rola `staff` nadana przez `app_metadata` (tylko service_role; `handle_new_user` ignoruje role uprzywilejowane z `user_metadata`). Hasło GoTrue = `HMAC-SHA256(STAFF_PIN_PEPPER, "KOD:PIN")` — klient nigdy nie woła GoTrue z PIN-em.
-- Bramka w bazie (`fm_staff_login_gate`, service_role): limit >30 prób/15 min per IP, blokada, lockout, **konto działa tylko w dniu `event_date` (Europe/Warsaw)**, `device_id` wymagany i zgodny z przypiętym. Wynik (`fm_staff_login_result`): atomowy licznik — 5 błędów → 15 min; sukces zeruje i przypina tablet.
-- `is_staff()` przy każdym RPC/RLS: `active AND NOT blocked AND event_date = dziś AND token wydany po ostatniej rotacji PIN-u`.
+- Bramka w bazie (`fm_staff_login_gate`, service_role): limit **IP + kod + urządzenie** (10/15 min; wszystkie tablety mogą wychodzić jednym IP Wi-Fi) + globalny IP 300/15 min, blokada, lockout, **konto działa tylko w dniu `event_date` (Europe/Warsaw)**, `device_id` wymagany i zgodny z przypiętym, **atomowa rezerwacja próby** pod blokadą wiersza (5. próba, także równoległa, = lockout 15 min). Wynik (`fm_staff_login_result`): sukces zeruje licznik i przypina tablet w jednym `UPDATE` (drugi tablet naraz → `FM_DEVICE_MISMATCH`, funkcja unieważnia jego świeżą sesję i nie oddaje tokenów).
+- `is_staff()` przy każdym RPC/RLS: `active AND NOT blocked AND event_date = dziś AND token z iat ≥ ostatnia rotacja PIN-u` (token bez `iat` po rotacji = odrzucony).
 - PIN: `crypto.randomInt`, bez trywialnych ciągów, zwracany **raz** (create/reset_pin), nie zapisywany, nie logowany. Reset PIN-u / blokada = unieważnienie wszystkich sesji (`fm_staff_revoke_sessions`) + odpięcie tabletu. Kontami zarządza **tylko super admin**.
 
 ## 6. Kiosk (rzutnik 1024×768)
@@ -62,4 +64,4 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 
 ## 7. Test przed eventem (próba generalna 21–22.09)
 
-1. Test SQL (pkt 2.4). 2. Utwórz 2 konta obsługi **z datą próby** (konto działa tylko w swoim dniu), przypisz sieci, zaloguj na tablecie (Chrome/Safari). 3. Otwórz dzień na dniu testowym (`fm_settings.event_date` = data próby, faza opublikowana); po próbie „Reset dnia testowego”. 4. Przejdź scenariusz: otwórz → wywołaj → rozpocznij → zakończ+następny → nieobecny → wrócił → obsłuż powracającego → wyjątek → cofnij → przerwa → wolne wejście → zamknij. 5. Rzutnik 1024×768: czytelność z 10 m, rotacja stron, GATE. 6. Test obciążeniowy snapshotu (300 klientów × 8 s ≈ 40 req/s na CDN, ~0.2 req/s na Supabase).
+1. Test SQL (pkt 2.4). 2. Super admin: **Włącz tryb testowy** dla daty próby (nie dla 24.09). 3. Utwórz 2 konta obsługi **z datą próby** (konto działa tylko w swoim dniu), przypisz sieci, zaloguj na tablecie (Chrome/Safari). 4. „Otwórz dzień” (w trybie testowym bierze najnowszy opublikowany plan, nie rusza produkcyjnych ustawień FM); po próbie „Reset dnia testowego”, potem „Wyłącz tryb testowy”. 5. Przejdź scenariusz: otwórz → wywołaj → rozpocznij → zakończ+następny → nieobecny → wrócił → obsłuż powracającego → wyjątek → cofnij → przerwa → wolne wejście → „Zamknij wszystkie” przy trwającym spotkaniu (closing) → dokończ. 6. Rzutnik 1024×768: czytelność z 10 m, rotacja stron, GATE. 7. Test obciążeniowy snapshotu (300 klientów × 8 s ≈ 40 req/s na CDN, ~0.2 req/s na Supabase).

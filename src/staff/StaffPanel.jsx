@@ -99,9 +99,10 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
     try {
       for (;;) {
         try {
+          const prevNr = stateRef.current?.current?.nr ?? null;
           const st = await makeCall(idem, stateRef.current?.version ?? 0);
           if (st && typeof st === "object" && st.station_id) setState(st); else await refreshState();
-          setLastAction({ ts: Date.now(), label });
+          setLastAction({ ts: Date.now(), label, nr: prevNr });
           return st;
         } catch (e) {
           const network = e?.message && /fetch|network|Failed to fetch|Load failed/i.test(e.message) && !e.fmCode;
@@ -119,7 +120,10 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
 
   const selected = stations.find(x => x.station_id === selectedId);
   const undoLeft = lastAction ? Math.max(0, Math.ceil((lastAction.ts + UNDO_WINDOW_MS - Date.now()) / 1000)) : 0;
-  const canUndo = undoLeft > 0 && (lastAction?.label === "start" || lastAction?.label === "no_show" || (lastAction?.label === "finish" && !state?.current));
+  // Cofnięcie: start zawsze (nie zmienia numeru); no_show/finish tylko gdy stanowisko wolne
+  // i przywracany numer jest nadal ostatnio wywołanym w grupie (tablica nie może cofnąć numeru).
+  const canUndo = undoLeft > 0 && (lastAction?.label === "start"
+    || ((lastAction?.label === "no_show" || lastAction?.label === "finish") && !state?.current && lastAction?.nr != null && lastAction.nr === state?.last_called_nr));
 
   const noShows = useMemo(() => meetings.filter(m => m.status === "no_show"), [meetings]);
   const upcoming = useMemo(() => {
@@ -302,7 +306,7 @@ function NowCard({ state, t }) {
         </div>
       ) : (
         <div style={{ color: C.muted, fontSize: 18, padding: "24px 0" }}>
-          {state.mode === "free_entry" ? t.free_entry_now : state.mode === "open" ? t.station_free : t.station_closed}
+          {state.mode === "free_entry" ? t.free_entry_now : state.mode === "open" ? t.station_free : state.mode === "closing" ? t.day_closed_now : t.station_closed}
         </div>
       )}
     </section>
@@ -343,6 +347,11 @@ function ActionBar({ state, busy, canUndo, undoLeft, readyReturnee, on, t }) {
     btns.push(<BigBtn key="fr" tone="primary" disabled={busy} onClick={on.finishReturnee}>{t.btn_finish_returnee}</BigBtn>);
   } else if (mode === "closed") {
     btns.push(<BigBtn key="open" tone="primary" disabled={busy} onClick={on.open}>{t.btn_open}</BigBtn>);
+  } else if (mode === "closing") {
+    // dzień zamknięty: tylko dokończenie trwającego spotkania, bez wywołań
+    if (active && cur.status === "called") btns.push(<BigBtn key="start" tone="primary" disabled={busy} onClick={on.start}>{t.btn_start}</BigBtn>);
+    if (active) { btns.push(<BigBtn key="f" tone="primary" disabled={busy} onClick={on.finish}>{t.btn_finish}</BigBtn>); btns.push(<BigBtn key="ns" tone="danger" disabled={busy} onClick={on.noShow}>{t.btn_no_show}</BigBtn>); }
+    if (!active) btns.push(<BigBtn key="cl" tone="ghost" disabled={busy} onClick={() => on.mode("closed")}>{t.btn_close}</BigBtn>);
   } else if (mode === "paused") {
     btns.push(<BigBtn key="resume" tone="primary" disabled={busy} onClick={on.open}>{t.btn_resume}</BigBtn>);
     btns.push(<BigBtn key="close" tone="ghost" disabled={busy} onClick={() => on.mode("closed")}>{t.btn_close}</BigBtn>);
@@ -368,7 +377,7 @@ function ActionBar({ state, busy, canUndo, undoLeft, readyReturnee, on, t }) {
       {btns}
       <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
         {canUndo && <BigBtn tone="warn" disabled={busy} onClick={on.undo} title={t.undo_hint}>{t.btn_undo} ({undoLeft} s)</BigBtn>}
-        {mode !== "closed" && <BigBtn tone="ghost" disabled={busy} onClick={on.exception}>{t.btn_exception}</BigBtn>}
+        {mode !== "closed" && mode !== "closing" && <BigBtn tone="ghost" disabled={busy} onClick={on.exception}>{t.btn_exception}</BigBtn>}
       </div>
     </div>
   );

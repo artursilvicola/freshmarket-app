@@ -14,6 +14,7 @@ export const MODE_LABEL = {
   open: { pl: STAFF_DICT.pl.mode.open, en: STAFF_DICT.en.mode.open, color: C.green, bg: C.greenBg },
   paused: { pl: STAFF_DICT.pl.mode.paused, en: STAFF_DICT.en.mode.paused, color: C.amber, bg: C.amberBg },
   free_entry: { pl: STAFF_DICT.pl.mode.free_entry, en: STAFF_DICT.en.mode.free_entry, color: C.blue, bg: C.blueBg },
+  closing: { pl: STAFF_DICT.pl.mode.closing, en: STAFF_DICT.en.mode.closing, color: C.amber, bg: C.amberBg },
 };
 
 export const statusLabel = (lang, s) => STAFF_DICT[pickLang(lang)].status[s] || s;

@@ -26,17 +26,22 @@
 --   T12 open_day: pelny import wielu spotkan do jednej sieci, pominiecie bez force,
 --       synchronizacja z force (zmiana numeru), konflikt numeru, brakujace mapowania,
 --       split bez kategorii -> 'unrouted', plan nieopublikowany -> blad
---   T13 logowanie: gate/result — zly kod, zly dzien, urzadzenie wymagane, lockout po 5,
---       reset przy sukcesie, przypiecie i niezgodnosc urzadzenia, limit per IP,
---       revoke_sessions + pin_rotated_at uniewaznia stare tokeny dla is_staff()
---   T14 reset_day: zabroniony dla dnia z ruchem, dozwolony dla dnia testowego
+--   T13 logowanie: gate REZERWUJE probe pod blokada (5. proba = lockout bez wyscigu), zly kod,
+--       zly dzien, urzadzenie wymagane, przypiecie w jednym UPDATE (drugi tablet -> mismatch),
+--       limit ip+kod+urzadzenie, revoke_sessions + rotacja PIN (stary token / brak iat = odrzucone)
+--   T15 move_meeting: przeniesienie zaplanowanego spotkania miedzy grupami sieci (split),
+--       konflikt numeru -> max+1 / blad, wywolane nie do przeniesienia, tylko admin
+--   T16 close_all: zajete stanowisko -> 'closing' (TERAZ widoczne, bez NASTEPNY), zakaz wywolan
+--       i otwierania (FM_DAY_CLOSED), auto-zamkniecie po zakonczeniu, reopen_day
+--   T14 tryb testowy + reset_day: tylko super admin, tylko test_mode, nigdy data produkcyjna,
+--       w trybie testowym takze po wywolaniach, wpis w logu
 -- ============================================================================
 BEGIN;
 
 -- ── helpery ──────────────────────────────────────────────────────────────────
 CREATE TEMP TABLE t_ids (k text PRIMARY KEY, v uuid);
 INSERT INTO t_ids VALUES
-  ('admin', gen_random_uuid()), ('op1', gen_random_uuid()), ('op2', gen_random_uuid()), ('op_old', gen_random_uuid()),
+  ('admin', gen_random_uuid()), ('admin2', gen_random_uuid()), ('op1', gen_random_uuid()), ('op2', gen_random_uuid()), ('op_old', gen_random_uuid()),
   ('sup_user', gen_random_uuid()), ('buyer_user', gen_random_uuid()), ('escalate', gen_random_uuid()),
   ('co1', gen_random_uuid()), ('co2', gen_random_uuid()), ('co3', gen_random_uuid()), ('co4', gen_random_uuid()), ('co5', gen_random_uuid());
 CREATE TEMP TABLE t_state (s jsonb);
@@ -54,6 +59,11 @@ BEGIN
     PERFORM set_config('request.jwt.claims', json_build_object('sub', pg_temp.id(k), 'role', 'authenticated', 'iat', COALESCE(p_iat, extract(epoch FROM now())::bigint))::text, true);
     PERFORM set_config('request.jwt.claim.sub', pg_temp.id(k)::text, true);
   END IF;
+END $$;
+CREATE OR REPLACE FUNCTION pg_temp.login_noiat(k text) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', pg_temp.id(k), 'role', 'authenticated')::text, true);
+  PERFORM set_config('request.jwt.claim.sub', pg_temp.id(k)::text, true);
 END $$;
 -- expect_error: FAIL zarowno gdy instrukcja przeszla, jak i gdy blad jest inny
 CREATE OR REPLACE FUNCTION pg_temp.expect_error(p_sql text, p_code text) RETURNS void LANGUAGE plpgsql AS $$
@@ -84,9 +94,9 @@ SELECT pg_temp.ok((SELECT 'staff' = ANY(enum_range(NULL::public.user_role)::text
 -- uzytkownicy auth: role uprzywilejowane przez app_metadata; 'escalate' probuje admin z user_metadata
 INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data)
 SELECT v, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', k || '@test.local', '', now(), now(), now(),
-       CASE k WHEN 'admin' THEN '{"provider":"email","role":"admin"}'::jsonb WHEN 'op1' THEN '{"provider":"email","role":"staff"}' WHEN 'op2' THEN '{"provider":"email","role":"staff"}' WHEN 'op_old' THEN '{"provider":"email","role":"staff"}' ELSE '{"provider":"email"}' END,
+       CASE k WHEN 'admin' THEN '{"provider":"email","role":"admin"}'::jsonb WHEN 'admin2' THEN '{"provider":"email","role":"admin"}' WHEN 'op1' THEN '{"provider":"email","role":"staff"}' WHEN 'op2' THEN '{"provider":"email","role":"staff"}' WHEN 'op_old' THEN '{"provider":"email","role":"staff"}' ELSE '{"provider":"email"}' END,
        CASE k WHEN 'sup_user' THEN '{"role":"supplier"}'::jsonb WHEN 'buyer_user' THEN '{"role":"buyer"}' WHEN 'escalate' THEN '{"role":"admin"}' ELSE '{}' END
-FROM t_ids WHERE k IN ('admin','op1','op2','op_old','sup_user','buyer_user','escalate');
+FROM t_ids WHERE k IN ('admin','admin2','op1','op2','op_old','sup_user','buyer_user','escalate');
 SELECT pg_temp.ok((SELECT role::text FROM public.profiles WHERE id = pg_temp.id('admin')) = 'admin', 'T0 admin z app_metadata');
 SELECT pg_temp.ok((SELECT role::text FROM public.profiles WHERE id = pg_temp.id('op1')) = 'staff', 'T0 staff z app_metadata');
 SELECT pg_temp.ok((SELECT role::text FROM public.profiles WHERE id = pg_temp.id('escalate')) = 'supplier', 'T0 role admin z user_metadata ZIGNOROWANA (eskalacja zablokowana)');
@@ -94,9 +104,9 @@ UPDATE public.profiles SET admin_level = 'super' WHERE id = pg_temp.id('admin');
 
 -- fixtures: obsluga (dzisiaj wg Europe/Warsaw), firmy, sieci, grupy, stanowiska, spotkania
 CREATE TEMP TABLE t_day AS SELECT (now() AT TIME ZONE 'Europe/Warsaw')::date AS today;
-INSERT INTO public.fm_staff (id, code, event_date) VALUES
-  (pg_temp.id('op1'), 'TEST-OP1', (SELECT today FROM t_day)), (pg_temp.id('op2'), 'TEST-OP2', (SELECT today FROM t_day)),
-  (pg_temp.id('op_old'), 'TEST-OLD', (SELECT today - 1 FROM t_day));
+INSERT INTO public.fm_staff (id, code, event_date, pin_rotated_at) VALUES
+  (pg_temp.id('op1'), 'TEST-OP1', (SELECT today FROM t_day), now() - interval '1 day'), (pg_temp.id('op2'), 'TEST-OP2', (SELECT today FROM t_day), now() - interval '1 day'),
+  (pg_temp.id('op_old'), 'TEST-OLD', (SELECT today - 1 FROM t_day), now() - interval '1 day');
 INSERT INTO public.companies (id, name, categories) VALUES
   (pg_temp.id('co1'), 'TEST Firma 1', '{owoce}'), (pg_temp.id('co2'), 'TEST Firma 2', '{owoce}'), (pg_temp.id('co3'), 'TEST Firma 3', '{kwiaty}'),
   (pg_temp.id('co4'), 'TEST Firma 4', '{}'), (pg_temp.id('co5'), 'TEST Firma 5', '{owoce}');
@@ -250,7 +260,10 @@ SELECT pg_temp.ok((SELECT array_agg(cm.nr ORDER BY cm.nr) FROM public.fm_station
 SELECT pg_temp.ok((SELECT last_called_nr FROM public.fm_queue_groups WHERE id = pg_temp.grp('test-b')) = 2, 'T11 last_called_nr grupy = 2');
 SET LOCAL ROLE authenticated; SELECT pg_temp.login('op2');
 SELECT public.fm_queue_start(pg_temp.st('test-b-1'), pg_temp.ver('test-b-1'), 'idem-start-b1-0001');
-DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_finish_and_call_next(pg_temp.st('test-b-1'), pg_temp.ver('test-b-1'), 'idem-fin-b1-0001', true);
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_finish_and_call_next(pg_temp.st('test-b-1'), pg_temp.ver('test-b-1'), 'idem-fin-b1-0001', false);
+-- A zakonczylo 1, B pokazuje 2: cofniecie zakonczenia na A pokazaloby starszy numer -> ZABRONIONE
+SELECT pg_temp.expect_error($q$SELECT public.fm_queue_undo(pg_temp.st('test-b-1'), pg_temp.ver('test-b-1'), 'idem-undo-b1-0001')$q$, 'FM_UNDO_FORBIDDEN');
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_call_next(pg_temp.st('test-b-1'), pg_temp.ver('test-b-1'), 'idem-call-b1-0003');
 SELECT pg_temp.ok((SELECT (s->'current'->>'nr')::int FROM t_state) = 3, 'T11 stanowisko 1 dostalo 3 (stanowisko 2 dalej ma 2)');
 DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_no_show(pg_temp.st('test-b-2'), pg_temp.ver('test-b-2'), 'idem-ns-b2-0001');
 SELECT pg_temp.ok((SELECT s->'current' FROM t_state) = 'null'::jsonb AND (SELECT (s->>'last_called_nr')::int FROM t_state) = 3, 'T11 no_show na stanowisku 2 nie rusza numeru grupy (3)');
@@ -314,43 +327,120 @@ RESET ROLE;
 SELECT pg_temp.ok((public.fm_staff_login_gate('NIE-MA', '10.0.0.1', 'dev-tablet-0001')->>'reason') = 'FM_BAD_CREDENTIALS', 'T13 nieznany kod');
 SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OLD', '10.0.0.1', 'dev-tablet-0001')->>'reason') = 'FM_WRONG_DAY', 'T13 konto z inna data eventu');
 SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', NULL)->>'reason') = 'FM_DEVICE_REQUIRED', 'T13 urzadzenie wymagane');
-SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'allowed')::boolean, 'T13 gate OK');
-SELECT public.fm_staff_login_result('TEST-OP1', '10.0.0.1', false, 'dev-tablet-0001') FROM generate_series(1,4);
-SELECT pg_temp.ok((SELECT failed_logins FROM public.fm_staff WHERE code = 'TEST-OP1') = 4 AND (SELECT locked_until FROM public.fm_staff WHERE code = 'TEST-OP1') IS NULL, 'T13 4 bledy = brak blokady');
-SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP1', '10.0.0.1', false, 'dev-tablet-0001')->>'locked')::boolean, 'T13 5. blad = lockout');
-SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'reason') = 'FM_LOCKED', 'T13 gate: FM_LOCKED');
-UPDATE public.fm_staff SET locked_until = NULL WHERE code = 'TEST-OP1';  -- symulacja uplywu 15 min
+-- REZERWACJA proby w gate: 4 przejscia, 5. = lockout — bez czekania na result (rownolegle proby nie omina limitu)
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'allowed')::boolean, 'T13 gate przepuszcza 4 proby') FROM generate_series(1,4);
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'reason') = 'FM_LOCKED', 'T13 5. proba = lockout zarezerwowany w gate');
+SELECT pg_temp.ok((SELECT locked_until > now() FROM public.fm_staff WHERE code = 'TEST-OP1'), 'T13 locked_until ustawione');
+SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP1', '10.0.0.1', false, 'dev-tablet-0001')->>'locked')::boolean, 'T13 result(false) przy lockoucie: locked');
+UPDATE public.fm_staff SET locked_until = NULL, failed_logins = 0 WHERE code = 'TEST-OP1';  -- symulacja uplywu 15 min
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'allowed')::boolean, 'T13 po odblokowaniu gate OK');
 SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP1', '10.0.0.1', true, 'dev-tablet-0001')->>'device_id') = 'dev-tablet-0001', 'T13 sukces: reset licznika, przypiecie urzadzenia');
-SELECT pg_temp.ok((SELECT failed_logins FROM public.fm_staff WHERE code = 'TEST-OP1') = 0, 'T13 licznik wyzerowany');
-SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-INNY')->>'reason') = 'FM_DEVICE_MISMATCH', 'T13 inne urzadzenie odrzucone');
-SELECT public.fm_staff_login_gate('TEST-OP2', '10.0.0.9', 'dev-tablet-0002') FROM generate_series(1,30);
-SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP2', '10.0.0.9', 'dev-tablet-0002')->>'reason') = 'FM_RATE_LIMIT', 'T13 limit per IP po 30 probach');
--- revoke_sessions + rotacja PIN: stare tokeny (iat przed rotacja) przestaja dzialac dla RPC
+SELECT pg_temp.ok((SELECT failed_logins = 0 AND device_id = 'dev-tablet-0001' FROM public.fm_staff WHERE code = 'TEST-OP1'), 'T13 licznik wyzerowany, urzadzenie przypiete');
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-INNY')->>'reason') = 'FM_DEVICE_MISMATCH', 'T13 inne urzadzenie odrzucone w gate');
+-- wyscig dwoch tabletow przy pustym device_id: result przypina TYLKO gdy puste/zgodne (jeden UPDATE)
+SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP2', '10.0.0.2', true, 'dev-tablet-A000')->>'device_id') = 'dev-tablet-A000', 'T13 tablet A przypiety');
+SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP2', '10.0.0.2', true, 'dev-tablet-B000')->>'reason') = 'FM_DEVICE_MISMATCH', 'T13 tablet B (po udanym GoTrue) odrzucony przez result -> funkcja uniewaznia jego sesje');
+SELECT pg_temp.ok((SELECT device_id FROM public.fm_staff WHERE code = 'TEST-OP2') = 'dev-tablet-A000', 'T13 w bazie zostal tablet A');
+-- limit ip+kod+urzadzenie (10/15 min) niezalezny od lockoutu — nieistniejacy kod; inny kod z tego samego IP nadal moze
+SELECT public.fm_staff_login_gate('NIE-MA-2', '10.0.0.9', 'dev-tablet-0009') FROM generate_series(1,10);
+SELECT pg_temp.ok((public.fm_staff_login_gate('NIE-MA-2', '10.0.0.9', 'dev-tablet-0009')->>'reason') = 'FM_RATE_LIMIT', 'T13 limit ip+kod+urzadzenie po 10 probach');
+SELECT pg_temp.ok((public.fm_staff_login_gate('NIE-MA-3', '10.0.0.9', 'dev-tablet-0010')->>'reason') = 'FM_BAD_CREDENTIALS', 'T13 inny kod/tablet z tego samego IP (wspolne Wi-Fi) nie jest blokowany');
+-- revoke_sessions + rotacja PIN: stare tokeny (iat przed rotacja) i tokeny bez iat sa odrzucane
 INSERT INTO auth.sessions (id, user_id, created_at, updated_at) VALUES (gen_random_uuid(), pg_temp.id('op1'), now(), now());
 SELECT pg_temp.ok((public.fm_staff_revoke_sessions(pg_temp.id('op1'), true)->>'sessions_revoked')::int = 1, 'T13 sesja uniewazniona');
-SELECT pg_temp.ok((SELECT device_id IS NULL AND pin_rotated_at IS NOT NULL FROM public.fm_staff WHERE code = 'TEST-OP1'), 'T13 urzadzenie odpiete, pin_rotated_at ustawione');
+SELECT pg_temp.ok((SELECT device_id IS NULL AND pin_rotated_at > now() - interval '1 minute' FROM public.fm_staff WHERE code = 'TEST-OP1'), 'T13 urzadzenie odpiete, pin_rotated_at ustawione');
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.login('op1', extract(epoch FROM now() - interval '1 hour')::bigint);   -- token sprzed rotacji
 SELECT pg_temp.ok(NOT public.is_staff(), 'T13 stary token: is_staff() = false');
 SELECT pg_temp.expect_error($q$SELECT public.fm_queue_my_stations(NULL)$q$, 'FM_FORBIDDEN');
+SELECT pg_temp.login_noiat('op1');
+SELECT pg_temp.ok(NOT public.is_staff(), 'T13 token bez iat po rotacji: is_staff() = false');
 SELECT pg_temp.login('op1', extract(epoch FROM now() + interval '1 minute')::bigint);  -- nowe logowanie
 SELECT pg_temp.ok(public.is_staff(), 'T13 nowy token: is_staff() = true');
 RESET ROLE;
 
--- ── T14 reset_day ────────────────────────────────────────────────────────────
+-- ── T15 przeniesienie spotkania miedzy grupami (split) ───────────────────────
+-- siec C: grupa glowna {owoce} i 'Kwiaty' {kwiaty}; co3 (kwiaty) siedzi w glownej z nr 3 -> przenies
 SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
-SELECT pg_temp.expect_error($q$SELECT public.fm_queue_reset_day((SELECT today FROM t_day), 'zle potwierdzenie')$q$, 'FM_CONFIRM_REQUIRED');
-SELECT pg_temp.expect_error(format($q$SELECT public.fm_queue_reset_day(%L, %L)$q$, (SELECT today FROM t_day), 'RESET ' || to_char((SELECT today FROM t_day), 'YYYY-MM-DD')), 'FM_RESET_LIVE_DAY');
+DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_move_meeting(
+  (SELECT m.id FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = 990003 AND g.label IS NULL AND m.company_id = pg_temp.id('co3')),
+  (SELECT id FROM public.fm_queue_groups WHERE retailer_id = 990003 AND label = 'Kwiaty'), NULL);
+SELECT pg_temp.ok((SELECT (j->>'nr')::int FROM t_json) = 3, 'T15 przeniesione z zachowaniem numeru 3 (wolny w celu)');
+SELECT pg_temp.expect_error(format($q$SELECT public.fm_queue_move_meeting(%L, %L, 3)$q$,
+  (SELECT m.id FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = 990003 AND g.label IS NULL AND m.company_id = pg_temp.id('co2')),
+  (SELECT id FROM public.fm_queue_groups WHERE retailer_id = 990003 AND label = 'Kwiaty')), 'FM_NR_CONFLICT');
+DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_move_meeting(
+  (SELECT m.id FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = 990003 AND g.label IS NULL AND m.company_id = pg_temp.id('co2')),
+  (SELECT id FROM public.fm_queue_groups WHERE retailer_id = 990003 AND label = 'Kwiaty'), NULL);
+SELECT pg_temp.ok((SELECT (j->>'nr')::int FROM t_json) = 2, 'T15 wolny numer zachowany (2)');
 RESET ROLE;
-INSERT INTO public.fm_queue_groups (event_date, retailer_id) VALUES ((SELECT today + 1 FROM t_day), (SELECT id FROM t_ret WHERE cid = 'test-a'));
+-- grupa docelowa wywolala juz numery do 5: przeniesienie nr 4 (<= last_called) dostaje kolejny wolny = 6
+UPDATE public.fm_queue_groups SET last_called_nr = 5 WHERE retailer_id = 990003 AND label = 'Kwiaty';
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
+DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_move_meeting(
+  (SELECT m.id FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = 990003 AND g.label IS NULL AND m.company_id = pg_temp.id('co4')),
+  (SELECT id FROM public.fm_queue_groups WHERE retailer_id = 990003 AND label = 'Kwiaty'), NULL);
+SELECT pg_temp.ok((SELECT (j->>'nr')::int FROM t_json) = 6, 'T15 numer <= last_called_nr celu -> kolejny wolny (6)');
+RESET ROLE;
+INSERT INTO public.fm_queue_groups (event_date, retailer_id, label) VALUES ((SELECT today FROM t_day), 990001, 'Druga');
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
+SELECT pg_temp.expect_error(format($q$SELECT public.fm_queue_move_meeting(%L, %L, NULL)$q$, pg_temp.mtg('test-a', 1), (SELECT id FROM public.fm_queue_groups WHERE retailer_id = 990001 AND label = 'Druga')), 'FM_BAD_STATUS');
+SELECT pg_temp.expect_error(format($q$SELECT public.fm_queue_move_meeting(%L, %L, NULL)$q$, pg_temp.mtg('test-a', 5), (SELECT id FROM public.fm_queue_groups WHERE retailer_id = 990003 AND label = 'Kwiaty')), 'FM_BAD_TARGET');
+SELECT pg_temp.login('op1');
+SELECT pg_temp.expect_error(format($q$SELECT public.fm_queue_move_meeting(%L, %L, NULL)$q$, pg_temp.mtg('test-a', 5), (SELECT id FROM public.fm_queue_groups WHERE retailer_id = 990001 AND label = 'Druga')), 'FM_FORBIDDEN');
+RESET ROLE;
+SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_log WHERE action = 'move_meeting') = 3, 'T15 trzy wpisy move_meeting w logu');
+
+-- ── T16 Zamknij wszystkie przy trwajacym spotkaniu -> 'closing' ──────────────
+-- po T11: b-1 ma nr 3 (called), b-2 ma nr 4 (called); a-1 wolne (open)
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('op2');
+SELECT public.fm_queue_start(pg_temp.st('test-b-1'), pg_temp.ver('test-b-1'), 'idem-start-b1-0003');
+SELECT pg_temp.login('admin');
+DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_close_all((SELECT today FROM t_day));
+RESET ROLE;
+SELECT pg_temp.ok((SELECT mode FROM public.fm_stations WHERE id = pg_temp.st('test-b-1')) = 'closing', 'T16 zajete stanowisko -> closing');
+SELECT pg_temp.ok((SELECT mode FROM public.fm_stations WHERE id = pg_temp.st('test-a-1')) = 'closed', 'T16 wolne stanowisko -> closed');
+SELECT pg_temp.ok((SELECT (x->>'current_nr')::int FROM jsonb_array_elements(public.fm_queue_public_snapshot((SELECT today FROM t_day))->'stations') x WHERE (x->>'station_id')::uuid = pg_temp.st('test-b-1')) = 3, 'T16 tablica: trwajace spotkanie nadal widoczne (mode closing)');
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('op2');
+SELECT pg_temp.expect_error($q$SELECT public.fm_queue_call_next(pg_temp.st('test-b-1'), pg_temp.ver('test-b-1'), 'idem-call-b1-0099')$q$, 'FM_STATION_NOT_OPEN');
+SELECT pg_temp.expect_error($q$SELECT public.fm_queue_set_mode(pg_temp.st('test-b-2'), 'open', pg_temp.ver('test-b-2'), 'idem-mode-b2-0099')$q$, 'FM_DAY_CLOSED');
+SELECT pg_temp.login('op1');
+SELECT pg_temp.expect_error($q$SELECT public.fm_queue_open_station(pg_temp.st('test-a-1'), pg_temp.ver('test-a-1'), 'idem-open-a1-0099')$q$, 'FM_DAY_CLOSED');
+SELECT pg_temp.login('op2');
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_finish_and_call_next(pg_temp.st('test-b-1'), pg_temp.ver('test-b-1'), 'idem-fin-b1-0003', true);
+SELECT pg_temp.ok((SELECT s->>'mode' FROM t_state) = 'closed' AND (SELECT s->'current' FROM t_state) = 'null'::jsonb, 'T16 po zakonczeniu: closing -> closed, bez wywolania nastepnego');
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_no_show(pg_temp.st('test-b-2'), pg_temp.ver('test-b-2'), 'idem-ns-b2-0004');
+SELECT pg_temp.ok((SELECT s->>'mode' FROM t_state) = 'closed', 'T16 no_show w closing -> closed');
+SELECT pg_temp.login('admin');
+SELECT public.fm_queue_reopen_day((SELECT today FROM t_day));
+SELECT pg_temp.login('op1');
+SELECT pg_temp.ok((SELECT s->>'mode' FROM (SELECT public.fm_queue_open_station(pg_temp.st('test-a-1'), pg_temp.ver('test-a-1'), 'idem-open-a1-0100') s) x) = 'open', 'T16 po reopen_day mozna otworzyc');
+RESET ROLE;
+
+-- ── T14 tryb testowy + reset dnia ────────────────────────────────────────────
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
+-- dzisiaj = data produkcyjna (fm_settings.event_date): tryb testowy i reset zabronione
+SELECT pg_temp.expect_error($q$SELECT public.fm_queue_set_test_mode((SELECT today FROM t_day), true)$q$, 'FM_PRODUCTION_DATE');
+SELECT pg_temp.expect_error(format($q$SELECT public.fm_queue_reset_day(%L, %L)$q$, (SELECT today FROM t_day), 'RESET ' || to_char((SELECT today FROM t_day), 'YYYY-MM-DD')), 'FM_NOT_TEST_MODE');
+SELECT pg_temp.expect_error($q$SELECT public.fm_queue_reset_day((SELECT today FROM t_day), 'zle potwierdzenie')$q$, 'FM_CONFIRM_REQUIRED');
+RESET ROLE;
+-- dzien testowy (jutro): grupa + spotkanie + wywolanie
+INSERT INTO public.fm_queue_groups (event_date, retailer_id) VALUES ((SELECT today + 1 FROM t_day), 990001);
 INSERT INTO public.fm_stations (queue_group_id, idx) SELECT id, 1 FROM public.fm_queue_groups WHERE event_date = (SELECT today + 1 FROM t_day);
 INSERT INTO public.fm_queue_meetings (queue_group_id, company_id, nr) SELECT id, pg_temp.id('co1'), 1 FROM public.fm_queue_groups WHERE event_date = (SELECT today + 1 FROM t_day);
 UPDATE public.fm_queue_groups SET last_called_nr = 1 WHERE event_date = (SELECT today + 1 FROM t_day);
-SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin2');  -- zwykly admin (bez admin_level='super')
+SELECT pg_temp.ok(NOT public.is_super_admin() AND public.is_admin(), 'T14 admin2 jest zwyklym adminem');
+SELECT pg_temp.expect_error($q$SELECT public.fm_queue_set_test_mode((SELECT today + 1 FROM t_day), true)$q$, 'FM_FORBIDDEN');
+SELECT pg_temp.expect_error(format($q$SELECT public.fm_queue_reset_day(%L, %L)$q$, (SELECT today + 1 FROM t_day), 'RESET ' || to_char((SELECT today + 1 FROM t_day), 'YYYY-MM-DD')), 'FM_FORBIDDEN');
+SELECT pg_temp.login('admin');
+SELECT pg_temp.expect_error(format($q$SELECT public.fm_queue_reset_day(%L, %L)$q$, (SELECT today + 1 FROM t_day), 'RESET ' || to_char((SELECT today + 1 FROM t_day), 'YYYY-MM-DD')), 'FM_NOT_TEST_MODE');
+SELECT pg_temp.ok((public.fm_queue_set_test_mode((SELECT today + 1 FROM t_day), true)->>'test_mode')::boolean, 'T14 tryb testowy wlaczony (super admin, data nieprodukcyjna)');
 DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_reset_day((SELECT today + 1 FROM t_day), 'RESET ' || to_char((SELECT today + 1 FROM t_day), 'YYYY-MM-DD'));
-SELECT pg_temp.ok((SELECT (j->>'deleted_meetings')::int FROM t_json) = 1, 'T14 reset dnia testowego usunal spotkania');
+SELECT pg_temp.ok((SELECT (j->>'deleted_meetings')::int FROM t_json) = 1, 'T14 reset dnia testowego usunal spotkania (takze po wywolaniach)');
 RESET ROLE;
 SELECT pg_temp.ok((SELECT last_called_nr FROM public.fm_queue_groups WHERE event_date = (SELECT today + 1 FROM t_day)) = 0, 'T14 last_called_nr wyzerowany TYLKO przez reset_day');
+SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_log WHERE action IN ('reset_day','set_test_mode')) = 2, 'T14 reset i tryb testowy w logu append-only');
 
-SELECT '✅ OK — wszystkie testy 053_fm_queue_test (T0–T14) przeszly' AS wynik;
+SELECT '✅ OK — wszystkie testy 053_fm_queue_test (T0–T16) przeszly' AS wynik;
 ROLLBACK;
