@@ -1,7 +1,7 @@
 # Kolejki / numerki spotkań B2B — runbook wdrożenia (FM 2026, 24.09)
 
-Stan: **kod v4.1 (po review Codexa v4 z 7.09) na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane.**
-Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 (`NOTATKA_DLA_CODEX_2026-09-07_KOLEJKI_REVIEW_v4_1.md`). Do końcowej akceptacji brakuje **testów hostowanych na projekcie testowym Supabase + deploy preview**.
+Stan: **kod v4.2 na gałęzi `feat/admin-instructions-announcements`, NIE wdrożony na main, migracje NIE zaaplikowane na produkcji.**
+Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 → **test hostowany Codexa (7.09) na projekcie testowym + deploy preview: logowanie, 2 urządzenia, brute force, reset PIN, blokady, Realtime ✅; zalew 20× → v4.2 (fail-fast + lock_timeout)** (`NOTATKA_DLA_CODEX_2026-09-07_KOLEJKI_REVIEW_v4_2.md`). Do końcowej akceptacji: powtórka testu 20× na v4.2.
 
 ## 1. Co powstało
 
@@ -41,12 +41,12 @@ Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: 
 - powracający: `no_show → returned_waiting` z barierą `return_after_nr` = większy z dwóch najbliższych numerów (bieżący + kolejny); obsługa poza tablicą (`active_returnee_id`), `last_called_nr` bez zmian;
 - wyjątek = `max(nr)+1`; walk-inów brak;
 - `free_entry`/`closed` tylko gdy stanowisko wolne;
-- każda operacja: rola + przypisanie (`fm_queue_assignments`), blokady grupa → stanowisko → spotkanie, `version` (409 → `FM_CONFLICT`), **obowiązkowy** klucz idempotencji sprawdzany ponownie pod blokadą (powtórka zwraca stan bez drugiej operacji), wpis w `fm_queue_log` (append-only, INSERT tylko z RPC);
+- każda operacja: rola + przypisanie (`fm_queue_assignments`), blokady grupa → stanowisko → spotkanie z `lock_timeout` 3 s (`FM_BUSY` → tablet ponawia raz z tym samym kluczem), **fail-fast**: nieaktualna `version` odrzucana przed czekaniem na blokadę (`FM_CONFLICT` bez zajmowania puli połączeń) i ponownie pod blokadą, **obowiązkowy** klucz idempotencji sprawdzany przed pre-checkiem i pod blokadą (powtórka zawsze zwraca stan), wpis w `fm_queue_log` (append-only, INSERT tylko z RPC);
 - „Otwórz dzień” importuje plan tylko z `fm_settings` dla tej daty w fazie opublikowanej; raportuje `missing_supplier/missing_chain/unrouted/nr_conflict/locked_status/group_changed`; „Synchronizuj (force)” aktualizuje numery tylko spotkań jeszcze niewywołanych.
 
 ## 4. Dane publiczne vs prywatne
 
-- `fm_queue_board_v` / `fm_queue_public_snapshot` (anon): sieć, etykieta grupy, gate, stanowisko, tryb, `last_called_nr`, `current_nr`, `next_nr`, `busy_private`. **Zero nazw firm, zero company_id, zero operatorów.** anon nie ma żadnych grantów na tabele modułu.
+- `fm_queue_public_snapshot` (anon; SECURITY DEFINER): sieć, etykieta grupy, gate, stanowisko, tryb, `last_called_nr`, `current_nr`, `next_nr`, `busy_private`. **Zero nazw firm, zero company_id, zero operatorów.** anon nie ma żadnych grantów na tabele modułu ani na widok `fm_queue_board_v` (widok z `security_invoker = true`, czytany przez zalogowanych pod RLS — Supabase Advisor).
 - `fm_queue_station_state` (nazwy firm): tylko admin lub operator przypisany do grupy; wersja `_unsafe` bez grantów (tylko z wnętrza RPC).
 - `fm_queue_groups` / `fm_stations`: SELECT dla wszystkich zalogowanych (konfiguracja, bez danych wrażliwych) — potrzebne, żeby algorytm liczył tę samą pojemność u admina, dostawcy i kupca.
 - `fm_queue_meetings`: admin wszystko; staff tylko przypisane grupy; dostawca tylko `company_id = app_company_id()`; anon nic.
