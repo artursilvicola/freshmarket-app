@@ -235,6 +235,104 @@ Etap 2 (do 18.09): powroty poza tablicą, wyjątki, tryby, cofnij, paginacja/prz
 „Twoja kolej", widok mobilny. **Próba generalna 21–22.09** (tryb testowy na planie roboczym, realne
 tablety, rzutnik — pomiar rozdzielczości). 23.09: import zatwierdzonego planu. 24.09: event.
 
+## 14. Decyzje końcowe (Artur + Codex, 6.09.2026) — obowiązująca specyfikacja
+
+Nadpisują wcześniejsze sekcje tam, gdzie się różnią. Start implementacji od commita `e4e8a6d`.
+
+1. **Jeden moduł w aplikacji B2B**: `/obsluga` (obsługa), admin → „Dzień wydarzenia", `/tablica`
+   (publiczna + projektor), panel dostawcy → „Moje spotkania B2B" z kolejką. Jedna baza, te same kolejki.
+2. **i18n w całości**: obsługa/admin/dostawca w PL **albo** EN (wybór zapamiętany w profilu i lokalnie);
+   tablica **dwujęzyczna jednocześnie** (TERAZ / NOW, NASTĘPNY / NEXT, PRZERWA / BREAK, WOLNE WEJŚCIE /
+   FREE ENTRY, ZAMKNIĘTE / CLOSED, ZAJĘTE / BUSY, BRAK POŁĄCZENIA / OFFLINE, BRAMA / GATE, STANOWISKO /
+   STAND). Nazw sieci nie tłumaczymy. Zero tekstów w komponentach — wszystko przez klucze.
+3. **Brak stałych limitów** (sieci, stanowisk, operatorów, tabletów, przypisań). Admin w każdej chwili
+   dodaje/dezaktywuje operatora, przypisuje dowolną liczbę sieci, przenosi sieć, blokuje tablet.
+   Zmiana przypisania pojawia się na tabletach automatycznie, bez utraty kolejki.
+4. **Logowanie obsługi bez prywatnych e-maili**: wypożyczone tablety z Windows; ekran `/obsluga`:
+   identyfikator operatora (np. „OBSŁUGA 3") + **indywidualny 6-cyfrowy PIN** + przełącznik PL|EN.
+   PIN tylko jako hash (Supabase Auth), limit błędnych prób, blokada przez admina, PIN ważny na to
+   wydarzenie, dezaktywacja po evencie, sesja zapamiętana na tablecie, unieważnienie sesji + nowy PIN
+   przez admina, opcjonalnie jedno aktywne urządzenie, PIN nigdy w logach ani ponownie z API. Admin
+   tworzy „stanowiska obsługi" (Obsługa 1…n) z opcjonalnym imieniem; audyt zapisuje operatora i
+   urządzenie. Rola `staff` → tylko `/obsluga`; brak dostępu do paneli admin/kupiec/dostawca.
+5. **Osobne migracje**: `052_staff_role.sql` (wyłącznie bezpieczne dodanie wartości `staff` do ENUM
+   `user_role`) i `053_fm_queue.sql` (tabele, indeksy, polityki, funkcje). Aktualizacja
+   `handle_new_user`, `AuthProvider`, `RoleRedirect`, `ProtectedRoute`, etykiet ról, panelu kont,
+   routingu `/obsluga`. Konto `staff` tworzy tylko admin (brak publicznej rejestracji). Test regresji
+   rejestracji dostawców.
+6. **Model dwuwarstwowy**: `fm_queue_groups` (właściciel kolejki i numeracji: event_date, retailer_id,
+   label, categories, gate, konfiguracja, aktywność) + `fm_stations` (fizyczne stanowiska grupy: idx,
+   label, active). Dino Owoce / Dino Kwiaty = 2 grupy; Auchan ×2 = 1 grupa + 2 stanowiska; Auchan
+   Owoce ×2 + Auchan Kwiaty ×1 = 2 grupy (2 + 1 stanowisko). Przypisania operatorów do grup (w UI
+   admin wybiera sieci, aplikacja tworzy przypisania do grup).
+7. **Pojemność algorytmu**: `pojemnośćGrupy = 5 × liczba aktywnych stanowisk` (1 → 5, 2 → 10, 3 → 15);
+   dla split liczona per grupa i sumowana per sieć. `FM_MAX_S = 60` pozostaje **przestrzenią numerów**
+   (przez `FM_MIN_GAP` numery idą wyżej niż liczba spotkań). `buildFMData` dostaje konfigurację liczby
+   stanowisk po `fm26_chain_id`; brak konfiguracji → jawny fallback 1 + ostrzeżenie dla admina.
+   Mnożnik „5" trzymamy jako parametr konfiguracji (nie stałą), żeby dało się go podnieść bez kodu —
+   **uwaga**: stara tablica z 2025 pokazuje numery do 53 w jednej sieci, a plan 2026 to ~325 par na
+   22 sieci (~15/sieć), więc 5/stanowisko może okazać się za nisko; decyzja o wartości należy do Artura
+   przed 17.09. Testy: 1 stanowisko → max 5; 2 parallel → max 10; split na 2 grupy; brak konfiguracji;
+   `FM_MIN_GAP`; brak kolizji tej samej firmy. Musi wejść przed produkcyjnym uruchomieniem algorytmu.
+8. **Stany**: `planned → called → in_progress → done` + `no_show`, `skipped`, `cancelled`, stan
+   oczekującego powracającego i obsługi powracającego poza tablicą. Numery publiczne tylko do przodu,
+   egzekwowane przez bazę. „Zakończ i wywołaj następny" = atomowa operacja bazodanowa.
+9. **Powracający**: sam zgłasza się do obsługi; obsłużony po bieżącym i kolejnym; stary numer nie wraca
+   na tablicę; bariera w bazie (po którym przyszłym spotkaniu można go obsłużyć); stanowisko rozdziela
+   publicznie wywołane spotkanie i prywatnie obsługiwanego powracającego (`active_returnee_id`);
+   w parallel blokuje tylko swoje fizyczne stanowisko; tablica pokazuje ZAJĘTE / BUSY, bez numeru.
+10. **Spotkanie wyjątkowe**: „Dodaj spotkanie – wyjątek": nazwa firmy + potwierdzenie, `max(nr)+1`,
+    źródło `exception`, audyt; nigdy między wcześniejsze numery.
+11. **Free entry**: osobny, ręczny, nienumerowany tryb **na poziomie fizycznego stanowiska** (Auchan ×2:
+    jedno w Free entry, drugie kontynuuje kolejkę). Warunek: aktywne numerowane spotkanie zakończone.
+    W trybie: tablica WOLNE WEJŚCIE / FREE ENTRY bez TERAZ/NASTĘPNY, brak nowych numerów, „Wywołaj
+    następny" wyłączone, zaplanowane spotkania zostają, timer swobodnej rozmowy opcjonalny, wyłączenie
+    wznawia kolejkę od dotychczasowego miejsca. Każde włączenie/wyłączenie w audycie. „Zamknij wszystkie"
+    zamyka też Free entry. Nigdy automatycznie (godzina, pusta kolejka).
+12. **Start i zamknięcie**: admin „Otwórz dzień" importuje zatwierdzony plan; stanowiska otwierane
+    ręcznie („Otwórz stanowisko / Open stand"); przed pierwszym wywołaniem tablica: TERAZ 0 / NASTĘPNY =
+    pierwszy numer; 17:00 „Zamknij wszystkie / Close all" — audytowana operacja bazodanowa.
+13. **Panel operatora**: tylko przypisane grupy; kafelki dla dowolnej liczby przypisań; kafelek: sieć,
+    stanowisko, GATE, aktualny numer, nazwa dostawcy (tylko obsługa), następny, timer, stan połączenia.
+    Przycisk główny: „Wywołaj 12" → „Rozpocznij 12" → „Zakończ 12 i wywołaj następny". Dodatkowe:
+    Nieobecny, Pomiń, Obsłuż powracającego, Przerwa/Wznów, Free entry, Zamknij, Dodaj spotkanie –
+    wyjątek, Cofnij (≤ 30 s). Zmiany przypisań pojawiają się automatycznie.
+14. **Tablica**: projekt pod 1024×768 / 4:3 / stary rzutnik: ciemne tło, wysoki kontrast, duże nazwy
+    sieci (bez logo), zielone TERAZ, bursztynowe NASTĘPNY, brak przewijania, pełny ekran, GATE 1/2,
+    aktualizacja bez przeładowania. ~12 stanowisk/stronę; 24 → 2 strony, 28 → 3 strony z równym
+    rozłożeniem (10/9/9, nie 12/12/4). Rotacja 8–10 s (konfigurowalna), wskaźnik strony `1/3`, zmiana
+    numeru natychmiast, krótkie wyróżnienie, bez migotania. Układ liczony z realnej rozdzielczości.
+15. **Widok dostawcy** („Moje spotkania B2B"): przy każdym spotkaniu sieć, numer, GATE i stanowisko,
+    numer aktualnie obsługiwany, „przed Tobą N spotkań", „Przygotuj się", „Twoja kolej", „Spotkanie
+    zakończone", „Nieobecny – zgłoś się do obsługi", „Przerwa", „Free entry – możesz podejść",
+    „Zamknięte" — w języku dostawcy. Publiczna `/tablica` na telefonie: bez logowania, jedna kolumna,
+    wyszukiwanie, filtr GATE, PL/EN, ulubione lokalnie. Nazwy dostawców nigdy w publicznym API/tablicy.
+16. **Realtime**: Supabase Realtime tylko dla tabletów, admina i komputera projektora. Telefony i panel
+    dostawcy pobierają **zwarty publiczny snapshot co 5–10 s** (cache'owalny, bez danych prywatnych).
+    Fallback polling dla tabletu i tablicy. Test ≥ 300 równoczesnych klientów przed eventem.
+17. **RPC i bezpieczeństwo**: wszystkie zmiany kolejki przez RPC `SECURITY DEFINER` z `SET search_path`,
+    kwalifikowanymi nazwami, operatorem z `auth.uid()`, kontrolą staff/admin i przypisania, blokadą
+    wiersza/grupy, `version`, regułą „tylko do przodu", audytem, idempotency key, jednoznacznym kodem
+    konfliktu. `REVOKE EXECUTE … FROM PUBLIC, anon` + grant tylko wymaganych. Publiczny odczyt przez
+    osobny snapshot bez nazw dostawców, `company_id`, operatorów, notatek, audytu.
+18. **Offline**: tablet — przyciski nieaktywne, `OFFLINE`, godzina ostatnich danych, żadnych lokalnych
+    „zapisów". Tablica — ostatni stan + „BRAK POŁĄCZENIA / OFFLINE – dane z / data from 12:34".
+    Podwójne dotknięcie/ponowienie nigdy nie wykonuje operacji dwa razy.
+19. **Kiosk**: tablety Windows → Edge/Chrome; instrukcja Windows Assigned Access z Edge (auto-otwarcie
+    `/obsluga`, pełny ekran, brak innych stron, powrót po restarcie). Bezpieczeństwo nie zależy od
+    kiosku — RLS i RPC.
+20. **Testy przed wdrożeniem**: migracja `staff`, regresja rejestracji dostawcy, RLS staff/admin/anon,
+    publiczne API bez nazw firm, idempotencja, podwójne kliknięcie, konflikt dwóch tabletów, równoległe
+    wywołanie na dwóch stanowiskach, niecofanie numeru, powracający, wyjątek `max+1`, Free entry i
+    powrót, zamknięcie wszystkich, zmiana przypisań, PL/EN nowych widoków, tablica 1024×768, 24 i 28
+    stanowisk, rotacja stron, utrata internetu, 300+ telefonów.
+
+**Kolejność prac**: 1 dokumentacja → 2 migracja ENUM `staff` → 3 model (grupy, stanowiska, spotkania,
+stany, przypisania, operacje, audyt) → 4 RPC → 5 pojemność w `buildFMData` → 6 testy migracji/RPC/RLS/
+algorytmu → 7 `/obsluga` → 8 admin „Dzień wydarzenia" → 9 tablica → 10 panel dostawcy + mobilna
+tablica → 11 E2E, 1024×768, obciążenie. Małe commity. **Migracje na produkcję tylko po osobnym review
+bezpieczeństwa i wyraźnej akceptacji.**
+
 ## 11. Gdzie zgadzam się z Codexem, a gdzie proponuję inaczej
 
 Zgoda: cztery widoki na wspólnej bazie; hybryda; jednoznaczne statusy; audyt; idempotencja i kontrola

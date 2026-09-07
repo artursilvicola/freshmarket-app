@@ -110,6 +110,10 @@ drop policy if exists "legacy_sends_supplier_read"                   on legacy_s
 drop policy if exists "legacy_sends_supplier_write"                  on legacy_sends;
 drop policy if exists "legacy_sends_select"                          on legacy_sends;
 drop policy if exists "legacy_sends_insert"                          on legacy_sends;
+-- [feat/fm-queue] idempotencja przy instalacji od pustej bazy: 005 tworzy te dwie
+-- polityki pod tymi samymi nazwami (na prod 011 i tak je nadpisalo).
+drop policy if exists "legacy_sends_update_admin"                    on legacy_sends;
+drop policy if exists "legacy_sends_delete_admin"                    on legacy_sends;
 drop policy if exists "legacy_sends_update"                          on legacy_sends;
 drop policy if exists "legacy_sends_delete"                          on legacy_sends;
 
