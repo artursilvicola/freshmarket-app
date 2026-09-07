@@ -1,5 +1,5 @@
 -- ============================================================================
--- 053_fm_queue.sql  (v3 — po review Codexa v2 z 7.09.2026)
+-- 053_fm_queue.sql  (v4 — po review Codexa v3 z 7.09.2026)
 -- [feat/fm-queue] Modul kolejek / numerkow spotkan B2B na zywo (FM 2026).
 -- Specyfikacja: docs/production/FM_KOLEJKI_NUMERKI_PROPOZYCJA.md, sekcja 14.
 -- Review i kontrpropozycja: docs/production/NOTATKA_DLA_CODEX_2026-09-06_KOLEJKI_REVIEW.md
@@ -61,8 +61,11 @@ CREATE TABLE IF NOT EXISTS public.fm_login_attempts (   -- limit prob per IP / k
   ip text,
   code text,
   device_id text,
-  ok boolean
+  status text NOT NULL DEFAULT 'rejected' CHECK (status IN ('pending', 'success', 'invalid', 'error', 'rejected')),
+  resolved_at timestamptz,
+  ok boolean                                 -- zgodnosc wsteczna (true = success)
 );
+CREATE INDEX IF NOT EXISTS fm_login_attempts_code_pending ON public.fm_login_attempts (code, ts DESC) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS fm_login_attempts_ip_ts ON public.fm_login_attempts (ip, ts DESC);
 CREATE INDEX IF NOT EXISTS fm_login_attempts_key_ts ON public.fm_login_attempts (ip, code, device_id, ts DESC);
 
@@ -207,10 +210,11 @@ LANGUAGE sql SECURITY DEFINER STABLE SET search_path = '' AS $$
   SELECT COALESCE((
     SELECT p.role = 'staff' AND s.active AND NOT s.blocked
        AND s.event_date = (now() AT TIME ZONE 'Europe/Warsaw')::date
-       -- po rotacji PIN-u token MUSI miec iat >= pin_rotated_at; brak iat = odrzucenie
+       -- po rotacji PIN-u token MUSI byc wystawiony PO rotacji (iat > pelna sekunda rotacji);
+       -- brak iat = odrzucenie; zadnej tolerancji
        AND (s.pin_rotated_at IS NULL
             OR (NULLIF(auth.jwt()->>'iat', '') IS NOT NULL
-                AND to_timestamp((auth.jwt()->>'iat')::bigint) >= s.pin_rotated_at - interval '5 seconds'))
+                AND (auth.jwt()->>'iat')::bigint > floor(extract(epoch FROM s.pin_rotated_at))::bigint))
     FROM public.profiles p JOIN public.fm_staff s ON s.id = p.id
     WHERE p.id = auth.uid()), false);
 $$;
@@ -960,12 +964,17 @@ END; $$;
 -- Otworz dzien ponownie po omylkowym "Zamknij wszystkie" (admin, log).
 CREATE OR REPLACE FUNCTION public.fm_queue_reopen_day(p_event_date date)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE v_uid uuid := auth.uid();
+DECLARE v_uid uuid := auth.uid(); v_n int;
 BEGIN
   IF NOT public.is_admin() THEN RAISE EXCEPTION 'FM_FORBIDDEN' USING ERRCODE = '42501'; END IF;
+  PERFORM 1 FROM public.fm_queue_groups WHERE event_date = p_event_date ORDER BY id FOR UPDATE;
   UPDATE public.fm_queue_settings SET closed_all_at = NULL, updated_by = v_uid WHERE event_date = p_event_date;
-  PERFORM public.fm_queue_log_write(v_uid, NULL, NULL, NULL, 'reopen_day', NULL, NULL, NULL, NULL, jsonb_build_object('event_date', p_event_date));
-  RETURN jsonb_build_object('event_date', p_event_date, 'reopened', true);
+  -- stanowiska w trakcie zamykania wracaja do 'open' (zamkniete zostaja zamkniete — otwiera je obsluga)
+  UPDATE public.fm_stations st SET mode = 'open', version = st.version + 1, updated_by = v_uid
+    FROM public.fm_queue_groups g WHERE g.id = st.queue_group_id AND g.event_date = p_event_date AND st.mode = 'closing';
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  PERFORM public.fm_queue_log_write(v_uid, NULL, NULL, NULL, 'reopen_day', NULL, NULL, NULL, NULL, jsonb_build_object('event_date', p_event_date, 'reopened_stations', v_n));
+  RETURN jsonb_build_object('event_date', p_event_date, 'reopened', true, 'reopened_stations', v_n);
 END; $$;
 
 -- Przeniesienie ZAPLANOWANEGO (jeszcze niewywolanego) spotkania miedzy grupami tej samej sieci
@@ -1023,22 +1032,27 @@ END; $$;
 -- ── 9. LOGOWANIE OBSLUGI (tylko service_role, wolane z funkcji Netlify) ──────
 -- gate: limit per IP (30 prob / 15 min), istnienie kodu, blokada, lockout, data eventu,
 -- zgodnosc urzadzenia. Zapisuje probe. NIE weryfikuje PIN-u (to robi GoTrue).
+-- Bramka logowania. Zwraca attempt_id rezerwacji (status 'pending', wygasa po 60 s bez rozliczenia).
+-- Lockout liczy WYLACZNIE proby rozliczone jako 'invalid' (bledny PIN): 5 -> 15 min.
+-- Rownolegle proby: dopuszczamy tyle, ile zostalo do 5 (failed + pending < 5), reszta czeka (FM_BUSY).
+-- Awaria GoTrue/sieci (rozliczenie 'error' albo brak rozliczenia) NIE zwieksza licznika.
 CREATE OR REPLACE FUNCTION public.fm_staff_login_gate(p_code text, p_ip text, p_device text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE s public.fm_staff; v_key_n int; v_ip_n int; v_failed int; v_locked timestamptz;
+DECLARE s public.fm_staff; v_key_n int; v_ip_n int; v_pending int; v_attempt bigint;
         v_today date := (now() AT TIME ZONE 'Europe/Warsaw')::date;
         v_ip text := left(p_ip, 64); v_code text := left(p_code, 32); v_dev text := left(p_device, 64);
 BEGIN
-  -- serializacja rownoleglych prob dla tej samej kombinacji ip+kod+urzadzenie (limit liczy
-  -- tylko zatwierdzone wiersze — bez blokady rownolegle transakcje by sie nie widzialy)
+  -- serializacja prob dla tej samej kombinacji ip+kod+urzadzenie (limit liczy zatwierdzone wiersze)
   PERFORM pg_advisory_xact_lock(hashtext('fm_login:' || COALESCE(v_ip, '') || '|' || COALESCE(v_code, '') || '|' || COALESCE(v_dev, '')));
   DELETE FROM public.fm_login_attempts WHERE ts < now() - interval '2 days';
-  INSERT INTO public.fm_login_attempts (ip, code, device_id) VALUES (v_ip, v_code, v_dev);
-  -- podstawowy limit: ip + kod + urzadzenie (wszystkie tablety moga wychodzic jednym IP Wi-Fi)
+  -- nierozliczone rezerwacje wygasaja (np. funkcja Netlify padla w trakcie)
+  UPDATE public.fm_login_attempts SET status = 'error', resolved_at = now() WHERE status = 'pending' AND ts < now() - interval '60 seconds';
+  INSERT INTO public.fm_login_attempts (ip, code, device_id, status) VALUES (v_ip, v_code, v_dev, 'rejected') RETURNING id INTO v_attempt;
+
+  -- podstawowy limit: ip + kod + urzadzenie (tablety moga wychodzic jednym IP Wi-Fi)
   SELECT count(*) INTO v_key_n FROM public.fm_login_attempts
     WHERE ip IS NOT DISTINCT FROM v_ip AND code IS NOT DISTINCT FROM v_code AND device_id IS NOT DISTINCT FROM v_dev AND ts > now() - interval '15 minutes';
   IF v_key_n > 10 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_RATE_LIMIT', 'retry_after_s', 900); END IF;
-  -- globalny limit IP (duzo wyzszy)
   SELECT count(*) INTO v_ip_n FROM public.fm_login_attempts WHERE ip = v_ip AND ts > now() - interval '15 minutes';
   IF v_ip IS NOT NULL AND v_ip_n > 300 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_RATE_LIMIT', 'retry_after_s', 900); END IF;
 
@@ -1053,41 +1067,73 @@ BEGIN
   IF v_dev IS NULL OR length(v_dev) < 8 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_DEVICE_REQUIRED'); END IF;
   IF s.device_id IS NOT NULL AND s.device_id <> v_dev THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_DEVICE_MISMATCH'); END IF;
 
-  -- REZERWACJA proby (atomowo, pod ta sama blokada): licznik rosnie TERAZ; sukces w
-  -- fm_staff_login_result go zeruje, porazka nic juz nie zmienia. 5. rownolegla proba -> lockout.
-  UPDATE public.fm_staff
-    SET failed_logins = failed_logins + 1,
-        locked_until  = CASE WHEN failed_logins + 1 >= 5 THEN now() + interval '15 minutes' ELSE locked_until END
-    WHERE id = s.id RETURNING failed_logins, locked_until INTO v_failed, v_locked;
-  IF v_locked IS NOT NULL AND v_locked > now() THEN
-    RETURN jsonb_build_object('allowed', false, 'reason', 'FM_LOCKED', 'retry_after_s', GREATEST(1, ceil(extract(epoch FROM v_locked - now())))::int);
-  END IF;
-  RETURN jsonb_build_object('allowed', true, 'id', s.id, 'code', s.code, 'display_name', s.display_name, 'attempts_left', 5 - v_failed);
+  -- rezerwacja: dopuszczamy tylko tyle rownoleglych prob, ile zostalo do lockoutu
+  SELECT count(*) INTO v_pending FROM public.fm_login_attempts WHERE code = v_code AND status = 'pending';
+  IF s.failed_logins + v_pending >= 5 THEN RETURN jsonb_build_object('allowed', false, 'reason', 'FM_BUSY', 'retry_after_s', 60); END IF;
+  UPDATE public.fm_login_attempts SET status = 'pending' WHERE id = v_attempt;
+  RETURN jsonb_build_object('allowed', true, 'attempt_id', v_attempt, 'id', s.id, 'code', s.code, 'display_name', s.display_name, 'attempts_left', 5 - s.failed_logins - v_pending);
 END; $$;
 
 -- result: atomowa aktualizacja licznika/lockoutu (UPDATE w jednym wyrazeniu — bez wyscigu)
-CREATE OR REPLACE FUNCTION public.fm_staff_login_result(p_code text, p_ip text, p_success boolean, p_device text)
+-- Rozliczenie DOKLADNIE tej proby (attempt_id). Kazda proba rozliczana raz (FM_ATTEMPT_SETTLED).
+--   success            -> licznik = 0, przypiecie urzadzenia w JEDNYM UPDATE (tylko puste/zgodne)
+--   invalid_credentials-> failed_logins + 1; 5 -> lockout 15 min
+--   system_error       -> nic (awaria GoTrue/sieci nie blokuje operatora)
+CREATE OR REPLACE FUNCTION public.fm_staff_login_result(p_attempt_id bigint, p_outcome text, p_device text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
-DECLARE v_failed int; v_locked timestamptz; v_dev text; v_code text := left(p_code, 32); v_in_dev text := left(p_device, 64);
+DECLARE a public.fm_login_attempts; v_failed int; v_locked timestamptz; v_dev text; v_in_dev text := left(p_device, 64);
 BEGIN
-  UPDATE public.fm_login_attempts SET ok = p_success
-    WHERE id = (SELECT max(id) FROM public.fm_login_attempts WHERE code IS NOT DISTINCT FROM v_code AND ip IS NOT DISTINCT FROM left(p_ip, 64) AND device_id IS NOT DISTINCT FROM v_in_dev);
-  IF p_success THEN
-    -- przypiecie urzadzenia w JEDNYM UPDATE: tylko gdy puste albo zgodne. Dwa tablety
-    -- rownoczesnie przy pustym device_id -> wygrywa pierwszy, drugi dostaje FM_DEVICE_MISMATCH
-    -- (funkcja Netlify uniewaznia wtedy wlasnie utworzona sesje).
-    UPDATE public.fm_staff SET failed_logins = 0, locked_until = NULL, last_login_at = now(),
-      device_id = COALESCE(device_id, v_in_dev), device_bound_at = COALESCE(device_bound_at, now())
-      WHERE code = v_code AND (device_id IS NULL OR device_id = v_in_dev) RETURNING device_id INTO v_dev;
-    IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'reason', 'FM_DEVICE_MISMATCH'); END IF;
-    RETURN jsonb_build_object('ok', true, 'device_id', v_dev);
+  IF p_outcome NOT IN ('success', 'invalid_credentials', 'system_error') THEN RAISE EXCEPTION 'FM_BAD_OUTCOME' USING ERRCODE = '22023'; END IF;
+  SELECT * INTO a FROM public.fm_login_attempts WHERE id = p_attempt_id FOR UPDATE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok', false, 'reason', 'FM_ATTEMPT_NOT_FOUND'); END IF;
+  IF a.status <> 'pending' THEN RETURN jsonb_build_object('ok', false, 'reason', 'FM_ATTEMPT_SETTLED', 'status', a.status); END IF;
+  PERFORM 1 FROM public.fm_staff WHERE code = a.code FOR UPDATE;
+
+  IF p_outcome = 'system_error' THEN
+    UPDATE public.fm_login_attempts SET status = 'error', resolved_at = now(), ok = false WHERE id = a.id;
+    RETURN jsonb_build_object('ok', false, 'reason', 'FM_SYSTEM_ERROR');
   END IF;
-  -- porazka: proba byla juz zarezerwowana w gate — tylko odczyt stanu
-  SELECT failed_logins, locked_until INTO v_failed, v_locked FROM public.fm_staff WHERE code = v_code;
-  RETURN jsonb_build_object('ok', false,
-    'locked', v_locked IS NOT NULL AND v_locked > now(),
-    'retry_after_s', CASE WHEN v_locked IS NOT NULL AND v_locked > now() THEN GREATEST(1, ceil(extract(epoch FROM v_locked - now())))::int ELSE NULL END,
-    'attempts_left', CASE WHEN v_locked IS NOT NULL AND v_locked > now() THEN 0 ELSE GREATEST(0, 5 - COALESCE(v_failed, 0)) END);
+
+  IF p_outcome = 'invalid_credentials' THEN
+    UPDATE public.fm_login_attempts SET status = 'invalid', resolved_at = now(), ok = false WHERE id = a.id;
+    UPDATE public.fm_staff
+      SET failed_logins = failed_logins + 1,
+          locked_until  = CASE WHEN failed_logins + 1 >= 5 THEN now() + interval '15 minutes' ELSE locked_until END
+      WHERE code = a.code RETURNING failed_logins, locked_until INTO v_failed, v_locked;
+    RETURN jsonb_build_object('ok', false, 'reason', 'FM_BAD_CREDENTIALS',
+      'locked', v_locked IS NOT NULL AND v_locked > now(),
+      'retry_after_s', CASE WHEN v_locked IS NOT NULL AND v_locked > now() THEN GREATEST(1, ceil(extract(epoch FROM v_locked - now())))::int ELSE NULL END,
+      'attempts_left', CASE WHEN v_locked IS NOT NULL AND v_locked > now() THEN 0 ELSE GREATEST(0, 5 - COALESCE(v_failed, 0)) END);
+  END IF;
+
+  -- success: przypiecie urzadzenia tylko gdy puste albo zgodne (dwa tablety naraz -> wygrywa pierwszy)
+  UPDATE public.fm_staff SET failed_logins = 0, locked_until = NULL, last_login_at = now(),
+    device_id = COALESCE(device_id, v_in_dev), device_bound_at = COALESCE(device_bound_at, now())
+    WHERE code = a.code AND (device_id IS NULL OR device_id = v_in_dev) RETURNING device_id INTO v_dev;
+  IF NOT FOUND THEN
+    UPDATE public.fm_login_attempts SET status = 'error', resolved_at = now(), ok = false WHERE id = a.id;
+    RETURN jsonb_build_object('ok', false, 'reason', 'FM_DEVICE_MISMATCH');
+  END IF;
+  UPDATE public.fm_login_attempts SET status = 'success', resolved_at = now(), ok = true WHERE id = a.id;
+  RETURN jsonb_build_object('ok', true, 'device_id', v_dev);
+END; $$;
+
+-- Blokada / odblokowanie konta obslugi w JEDNEJ transakcji: blocked + (przy blokadzie) uniewaznienie
+-- sesji. Funkcja Netlify wola to PRZED banem w Auth; przy czesciowym bledzie konto zostaje zablokowane
+-- w bazie (is_staff() sprawdza blocked przy kazdym RPC/RLS).
+CREATE OR REPLACE FUNCTION public.fm_staff_set_blocked(p_user uuid, p_blocked boolean)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
+DECLARE v_n int := 0; v_found boolean;
+BEGIN
+  UPDATE public.fm_staff SET blocked = p_blocked WHERE id = p_user;
+  v_found := FOUND;
+  IF NOT v_found THEN RAISE EXCEPTION 'FM_NOT_FOUND' USING ERRCODE = 'P0002'; END IF;
+  IF p_blocked THEN
+    DELETE FROM auth.refresh_tokens WHERE user_id = p_user::text;
+    DELETE FROM auth.sessions WHERE user_id = p_user;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+  END IF;
+  RETURN jsonb_build_object('blocked', p_blocked, 'sessions_revoked', v_n);
 END; $$;
 
 -- reset PIN / blokada: uniewaznij sesje (refresh tokeny + sesje) i odepnij urzadzenie
@@ -1102,6 +1148,8 @@ BEGIN
     pin_rotated_at = CASE WHEN p_rotate_pin THEN now() ELSE pin_rotated_at END WHERE id = p_user;
   RETURN jsonb_build_object('sessions_revoked', v_n);
 END; $$;
+
+DROP FUNCTION IF EXISTS public.fm_staff_login_result(text, text, boolean, text);
 
 -- ── 10. REALTIME + GRANTY ────────────────────────────────────────────────────
 -- Supabase Realtime (postgres_changes) wysyla zmiany tylko z tabel w publikacji.
@@ -1149,7 +1197,7 @@ DO $$ DECLARE f text; BEGIN
     'fm_queue_open_day(date,boolean)', 'fm_queue_close_all(date)', 'fm_queue_reset_day(date,text)', 'fm_queue_assign_retailer(uuid,int,date,boolean)',
     'fm_queue_day_closed(uuid)', 'fm_queue_autoclose(uuid)', 'fm_queue_is_production_date(date)',
     'fm_queue_set_test_mode(date,boolean)', 'fm_queue_reopen_day(date)', 'fm_queue_move_meeting(uuid,uuid,int)',
-    'fm_staff_login_gate(text,text,text)', 'fm_staff_login_result(text,text,boolean,text)', 'fm_staff_revoke_sessions(uuid,boolean)'
+    'fm_staff_login_gate(text,text,text)', 'fm_staff_login_result(bigint,text,text)', 'fm_staff_revoke_sessions(uuid,boolean)', 'fm_staff_set_blocked(uuid,boolean)'
   ] LOOP
     EXECUTE format('REVOKE EXECUTE ON FUNCTION public.%s FROM PUBLIC, anon, authenticated', f);
   END LOOP;
@@ -1170,8 +1218,9 @@ DO $$ DECLARE f text; BEGIN
   GRANT EXECUTE ON FUNCTION public.fm_queue_public_snapshot(date) TO anon, authenticated;
   -- logowanie obslugi: wylacznie backend (service_role)
   GRANT EXECUTE ON FUNCTION public.fm_staff_login_gate(text,text,text) TO service_role;
-  GRANT EXECUTE ON FUNCTION public.fm_staff_login_result(text,text,boolean,text) TO service_role;
+  GRANT EXECUTE ON FUNCTION public.fm_staff_login_result(bigint,text,text) TO service_role;
   GRANT EXECUTE ON FUNCTION public.fm_staff_revoke_sessions(uuid,boolean) TO service_role;
+  GRANT EXECUTE ON FUNCTION public.fm_staff_set_blocked(uuid,boolean) TO service_role;
 END $$;
 
 COMMIT;

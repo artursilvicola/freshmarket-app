@@ -26,9 +26,11 @@
 --   T12 open_day: pelny import wielu spotkan do jednej sieci, pominiecie bez force,
 --       synchronizacja z force (zmiana numeru), konflikt numeru, brakujace mapowania,
 --       split bez kategorii -> 'unrouted', plan nieopublikowany -> blad
---   T13 logowanie: gate REZERWUJE probe pod blokada (5. proba = lockout bez wyscigu), zly kod,
---       zly dzien, urzadzenie wymagane, przypiecie w jednym UPDATE (drugi tablet -> mismatch),
---       limit ip+kod+urzadzenie, revoke_sessions + rotacja PIN (stary token / brak iat = odrzucone)
+--   T13 logowanie: gate rezerwuje probe (attempt_id, max 5 rownoleglych, wygasa po 60 s), result
+--       rozlicza dokladnie te probe raz (success / invalid_credentials / system_error); lockout po
+--       5 FAKTYCZNIE blednych PIN-ach, poprawny PIN przy 5. probie = sukces, awaria = bez lockoutu;
+--       przypiecie tabletu w jednym UPDATE; limit ip+kod+urzadzenie; set_blocked fail-closed;
+--       rotacja PIN: stary token / ta sama sekunda / brak iat = odrzucone
 --   T15 move_meeting: przeniesienie zaplanowanego spotkania miedzy grupami sieci (split),
 --       konflikt numeru -> max+1 / blad, wywolane nie do przeniesienia, tylko admin
 --   T16 close_all: zajete stanowisko -> 'closing' (TERAZ widoczne, bez NASTEPNY), zakaz wywolan
@@ -56,7 +58,8 @@ BEGIN
     PERFORM set_config('request.jwt.claims', '', true);
     PERFORM set_config('request.jwt.claim.sub', '', true);
   ELSE
-    PERFORM set_config('request.jwt.claims', json_build_object('sub', pg_temp.id(k), 'role', 'authenticated', 'iat', COALESCE(p_iat, extract(epoch FROM now())::bigint))::text, true);
+    -- domyslny iat = teraz + 60 s: now() w transakcji jest stale, a po rotacji PIN-u token musi byc PO pelnej sekundzie rotacji
+    PERFORM set_config('request.jwt.claims', json_build_object('sub', pg_temp.id(k), 'role', 'authenticated', 'iat', COALESCE(p_iat, extract(epoch FROM now())::bigint + 60))::text, true);
     PERFORM set_config('request.jwt.claim.sub', pg_temp.id(k)::text, true);
   END IF;
 END $$;
@@ -324,39 +327,80 @@ SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
 RESET ROLE;
 
 -- ── T13 logowanie obslugi (gate/result jako service_role) ────────────────────
+CREATE TEMP TABLE t_att (k text PRIMARY KEY, id bigint);
+GRANT ALL ON t_att TO anon, authenticated;
 SELECT pg_temp.ok((public.fm_staff_login_gate('NIE-MA', '10.0.0.1', 'dev-tablet-0001')->>'reason') = 'FM_BAD_CREDENTIALS', 'T13 nieznany kod');
 SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OLD', '10.0.0.1', 'dev-tablet-0001')->>'reason') = 'FM_WRONG_DAY', 'T13 konto z inna data eventu');
 SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', NULL)->>'reason') = 'FM_DEVICE_REQUIRED', 'T13 urzadzenie wymagane');
--- REZERWACJA proby w gate: 4 przejscia, 5. = lockout — bez czekania na result (rownolegle proby nie omina limitu)
-SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'allowed')::boolean, 'T13 gate przepuszcza 4 proby') FROM generate_series(1,4);
-SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'reason') = 'FM_LOCKED', 'T13 5. proba = lockout zarezerwowany w gate');
-SELECT pg_temp.ok((SELECT locked_until > now() FROM public.fm_staff WHERE code = 'TEST-OP1'), 'T13 locked_until ustawione');
-SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP1', '10.0.0.1', false, 'dev-tablet-0001')->>'locked')::boolean, 'T13 result(false) przy lockoucie: locked');
-UPDATE public.fm_staff SET locked_until = NULL, failed_logins = 0 WHERE code = 'TEST-OP1';  -- symulacja uplywu 15 min
-SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'allowed')::boolean, 'T13 po odblokowaniu gate OK');
-SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP1', '10.0.0.1', true, 'dev-tablet-0001')->>'device_id') = 'dev-tablet-0001', 'T13 sukces: reset licznika, przypiecie urzadzenia');
+-- rezerwacje: 5 rownoleglych prob dostaje attempt_id, 6. czeka (FM_BUSY) — bez zwiekszania licznika
+INSERT INTO t_att SELECT 'a' || g, (public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'attempt_id')::bigint FROM generate_series(1,5) g;
+SELECT pg_temp.ok((SELECT count(*) FROM t_att WHERE id IS NOT NULL) = 5, 'T13 5 rezerwacji (attempt_id) dla 5 prob');
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'reason') = 'FM_BUSY', 'T13 6. rownolegla proba czeka (FM_BUSY), licznik bez zmian');
+SELECT pg_temp.ok((SELECT failed_logins FROM public.fm_staff WHERE code = 'TEST-OP1') = 0, 'T13 rezerwacja nie zwieksza failed_logins');
+-- awaria infrastruktury: rozliczenie system_error NIE liczy sie jako bledny PIN
+SELECT pg_temp.ok((public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'a1'), 'system_error', 'dev-tablet-0001')->>'reason') = 'FM_SYSTEM_ERROR', 'T13 system_error rozliczone');
+SELECT pg_temp.ok((SELECT failed_logins FROM public.fm_staff WHERE code = 'TEST-OP1') = 0, 'T13 awaria GoTrue nie zwieksza licznika');
+-- 4 faktycznie bledne PIN-y: brak lockoutu; 5. bledny -> lockout
+SELECT pg_temp.ok((public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'a' || g), 'invalid_credentials', 'dev-tablet-0001')->>'locked')::boolean = false, 'T13 bledny PIN bez lockoutu (1-4)') FROM generate_series(2,5) g;
+SELECT pg_temp.ok((SELECT failed_logins FROM public.fm_staff WHERE code = 'TEST-OP1') = 4 AND (SELECT locked_until FROM public.fm_staff WHERE code = 'TEST-OP1') IS NULL, 'T13 4 bledne = brak blokady');
+-- rozliczenie tej samej proby drugi raz -> odrzucone (kazda proba liczona raz)
+SELECT pg_temp.ok((public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'a2'), 'invalid_credentials', 'dev-tablet-0001')->>'reason') = 'FM_ATTEMPT_SETTLED', 'T13 attempt_id rozliczany tylko raz');
+SELECT pg_temp.ok((SELECT failed_logins FROM public.fm_staff WHERE code = 'TEST-OP1') = 4, 'T13 powtorne rozliczenie nie liczy sie');
+-- POPRAWNY PIN przy 5. probie -> sukces, licznik zerowany, urzadzenie przypiete
+INSERT INTO t_att SELECT 'a6', (public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-0001')->>'attempt_id')::bigint;
+SELECT pg_temp.ok((SELECT id IS NOT NULL FROM t_att WHERE k = 'a6'), 'T13 5. proba jest jeszcze dopuszczona (4 bledne)');
+SELECT pg_temp.ok((public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'a6'), 'success', 'dev-tablet-0001')->>'device_id') = 'dev-tablet-0001', 'T13 poprawny PIN przy 5. probie = sukces');
 SELECT pg_temp.ok((SELECT failed_logins = 0 AND device_id = 'dev-tablet-0001' FROM public.fm_staff WHERE code = 'TEST-OP1'), 'T13 licznik wyzerowany, urzadzenie przypiete');
-SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.1', 'dev-tablet-INNY')->>'reason') = 'FM_DEVICE_MISMATCH', 'T13 inne urzadzenie odrzucone w gate');
--- wyscig dwoch tabletow przy pustym device_id: result przypina TYLKO gdy puste/zgodne (jeden UPDATE)
-SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP2', '10.0.0.2', true, 'dev-tablet-A000')->>'device_id') = 'dev-tablet-A000', 'T13 tablet A przypiety');
-SELECT pg_temp.ok((public.fm_staff_login_result('TEST-OP2', '10.0.0.2', true, 'dev-tablet-B000')->>'reason') = 'FM_DEVICE_MISMATCH', 'T13 tablet B (po udanym GoTrue) odrzucony przez result -> funkcja uniewaznia jego sesje');
+-- 5 faktycznie blednych = lockout (piaty bledny jest sprawdzany, potem blokada)
+-- (inne IP: limit 10/15 min na ip+kod+urzadzenie zostal juz zuzyty seria 'a' — to celowo osobny klucz)
+INSERT INTO t_att SELECT 'b' || g, (public.fm_staff_login_gate('TEST-OP1', '10.0.0.11', 'dev-tablet-0001')->>'attempt_id')::bigint FROM generate_series(1,5) g;
+SELECT pg_temp.ok((SELECT count(*) FROM t_att WHERE k LIKE 'b%' AND id IS NOT NULL) = 5, 'T13 5 nowych rezerwacji po sukcesie');
+SELECT public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'b' || g), 'invalid_credentials', 'dev-tablet-0001') FROM generate_series(1,4) g;
+SELECT pg_temp.ok((public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'b5'), 'invalid_credentials', 'dev-tablet-0001')->>'locked')::boolean, 'T13 5. bledny PIN = lockout');
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.11', 'dev-tablet-0001')->>'reason') = 'FM_LOCKED', 'T13 gate: FM_LOCKED');
+UPDATE public.fm_staff SET locked_until = NULL, failed_logins = 0 WHERE code = 'TEST-OP1';  -- uplyw 15 min
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP1', '10.0.0.12', 'dev-tablet-INNY')->>'reason') = 'FM_DEVICE_MISMATCH', 'T13 inne urzadzenie odrzucone w gate');
+-- wygasanie nierozliczonej rezerwacji (funkcja Netlify padla): po 60 s nie blokuje kolejnych prob
+INSERT INTO t_att SELECT 'c' || g, (public.fm_staff_login_gate('TEST-OP2', '10.0.0.2', 'dev-tablet-A000')->>'attempt_id')::bigint FROM generate_series(1,5) g;
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP2', '10.0.0.2', 'dev-tablet-A000')->>'reason') = 'FM_BUSY', 'T13 5 wiszacych rezerwacji -> FM_BUSY');
+UPDATE public.fm_login_attempts SET ts = now() - interval '2 minutes' WHERE code = 'TEST-OP2' AND status = 'pending';  -- symulacja uplywu 60 s
+INSERT INTO t_att SELECT 'c6', (public.fm_staff_login_gate('TEST-OP2', '10.0.0.2', 'dev-tablet-A000')->>'attempt_id')::bigint;
+SELECT pg_temp.ok((SELECT id IS NOT NULL FROM t_att WHERE k = 'c6'), 'T13 wygasle rezerwacje nie blokuja (status error, licznik 0)');
+SELECT pg_temp.ok((SELECT count(*) FROM public.fm_login_attempts WHERE code = 'TEST-OP2' AND status = 'error') = 5 AND (SELECT failed_logins FROM public.fm_staff WHERE code = 'TEST-OP2') = 0, 'T13 wygasle = error, bez lockoutu');
+-- wyscig dwoch tabletow przy pustym device_id: przypiecie w jednym UPDATE
+SELECT pg_temp.ok((public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'c6'), 'success', 'dev-tablet-A000')->>'device_id') = 'dev-tablet-A000', 'T13 tablet A przypiety');
+INSERT INTO t_att SELECT 'c7', (public.fm_staff_login_gate('TEST-OP2', '10.0.0.2', 'dev-tablet-A000')->>'attempt_id')::bigint;
+UPDATE public.fm_login_attempts SET device_id = 'dev-tablet-B000' WHERE id = (SELECT id FROM t_att WHERE k = 'c7');  -- drugi tablet, ktory przeszedl gate przed przypieciem
+SELECT pg_temp.ok((public.fm_staff_login_result((SELECT id FROM t_att WHERE k = 'c7'), 'success', 'dev-tablet-B000')->>'reason') = 'FM_DEVICE_MISMATCH', 'T13 tablet B (po udanym GoTrue) odrzucony -> funkcja uniewaznia jego sesje');
 SELECT pg_temp.ok((SELECT device_id FROM public.fm_staff WHERE code = 'TEST-OP2') = 'dev-tablet-A000', 'T13 w bazie zostal tablet A');
--- limit ip+kod+urzadzenie (10/15 min) niezalezny od lockoutu — nieistniejacy kod; inny kod z tego samego IP nadal moze
+-- limit ip+kod+urzadzenie (10/15 min) niezalezny od lockoutu; inny kod z tego samego IP nadal moze
 SELECT public.fm_staff_login_gate('NIE-MA-2', '10.0.0.9', 'dev-tablet-0009') FROM generate_series(1,10);
 SELECT pg_temp.ok((public.fm_staff_login_gate('NIE-MA-2', '10.0.0.9', 'dev-tablet-0009')->>'reason') = 'FM_RATE_LIMIT', 'T13 limit ip+kod+urzadzenie po 10 probach');
 SELECT pg_temp.ok((public.fm_staff_login_gate('NIE-MA-3', '10.0.0.9', 'dev-tablet-0010')->>'reason') = 'FM_BAD_CREDENTIALS', 'T13 inny kod/tablet z tego samego IP (wspolne Wi-Fi) nie jest blokowany');
--- revoke_sessions + rotacja PIN: stare tokeny (iat przed rotacja) i tokeny bez iat sa odrzucane
+-- blokada fail-closed: fm_staff_set_blocked = blocked + sesje w jednej transakcji
+INSERT INTO auth.sessions (id, user_id, created_at, updated_at) VALUES (gen_random_uuid(), pg_temp.id('op2'), now(), now());
+DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_staff_set_blocked(pg_temp.id('op2'), true);
+SELECT pg_temp.ok((SELECT (j->>'blocked')::boolean AND (j->>'sessions_revoked')::int = 1 FROM t_json), 'T13 set_blocked: zablokowane + sesja uniewazniona atomowo');
+SELECT pg_temp.ok((public.fm_staff_login_gate('TEST-OP2', '10.0.0.2', 'dev-tablet-A000')->>'reason') = 'FM_BLOCKED', 'T13 zablokowane konto nie loguje sie');
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('op2');
+SELECT pg_temp.ok(NOT public.is_staff(), 'T13 zablokowane konto: is_staff() = false (RPC/RLS odciete)');
+RESET ROLE;
+SELECT public.fm_staff_set_blocked(pg_temp.id('op2'), false);
+SELECT pg_temp.expect_error($q$SELECT public.fm_staff_set_blocked(gen_random_uuid(), true)$q$, 'FM_NOT_FOUND');
+-- revoke_sessions + rotacja PIN: stare tokeny (iat <= sekunda rotacji) i tokeny bez iat sa odrzucane
 INSERT INTO auth.sessions (id, user_id, created_at, updated_at) VALUES (gen_random_uuid(), pg_temp.id('op1'), now(), now());
 SELECT pg_temp.ok((public.fm_staff_revoke_sessions(pg_temp.id('op1'), true)->>'sessions_revoked')::int = 1, 'T13 sesja uniewazniona');
 SELECT pg_temp.ok((SELECT device_id IS NULL AND pin_rotated_at > now() - interval '1 minute' FROM public.fm_staff WHERE code = 'TEST-OP1'), 'T13 urzadzenie odpiete, pin_rotated_at ustawione');
 SET LOCAL ROLE authenticated;
-SELECT pg_temp.login('op1', extract(epoch FROM now() - interval '1 hour')::bigint);   -- token sprzed rotacji
+SELECT pg_temp.login('op1', extract(epoch FROM now() - interval '1 hour')::bigint);
 SELECT pg_temp.ok(NOT public.is_staff(), 'T13 stary token: is_staff() = false');
 SELECT pg_temp.expect_error($q$SELECT public.fm_queue_my_stations(NULL)$q$, 'FM_FORBIDDEN');
+SELECT pg_temp.login('op1', (SELECT floor(extract(epoch FROM pin_rotated_at))::bigint FROM public.fm_staff WHERE code = 'TEST-OP1'));
+SELECT pg_temp.ok(NOT public.is_staff(), 'T13 token z ta sama sekunda co rotacja: odrzucony (bez tolerancji)');
 SELECT pg_temp.login_noiat('op1');
 SELECT pg_temp.ok(NOT public.is_staff(), 'T13 token bez iat po rotacji: is_staff() = false');
-SELECT pg_temp.login('op1', extract(epoch FROM now() + interval '1 minute')::bigint);  -- nowe logowanie
-SELECT pg_temp.ok(public.is_staff(), 'T13 nowy token: is_staff() = true');
+SELECT pg_temp.login('op1', (SELECT floor(extract(epoch FROM pin_rotated_at))::bigint + 1 FROM public.fm_staff WHERE code = 'TEST-OP1'));
+SELECT pg_temp.ok(public.is_staff(), 'T13 token wystawiony sekunde po rotacji: OK');
 RESET ROLE;
 
 -- ── T15 przeniesienie spotkania miedzy grupami (split) ───────────────────────
@@ -411,9 +455,29 @@ DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_finish_and_call_
 SELECT pg_temp.ok((SELECT s->>'mode' FROM t_state) = 'closed' AND (SELECT s->'current' FROM t_state) = 'null'::jsonb, 'T16 po zakonczeniu: closing -> closed, bez wywolania nastepnego');
 DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_no_show(pg_temp.st('test-b-2'), pg_temp.ver('test-b-2'), 'idem-ns-b2-0004');
 SELECT pg_temp.ok((SELECT s->>'mode' FROM t_state) = 'closed', 'T16 no_show w closing -> closed');
+-- reopen_day przy stanowisku w 'closing': wraca do 'open' z nowa wersja; 'closed' zostaje
+RESET ROLE;
+INSERT INTO public.fm_queue_meetings (queue_group_id, company_id, nr) VALUES (pg_temp.grp('test-b'), pg_temp.id('co5'), 5);  -- jeszcze jedno spotkanie do wywolania
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('op2');
+SELECT public.fm_queue_open_station(pg_temp.st('test-b-2'), pg_temp.ver('test-b-2'), 'idem-open-b2-0200') FROM (SELECT 1) x WHERE false;  -- (dzien zamkniety: nie otwieramy)
 SELECT pg_temp.login('admin');
 SELECT public.fm_queue_reopen_day((SELECT today FROM t_day));
-SELECT pg_temp.login('op1');
+SELECT pg_temp.login('op2');
+SELECT public.fm_queue_open_station(pg_temp.st('test-b-2'), pg_temp.ver('test-b-2'), 'idem-open-b2-0201');
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_call_next(pg_temp.st('test-b-2'), pg_temp.ver('test-b-2'), 'idem-call-b2-0201');
+SELECT pg_temp.ok((SELECT (s->'current'->>'nr')::int FROM t_state) = 5, 'T16 po reopen b-2 wywolal 5');
+SELECT pg_temp.login('admin');
+SELECT public.fm_queue_close_all((SELECT today FROM t_day));
+RESET ROLE;
+SELECT pg_temp.ok((SELECT mode FROM public.fm_stations WHERE id = pg_temp.st('test-b-2')) = 'closing', 'T16 b-2 zajete -> closing');
+CREATE TEMP TABLE t_ver AS SELECT version AS v FROM public.fm_stations WHERE id = pg_temp.st('test-b-2');
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
+DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_reopen_day((SELECT today FROM t_day));
+SELECT pg_temp.ok((SELECT (j->>'reopened_stations')::int FROM t_json) = 1, 'T16 reopen_day: 1 stanowisko closing -> open');
+RESET ROLE;
+SELECT pg_temp.ok((SELECT mode = 'open' AND version = (SELECT v FROM t_ver) + 1 FROM public.fm_stations WHERE id = pg_temp.st('test-b-2')), 'T16 b-2 znow open, version + 1');
+SELECT pg_temp.ok((SELECT mode FROM public.fm_stations WHERE id = pg_temp.st('test-b-1')) = 'closed', 'T16 b-1 (closed) zostaje closed');
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('op1');
 SELECT pg_temp.ok((SELECT s->>'mode' FROM (SELECT public.fm_queue_open_station(pg_temp.st('test-a-1'), pg_temp.ver('test-a-1'), 'idem-open-a1-0100') s) x) = 'open', 'T16 po reopen_day mozna otworzyc');
 RESET ROLE;
 

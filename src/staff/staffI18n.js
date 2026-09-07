@@ -41,7 +41,8 @@ const DICT = {
       FM_NO_SCHEDULE: "Brak zatwierdzonego planu spotkań.", FM_PLAN_NOT_PUBLISHED: "Plan spotkań dla tej daty nie jest opublikowany.", FM_FORWARD_ONLY: "Numer nie może się zmniejszyć.",
       FM_CONFIRM_REQUIRED: "Niepoprawne potwierdzenie.", FM_RESET_LIVE_DAY: "Nie można resetować dnia, w którym trwają spotkania.", FM_NOT_FOUND: "Nie znaleziono.",
       FM_DAY_CLOSED: "Dzień został zamknięty — nie można otwierać stanowisk ani wywoływać numerów.", FM_NOT_TEST_MODE: "Ten dzień nie jest w trybie testowym.", FM_PRODUCTION_DATE: "To data produkcyjnego wydarzenia — tryb testowy/reset niedozwolony.",
-      FM_NR_CONFLICT: "Numer jest zajęty (lub firma ma już spotkanie w grupie docelowej).", FM_BAD_TARGET: "Grupa docelowa musi należeć do tej samej sieci i daty i być aktywna.", unknown: "Nieznany błąd.",
+      FM_NR_CONFLICT: "Numer jest zajęty (lub firma ma już spotkanie w grupie docelowej).", FM_BAD_TARGET: "Grupa docelowa musi należeć do tej samej sieci i daty i być aktywna.",
+      FM_BUSY: "Trwa inna próba logowania na to konto — odczekaj chwilę.", FM_SYSTEM_ERROR: "Chwilowy problem z serwerem — spróbuj ponownie (próba nie została policzona).", unknown: "Nieznany błąd.",
     },
   },
   en: {
@@ -79,7 +80,8 @@ const DICT = {
       FM_NO_SCHEDULE: "No approved meeting plan.", FM_PLAN_NOT_PUBLISHED: "The plan for this date is not published.", FM_FORWARD_ONLY: "The number cannot decrease.",
       FM_CONFIRM_REQUIRED: "Invalid confirmation.", FM_RESET_LIVE_DAY: "Cannot reset a day with live meetings.", FM_NOT_FOUND: "Not found.",
       FM_DAY_CLOSED: "The day has been closed — desks cannot be opened and no numbers can be called.", FM_NOT_TEST_MODE: "This day is not in test mode.", FM_PRODUCTION_DATE: "This is the production event date — test mode/reset not allowed.",
-      FM_NR_CONFLICT: "The number is taken (or the company already has a meeting in the target group).", FM_BAD_TARGET: "Target group must belong to the same retailer and date and be active.", unknown: "Unknown error.",
+      FM_NR_CONFLICT: "The number is taken (or the company already has a meeting in the target group).", FM_BAD_TARGET: "Target group must belong to the same retailer and date and be active.",
+      FM_BUSY: "Another login attempt for this account is in progress — wait a moment.", FM_SYSTEM_ERROR: "Temporary server problem — try again (the attempt was not counted).", unknown: "Unknown error.",
     },
   },
 };

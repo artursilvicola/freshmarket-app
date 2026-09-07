@@ -1,115 +1,117 @@
 /**
- * Netlify Function: admin-staff
+ * Netlify Function (format 2.0): admin-staff
  * POST /.netlify/functions/admin-staff   (JWT SUPER admina: profiles.role='admin' AND admin_level='super')
  *
  * Body: { action: "create" | "reset_pin" | "block" | "unblock" | "delete", ... }
  *   create:    { code, display_name?, event_date }
  *              → użytkownik Auth (app_metadata.role='staff' — jedyna droga nadania roli
- *                uprzywilejowanej, patrz handle_new_user) + wiersz fm_staff; PIN zwracany JEDEN RAZ
- *   reset_pin: { id }  → nowy PIN (raz), unieważnienie wszystkich sesji, odpięcie urządzenia,
- *                        pin_rotated_at (stare tokeny odrzucane przez is_staff()), kasuje lockout
- *   block:     { id }  → fm_staff.blocked=true + ban w Auth + unieważnienie sesji
- *   unblock:   { id }
+ *                uprzywilejowanej) + wiersz fm_staff; PIN zwracany JEDEN RAZ
+ *   reset_pin: { id }  → nowe hasło GoTrue, potem fm_staff_revoke_sessions (rotacja: stare
+ *                        tokeny odrzucane przez is_staff(), tablet odpięty). Częściowy błąd → 500
+ *                        z jasnym komunikatem (PIN nie jest zwracany; powtórz reset).
+ *   block:     { id }  → FAIL-CLOSED: najpierw fm_staff_set_blocked(true) w bazie (blocked +
+ *                        unieważnienie sesji, jedna transakcja) i sprawdzenie wyniku, potem ban w Auth.
+ *                        Gdy ban zawiedzie — konto ZOSTAJE zablokowane w bazie, endpoint zwraca błąd.
+ *   unblock:   { id }  → najpierw zdjęcie banu w Auth, potem fm_staff_set_blocked(false);
+ *                        przy błędzie konto pozostaje zablokowane.
  *   delete:    { id }  → usuwa użytkownika Auth (kaskada: profiles → fm_staff)
  *
  * PIN nie jest nigdzie zapisywany ani logowany — hasło GoTrue to HMAC(pepper, kod:PIN).
  * [feat/fm-queue]
  */
 import { createClient } from "@supabase/supabase-js";
-import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
-import { generatePin, normalizeStaffCode, pepperFromEnv, staffEmailFor, staffPassword } from "./_shared/staff-auth.js";
+import { CORS, bearer, envConfig, json, missingOf, readJson } from "./_shared/netlify-modern.js";
+import { generatePin, normalizeStaffCode, staffEmailFor, staffPassword } from "./_shared/staff-auth.js";
 
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+export default async (request) => {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+  if (request.method !== "POST") return json(405, { error: "Method not allowed" });
 
-export const handler = async (event) => {
-  if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== "POST") return errJson(405, "Method not allowed");
-
-  const env = resolveEnvConfig();
-  const missing = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey", "supabaseAnonKey"]);
-  if (missing.length) return errJson(500, envErrorPayload("admin-staff", missing));
-  const pepper = pepperFromEnv();
-  if (!pepper) return errJson(500, { error: "Brak konfiguracji STAFF_PIN_PEPPER (Netlify env, min. 32 znaki)." });
+  const cfg = envConfig();
+  const missing = missingOf(cfg, ["supabaseUrl", "supabaseServiceRoleKey", "supabaseAnonKey"]);
+  if (missing.length) return json(500, { error: `Brak konfiguracji: ${missing.join(", ")}` });
+  if (!cfg.staffPinPepper || cfg.staffPinPepper.length < 32) return json(500, { error: "Brak konfiguracji STAFF_PIN_PEPPER (Netlify env, min. 32 znaki)." });
 
   // 1. Autoryzacja: SUPER admin
-  const authHeader = event.headers.authorization || event.headers.Authorization;
-  if (!authHeader?.startsWith("Bearer ")) return errJson(401, "Brak nagłówka Authorization");
-  const token = authHeader.slice(7);
-  const supaUser = createClient(env.supabaseUrl, env.supabaseAnonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
+  const token = bearer(request);
+  if (!token) return json(401, { error: "Brak nagłówka Authorization" });
+  const supaUser = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, { global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
-  if (uErr || !userData?.user) return errJson(401, "Nieprawidłowy token");
-  const svc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey, { auth: { persistSession: false } });
+  if (uErr || !userData?.user) return json(401, { error: "Nieprawidłowy token" });
+  const svc = createClient(cfg.supabaseUrl, cfg.supabaseServiceRoleKey, { auth: { persistSession: false } });
   const { data: caller } = await svc.from("profiles").select("role, admin_level").eq("id", userData.user.id).maybeSingle();
-  if (caller?.role !== "admin" || caller?.admin_level !== "super") return errJson(403, "Kontami obsługi zarządza tylko super administrator.");
+  if (caller?.role !== "admin" || caller?.admin_level !== "super") return json(403, { error: "Kontami obsługi zarządza tylko super administrator." });
 
-  let body;
-  try { body = JSON.parse(event.body || "{}"); } catch { return errJson(400, "Niepoprawny JSON"); }
+  const body = await readJson(request);
+  if (!body) return json(400, { error: "Niepoprawny JSON" });
   const action = String(body.action || "");
 
   if (action === "create") {
     const code = normalizeStaffCode(body.code);
     const eventDate = String(body.event_date || "").slice(0, 10);
     const displayName = String(body.display_name || "").trim().slice(0, 80) || null;
-    if (!code || code.length < 3) return errJson(400, "Kod operatora: min. 3 znaki (litery, cyfry, myślnik).");
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return errJson(400, "Podaj datę eventu (YYYY-MM-DD).");
+    if (!code || code.length < 3) return json(400, { error: "Kod operatora: min. 3 znaki (litery, cyfry, myślnik)." });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) return json(400, { error: "Podaj datę eventu (YYYY-MM-DD)." });
     const { data: exists } = await svc.from("fm_staff").select("id").eq("code", code).maybeSingle();
-    if (exists) return errJson(409, `Kod ${code} już istnieje.`);
+    if (exists) return json(409, { error: `Kod ${code} już istnieje.` });
 
     const pin = generatePin();
     const { data: created, error: cErr } = await svc.auth.admin.createUser({
       email: staffEmailFor(code),
-      password: staffPassword(pepper, code, pin),
+      password: staffPassword(cfg.staffPinPepper, code, pin),
       email_confirm: true,
       app_metadata: { role: "staff", staff_code: code },   // rola uprzywilejowana TYLKO tędy
       user_metadata: { staff_code: code },
     });
-    if (cErr || !created?.user) return errJson(500, `Nie udało się utworzyć konta: ${cErr?.message || "?"}`);
+    if (cErr || !created?.user) return json(500, { error: `Nie udało się utworzyć konta: ${cErr?.message || "?"}` });
     const uid = created.user.id;
-
-    // profil zakłada trigger handle_new_user (z app_metadata); dopinamy defensywnie
-    await svc.from("profiles").upsert({ id: uid, email: staffEmailFor(code), role: "staff", name: displayName || code }, { onConflict: "id" });
-    const { error: sErr } = await svc.from("fm_staff").insert({
+    const { error: pErr } = await svc.from("profiles").upsert({ id: uid, email: staffEmailFor(code), role: "staff", name: displayName || code }, { onConflict: "id" });
+    const { error: sErr } = pErr ? { error: pErr } : await svc.from("fm_staff").insert({
       id: uid, code, display_name: displayName, event_date: eventDate, pin_rotated_at: new Date().toISOString(),
     });
     if (sErr) {
       await svc.auth.admin.deleteUser(uid).catch(() => {});
-      return errJson(500, `Nie udało się zapisać obsługi: ${sErr.message}`);
+      return json(500, { error: `Nie udało się zapisać obsługi: ${sErr.message}` });
     }
-    return okJson({ id: uid, code, pin }); // PIN tylko tu, jeden raz
+    return json(200, { id: uid, code, pin }); // PIN tylko tu, jeden raz
   }
 
   const id = String(body.id || "");
-  if (!/^[0-9a-f-]{36}$/i.test(id)) return errJson(400, "Brak id konta obsługi.");
-  const { data: staff } = await svc.from("fm_staff").select("id, code").eq("id", id).maybeSingle();
-  if (!staff) return errJson(404, "Nie znaleziono konta obsługi.");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return json(400, { error: "Brak id konta obsługi." });
+  const { data: staff } = await svc.from("fm_staff").select("id, code, blocked").eq("id", id).maybeSingle();
+  if (!staff) return json(404, { error: "Nie znaleziono konta obsługi." });
 
   if (action === "reset_pin") {
     const pin = generatePin();
-    const { error } = await svc.auth.admin.updateUserById(id, { password: staffPassword(pepper, staff.code, pin) });
-    if (error) return errJson(500, `Reset PIN nieudany: ${error.message}`);
+    const { error } = await svc.auth.admin.updateUserById(id, { password: staffPassword(cfg.staffPinPepper, staff.code, pin) });
+    if (error) return json(500, { error: `Reset PIN nieudany: ${error.message}` });
     const { data: rev, error: rErr } = await svc.rpc("fm_staff_revoke_sessions", { p_user: id, p_rotate_pin: true });
-    if (rErr) return errJson(500, `PIN zmieniony, ale nie udało się unieważnić sesji: ${rErr.message}`);
-    return okJson({ id, code: staff.code, pin, sessions_revoked: rev?.sessions_revoked ?? null });
+    if (rErr) return json(500, { error: `Hasło zmienione, ale nie udało się unieważnić sesji (${rErr.message}). Powtórz „nowy PIN”.` });
+    return json(200, { id, code: staff.code, pin, sessions_revoked: rev?.sessions_revoked ?? null });
   }
-  if (action === "block" || action === "unblock") {
-    const blocked = action === "block";
-    const { error } = await svc.auth.admin.updateUserById(id, { ban_duration: blocked ? "87600h" : "none" });
-    if (error) return errJson(500, `Zmiana blokady nieudana: ${error.message}`);
-    await svc.from("fm_staff").update({ blocked }).eq("id", id);
-    if (blocked) await svc.rpc("fm_staff_revoke_sessions", { p_user: id, p_rotate_pin: false });
-    return okJson({ id, code: staff.code, blocked });
+
+  if (action === "block") {
+    // fail-closed: najpierw baza (blocked + sesje w jednej transakcji), dopiero potem Auth
+    const { data: blk, error: bErr } = await svc.rpc("fm_staff_set_blocked", { p_user: id, p_blocked: true });
+    if (bErr || !blk?.blocked) return json(500, { error: `Nie udało się zablokować konta w bazie: ${bErr?.message || "brak potwierdzenia"}.` });
+    const { error: banErr } = await svc.auth.admin.updateUserById(id, { ban_duration: "87600h" });
+    if (banErr) return json(500, { error: `Konto ZABLOKOWANE w bazie (sesje unieważnione: ${blk.sessions_revoked}), ale ban w Auth nie powiódł się: ${banErr.message}. Powtórz „zablokuj”.`, blocked: true });
+    return json(200, { id, code: staff.code, blocked: true, sessions_revoked: blk.sessions_revoked });
   }
+
+  if (action === "unblock") {
+    // odblokowanie: najpierw Auth, potem baza; przy błędzie konto pozostaje zablokowane
+    const { error: banErr } = await svc.auth.admin.updateUserById(id, { ban_duration: "none" });
+    if (banErr) return json(500, { error: `Nie udało się zdjąć banu w Auth: ${banErr.message}. Konto pozostaje zablokowane.`, blocked: true });
+    const { data: blk, error: bErr } = await svc.rpc("fm_staff_set_blocked", { p_user: id, p_blocked: false });
+    if (bErr || blk?.blocked !== false) return json(500, { error: `Ban zdjęty w Auth, ale baza nadal blokuje konto: ${bErr?.message || "brak potwierdzenia"}. Powtórz „odblokuj”.`, blocked: true });
+    return json(200, { id, code: staff.code, blocked: false });
+  }
+
   if (action === "delete") {
     const { error } = await svc.auth.admin.deleteUser(id);
-    if (error) return errJson(500, `Usunięcie nieudane: ${error.message}`);
-    return okJson({ id, deleted: true });
+    if (error) return json(500, { error: `Usunięcie nieudane: ${error.message}` });
+    return json(200, { id, deleted: true });
   }
-  return errJson(400, "Nieznana akcja.");
+  return json(400, { error: "Nieznana akcja." });
 };
-
-function okJson(p) { return { statusCode: 200, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(p) }; }
-function errJson(c, m) { return { statusCode: c, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(typeof m === "string" ? { error: m } : m) }; }

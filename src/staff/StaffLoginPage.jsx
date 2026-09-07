@@ -35,7 +35,7 @@ export default function StaffLoginPage({ onLoggedIn }) {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         setPin("");
-        if ((j.code === "FM_LOCKED" || j.code === "FM_RATE_LIMIT") && j.retry_after_s) setLockedFor(Number(j.retry_after_s));
+        if ((j.code === "FM_LOCKED" || j.code === "FM_RATE_LIMIT" || j.code === "FM_BUSY") && j.retry_after_s) setLockedFor(Number(j.retry_after_s));
         setErr(j.error || t.err_login);
         return;
       }
