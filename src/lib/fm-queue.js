@@ -129,6 +129,15 @@ export async function listFmQueueMeetings(groupId) {
   return data || [];
 }
 
+// [feat/staff-meeting-list] stanowiska grupy — etykiety w liście spotkań („na którym stanowisku”
+// przy wspólnej kolejce Auchan ×2). SELECT dla zalogowanych (fm_stations_auth_select), bez nazw firm.
+export async function listFmStations(groupId) {
+  const { data, error } = await supabase.from("fm_stations")
+    .select("id,idx,label,active").eq("queue_group_id", groupId).order("idx");
+  if (error) return softFail(error, []);
+  return data || [];
+}
+
 // dostawca: własne spotkania (RLS company_id = app_company_id())
 export async function listMyFmQueueMeetings() {
   const { data, error } = await supabase.from("fm_queue_meetings")
@@ -200,3 +209,13 @@ export function subscribeFmQueue(onChange) {
     .subscribe();
   return () => { try { supabase.removeChannel(ch); } catch { /* noop */ } };
 }
+
+// [feat/staff-meeting-list] Jeden obiekt API panelu obsługi (StaffPanel). Produkcja używa tego
+// obiektu; podgląd deweloperski (/obsluga-demo, tylko `import.meta.env.DEV`) podstawia
+// symulację w pamięci — bez danych testowych w produkcyjnej bazie.
+export const staffApi = {
+  rpc: fmQueueRpc,
+  listMeetings: listFmQueueMeetings,
+  listStations: listFmStations,
+  subscribe: subscribeFmQueue,
+};

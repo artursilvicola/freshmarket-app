@@ -2,12 +2,17 @@
 // Wszystkie zmiany stanu idą przez RPC fm_queue_* (SECURITY DEFINER, version,
 // obowiązkowy klucz idempotencji). Panel NIE pisze do tabel bezpośrednio.
 // Numer publiczny (TERAZ) nigdy nie cofa się — „Cofnij” dotyczy tylko statusu spotkania.
+// [feat/staff-meeting-list] Weryfikacja dostawcy po nazwie firmy: TERAZ/NASTĘPNY z pełną nazwą,
+// sieć/grupa/stanowisko i statusem + „Lista spotkań” (pełna kolejka grupy pod RLS: admin i
+// obsługa przypisana do sieci; Dino Owoce/Kwiaty = osobne grupy, Auchan ×2 = wspólna lista
+// z kolumną stanowiska). Warstwa danych jest wstrzykiwana (`api`) — podgląd dev bez bazy.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
-import { fmQueueRpc, listFmQueueMeetings, newIdemKey, subscribeFmQueue } from "../lib/fm-queue";
+import { newIdemKey, staffApi } from "../lib/fm-queue";
 import StaffLoginPage, { LangToggle } from "./StaffLoginPage";
 import { C, MODE_LABEL, fmtElapsed, humanFmError, statusLabel } from "./staffUi";
 import { useStaffLang } from "./staffI18n";
+import { MEETING_FILTERS, countByFilter, filterMeetings, fmtClock, isException, meetingName, stationLabelFor } from "./meetingList";
 
 const UNDO_WINDOW_MS = 30_000;
 const POLL_MS = 10_000;
@@ -28,12 +33,16 @@ export default function StaffPanel() {
   return <Operator user={user} profile={profile} signOut={signOut} isAdmin={role === "admin"} lang={lang} setLang={setLang} t={t} />;
 }
 
-function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
+// `initial` — tylko podgląd dev (/obsluga-demo?station=…&view=list&filter=done&q=12&open=10): stan startowy do zrzutów.
+export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, api = staffApi, initial = null }) {
   const [stations, setStations] = useState([]);
   const [stationsErr, setStationsErr] = useState("");
-  const [selectedId, setSelectedId] = useState(() => { try { return localStorage.getItem("fm_station_id") || ""; } catch { return ""; } });
+  const [selectedId, setSelectedId] = useState(() => { if (initial?.station) return initial.station; try { return localStorage.getItem("fm_station_id") || ""; } catch { return ""; } });
   const [state, setState] = useState(null);
   const [meetings, setMeetings] = useState([]);
+  const [groupStations, setGroupStations] = useState([]);      // stanowiska grupy (etykiety w liście)
+  const [meetingsMeta, setMeetingsMeta] = useState({ at: null, stale: false });
+  const [view, setView] = useState(initial?.view === "list" ? "list" : "station"); // "station" | "list"
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
@@ -42,6 +51,8 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
   const [, setTick] = useState(0);
   const stateRef = useRef(null);
   stateRef.current = state;
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   const showToast = useCallback((text, tone = "error") => {
     setToast({ text, tone, id: Date.now() });
@@ -49,21 +60,26 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
   }, []);
 
   const loadStations = useCallback(async () => {
-    try { setStations((await fmQueueRpc.myStations()) || []); setStationsErr(""); }
+    try { setStations((await api.rpc.myStations()) || []); setStationsErr(""); }
     catch (e) { setStationsErr(humanFmError(e, lang)); }
-  }, [lang]);
+  }, [api, lang]);
 
   const refreshState = useCallback(async () => {
     if (!selectedId) return;
-    try { const st = await fmQueueRpc.stationState(selectedId); if (st) setState(st); }
+    try { const st = await api.rpc.stationState(selectedId); if (st) setState(st); }
     catch (e) { if (e?.fmCode === "FM_AUTH_REQUIRED" || e?.fmCode === "FM_FORBIDDEN") showToast(humanFmError(e, lang)); }
-  }, [selectedId, showToast, lang]);
+  }, [api, selectedId, showToast, lang]);
 
+  // Lista spotkań grupy: przy błędzie sieci ZOSTAWIAMY ostatnią listę i oznaczamy ją jako nieaktualną.
   const refreshMeetings = useCallback(async () => {
     const gid = stateRef.current?.group_id;
     if (!gid) return;
-    try { setMeetings(await listFmQueueMeetings(gid)); } catch { /* lista opcjonalna */ }
-  }, []);
+    try {
+      const rows = await api.listMeetings(gid);
+      setMeetings(rows || []);
+      setMeetingsMeta({ at: new Date(), stale: false });
+    } catch { setMeetingsMeta(m => ({ ...m, stale: true })); }
+  }, [api]);
 
   useEffect(() => { loadStations(); }, [loadStations]);
   useEffect(() => {
@@ -72,12 +88,21 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
     if (s?.state) setState(s.state);
     refreshState();
   }, [selectedId, stations, refreshState]);
-  useEffect(() => { refreshMeetings(); }, [state?.group_id, state?.version, refreshMeetings]);
+  useEffect(() => { refreshMeetings(); }, [state?.group_id, state?.version, state?.group_version, refreshMeetings]);
   useEffect(() => {
-    const unsub = subscribeFmQueue(() => { refreshState(); });
-    const i = setInterval(() => { refreshState(); }, POLL_MS);
+    const gid = state?.group_id;
+    if (!gid) { setGroupStations([]); return; }
+    let alive = true;
+    api.listStations(gid).then(rows => { if (alive) setGroupStations(rows || []); }).catch(() => { /* etykiety opcjonalne */ });
+    return () => { alive = false; };
+  }, [api, state?.group_id]);
+  useEffect(() => {
+    // Realtime (zmiany z drugiego tabletu) + polling: stan stanowiska zawsze, lista gdy jest otwarta.
+    const unsub = api.subscribe(() => { refreshState(); if (viewRef.current === "list") refreshMeetings(); });
+    const i = setInterval(() => { refreshState(); if (viewRef.current === "list") refreshMeetings(); }, POLL_MS);
     return () => { unsub(); clearInterval(i); };
-  }, [refreshState]);
+  }, [api, refreshState, refreshMeetings]);
+  useEffect(() => { if (view === "list") refreshMeetings(); }, [view, refreshMeetings]);
   useEffect(() => {
     const i = setInterval(() => setTick(x => x + 1), 1000);
     const on = () => setOnline(true), off = () => setOnline(false);
@@ -87,6 +112,7 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
 
   function pick(id) {
     setSelectedId(id);
+    setView("station");
     try { if (id) localStorage.setItem("fm_station_id", id); else localStorage.removeItem("fm_station_id"); } catch { /* noop */ }
   }
 
@@ -119,7 +145,7 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
       setBusy(false);
       refreshMeetings();
     }
-  }, [busy, online, refreshState, refreshMeetings, showToast, lang]);
+  }, [busy, online, refreshState, refreshMeetings, showToast, lang, t]);
 
   const selected = stations.find(x => x.station_id === selectedId);
   const undoLeft = lastAction ? Math.max(0, Math.ceil((lastAction.ts + UNDO_WINDOW_MS - Date.now()) / 1000)) : 0;
@@ -135,9 +161,11 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
   }, [meetings, state?.last_called_nr]);
   const readyReturnee = (state?.waiting_returnees || []).find(r => r.ready);
   const nextExceptionNr = Math.max(state?.last_called_nr || 0, ...meetings.map(m => m.nr || 0)) + 1;
+  // Etykiety stanowisk grupy: z fm_stations (pełne), awaryjnie z listy „moich” stanowisk.
+  const stationList = groupStations.length ? groupStations : stations.filter(s => s.state?.group_id === state?.group_id);
 
   async function addException(name) {
-    const r = await act("add_exception", async (idem) => { await fmQueueRpc.addException(state.group_id, name, idem); return null; });
+    const r = await act("add_exception", async (idem) => { await api.rpc.addException(state.group_id, name, idem); return null; });
     setExcModal(null);
     if (r !== null) showToast(`${t.exc_title}: ${name}`, "ok");
   }
@@ -149,6 +177,11 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
         <div style={{ color: C.slate, fontSize: 13 }}>{isAdmin ? "admin" : (profile?.name || user.email?.split("@")[0]?.toUpperCase())}</div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
           <LangToggle lang={lang} setLang={setLang} />
+          {selected && state && (
+            <SmallBtn tone={view === "list" ? "primary" : "ghost"} onClick={() => setView(v => (v === "list" ? "station" : "list"))} testId="btn-list">
+              {view === "list" ? t.btn_back_station : `☰ ${t.btn_list}`}
+            </SmallBtn>
+          )}
           {selected && <SmallBtn onClick={() => pick("")}>{t.change_station}</SmallBtn>}
           <SmallBtn onClick={() => { pick(""); signOut?.(); }}>{t.logout}</SmallBtn>
         </div>
@@ -181,28 +214,37 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
         </main>
       )}
 
-      {selected && state && (
+      {selected && state && view === "list" && (
+        <main style={{ padding: "14px 16px 24px", maxWidth: 1100, margin: "0 auto", width: "100%", boxSizing: "border-box", flex: 1 }}>
+          <StationHeader s={selected} state={state} t={t} lang={lang} />
+          <MeetingListView meetings={meetings} stations={stationList} meta={meetingsMeta} online={online} currentId={state.current?.id || state.returnee?.id || null}
+            t={t} lang={lang} onRefresh={refreshMeetings} onBack={() => setView("station")} initial={initial} />
+        </main>
+      )}
+
+      {selected && state && view === "station" && (
         <main style={{ padding: "14px 16px 24px", maxWidth: 1100, margin: "0 auto", width: "100%", boxSizing: "border-box", flex: 1 }}>
           <StationHeader s={selected} state={state} t={t} lang={lang} />
           <div style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 14, marginTop: 12 }}>
-            <NowCard state={state} t={t} />
+            <NowCard state={state} s={selected} t={t} />
             <NextCard state={state} upcoming={upcoming} t={t} />
           </div>
 
           <ActionBar
             state={state} busy={busy || !online} canUndo={canUndo} undoLeft={undoLeft} readyReturnee={readyReturnee} t={t}
             on={{
-              open: () => act("open_station", (idem, v) => fmQueueRpc.openStation(selectedId, v, idem)),
-              callNext: () => act("call_next", (idem, v) => fmQueueRpc.callNext(selectedId, v, idem)),
-              start: () => act("start", (idem, v) => fmQueueRpc.start(selectedId, v, idem)),
-              finishNext: () => act("finish", (idem, v) => fmQueueRpc.finishAndCallNext(selectedId, v, true, idem)),
-              finish: () => act("finish", (idem, v) => fmQueueRpc.finishAndCallNext(selectedId, v, false, idem)),
-              noShow: () => act("no_show", (idem, v) => fmQueueRpc.noShow(selectedId, v, idem)),
-              undo: () => act("undo", (idem, v) => fmQueueRpc.undo(selectedId, v, idem)),
-              serveReturnee: () => readyReturnee && act("serve_returnee", (idem, v) => fmQueueRpc.serveReturnee(selectedId, readyReturnee.id, v, idem)),
-              finishReturnee: () => act("finish_returnee", (idem, v) => fmQueueRpc.finishReturnee(selectedId, v, idem)),
-              mode: (m) => act("set_mode", (idem, v) => fmQueueRpc.setMode(selectedId, m, v, idem)),
+              open: () => act("open_station", (idem, v) => api.rpc.openStation(selectedId, v, idem)),
+              callNext: () => act("call_next", (idem, v) => api.rpc.callNext(selectedId, v, idem)),
+              start: () => act("start", (idem, v) => api.rpc.start(selectedId, v, idem)),
+              finishNext: () => act("finish", (idem, v) => api.rpc.finishAndCallNext(selectedId, v, true, idem)),
+              finish: () => act("finish", (idem, v) => api.rpc.finishAndCallNext(selectedId, v, false, idem)),
+              noShow: () => act("no_show", (idem, v) => api.rpc.noShow(selectedId, v, idem)),
+              undo: () => act("undo", (idem, v) => api.rpc.undo(selectedId, v, idem)),
+              serveReturnee: () => readyReturnee && act("serve_returnee", (idem, v) => api.rpc.serveReturnee(selectedId, readyReturnee.id, v, idem)),
+              finishReturnee: () => act("finish_returnee", (idem, v) => api.rpc.finishReturnee(selectedId, v, idem)),
+              mode: (m) => act("set_mode", (idem, v) => api.rpc.setMode(selectedId, m, v, idem)),
               exception: () => setExcModal({ name: "", step: "form" }),
+              list: () => setView("list"),
             }}
           />
 
@@ -211,13 +253,13 @@ function Operator({ user, profile, signOut, isAdmin, lang, setLang, t }) {
               {(state.waiting_returnees || []).map(r => (
                 <Row key={r.id} nr={r.nr} name={r.name}
                   sub={r.ready ? t.ready_hint : `${t.waits_for} ${r.return_after_nr}`}
-                  right={<SmallBtn tone="ghost" disabled={busy} onClick={() => act("skip", async (idem) => { await fmQueueRpc.skip(r.id, idem); return null; })}>{t.resigns}</SmallBtn>} />
+                  right={<SmallBtn tone="ghost" disabled={busy} onClick={() => act("skip", async (idem) => { await api.rpc.skip(r.id, idem); return null; })}>{t.resigns}</SmallBtn>} />
               ))}
             </ListCard>
             <ListCard title={t.noshows_title} empty={t.noshows_empty}>
               {noShows.map(m => (
-                <Row key={m.id} nr={m.nr} name={m.companies?.name || m.exception_name || "—"} sub={statusLabel(lang, m.status)}
-                  right={<SmallBtn tone="primary" disabled={busy} onClick={() => act("mark_returned", async (idem) => { await fmQueueRpc.markReturned(m.id, idem); return null; })}>{t.returned}</SmallBtn>} />
+                <Row key={m.id} nr={m.nr} name={meetingName(m) || "—"} sub={statusLabel(lang, m.status)}
+                  right={<SmallBtn tone="primary" disabled={busy} onClick={() => act("mark_returned", async (idem) => { await api.rpc.markReturned(m.id, idem); return null; })}>{t.returned}</SmallBtn>} />
               ))}
             </ListCard>
           </div>
@@ -279,33 +321,44 @@ function StationHeader({ s, state, t, lang }) {
   );
 }
 
-function NowCard({ state, t }) {
+// Nazwa stanowiska/grupy do wiersza identyfikacji: „Auchan Polska · stanowisko 1”
+function whereLabel(s, t) {
+  const grp = `${s.retailer_name}${s.group_label ? ` · ${s.group_label}` : ""}`;
+  return `${grp} · ${t.station_short} ${s.station_label || s.station_idx}`;
+}
+
+function NowCard({ state, s, t }) {
   const cur = state.current, ret = state.returnee;
   const active = cur && ["called", "in_progress"].includes(cur.status);
+  const fullName = { fontSize: 24, fontWeight: 700, marginTop: 8, lineHeight: 1.25, overflowWrap: "anywhere" };
   return (
-    <section style={card}>
+    <section style={card} data-testid="now-card">
       <div style={eyebrow}>{t.now}</div>
       {ret ? (
         <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.slate }}>{whereLabel(s, t)}</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
             <div style={{ fontSize: 84, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums", color: C.blue }}>{ret.nr}</div>
             <Pill color={C.blue} bg={C.blueBg}>{t.returnee_pill}</Pill>
           </div>
-          <div style={{ fontSize: 22, fontWeight: 700, marginTop: 6 }}>{ret.name}</div>
-          <div style={{ color: C.slate, marginTop: 4 }}>{t.ongoing} {fmtElapsed(ret.started_at)}</div>
+          <div style={fullName}><span style={{ color: C.slate, fontWeight: 600 }}>{t.nr_label} {ret.nr} — </span>{ret.name || t.no_company}</div>
+          <div style={{ color: C.slate, marginTop: 4 }}>{t.now_status.returnee} · {t.ongoing} {fmtElapsed(ret.started_at)}</div>
+          <div style={hint}>{t.verify_hint}</div>
         </div>
       ) : active ? (
         <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: C.slate }}>{whereLabel(s, t)}</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
             <div style={{ fontSize: 96, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums", color: cur.status === "in_progress" ? C.green : C.amber }}>{cur.nr}</div>
             <Pill color={cur.status === "in_progress" ? C.green : C.amber} bg={cur.status === "in_progress" ? C.greenBg : C.amberBg} big>
               {cur.status === "in_progress" ? t.in_progress : t.called_waiting}
             </Pill>
           </div>
-          <div style={{ fontSize: 24, fontWeight: 700, marginTop: 6 }}>{cur.name}</div>
+          <div style={fullName} data-testid="now-name"><span style={{ color: C.slate, fontWeight: 600 }}>{t.nr_label} {cur.nr} — </span>{cur.name || t.no_company}</div>
           <div style={{ color: C.slate, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
-            {cur.status === "in_progress" ? `${t.ongoing} ${fmtElapsed(cur.started_at)}` : `${t.since_call} ${fmtElapsed(cur.called_at)}`}
+            {cur.status === "in_progress" ? `${t.now_status.in_progress} · ${t.ongoing} ${fmtElapsed(cur.started_at)}` : `${t.now_status.called} · ${t.since_call} ${fmtElapsed(cur.called_at)}`}
           </div>
+          <div style={hint}>{t.verify_hint}</div>
         </div>
       ) : (
         <div style={{ color: C.muted, fontSize: 18, padding: "24px 0" }}>
@@ -324,21 +377,156 @@ function NextCard({ state, upcoming, t }) {
       {nx ? (
         <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
           <div style={{ fontSize: 52, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}>{nx.nr}</div>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>{nx.name}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, overflowWrap: "anywhere", lineHeight: 1.3 }}>{nx.name || t.no_company}</div>
         </div>
       ) : <div style={{ color: C.muted, fontSize: 16 }}>{t.queue_end}</div>}
       {upcoming.length > 1 && (
         <div style={{ marginTop: 12, borderTop: `1px solid ${C.line}`, paddingTop: 8 }}>
           {upcoming.slice(1, 6).map(m => (
             <div key={m.id} style={{ display: "flex", gap: 10, fontSize: 13, padding: "4px 0", color: C.slate }}>
-              <b style={{ width: 28, textAlign: "right", color: C.ink, fontVariantNumeric: "tabular-nums" }}>{m.nr}</b>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.companies?.name || m.exception_name || "—"}</span>
+              <b style={{ width: 28, textAlign: "right", color: C.ink, fontVariantNumeric: "tabular-nums", flex: "0 0 auto" }}>{m.nr}</b>
+              <span title={meetingName(m)} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meetingName(m) || "—"}</span>
             </div>
           ))}
         </div>
       )}
     </section>
   );
+}
+
+// ── Lista spotkań grupy (weryfikacja dostawcy) ───────────────────────────────
+const STATUS_TONE = {
+  planned: { color: C.slate, bg: C.bg },
+  called: { color: C.amber, bg: C.amberBg },
+  in_progress: { color: C.green, bg: C.greenBg },
+  returned_in_progress: { color: C.green, bg: C.greenBg },
+  done: { color: "#334155", bg: "#e2e8f0" },
+  no_show: { color: C.red, bg: C.redBg },
+  returned_waiting: { color: C.blue, bg: C.blueBg },
+  skipped: { color: C.muted, bg: C.bg },
+  cancelled: { color: C.muted, bg: C.bg },
+};
+
+function MeetingListView({ meetings, stations, meta, online, currentId, t, lang, onRefresh, onBack, initial = null }) {
+  const [filter, setFilter] = useState(MEETING_FILTERS.includes(initial?.filter) ? initial.filter : "all");
+  const [query, setQuery] = useState(initial?.query || "");
+  const [openId, setOpenId] = useState(null);
+  const [openInit, setOpenInit] = useState(initial?.openNr || null);
+  useEffect(() => {
+    if (!openInit) return;
+    const m = meetings.find(x => String(x.nr) === String(openInit));
+    if (m) { setOpenId(m.id); setOpenInit(null); }
+  }, [openInit, meetings]);
+  const counts = useMemo(() => countByFilter(meetings), [meetings]);
+  const rows = useMemo(() => filterMeetings(meetings, { filter, query }), [meetings, filter, query]);
+  const stale = meta.stale || !online;
+  const th = { textAlign: "left", fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", color: C.muted, padding: "10px 10px", borderBottom: `1px solid ${C.line}`, whiteSpace: "nowrap" };
+  const td = { padding: "12px 10px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top", fontSize: 16 };
+  return (
+    <section style={{ ...card, marginTop: 12 }} data-testid="meeting-list">
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={eyebrow}>{t.list_title.toUpperCase()} · {t.list_count(rows.length, meetings.length)}</div>
+          <div style={{ fontSize: 13, color: C.slate }}>{t.list_sub}</div>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: C.muted }}>
+          {meta.at && !stale && <span>{t.refreshed_at} {fmtClock(meta.at)}</span>}
+          <SmallBtn onClick={onRefresh}>{t.refresh}</SmallBtn>
+          <SmallBtn tone="primary" onClick={onBack}>{t.btn_back_station}</SmallBtn>
+        </div>
+      </div>
+
+      {stale && (
+        <div role="status" data-testid="stale" style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: C.amberBg, border: "1px solid #fde68a", color: "#92400e", fontWeight: 700, fontSize: 14 }}>
+          {t.stale(meta.at ? fmtClock(meta.at) : null)}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
+        <div style={{ position: "relative", flex: "1 1 320px", maxWidth: 520 }}>
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder={t.search_ph} inputMode="search" aria-label={t.search_ph} data-testid="search"
+            style={{ width: "100%", boxSizing: "border-box", padding: "14px 44px 14px 14px", borderRadius: 12, border: `1.5px solid ${C.line}`, fontSize: 18, fontFamily: "inherit" }} />
+          {query && (
+            <button type="button" onClick={() => setQuery("")} aria-label={t.search_clear} title={t.search_clear}
+              style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", width: 36, height: 36, borderRadius: 999, border: "none", background: C.bg, color: C.slate, fontSize: 18, cursor: "pointer" }}>×</button>
+          )}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }} role="tablist" aria-label={t.col_status}>
+        {MEETING_FILTERS.map(f => {
+          const on = f === filter;
+          return (
+            <button key={f} type="button" role="tab" aria-selected={on} onClick={() => setFilter(f)} data-testid={`filter-${f}`}
+              style={{ minHeight: 44, padding: "0 14px", borderRadius: 999, border: `1.5px solid ${on ? C.teal : C.line}`, background: on ? C.teal : C.white, color: on ? "white" : C.slate, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+              {t.filters[f]} <span style={{ opacity: 0.8, fontVariantNumeric: "tabular-nums" }}>({counts[f]})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {meetings.length === 0 ? (
+        !stale && <div style={{ color: C.muted, fontSize: 15, padding: "18px 0 6px" }}>{t.list_none}</div>
+      ) : rows.length === 0 ? (
+        <div style={{ color: C.muted, fontSize: 15, padding: "18px 0 6px" }}>{t.list_empty}</div>
+      ) : (
+        <div style={{ overflowX: "auto", marginTop: 8 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ ...th, width: 84 }}>{t.col_nr.toUpperCase()}</th>
+                <th style={th}>{t.col_company.toUpperCase()}</th>
+                <th style={{ ...th, width: 210 }}>{t.col_status.toUpperCase()}</th>
+                <th style={{ ...th, width: 120 }}>{t.col_station.toUpperCase()}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(m => {
+                const tone = STATUS_TONE[m.status] || STATUS_TONE.planned;
+                const st = stationLabelFor(m.station_id, stations);
+                const open = openId === m.id;
+                const isCur = currentId && m.id === currentId;
+                const hasTimes = m.called_at || m.started_at || m.ended_at;
+                return [
+                  <tr key={m.id} data-testid={`row-${m.nr}`} onClick={() => setOpenId(open ? null : m.id)} aria-expanded={open}
+                    style={{ cursor: "pointer", background: open ? "#f8fafc" : "transparent", boxShadow: isCur ? `inset 4px 0 0 ${C.teal}` : "none" }}>
+                    <td style={{ ...td, fontSize: 24, fontWeight: 900, fontVariantNumeric: "tabular-nums", textAlign: "right", paddingRight: 16 }}>{m.nr}</td>
+                    <td style={{ ...td, fontWeight: 700, overflowWrap: "anywhere" }}>
+                      {meetingName(m) || <span style={{ color: C.muted, fontWeight: 500 }}>{t.no_company}</span>}
+                      {isException(m) && <span style={{ marginLeft: 8 }}><Pill color="#7c2d12" bg="#ffedd5">{t.exception_tag}</Pill></span>}
+                      {isCur && <span style={{ marginLeft: 8 }}><Pill color={C.tealDark} bg="#ccfbf1">{t.current_tag}</Pill></span>}
+                    </td>
+                    <td style={td}><Pill color={tone.color} bg={tone.bg} big>{statusLabel(lang, m.status).toUpperCase()}</Pill></td>
+                    <td style={{ ...td, fontVariantNumeric: "tabular-nums", color: st ? C.ink : C.muted }}>{st || "—"}</td>
+                  </tr>,
+                  open && (
+                    <tr key={`${m.id}-d`} data-testid={`details-${m.nr}`}>
+                      <td colSpan={4} style={{ ...td, background: "#f8fafc", fontSize: 14, color: C.slate, paddingTop: 0 }}>
+                        {hasTimes || m.return_after_nr || m.note ? (
+                          <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
+                            <Kv k={t.details_called} v={fmtClock(m.called_at)} />
+                            <Kv k={t.details_started} v={fmtClock(m.started_at)} />
+                            <Kv k={t.details_ended} v={fmtClock(m.ended_at)} />
+                            {m.return_after_nr != null && <Kv k={t.details_return_after} v={String(m.return_after_nr)} />}
+                            {st && <Kv k={t.col_station} v={st} />}
+                            {m.note && <Kv k={t.details_note} v={m.note} />}
+                          </div>
+                        ) : <span>{t.details_none}</span>}
+                      </td>
+                    </tr>
+                  ),
+                ];
+              })}
+            </tbody>
+          </table>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>{t.tap_details}</div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Kv({ k, v }) {
+  return <span><span style={{ color: C.muted }}>{k}:</span> <b style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>{v || "—"}</b></span>;
 }
 
 function ActionBar({ state, busy, canUndo, undoLeft, readyReturnee, on, t }) {
@@ -380,6 +568,7 @@ function ActionBar({ state, busy, canUndo, undoLeft, readyReturnee, on, t }) {
       {btns}
       <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
         {canUndo && <BigBtn tone="warn" disabled={busy} onClick={on.undo} title={t.undo_hint}>{t.btn_undo} ({undoLeft} s)</BigBtn>}
+        <BigBtn tone="ghost" onClick={on.list} title={t.list_sub}>☰ {t.btn_list}</BigBtn>
         {mode !== "closed" && mode !== "closing" && <BigBtn tone="ghost" disabled={busy} onClick={on.exception}>{t.btn_exception}</BigBtn>}
       </div>
     </div>
@@ -401,7 +590,7 @@ function Row({ nr, name, sub, right }) {
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 0", borderTop: `1px solid ${C.line}` }}>
       <div style={{ fontSize: 22, fontWeight: 900, width: 44, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{nr}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+        <div style={{ fontWeight: 700, overflowWrap: "anywhere" }}>{name}</div>
         {sub && <div style={{ fontSize: 12, color: C.slate }}>{sub}</div>}
       </div>
       {right}
@@ -421,6 +610,7 @@ function Modal({ children, onClose }) {
 
 const card = { background: C.white, borderRadius: 16, border: `1px solid ${C.line}`, padding: "14px 18px" };
 const eyebrow = { fontSize: 12, fontWeight: 800, letterSpacing: "0.12em", color: C.muted, marginBottom: 8 };
+const hint = { marginTop: 10, fontSize: 13, color: "#92400e", background: C.amberBg, border: "1px solid #fde68a", borderRadius: 10, padding: "8px 10px", lineHeight: 1.4 };
 const bigPrimary = (disabled) => ({ minHeight: 64, padding: "0 22px", borderRadius: 14, border: `1.5px solid ${C.teal}`, background: C.teal, color: "white", fontSize: 17, fontWeight: 800, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, fontFamily: "inherit" });
 
 function Pill({ children, color, bg, big }) {
@@ -441,10 +631,10 @@ function BigBtn({ children, onClick, disabled, tone = "primary", title }) {
     </button>
   );
 }
-function SmallBtn({ children, onClick, disabled, tone = "ghost" }) {
+function SmallBtn({ children, onClick, disabled, tone = "ghost", testId }) {
   const primary = tone === "primary";
   return (
-    <button type="button" onClick={onClick} disabled={disabled}
+    <button type="button" onClick={onClick} disabled={disabled} data-testid={testId}
       style={{ minHeight: 40, padding: "0 14px", borderRadius: 10, border: `1.5px solid ${primary ? C.teal : C.line}`, background: primary ? C.teal : C.white, color: primary ? "white" : C.slate, fontSize: 13, fontWeight: 700, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1, fontFamily: "inherit" }}>
       {children}
     </button>

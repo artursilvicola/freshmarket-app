@@ -82,6 +82,18 @@ Produkcja: plan **Pro**, compute **Nano** (`t4g.nano`, ~21/60 połączeń, 62–
 - Blokada konta (`admin-staff` block) jest **fail-closed**: najpierw `fm_staff_set_blocked` w bazie (blocked + sesje w jednej transakcji), potem ban w Auth; przy częściowym błędzie konto zostaje zablokowane, panel pokazuje błąd.
 - PIN: `crypto.randomInt`, bez trywialnych ciągów, zwracany **raz** (create/reset_pin), nie zapisywany, nie logowany. Reset PIN-u / blokada = unieważnienie wszystkich sesji (`fm_staff_revoke_sessions`) + odpięcie tabletu. Kontami zarządza **tylko super admin**.
 
+## 5a. Weryfikacja dostawcy przez obsługę (gałąź `feat/staff-meeting-list`, 8.09 — do review)
+
+Operator jest osobą zewnętrzną i nie zna dostawców. Sam numer NIE jest weryfikacją. Przebieg przy stanowisku:
+
+1. Dostawca podaje firmę, sieć i numer oraz pokazuje kartę spotkania (lub ekran „Twoja kolej”).
+2. Operator ma wybrane właściwe stanowisko (sieć / grupa — Dino · Owoce i Dino · Kwiaty to osobne kolejki). Przy **TERAZ** widzi: „Sieć · stanowisko N”, **„Numer 12 — pełna nazwa firmy”** (zawijana, nigdy ucięta), status („Wywołany — oczekujemy na dostawcę”, „W trakcie — spotkanie trwa”) i wskazówkę weryfikacyjną.
+3. Jeśli osoba nie jest przy TERAZ: **„☰ Lista spotkań”** → szukanie po numerze lub nazwie (bez polskich znaków), filtry Wszystkie / Oczekujące / Wywołane–w trakcie / Zakończone / Nieobecni–powracający, kolumna **Stanowisko** (Auchan ×2 = wspólna kolejka), wiersz → godziny wywołania / rozpoczęcia / zakończenia. **Status pochodzi z rekordu spotkania** — niższy numer nie oznacza „zakończone”.
+4. Zgadza się → skierowanie do kupca i istniejący przycisk „Rozpocznij spotkanie”. Nie zgadza się (inna firma, spotkanie już zakończone/nieobecny) → administrator. Lista nie ma żadnych akcji zmieniających stan; bez automatycznego wyjątku i bez „rozpocznij ponownie”.
+5. Lista odświeża się po każdej operacji, z Realtime (drugi tablet) i co 10 s; przy błędzie pobrania / offline pokazuje baner „dane mogą być nieaktualne” z godziną ostatniego udanego odświeżenia.
+
+Widoczność: RLS 053 bez zmian (admin + obsługa przypisana do sieci); `/tablice` i snapshot nadal bez nazw dostawców. Podgląd z danymi testowymi (tylko dev): `/obsluga-demo?station=s-au-2&view=list`; zrzuty 1024×768: `docs/production/img/obsluga-lista/`. Notatka do review: `NOTATKA_DLA_CODEX_2026-09-08_OBSLUGA_LISTA_SPOTKAN.md`.
+
 ## 6. Kiosk (rzutnik 1024×768)
 
 - Windows: Edge/Chrome `msedge.exe --kiosk "https://b2b.freshmarket.eu/tablice?gate=1" --edge-kiosk-type=fullscreen` (lub Windows „Dostęp przypisany” z Edge). Parametry: `?rotate=8`, `?perPage=10`, `?page=2` (stała strona, drugi ekran).

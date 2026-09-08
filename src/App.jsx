@@ -18,6 +18,9 @@ import { isSupabaseConfigured } from "./lib/supabase";
 // /tablice jest publiczna (snapshot bez nazw firm); /tablica to stary alias.
 const StaffPanel = lazy(() => import("./staff/StaffPanel"));
 const FmBoardPage = lazy(() => import("./pages/FmBoardPage"));
+// [feat/staff-meeting-list] Podgląd panelu obsługi z danymi testowymi w pamięci — TYLKO w dev
+// (`import.meta.env.DEV` jest stałą w buildzie, więc trasa i chunk nie trafiają do produkcji).
+const StaffDemo = import.meta.env.DEV ? lazy(() => import("./staff/StaffDemo")) : null;
 
 export default function App() {
   if (!isSupabaseConfigured) {
@@ -79,6 +82,7 @@ export default function App() {
           <Route path="/obsluga/*" element={<Suspense fallback={<LazyFallback />}><StaffPanel /></Suspense>} />
           <Route path="/tablice" element={<Suspense fallback={<LazyFallback />}><FmBoardPage /></Suspense>} />
           <Route path="/tablica" element={<LegacyBoardRedirect />} />
+          {StaffDemo && <Route path="/obsluga-demo" element={<Suspense fallback={<LazyFallback />}><StaffDemo /></Suspense>} />}
 
           {/* Root: przekieruj według roli */}
           <Route path="/" element={<RoleRedirect />} />
