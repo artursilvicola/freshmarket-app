@@ -40,7 +40,8 @@ export default function StaffPanel() {
 
 // `initial` — tylko podgląd dev (/obsluga-demo?station=…&view=list&filter=done&q=12&open=10): stan startowy do zrzutów.
 export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, api = staffApi, initial = null }) {
-  const [stations, setStations] = useState([]);
+  const [stationSnapshot, setStationSnapshot] = useState({ rows: [], gen: -1, order: 0, requestedAt: 0 });
+  const stations = stationSnapshot.rows;
   const [stationsErr, setStationsErr] = useState("");
   const [selectedId, setSelectedId] = useState(() => { if (initial?.station) return initial.station; try { return localStorage.getItem("fm_station_id") || ""; } catch { return ""; } });
   const [rawState, setState] = useState(null);
@@ -69,7 +70,9 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   // interwału, listy i wyników operacji: GENERACJA WYBORU (rośnie przy każdym wejściu/wyjściu ze
   // stanowiska — Auchan → Dino → Auchan to trzy różne generacje) + WERSJA stanowiska/grupy z bazy.
   const genRef = useRef(0);
-  const stationsAtRef = useRef(0);          // kiedy wczytano listę stanowisk (zasiew stanu tylko ze świeżej)
+  // Jeden porządek dla odczytów, operacji i zasiewu. Nadawany PRZED wysłaniem, nie po odpowiedzi.
+  // Same wersje nie opisują całego snapshotu: np. ready powracającego zależy od drugiego stanowiska.
+  const stateOrderRef = useRef(0), stateAppliedOrderRef = useRef(0), stationsAppliedOrderRef = useRef(0);
   const mtgSeq = useRef(0), mtgApplied = useRef(0);
   const mtgInflight = useRef({ gen: 0, count: 0 }), mtgPending = useRef(false);
   const refreshMeetingsRef = useRef(null);
@@ -80,15 +83,26 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   }, []);
 
   const loadStations = useCallback(async () => {
-    try { setStations((await api.rpc.myStations()) || []); stationsAtRef.current = Date.now(); setStationsErr(""); }
-    catch (e) { setStationsErr(humanFmError(e, lang)); }
+    const gen = genRef.current, order = ++stateOrderRef.current, requestedAt = Date.now();
+    try {
+      const rows = (await api.rpc.myStations()) || [];
+      if (gen !== genRef.current || order < stationsAppliedOrderRef.current) return;
+      stationsAppliedOrderRef.current = order;
+      setStationSnapshot({ rows, gen, order, requestedAt });
+      setStationsErr("");
+    } catch (e) {
+      if (gen !== genRef.current || order < stationsAppliedOrderRef.current) return;
+      stationsAppliedOrderRef.current = order;
+      setStationsErr(humanFmError(e, lang));
+    }
   }, [api, lang]);
 
   // BRAMKA przyjęcia kandydata stanu stanowiska (odczyt, Realtime, interwał, wynik operacji, zasiew).
   // Odrzuca: inną generację wyboru, inne stanowisko niż wybrane oraz stan STARSZY od już przyjętego
-  // (wersje w bazie rosną monotonicznie: każda operacja to +1 na stanowisku, grupowe +1 na grupie).
+  // Wersje nie maleją, ale nie każda zmiana danych pochodnych je podbija (np. waiting_returnees.ready).
+  // Przy RÓWNYCH wersjach rozstrzyga porządek żądań — nowsza odpowiedź nadal może zmienić ekran.
   // Ustawia stateRef synchronicznie, żeby kolejne kandydaty w tym samym ticku porównywały się z nowym.
-  const applyState = useCallback((st, { gen, stationId }) => {
+  const applyState = useCallback((st, { gen, stationId, order }) => {
     if (gen !== genRef.current) return false;
     if (!st || !stationId || st.station_id !== stationId || stationId !== selectedRef.current) return false;
     const cur = stateRef.current;
@@ -96,7 +110,9 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
       const v = Number(st.version ?? 0), cv = Number(cur.version ?? 0);
       const gv = Number(st.group_version ?? 0), cgv = Number(cur.group_version ?? 0);
       if (v < cv || (v === cv && gv < cgv)) return false;   // starszy odczyt / spóźniony wynik
+      if (v === cv && gv === cgv && order <= stateAppliedOrderRef.current) return false;
     }
+    stateAppliedOrderRef.current = Math.max(stateAppliedOrderRef.current, order);
     stateRef.current = st;
     setState(st);
     return true;
@@ -105,11 +121,12 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   const refreshState = useCallback(async () => {
     const id = selectedRef.current, gen = genRef.current;
     if (!id) return;
+    const order = ++stateOrderRef.current;
     try {
       const st = await api.rpc.stationState(id);
-      applyState(st, { gen, stationId: id });
+      applyState(st, { gen, stationId: id, order });
     } catch (e) {
-      if (gen !== genRef.current || id !== selectedRef.current) return;
+      if (gen !== genRef.current || id !== selectedRef.current || order < stateAppliedOrderRef.current) return;
       if (e?.fmCode === "FM_AUTH_REQUIRED" || e?.fmCode === "FM_FORBIDDEN") showToast(humanFmError(e, lang));
     }
   }, [api, applyState, showToast, lang]);
@@ -145,11 +162,13 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   useEffect(() => {
     if (!selectedId) { stateRef.current = null; setState(null); return; }
     const s = stations.find(x => x.station_id === selectedId);
-    // Zasiew z listy stanowisk tylko, gdy ta lista jest świeża (≤ 15 s) i przechodzi bramkę;
-    // w przeciwnym razie ekran pokazuje „Ładowanie…” do czasu odczytu — nie stary cache jako świeży.
-    if (s?.state && Date.now() - stationsAtRef.current <= 15_000) applyState(s.state, { gen: genRef.current, stationId: selectedId });
+    // Cache zachowuje generację i porządek POBRANIA. Nie nadawaj mu świeżej tożsamości przy renderze.
+    // Po zmianie wyboru czekamy na stationState; stara lista służy tylko do wyboru stanowiska.
+    if (s?.state && stationSnapshot.gen === genRef.current && Date.now() - stationSnapshot.requestedAt <= 15_000) {
+      applyState(s.state, { gen: stationSnapshot.gen, stationId: selectedId, order: stationSnapshot.order });
+    }
     refreshState();
-  }, [selectedId, stations, refreshState, applyState]);
+  }, [selectedId, stationSnapshot, refreshState, applyState]);
   // Zmiana grupy = natychmiastowe porzucenie danych poprzedniej grupy (zanim przyjdzie odpowiedź).
   useEffect(() => {
     const gid = state?.group_id || null;
@@ -196,6 +215,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
     genRef.current += 1;
     selectedRef.current = id;
     stateRef.current = null;
+    stateAppliedOrderRef.current = 0;
     mtgInflight.current = { gen: genRef.current, count: 0 };
     mtgPending.current = false;
     setSelectedId(id);
@@ -215,6 +235,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   const act = useCallback(async (label, makeCall) => {
     if (busy || !online) return;
     const gen = genRef.current, stationId = selectedRef.current;
+    const order = ++stateOrderRef.current;
     const expectedVersion = stateRef.current?.version ?? 0;
     const prevNr = stateRef.current?.current?.nr ?? null;
     const idem = newIdemKey();
@@ -225,7 +246,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
       for (;;) {
         try {
           const st = await makeCall(idem, expectedVersion);
-          if (st && typeof st === "object" && st.station_id) applyState(st, { gen, stationId });
+          if (st && typeof st === "object" && st.station_id) applyState(st, { gen, stationId, order });
           else if (live()) await refreshState();
           if (live()) setLastAction({ ts: Date.now(), label, nr: prevNr, stationId });
           return st;
