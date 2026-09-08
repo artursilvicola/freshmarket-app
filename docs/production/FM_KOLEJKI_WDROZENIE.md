@@ -1,6 +1,6 @@
 # Kolejki / numerki spotkań B2B — runbook wdrożenia (FM 2026, 24.09)
 
-Stan: **v4.4 zmergowane do `feat/admin-instructions-announcements` (= commit Codexa `1ea67d2`). Codex: AKCEPTACJA KOŃCOWA (7.09). NIE na main, migracje NIE na produkcji.** Do zgody „wdrażaj”: upgrade produkcji Nano → Micro w spokojnym oknie (< 2 min przerwy). Gałąź testowa Supabase usunięta (~0,013 USD).
+Stan na 8.09.2026: **kolejki v4.4 są na produkcji od 7.09 (Micro, migracje 052/053 — historia w §8). Lista spotkań obsługi z commitu `a7e87db` została wdrożona 8.09 po wyraźnej zgodzie Artura.** Deploy produkcyjny `6a9ff29d50868c000867539e`, publikacja 11:34:18 UTC / 13:34:18 Europe/Warsaw. Poprawka listy nie wymagała migracji ani zmian danych uczestników. Szczegóły i ograniczenia kontroli: §9. Płatna gałąź testowa Supabase z wcześniejszego testu została usunięta.
 Specyfikacja i decyzje: `FM_KOLEJKI_NUMERKI_PROPOZYCJA.md` (sekcja 14). Review: v1 (odrzucona) → v2 → v3 (kolejki OK) → v4 → v4.1 → v4.2 → v4.4. T0–T16, logowanie 2 operatorów, idempotencja, 2 stanowiska równolegle, Realtime 2 tablety, 2 urządzenia naraz, brute force 40× + lockout, reset PIN + stare tokeny, block/unblock — **wszystko ✅**. Zalew 5×: 1 sukces w 69 ms + 4 konflikty, całość 212 ms. Zalew 20×: 1 sukces w 83 ms + 19 konfliktów, całość 261 ms; **0 `PGRST003`, 0 timeoutów, dokładnie jedna wykonana operacja**.
 
 Warunek testu 20× jest spełniony. Wcześniejszy timeout nie wynikał z pojemności puli: `FM_CONFLICT` używał SQLSTATE `40001`, a PostgREST 14.5 automatycznie ponawia błędy serializacji. v4.4 używa oficjalnego kodu `PT409` (HTTP 409), więc konflikt wraca natychmiast i nie uruchamia retry infrastruktury.
@@ -34,9 +34,9 @@ Warunek testu 20× jest spełniony. Wcześniejszy timeout nie wynikał z pojemno
 8. **23.09** po zatwierdzeniu planu: **Tablica i dzień → „Otwórz dzień (import planu)”**. Stanowiska zostają ZAMKNIĘTE.
 9. **24.09**: obsługa loguje się na `/obsluga`, otwiera swoje stanowiska ręcznie; rzutnik: `/tablice?gate=1` i `/tablice?gate=2`; 17:00 → „Zamknij wszystkie stanowiska”.
 
-## 2a. Test przed zgodą na produkcję — tymczasowa gałąź Supabase (plan Codexa, 7.09)
+## 2a. Archiwalny plan testu przed pierwszym wdrożeniem — tymczasowa gałąź Supabase (7.09)
 
-Produkcja: plan **Pro**, compute **Nano** (`t4g.nano`, ~21/60 połączeń, 62–65% RAM). Bezpłatny upgrade do **Micro** (2× RAM, ten sam limit połączeń, < 2 min przerwy) — zalecany przez Supabase dla organizacji płatnych.
+Stan przed wdrożeniem 7.09: plan **Pro**, compute **Nano** (`t4g.nano`, ~21/60 połączeń, 62–65% RAM). Poniższy plan jest historyczny: upgrade do **Micro** wykonano 7.09, a zmierzona przerwa wyniosła około 4 minut (szczegóły §8). Diagnoza problemu zalewu i jej rozwiązanie przez `PT409` są opisane na początku dokumentu; nie przypisywać dawnych timeoutów wyłącznie małej puli.
 
 1. Utworzyć tymczasową gałąź Supabase w organizacji Pro (0,01344 USD/h) — compute Micro.
 2. Na gałęzi: `052_staff_role.sql` (osobno) → `053_fm_queue.sql`; kontrola: `select proname from pg_proc where proname like 'fm_queue%';`.
@@ -82,7 +82,7 @@ Produkcja: plan **Pro**, compute **Nano** (`t4g.nano`, ~21/60 połączeń, 62–
 - Blokada konta (`admin-staff` block) jest **fail-closed**: najpierw `fm_staff_set_blocked` w bazie (blocked + sesje w jednej transakcji), potem ban w Auth; przy częściowym błędzie konto zostaje zablokowane, panel pokazuje błąd.
 - PIN: `crypto.randomInt`, bez trywialnych ciągów, zwracany **raz** (create/reset_pin), nie zapisywany, nie logowany. Reset PIN-u / blokada = unieważnienie wszystkich sesji (`fm_staff_revoke_sessions`) + odpięcie tabletu. Kontami zarządza **tylko super admin**.
 
-## 5a. Weryfikacja dostawcy przez obsługę (gałąź `feat/staff-meeting-list` + `codex/staff-state-ordering`, 8.09 — testy lokalne OK, 3 kolejne testy hostowane OK; bez deployu)
+## 5a. Weryfikacja dostawcy przez obsługę (wdrożone na produkcję 8.09, `a7e87db`; szczegóły §9)
 
 Operator jest osobą zewnętrzną i nie zna dostawców. Sam numer NIE jest weryfikacją. Przebieg przy stanowisku:
 
@@ -94,7 +94,7 @@ Operator jest osobą zewnętrzną i nie zna dostawców. Sam numer NIE jest weryf
 
 Widoczność: RLS 053 bez zmian (admin + obsługa przypisana do sieci); `/tablice` i snapshot nadal bez nazw dostawców. Podgląd z danymi testowymi (tylko dev): `/obsluga-demo?station=s-au-2&view=list`; zrzuty 1024×768: `docs/production/img/obsluga-lista/`. Notatki review: `NOTATKA_DLA_CODEX_2026-09-08_OBSLUGA_LISTA_SPOTKAN.md` → `_v2.md` → `_v3.md`.
 
-Uzupełnienie Codexa: `NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_FINAL.md`. Testy lokalne: **54/54**, oryginalne testy review **9/9**, build OK. Brak merge do main/deployu tej poprawki. **Test hostowany wykonany 8.09:** `node scripts/fm-staff-list-hosted-test.mjs`, wyłącznie projekt `uowpixwtewrmmvkyooec` i istniejący testowy Deploy Preview. Logowanie kod/PIN, nazwy firm pod RLS, brak cudzej listy i dwie sesje Realtime: **3 kolejne pełne przebiegi OK**, ostatnie dwa po 25/25 kontroli. Raport: `NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_HOSTED.md`, surowe wyniki: `evidence/2026-09-08-staff-list/`. Zachowano też wcześniejszy niezaliczony przebieg Realtime (oczekiwana zmiana nie dotarła w 15 s; przyczyna niepotwierdzona). Nie usuwać pollingu awaryjnego 10 s i ostrzeżenia o nieaktualnych danych. Tymczasowe konta, sesje i fixtures posprzątane; audyt zachowany. Nie zastępuje próby na fizycznych tabletach ani testu UI nowego deployu.
+Uzupełnienie Codexa: `NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_FINAL.md`. Testy lokalne: **54/54**, oryginalne testy review **9/9**, build OK; powtórzone przed wdrożeniem 8.09. **Poprawka jest już na main i produkcji — §9.** Test hostowany wykonany wcześniej 8.09: `node scripts/fm-staff-list-hosted-test.mjs`, wyłącznie projekt `uowpixwtewrmmvkyooec` i istniejący testowy Deploy Preview. Logowanie kod/PIN, nazwy firm pod RLS, brak cudzej listy i dwie sesje Realtime: **3 kolejne pełne przebiegi OK**, ostatnie dwa po 25/25 kontroli. Raport: `NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_HOSTED.md`, surowe wyniki: `evidence/2026-09-08-staff-list/`. Zachowano też wcześniejszy niezaliczony przebieg Realtime (oczekiwana zmiana nie dotarła w 15 s; przyczyna niepotwierdzona). Nie usuwać pollingu awaryjnego 10 s i ostrzeżenia o nieaktualnych danych. Tymczasowe konta, sesje i fixtures posprzątane; audyt zachowany. Nie zastępuje próby na fizycznych tabletach ani klikania nowej listy na zalogowanym koncie w docelowym środowisku.
 
 ## 6. Kiosk (rzutnik 1024×768)
 
@@ -126,3 +126,11 @@ Uzupełnienie Codexa: `NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_FINAL.m
 | 14. `chore/npm-audit-2026-09` | — | osobno, po stabilizacji kolejek |
 
 Dzień produkcyjny NIE został otwarty, plan NIE został zaimportowany. Nie sprawdzono z zewnątrz: logowanie istniejących użytkowników i panel admina (brak sesji), Realtime z tokenem obsługi (próba generalna), logi Netlify/Supabase w dashboardzie (strona logów nie renderowała się w automatyzacji — do zerknięcia ręcznie).
+
+## 9. Lista spotkań obsługi — wdrożona 8.09.2026
+
+Po zgodzie Artura „ok, sprawdz i wdróż to” wykonano fast-forward `origin/main`: `b901bf4` → **`a7e87db`**. Netlify production **`6a9ff29d50868c000867539e`**, `ready`, publikacja 11:34:18 UTC / 13:34:18 Europe/Warsaw. Nie uruchamiano migracji, nie zmieniano sekretów ani danych w bazie. Poprzedni deploy do ewentualnego przywrócenia: `6a9ed12ae1077c00081aa455` (`b901bf4`).
+
+Powtórzono 54/54 testy aplikacji, 9/9 niezależne testy review, build i `git diff --check`. Najpierw sprawdzono draft `6a9ff1d90223d0ff506d415d` z testowym Supabase, następnie potwierdzono produkcyjny commit i produkcyjny projekt w bundlu. Logowanie PL/EN, publiczna tablica i przekierowanie `/tablica` z query/hash działają. Snapshot: 24 stanowiska, wszystkie zamknięte, bez pól z nazwami dostawców. Lokalny podgląd z danymi w pamięci potwierdził listę, historię, wyszukiwanie, zmianę Auchan → Dino i ostrzeżenie po błędzie odczytu.
+
+Pełny raport z granicami testów: **`NOTATKA_DLA_CLAUDE_2026-09-08_LISTA_WDROZONA.md`**. Nie wykonano w tej turze testu zalogowanego operatora na nowej produkcji ani fizycznych tabletów. Nadal potrzebne są przypisania GATE, konta/przypisania obsługi, aktualizacja instrukcji PDF i próba generalna. Przy filtrze `?gate=1` tablica pokazuje obecnie nieaktywność; bez filtra widoczne są stanowiska. Nie zmieniać GATE bez potwierdzonego planu sali.
