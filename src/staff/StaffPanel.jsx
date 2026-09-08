@@ -43,7 +43,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   const [stations, setStations] = useState([]);
   const [stationsErr, setStationsErr] = useState("");
   const [selectedId, setSelectedId] = useState(() => { if (initial?.station) return initial.station; try { return localStorage.getItem("fm_station_id") || ""; } catch { return ""; } });
-  const [state, setState] = useState(null);
+  const [rawState, setState] = useState(null);
   // [review 8.09 — P1] Lista spotkań i etykiety stanowisk są ZWIĄZANE Z GRUPĄ: nigdy nie pokazujemy
   // danych innej sieci pod bieżącym nagłówkiem. `rows === null` = brak danych tej grupy (ładowanie
   // albo błąd) — nie wolno wtedy pokazać ani poprzedniej listy, ani „brak spotkań”.
@@ -56,15 +56,22 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   const [lastAction, setLastAction] = useState(null); // { ts, label }
   const [excModal, setExcModal] = useState(null);     // { name, step: "form" | "confirm" }
   const [, setTick] = useState(0);
-  const stateRef = useRef(null);
-  stateRef.current = state;
+  // Ekran pokazuje stan TYLKO wybranego stanowiska (i jego grupy) — stan innego stanowiska,
+  // który przyszedłby jakąkolwiek drogą, nie jest renderowany (review v2 8.09).
+  const selected = stations.find(x => x.station_id === selectedId);
+  const state = rawState && rawState.station_id === selectedId && (!selected?.group_id || selected.group_id === rawState.group_id) ? rawState : null;
+  const stateRef = useRef(null);            // ostatni PRZYJĘTY stan — ustawiany synchronicznie w applyState
   const viewRef = useRef(view);
   viewRef.current = view;
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
-  // Sekwencjonowanie odpowiedzi: starsza odpowiedź NIGDY nie nadpisuje nowszej (P1 #2).
-  const mtgSeq = useRef(0), mtgApplied = useRef(0), mtgInflight = useRef(0), mtgPending = useRef(false);
-  const stSeq = useRef(0), stApplied = useRef(0);
+  // [review v2 8.09] JEDNA wspólna bramka przyjmowania wyników dla odczytów stanu, Realtime,
+  // interwału, listy i wyników operacji: GENERACJA WYBORU (rośnie przy każdym wejściu/wyjściu ze
+  // stanowiska — Auchan → Dino → Auchan to trzy różne generacje) + WERSJA stanowiska/grupy z bazy.
+  const genRef = useRef(0);
+  const stationsAtRef = useRef(0);          // kiedy wczytano listę stanowisk (zasiew stanu tylko ze świeżej)
+  const mtgSeq = useRef(0), mtgApplied = useRef(0);
+  const mtgInflight = useRef({ gen: 0, count: 0 }), mtgPending = useRef(false);
   const refreshMeetingsRef = useRef(null);
 
   const showToast = useCallback((text, tone = "error") => {
@@ -73,58 +80,76 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   }, []);
 
   const loadStations = useCallback(async () => {
-    try { setStations((await api.rpc.myStations()) || []); setStationsErr(""); }
+    try { setStations((await api.rpc.myStations()) || []); stationsAtRef.current = Date.now(); setStationsErr(""); }
     catch (e) { setStationsErr(humanFmError(e, lang)); }
   }, [api, lang]);
 
-  // Stan stanowiska: odpowiedź dla innego (już niewybranego) stanowiska albo starsza od
-  // zastosowanej jest odrzucana — nagłówek, TERAZ i lista muszą pokazywać tę samą grupę.
+  // BRAMKA przyjęcia kandydata stanu stanowiska (odczyt, Realtime, interwał, wynik operacji, zasiew).
+  // Odrzuca: inną generację wyboru, inne stanowisko niż wybrane oraz stan STARSZY od już przyjętego
+  // (wersje w bazie rosną monotonicznie: każda operacja to +1 na stanowisku, grupowe +1 na grupie).
+  // Ustawia stateRef synchronicznie, żeby kolejne kandydaty w tym samym ticku porównywały się z nowym.
+  const applyState = useCallback((st, { gen, stationId }) => {
+    if (gen !== genRef.current) return false;
+    if (!st || !stationId || st.station_id !== stationId || stationId !== selectedRef.current) return false;
+    const cur = stateRef.current;
+    if (cur && cur.station_id === st.station_id) {
+      const v = Number(st.version ?? 0), cv = Number(cur.version ?? 0);
+      const gv = Number(st.group_version ?? 0), cgv = Number(cur.group_version ?? 0);
+      if (v < cv || (v === cv && gv < cgv)) return false;   // starszy odczyt / spóźniony wynik
+    }
+    stateRef.current = st;
+    setState(st);
+    return true;
+  }, []);
+
   const refreshState = useCallback(async () => {
-    const id = selectedRef.current;
+    const id = selectedRef.current, gen = genRef.current;
     if (!id) return;
-    const seq = ++stSeq.current;
     try {
       const st = await api.rpc.stationState(id);
-      if (seq < stApplied.current || id !== selectedRef.current) return;
-      stApplied.current = seq;
-      if (st) setState(st);
+      applyState(st, { gen, stationId: id });
     } catch (e) {
-      if (seq < stApplied.current || id !== selectedRef.current) return;
+      if (gen !== genRef.current || id !== selectedRef.current) return;
       if (e?.fmCode === "FM_AUTH_REQUIRED" || e?.fmCode === "FM_FORBIDDEN") showToast(humanFmError(e, lang));
     }
-  }, [api, showToast, lang]);
+  }, [api, applyState, showToast, lang]);
 
   // Lista spotkań grupy. Odczyt ma jawny limit czasu (wiszące API = błąd, nie „aktualne dane”).
   // Wyzwalacze automatyczne (Realtime/interwał) w trakcie pobierania planują JEDNO kolejne
   // odświeżenie zamiast serii równoległych; ręczne „Odśwież” zawsze wysyła nowe zapytanie.
+  // Odpowiedź z poprzedniej generacji wyboru (np. z pierwszej wizyty na Auchan po powrocie
+  // Auchan → Dino → Auchan) nie jest przyjmowana ani nie rozlicza liczników nowej generacji.
   const refreshMeetings = useCallback(async ({ manual = false } = {}) => {
-    const gid = stateRef.current?.group_id;
+    const gen = genRef.current, gid = stateRef.current?.group_id;
     if (!gid) return;
-    if (!manual && mtgInflight.current > 0) { mtgPending.current = true; return; }
+    if (mtgInflight.current.gen !== gen) { mtgInflight.current = { gen, count: 0 }; mtgPending.current = false; }
+    if (!manual && mtgInflight.current.count > 0) { mtgPending.current = true; return; }
     const seq = ++mtgSeq.current;
-    mtgInflight.current += 1;
+    mtgInflight.current.count += 1;
     setMtg(m => (m.groupId === gid ? { ...m, loading: true } : { ...EMPTY_SCOPE, groupId: gid, loading: true }));
     let rows = null, failed = false;
     try { rows = await withReadTimeout(api.listMeetings(gid), LIST_TIMEOUT_MS); }
     catch { failed = true; }
-    mtgInflight.current = Math.max(0, mtgInflight.current - 1);
-    const stillCurrent = gid === stateRef.current?.group_id;
-    if (seq >= mtgApplied.current && stillCurrent) {
+    if (gen !== genRef.current) return;                      // odpowiedź z poprzedniej wizyty
+    mtgInflight.current.count = Math.max(0, mtgInflight.current.count - 1);
+    if (seq > mtgApplied.current && gid === stateRef.current?.group_id) {
       mtgApplied.current = seq;
       if (failed) setMtg(m => (m.groupId === gid ? { ...m, error: true, loading: false } : { ...EMPTY_SCOPE, groupId: gid, error: true }));
       else setMtg({ groupId: gid, rows: rows || [], at: Date.now(), error: false, loading: false });
     }
-    if (mtgPending.current && mtgInflight.current === 0) { mtgPending.current = false; refreshMeetingsRef.current?.(); }
+    if (mtgPending.current && mtgInflight.current.count === 0) { mtgPending.current = false; refreshMeetingsRef.current?.(); }
   }, [api]);
   refreshMeetingsRef.current = refreshMeetings;
 
   useEffect(() => { loadStations(); }, [loadStations]);
   useEffect(() => {
-    if (!selectedId) { setState(null); return; }
+    if (!selectedId) { stateRef.current = null; setState(null); return; }
     const s = stations.find(x => x.station_id === selectedId);
-    if (s?.state) setState(s.state);
+    // Zasiew z listy stanowisk tylko, gdy ta lista jest świeża (≤ 15 s) i przechodzi bramkę;
+    // w przeciwnym razie ekran pokazuje „Ładowanie…” do czasu odczytu — nie stary cache jako świeży.
+    if (s?.state && Date.now() - stationsAtRef.current <= 15_000) applyState(s.state, { gen: genRef.current, stationId: selectedId });
     refreshState();
-  }, [selectedId, stations, refreshState]);
+  }, [selectedId, stations, refreshState, applyState]);
   // Zmiana grupy = natychmiastowe porzucenie danych poprzedniej grupy (zanim przyjdzie odpowiedź).
   useEffect(() => {
     const gid = state?.group_id || null;
@@ -132,12 +157,12 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   }, [state?.group_id]);
   useEffect(() => { refreshMeetings(); }, [state?.group_id, state?.version, state?.group_version, refreshMeetings]);
   useEffect(() => {
-    const gid = state?.group_id;
+    const gid = state?.group_id, gen = genRef.current;
     if (!gid) { setGroupStations({ groupId: null, rows: [] }); return; }
     let alive = true;
     setGroupStations(g => (g.groupId === gid ? g : { groupId: gid, rows: [] }));
     api.listStations(gid)
-      .then(rows => { if (alive && gid === stateRef.current?.group_id) setGroupStations({ groupId: gid, rows: rows || [] }); })
+      .then(rows => { if (alive && gen === genRef.current && gid === stateRef.current?.group_id) setGroupStations({ groupId: gid, rows: rows || [] }); })
       .catch(() => { /* etykiety opcjonalne */ });
     return () => { alive = false; };
   }, [api, state?.group_id]);
@@ -164,34 +189,53 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
     };
   }, [refreshState]);
 
+  // Wejście/wyjście ze stanowiska = nowa generacja wyboru: wszystko, co było w locie (odczyty,
+  // lista, wyniki operacji, etykiety), traci prawo do zmiany ekranu. Historia „Cofnij” też jest
+  // per wybór. Powrót do listy stanowisk odświeża karty (i cache do zasiewu).
   function pick(id) {
+    genRef.current += 1;
+    selectedRef.current = id;
+    stateRef.current = null;
+    mtgInflight.current = { gen: genRef.current, count: 0 };
+    mtgPending.current = false;
     setSelectedId(id);
+    setState(null);
     setView("station");
     setMtg(EMPTY_SCOPE);
     setGroupStations({ groupId: null, rows: [] });
+    setLastAction(null);
     try { if (id) localStorage.setItem("fm_station_id", id); else localStorage.removeItem("fm_station_id"); } catch { /* noop */ }
+    if (!id) loadStations();
   }
 
   // Jedna operacja = jeden klucz idempotencji; przy błędzie sieci ponawiamy z TYM SAMYM kluczem.
+  // Cel operacji jest ZAMROŻONY przy starcie (stanowisko, oczekiwana wersja, klucz) — ponowienia
+  // niczego nie zmieniają. Wynik wpływa na ekran, listę, „Cofnij” i komunikaty TYLKO, jeśli operator
+  // nadal jest na tym samym stanowisku w tej samej generacji wyboru (review v2 8.09 — P1 #1).
   const act = useCallback(async (label, makeCall) => {
     if (busy || !online) return;
+    const gen = genRef.current, stationId = selectedRef.current;
+    const expectedVersion = stateRef.current?.version ?? 0;
+    const prevNr = stateRef.current?.current?.nr ?? null;
     const idem = newIdemKey();
+    const live = () => gen === genRef.current && stationId === selectedRef.current;
     setBusy(true);
     let attempt = 0;
     try {
       for (;;) {
         try {
-          const prevNr = stateRef.current?.current?.nr ?? null;
-          const st = await makeCall(idem, stateRef.current?.version ?? 0);
-          if (st && typeof st === "object" && st.station_id) setState(st); else await refreshState();
-          setLastAction({ ts: Date.now(), label, nr: prevNr });
+          const st = await makeCall(idem, expectedVersion);
+          if (st && typeof st === "object" && st.station_id) applyState(st, { gen, stationId });
+          else if (live()) await refreshState();
+          if (live()) setLastAction({ ts: Date.now(), label, nr: prevNr, stationId });
           return st;
         } catch (e) {
           const network = e?.network || (e?.message && /fetch|network|Failed to fetch|Load failed|timeout|abort/i.test(e.message) && !e.fmCode);
           if (network && attempt < 2) { attempt++; await new Promise(r => setTimeout(r, 1500)); continue; }
-          if (network) { await refreshState(); showToast(t.err_network); return null; }
           // FM_BUSY = blokada wiersza zajęta > 3 s (konwój) — ponów raz z tym samym kluczem (bezpieczne)
           if (e?.fmCode === "FM_BUSY" && attempt < 1) { attempt++; await new Promise(r => setTimeout(r, 400)); continue; }
+          if (!live()) return null;               // operator już gdzie indziej — cudzy ekran zostaje nietknięty
+          if (network) { await refreshState(); showToast(t.err_network); return null; }
           if (e?.fmCode === "FM_CONFLICT") await refreshState();
           showToast(humanFmError(e, lang));
           return null;
@@ -199,15 +243,15 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
       }
     } finally {
       setBusy(false);
-      refreshMeetings();
+      if (live()) refreshMeetingsRef.current?.();
     }
-  }, [busy, online, refreshState, refreshMeetings, showToast, lang, t]);
+  }, [busy, online, applyState, refreshState, showToast, lang, t]);
 
-  const selected = stations.find(x => x.station_id === selectedId);
   const undoLeft = lastAction ? Math.max(0, Math.ceil((lastAction.ts + UNDO_WINDOW_MS - Date.now()) / 1000)) : 0;
   // Cofnięcie: start zawsze (nie zmienia numeru); no_show/finish tylko gdy stanowisko wolne
   // i przywracany numer jest nadal ostatnio wywołanym w grupie (tablica nie może cofnąć numeru).
-  const canUndo = undoLeft > 0 && (lastAction?.label === "start"
+  // Tylko dla operacji wykonanej na TYM stanowisku w tym wyborze.
+  const canUndo = undoLeft > 0 && lastAction?.stationId === selectedId && (lastAction?.label === "start"
     || ((lastAction?.label === "no_show" || lastAction?.label === "finish") && !state?.current && lastAction?.nr != null && lastAction.nr === state?.last_called_nr));
 
   // Wszystko, co pokazuje spotkania, bierze dane WYŁĄCZNIE z zakresu bieżącej grupy.
@@ -272,6 +316,15 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
               );
             })}
           </div>
+        </main>
+      )}
+
+      {selected && !state && (
+        // Wybrane stanowisko bez przyjętego stanu (świeży wybór, cache nieświeży, odczyt w drodze):
+        // zamiast pokazywać cokolwiek z poprzedniego stanowiska — czekamy na odczyt.
+        <main data-testid="station-loading" style={{ padding: 40, textAlign: "center", color: C.slate }}>
+          <div style={{ fontSize: 18, fontWeight: 700 }}>{selected.retailer_name}{selected.group_label ? ` · ${selected.group_label}` : ""}</div>
+          <div style={{ marginTop: 8 }}>{t.loading}</div>
         </main>
       )}
 
