@@ -1,0 +1,95 @@
+{
+  "run": "LIST-TEST-A1D589B7",
+  "started_at": "2026-09-08T10:05:31.363Z",
+  "project_ref": "uowpixwtewrmmvkyooec",
+  "preview_origin": "https://6a9e92afd955ba9762082ec1--freshmarketb2b.netlify.app",
+  "event_date": "2026-09-08",
+  "checks": [
+    {
+      "label": "real admin-staff creates operator 1",
+      "pass": true
+    },
+    {
+      "label": "real admin-staff creates operator 2",
+      "pass": true
+    },
+    {
+      "label": "real staff-login operator 1",
+      "pass": true
+    },
+    {
+      "label": "operator 1 session belongs to test project",
+      "pass": true
+    },
+    {
+      "label": "real staff-login operator 2",
+      "pass": true
+    },
+    {
+      "label": "operator 2 session belongs to test project",
+      "pass": true
+    },
+    {
+      "label": "operator 1: exact supplier names and planned list",
+      "pass": true
+    },
+    {
+      "label": "operator 1: unassigned meeting list blocked by RLS",
+      "pass": true
+    },
+    {
+      "label": "operator 1: unfiltered request does not bypass assignment",
+      "pass": true
+    },
+    {
+      "label": "operator 1: private unassigned station RPC forbidden",
+      "pass": false
+    }
+  ],
+  "cleanup": [
+    {
+      "label": "revoke temporary staff session",
+      "pass": true
+    },
+    {
+      "label": "revoke temporary staff session",
+      "pass": true
+    },
+    {
+      "label": "delete only created queue groups (cascades test meetings/stations/assignments)",
+      "pass": true
+    },
+    {
+      "label": "delete only created suppliers",
+      "pass": true
+    },
+    {
+      "label": "delete only created retailer",
+      "pass": true
+    },
+    {
+      "label": "delete temporary Auth user/profile",
+      "pass": true
+    },
+    {
+      "label": "delete temporary Auth user/profile",
+      "pass": true
+    },
+    {
+      "label": "delete temporary Auth user/profile",
+      "pass": true
+    },
+    {
+      "label": "remove only newly created test-day setting",
+      "pass": true
+    },
+    {
+      "label": "no created profiles remain",
+      "pass": true
+    }
+  ],
+  "finished_at": "2026-09-08T10:05:44.064Z",
+  "pass": false,
+  "failure": "operator 1: private unassigned station RPC forbidden",
+  "audit_policy": "Append-only queue and login audit records retained; no PIN/password/key/token written to report."
+}

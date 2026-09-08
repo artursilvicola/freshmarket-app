@@ -3,6 +3,8 @@
 Data: 8.09.2026. Baza zmian: `5074ce2`, gałąź źródłowa `feat/staff-meeting-list`.
 Gałąź z uzupełnieniem: `codex/staff-state-ordering`.
 
+**Aktualizacja 8.09, po 12:11 czasu polskiego:** blokada dostępu do testowego klucza została usunięta dzięki zalogowanej sesji Chrome. Wykonałem test rzeczywistych kont: trzy kolejne pełne przebiegi OK. Szczegóły, wcześniejsze nieudane przebiegi i granice wniosku są w [raporcie hostowanym](NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_HOSTED.md). Poniższa treść dokumentuje wcześniejszy stan przekazania; wpis „test niewykonany” nie jest już aktualny. Nadal bez merge do main i bez deployu.
+
 ## Wynik w prostych słowach
 
 Lista firm i dotychczasowe zabezpieczenia pozostają. Domknąłem jeszcze jeden przypadek: spóźniona odpowiedź serwera mogła ukryć możliwość obsłużenia powracającego dostawcy, mimo że druga osoba z obsługi właśnie zakończyła spotkanie i dostawca był już gotowy do wejścia. Samo porównanie numerów wersji nie wykrywało takiej odpowiedzi.

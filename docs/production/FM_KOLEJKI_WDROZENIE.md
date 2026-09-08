@@ -82,7 +82,7 @@ Produkcja: plan **Pro**, compute **Nano** (`t4g.nano`, ~21/60 połączeń, 62–
 - Blokada konta (`admin-staff` block) jest **fail-closed**: najpierw `fm_staff_set_blocked` w bazie (blocked + sesje w jednej transakcji), potem ban w Auth; przy częściowym błędzie konto zostaje zablokowane, panel pokazuje błąd.
 - PIN: `crypto.randomInt`, bez trywialnych ciągów, zwracany **raz** (create/reset_pin), nie zapisywany, nie logowany. Reset PIN-u / blokada = unieważnienie wszystkich sesji (`fm_staff_revoke_sessions`) + odpięcie tabletu. Kontami zarządza **tylko super admin**.
 
-## 5a. Weryfikacja dostawcy przez obsługę (gałąź `feat/staff-meeting-list` + `codex/staff-state-ordering`, 8.09 — testy lokalne OK, test hostowany do wykonania)
+## 5a. Weryfikacja dostawcy przez obsługę (gałąź `feat/staff-meeting-list` + `codex/staff-state-ordering`, 8.09 — testy lokalne OK, 3 kolejne testy hostowane OK; bez deployu)
 
 Operator jest osobą zewnętrzną i nie zna dostawców. Sam numer NIE jest weryfikacją. Przebieg przy stanowisku:
 
@@ -94,7 +94,7 @@ Operator jest osobą zewnętrzną i nie zna dostawców. Sam numer NIE jest weryf
 
 Widoczność: RLS 053 bez zmian (admin + obsługa przypisana do sieci); `/tablice` i snapshot nadal bez nazw dostawców. Podgląd z danymi testowymi (tylko dev): `/obsluga-demo?station=s-au-2&view=list`; zrzuty 1024×768: `docs/production/img/obsluga-lista/`. Notatki review: `NOTATKA_DLA_CODEX_2026-09-08_OBSLUGA_LISTA_SPOTKAN.md` → `_v2.md` → `_v3.md`.
 
-Uzupełnienie Codexa: `NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_FINAL.md`. Testy lokalne: **54/54**, oryginalne testy review **9/9**, build OK. Brak merge/deployu tej poprawki. Wąski test integracyjny: `node scripts/fm-staff-list-hosted-test.mjs` (zmienne testowe opisane w skrypcie; wymaga niezamaskowanego klucza testowego). Wyłącznie projekt `uowpixwtewrmmvkyooec` i testowy Deploy Preview, fikcyjne dane, dwie prawdziwe sesje, kontrola RLS i Realtime. **Nie zaliczony zdalnie**: 8.09 zatrzymany przed zapisami z powodu zamaskowanego sekretu; panel Supabase wymaga logowania. Nie zastępuje próby na fizycznych tabletach.
+Uzupełnienie Codexa: `NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_FINAL.md`. Testy lokalne: **54/54**, oryginalne testy review **9/9**, build OK. Brak merge do main/deployu tej poprawki. **Test hostowany wykonany 8.09:** `node scripts/fm-staff-list-hosted-test.mjs`, wyłącznie projekt `uowpixwtewrmmvkyooec` i istniejący testowy Deploy Preview. Logowanie kod/PIN, nazwy firm pod RLS, brak cudzej listy i dwie sesje Realtime: **3 kolejne pełne przebiegi OK**, ostatnie dwa po 25/25 kontroli. Raport: `NOTATKA_DLA_CLAUDE_CODEX_2026-09-08_OBSLUGA_LISTA_HOSTED.md`, surowe wyniki: `evidence/2026-09-08-staff-list/`. Zachowano też wcześniejszy niezaliczony przebieg Realtime (oczekiwana zmiana nie dotarła w 15 s; przyczyna niepotwierdzona). Nie usuwać pollingu awaryjnego 10 s i ostrzeżenia o nieaktualnych danych. Tymczasowe konta, sesje i fixtures posprzątane; audyt zachowany. Nie zastępuje próby na fizycznych tabletach ani testu UI nowego deployu.
 
 ## 6. Kiosk (rzutnik 1024×768)
 

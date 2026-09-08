@@ -45,7 +45,7 @@ const anon = createClient(url, anonKey, options);
 const run = `LIST-TEST-${randomUUID().slice(0, 8).toUpperCase()}`;
 const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Warsaw", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const evidence = { run, started_at: new Date().toISOString(), project_ref: TEST_REF, preview_origin: endpoint.origin, event_date: today, checks: [], cleanup: [] };
-const created = { users: [], staff: [], groups: [], companies: [], retailer: null, settings: false, realtime: [] };
+const created = { users: [], staff: [], groups: [], companies: [], retailer: null, settings: false, realtime: [], adminToken: null };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const checked = async (query, label) => {
   const r = await query;
@@ -79,6 +79,7 @@ try {
   created.users.push(admin.user.id);
   await checked(svc.from("profiles").upsert({ id: admin.user.id, email: admin.user.email, role: "admin", admin_level: "super" }), "temporary admin profile");
   const session = await checked(anon.auth.signInWithPassword({ email: admin.user.email, password }), "admin login");
+  created.adminToken = session.session.access_token;
   // Separate anon client below: never accidentally test public access using the admin session.
   const publicClient = createClient(url, anonKey, options);
   const staff = [];
@@ -119,7 +120,11 @@ try {
     const allRows = await checked(client.from("fm_queue_meetings").select("id,queue_group_id"), "unfiltered meeting read");
     check(allRows.length === 2 && allRows.every(r => r.queue_group_id === assigned.id), `operator ${i + 1}: unfiltered request does not bypass assignment`);
     const state = await client.rpc("fm_queue_station_state", { p_station_id: hiddenStation.id });
-    check(!!state.error && /FM_FORBIDDEN/.test(state.error.message), `operator ${i + 1}: private unassigned station RPC forbidden`);
+    // A valid staff account lacking this assignment gets FM_NOT_ASSIGNED (not FM_FORBIDDEN,
+    // which is reserved for a caller without the staff role). Require the exact denial and no data.
+    evidence.private_rpc_denials ||= [];
+    evidence.private_rpc_denials.push({ operator: i + 1, code: state.error?.code || null, message: state.error?.message || null, data_is_null: state.data === null });
+    check(state.data === null && state.error?.code === "42501" && state.error?.message === "FM_NOT_ASSIGNED", `operator ${i + 1}: private unassigned station RPC forbidden`);
     const mine = await rpc(client, "fm_queue_my_stations", { p_event_date: today });
     check(mine.length === 2 && mine.every(s => s.group_id === assigned.id), `operator ${i + 1}: chooser contains only assigned group`);
   }
@@ -147,14 +152,19 @@ try {
   state = await rpc(clients[0], "fm_queue_call_next", { p_station_id: station.id, p_expected_version: state.version, p_idem: `${run}-call` });
   check(state.current?.nr === 1, "operator 1 calls first supplier through RPC");
   state = await rpc(clients[0], "fm_queue_start", { p_station_id: station.id, p_expected_version: state.version, p_idem: `${run}-start` });
+  check(state.current?.status === "in_progress", "start RPC returns in_progress");
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline && hits.some(events => !events.some(row => row.version === state.version))) await sleep(100);
-  check(hits.every(events => events.some(row => row.version === state.version)), "both independent Realtime sessions received the started meeting version");
+  const realtimeMetDeadline = hits.every(events => events.some(row => row.version === state.version));
+  evidence.realtime_wait_ms = Date.now() - (deadline - 15_000);
   evidence.realtime_event_counts = hits.map(events => events.length);
+  evidence.realtime_expected = { station_id: station.id, version: state.version };
+  evidence.realtime_received = hits.map(events => events.map(row => ({ id: row.id, version: row.version })));
   for (const [i, client] of clients.entries()) {
     const rows = await list(client, assigned.id);
     check(rows[0]?.status === "in_progress" && rows[0].companies?.name === companies[0].name && rows[0].station_id === station.id && !!rows[0].called_at && !!rows[0].started_at && rows[1]?.status === "planned", `operator ${i + 1}: refreshed list shows correct company, desk, status and times`);
   }
+  check(realtimeMetDeadline, "both independent Realtime sessions received the started meeting version within 15 seconds");
 } catch (error) {
   failure = String(error.message || error);
   console.error("FAIL", failure);
@@ -165,6 +175,7 @@ try {
   };
   for (const [client, channel] of created.realtime) await cleanup("close test Realtime channel", () => client.removeChannel(channel));
   for (const id of created.staff) await cleanup("revoke temporary staff session", () => rpc(svc, "fm_staff_revoke_sessions", { p_user: id, p_rotate_pin: false }));
+  if (created.adminToken) await cleanup("sign out temporary admin session", () => checked(svc.auth.admin.signOut(created.adminToken, "global"), "cleanup admin session"));
   if (created.groups.length) await cleanup("delete only created queue groups (cascades test meetings/stations/assignments)", () => checked(svc.from("fm_queue_groups").delete().in("id", created.groups), "cleanup groups"));
   if (created.companies.length) await cleanup("delete only created suppliers", () => checked(svc.from("companies").delete().in("id", created.companies), "cleanup companies"));
   if (created.retailer !== null) await cleanup("delete only created retailer", () => checked(svc.from("retailers").delete().eq("id", created.retailer).eq("name", `${run} Test Chain`), "cleanup retailer"));
@@ -177,7 +188,8 @@ try {
   }
   evidence.finished_at = new Date().toISOString(); evidence.pass = !failure; evidence.failure = failure;
   evidence.audit_policy = "Append-only queue and login audit records retained; no PIN/password/key/token written to report.";
-  await mkdir("out", { recursive: true });
+  await mkdir("out/staff-list-hosted-results", { recursive: true });
+  await writeFile(`out/staff-list-hosted-results/${run}.json`, JSON.stringify(evidence, null, 2) + "\n");
   await writeFile("out/staff-list-hosted-result.json", JSON.stringify(evidence, null, 2) + "\n");
   console.log(JSON.stringify(evidence, null, 2));
 }

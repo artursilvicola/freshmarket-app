@@ -1,0 +1,220 @@
+{
+  "run": "LIST-TEST-2FA1442A",
+  "started_at": "2026-09-08T10:11:01.123Z",
+  "project_ref": "uowpixwtewrmmvkyooec",
+  "preview_origin": "https://6a9e92afd955ba9762082ec1--freshmarketb2b.netlify.app",
+  "event_date": "2026-09-08",
+  "checks": [
+    {
+      "label": "real admin-staff creates operator 1",
+      "pass": true
+    },
+    {
+      "label": "real admin-staff creates operator 2",
+      "pass": true
+    },
+    {
+      "label": "real staff-login operator 1",
+      "pass": true
+    },
+    {
+      "label": "operator 1 session belongs to test project",
+      "pass": true
+    },
+    {
+      "label": "real staff-login operator 2",
+      "pass": true
+    },
+    {
+      "label": "operator 2 session belongs to test project",
+      "pass": true
+    },
+    {
+      "label": "operator 1: exact supplier names and planned list",
+      "pass": true
+    },
+    {
+      "label": "operator 1: unassigned meeting list blocked by RLS",
+      "pass": true
+    },
+    {
+      "label": "operator 1: unfiltered request does not bypass assignment",
+      "pass": true
+    },
+    {
+      "label": "operator 1: private unassigned station RPC forbidden",
+      "pass": true
+    },
+    {
+      "label": "operator 1: chooser contains only assigned group",
+      "pass": true
+    },
+    {
+      "label": "operator 2: exact supplier names and planned list",
+      "pass": true
+    },
+    {
+      "label": "operator 2: unassigned meeting list blocked by RLS",
+      "pass": true
+    },
+    {
+      "label": "operator 2: unfiltered request does not bypass assignment",
+      "pass": true
+    },
+    {
+      "label": "operator 2: private unassigned station RPC forbidden",
+      "pass": true
+    },
+    {
+      "label": "operator 2: chooser contains only assigned group",
+      "pass": true
+    },
+    {
+      "label": "anonymous user cannot read meeting lists",
+      "pass": true
+    },
+    {
+      "label": "public board contains test station but no supplier names",
+      "pass": true
+    },
+    {
+      "label": "Realtime session 1 subscribed with real staff token",
+      "pass": true
+    },
+    {
+      "label": "Realtime session 2 subscribed with real staff token",
+      "pass": true
+    },
+    {
+      "label": "operator 1 calls first supplier through RPC",
+      "pass": true
+    },
+    {
+      "label": "start RPC returns in_progress",
+      "pass": true
+    },
+    {
+      "label": "operator 1: refreshed list shows correct company, desk, status and times",
+      "pass": true
+    },
+    {
+      "label": "operator 2: refreshed list shows correct company, desk, status and times",
+      "pass": true
+    },
+    {
+      "label": "both independent Realtime sessions received the started meeting version within 15 seconds",
+      "pass": true
+    }
+  ],
+  "cleanup": [
+    {
+      "label": "close test Realtime channel",
+      "pass": true
+    },
+    {
+      "label": "close test Realtime channel",
+      "pass": true
+    },
+    {
+      "label": "revoke temporary staff session",
+      "pass": true
+    },
+    {
+      "label": "revoke temporary staff session",
+      "pass": true
+    },
+    {
+      "label": "sign out temporary admin session",
+      "pass": true
+    },
+    {
+      "label": "delete only created queue groups (cascades test meetings/stations/assignments)",
+      "pass": true
+    },
+    {
+      "label": "delete only created suppliers",
+      "pass": true
+    },
+    {
+      "label": "delete only created retailer",
+      "pass": true
+    },
+    {
+      "label": "delete temporary Auth user/profile",
+      "pass": true
+    },
+    {
+      "label": "delete temporary Auth user/profile",
+      "pass": true
+    },
+    {
+      "label": "delete temporary Auth user/profile",
+      "pass": true
+    },
+    {
+      "label": "remove only newly created test-day setting",
+      "pass": true
+    },
+    {
+      "label": "no created profiles remain",
+      "pass": true
+    }
+  ],
+  "private_rpc_denials": [
+    {
+      "operator": 1,
+      "code": "42501",
+      "message": "FM_NOT_ASSIGNED",
+      "data_is_null": true
+    },
+    {
+      "operator": 2,
+      "code": "42501",
+      "message": "FM_NOT_ASSIGNED",
+      "data_is_null": true
+    }
+  ],
+  "realtime_wait_ms": 336,
+  "realtime_event_counts": [
+    3,
+    3
+  ],
+  "realtime_expected": {
+    "station_id": "e86b951f-5d72-4117-a024-381426f823a4",
+    "version": 3
+  },
+  "realtime_received": [
+    [
+      {
+        "id": "e86b951f-5d72-4117-a024-381426f823a4",
+        "version": 1
+      },
+      {
+        "id": "e86b951f-5d72-4117-a024-381426f823a4",
+        "version": 2
+      },
+      {
+        "id": "e86b951f-5d72-4117-a024-381426f823a4",
+        "version": 3
+      }
+    ],
+    [
+      {
+        "id": "e86b951f-5d72-4117-a024-381426f823a4",
+        "version": 1
+      },
+      {
+        "id": "e86b951f-5d72-4117-a024-381426f823a4",
+        "version": 2
+      },
+      {
+        "id": "e86b951f-5d72-4117-a024-381426f823a4",
+        "version": 3
+      }
+    ]
+  ],
+  "finished_at": "2026-09-08T10:11:12.142Z",
+  "pass": true,
+  "failure": null,
+  "audit_policy": "Append-only queue and login audit records retained; no PIN/password/key/token written to report."
+}
