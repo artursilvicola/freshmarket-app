@@ -13885,7 +13885,8 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
           <div style={{ marginTop:12 }}><Badge color="#6ee7b7" bg="rgba(5,150,105,0.2)">{t("fm.supplier.wyniki_hero_badge")}</Badge></div>
         </div>
         {/* [feat/fm-queue] „Twoja kolej” — renderuje się tylko, gdy admin zaimportował plan do kolejek (dzień eventu). */}
-        <Suspense fallback={null}><FmMyQueue lang={i18n.language}/></Suspense>
+        {/* [fix/fm-queue-day-scoping] tylko dzień produkcyjny — spotkania z dni testowych nie trafiają do dostawców */}
+        <Suspense fallback={null}><FmMyQueue lang={i18n.language} eventDate={fmSettings.event_date || fmSettings.eventDate || null}/></Suspense>
         <Card title={t("fm.supplier.wyniki_card_title")} icon={Calendar}>
           {rows.length===0
             ? <div style={{ padding:30,textAlign:"center",color:"#94a3b8" }}>{t("fm.supplier.wyniki_empty")}</div>
