@@ -3,14 +3,17 @@
 // Z REKORDU SPOTKANIA. Niższy numer NIE oznacza „zakończone” — przy dwóch równoległych
 // stanowiskach (Auchan) numer 11 może trwać, gdy 12 jest już wywołany.
 
-export const MEETING_FILTERS = ["all", "waiting", "active", "done", "absent"];
+export const MEETING_FILTERS = ["all", "waiting", "active", "done", "dropped", "absent"];
 
-// Filtry są przeglądowe — `returned_in_progress` celowo pojawia się w dwóch
-// (powracający, który jest właśnie obsługiwany, interesuje operatora w obu widokach).
+// Filtry są PRZEGLĄDOWE, nie rozłączne: `returned_in_progress` celowo pojawia się w dwóch
+// (powracający właśnie obsługiwany interesuje operatora w obu widokach), więc liczniki nie
+// sumują się do „Wszystkie”. „Odbyte” = wyłącznie `done` (review Codexa 8.09: pominięte
+// i anulowane NIE są spotkaniami, które się odbyły — mają własny filtr).
 const FILTER_STATUSES = {
   waiting: ["planned"],
   active: ["called", "in_progress", "returned_in_progress"],
-  done: ["done", "skipped", "cancelled"],
+  done: ["done"],
+  dropped: ["skipped", "cancelled"],
   absent: ["no_show", "returned_waiting", "returned_in_progress"],
 };
 
@@ -74,4 +77,31 @@ export function fmtClock(ts) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "";
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+}
+
+// [review 8.09] Wiek danych: lista służy do weryfikacji firmy, więc „ostatnie udane odświeżenie”
+// musi się starzeć samo — samo `navigator.onLine` nie wystarcza (Wi-Fi działa, API nie odpowiada).
+export const LIST_STALE_AFTER_MS = 25_000;   // ~2,5 × cykl pollingu (10 s)
+export const LIST_TIMEOUT_MS = 10_000;       // jak RPC_TIMEOUT_MS — wiszący odczyt kończy się błędem
+
+export function isDataStale(at, now = Date.now(), maxAgeMs = LIST_STALE_AFTER_MS) {
+  if (at == null) return false;
+  const ts = at instanceof Date ? at.getTime() : Number(at);
+  if (!Number.isFinite(ts)) return false;
+  return now - ts > maxAgeMs;
+}
+
+// Wyścig z limitem czasu: spóźniony wynik jest ignorowany przez sekwencjonowanie w panelu.
+export function withReadTimeout(promise, ms = LIST_TIMEOUT_MS) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const e = new Error("list read timeout");
+      e.network = true; e.timeout = true;
+      reject(e);
+    }, ms);
+    Promise.resolve(promise).then(
+      v => { clearTimeout(timer); resolve(v); },
+      e => { clearTimeout(timer); reject(e); },
+    );
+  });
 }

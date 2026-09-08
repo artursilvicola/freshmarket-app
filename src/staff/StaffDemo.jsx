@@ -131,10 +131,18 @@ export default function StaffDemo() {
   // Parametry URL do zrzutów: ?station=s-au-2&view=list&filter=done&q=12&open=10&offline=1&lang=en
   const initial = useMemo(() => {
     const p = new URLSearchParams(window.location.search);
-    return { station: p.get("station") || null, view: p.get("view") || null, filter: p.get("filter") || null, query: p.get("q") || "", openNr: p.get("open") || null, offline: p.get("offline") === "1", lang: p.get("lang") || null };
+    const off = p.get("offline");
+    return { station: p.get("station") || null, view: p.get("view") || null, filter: p.get("filter") || null, query: p.get("q") || "", openNr: p.get("open") || null,
+      offline: off === "1", offlineAfter: off === "after", lang: p.get("lang") || null };
   }, []);
   useEffect(() => { if (initial.lang) setLang(initial.lang); }, [initial.lang, setLang]);
   const db = useMemo(() => ({ ...fixture(), listeners: new Set(), offline: initial.offline }), [initial.offline]);
+  // ?offline=after — pierwszy odczyt się udaje, kolejny pada: zrzut „lista widoczna, ale dane mogą być nieaktualne”
+  useEffect(() => {
+    if (!initial.offlineAfter) return;
+    const t = setTimeout(() => { db.offline = true; db.listeners.forEach(cb => cb()); setTick(x => x + 1); }, 1200);
+    return () => clearTimeout(t);
+  }, [initial.offlineAfter, db]);
   const api = useMemo(() => makeDemoApi(db, () => { db.listeners.forEach(cb => cb()); setTick(x => x + 1); }), [db]);
   const user = { id: "demo-staff", email: "obsluga-3@obsluga.freshmarket.eu" };
   const profile = { name: "OBSLUGA-3 (DEMO)" };

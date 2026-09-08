@@ -121,19 +121,48 @@ export async function listFmQueueLog(eventDate, limit = 500) {
   return data || [];
 }
 
+// [review 8.09 — P2] Odczyty listy też mają limit czasu (jak RPC): wiszące Data API przy
+// działającym Wi-Fi musi skończyć się BŁĘDEM sieciowym, a nie cichym czekaniem — panel
+// oznacza wtedy dane jako nieaktualne zamiast pokazywać stary stan jako świeży.
+const READ_TIMEOUT_MS = 10_000;
+function readSignal(timeoutMs = READ_TIMEOUT_MS) {
+  try {
+    if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") return AbortSignal.timeout(timeoutMs);
+  } catch { /* starsza przegladarka — bez limitu */ }
+  return null;
+}
+function readError(err) {
+  const e = new Error(/abort|timeout/i.test(String(err?.name || err?.message)) ? "read timeout" : (err?.message || "read error"));
+  e.network = true;
+  return e;
+}
+
 // spotkania grupy (admin / przypisany operator — RLS)
-export async function listFmQueueMeetings(groupId) {
-  const { data, error } = await supabase.from("fm_queue_meetings")
+export async function listFmQueueMeetings(groupId, { timeoutMs = READ_TIMEOUT_MS } = {}) {
+  let q = supabase.from("fm_queue_meetings")
     .select("*, companies(name)").eq("queue_group_id", groupId).order("nr");
-  if (error) return softFail(error, []);
+  const sig = readSignal(timeoutMs);
+  if (sig) q = q.abortSignal(sig);
+  let res;
+  try { res = await q; } catch (err) { throw readError(err); }
+  const { data, error } = res;
+  if (error) {
+    if (/abort|timeout|PGRST003|upstream|fetch/i.test(`${error.code || ""} ${error.message || ""}`)) throw readError(error);
+    return softFail(error, []);
+  }
   return data || [];
 }
 
 // [feat/staff-meeting-list] stanowiska grupy — etykiety w liście spotkań („na którym stanowisku”
 // przy wspólnej kolejce Auchan ×2). SELECT dla zalogowanych (fm_stations_auth_select), bez nazw firm.
-export async function listFmStations(groupId) {
-  const { data, error } = await supabase.from("fm_stations")
+export async function listFmStations(groupId, { timeoutMs = READ_TIMEOUT_MS } = {}) {
+  let q = supabase.from("fm_stations")
     .select("id,idx,label,active").eq("queue_group_id", groupId).order("idx");
+  const sig = readSignal(timeoutMs);
+  if (sig) q = q.abortSignal(sig);
+  let res;
+  try { res = await q; } catch (err) { throw readError(err); }
+  const { data, error } = res;
   if (error) return softFail(error, []);
   return data || [];
 }

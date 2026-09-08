@@ -12,10 +12,15 @@ import { newIdemKey, staffApi } from "../lib/fm-queue";
 import StaffLoginPage, { LangToggle } from "./StaffLoginPage";
 import { C, MODE_LABEL, fmtElapsed, humanFmError, statusLabel } from "./staffUi";
 import { useStaffLang } from "./staffI18n";
-import { MEETING_FILTERS, countByFilter, filterMeetings, fmtClock, isException, meetingName, stationLabelFor } from "./meetingList";
+import {
+  LIST_TIMEOUT_MS, MEETING_FILTERS, countByFilter, filterMeetings, fmtClock, isDataStale,
+  isException, meetingName, stationLabelFor, withReadTimeout,
+} from "./meetingList";
 
 const UNDO_WINDOW_MS = 30_000;
 const POLL_MS = 10_000;
+// Zakres danych listy: `groupId` mówi, CZYJE są wiersze; `rows === null` = brak danych tej grupy.
+const EMPTY_SCOPE = { groupId: null, rows: null, at: null, error: false, loading: false };
 
 export default function StaffPanel() {
   const { user, role, profile, loading, signOut } = useAuth();
@@ -39,9 +44,11 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   const [stationsErr, setStationsErr] = useState("");
   const [selectedId, setSelectedId] = useState(() => { if (initial?.station) return initial.station; try { return localStorage.getItem("fm_station_id") || ""; } catch { return ""; } });
   const [state, setState] = useState(null);
-  const [meetings, setMeetings] = useState([]);
-  const [groupStations, setGroupStations] = useState([]);      // stanowiska grupy (etykiety w liście)
-  const [meetingsMeta, setMeetingsMeta] = useState({ at: null, stale: false });
+  // [review 8.09 — P1] Lista spotkań i etykiety stanowisk są ZWIĄZANE Z GRUPĄ: nigdy nie pokazujemy
+  // danych innej sieci pod bieżącym nagłówkiem. `rows === null` = brak danych tej grupy (ładowanie
+  // albo błąd) — nie wolno wtedy pokazać ani poprzedniej listy, ani „brak spotkań”.
+  const [mtg, setMtg] = useState(EMPTY_SCOPE);                 // { groupId, rows, at, error, loading }
+  const [groupStations, setGroupStations] = useState({ groupId: null, rows: [] });
   const [view, setView] = useState(initial?.view === "list" ? "list" : "station"); // "station" | "list"
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
@@ -53,6 +60,12 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   stateRef.current = state;
   const viewRef = useRef(view);
   viewRef.current = view;
+  const selectedRef = useRef(selectedId);
+  selectedRef.current = selectedId;
+  // Sekwencjonowanie odpowiedzi: starsza odpowiedź NIGDY nie nadpisuje nowszej (P1 #2).
+  const mtgSeq = useRef(0), mtgApplied = useRef(0), mtgInflight = useRef(0), mtgPending = useRef(false);
+  const stSeq = useRef(0), stApplied = useRef(0);
+  const refreshMeetingsRef = useRef(null);
 
   const showToast = useCallback((text, tone = "error") => {
     setToast({ text, tone, id: Date.now() });
@@ -64,22 +77,46 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
     catch (e) { setStationsErr(humanFmError(e, lang)); }
   }, [api, lang]);
 
+  // Stan stanowiska: odpowiedź dla innego (już niewybranego) stanowiska albo starsza od
+  // zastosowanej jest odrzucana — nagłówek, TERAZ i lista muszą pokazywać tę samą grupę.
   const refreshState = useCallback(async () => {
-    if (!selectedId) return;
-    try { const st = await api.rpc.stationState(selectedId); if (st) setState(st); }
-    catch (e) { if (e?.fmCode === "FM_AUTH_REQUIRED" || e?.fmCode === "FM_FORBIDDEN") showToast(humanFmError(e, lang)); }
-  }, [api, selectedId, showToast, lang]);
+    const id = selectedRef.current;
+    if (!id) return;
+    const seq = ++stSeq.current;
+    try {
+      const st = await api.rpc.stationState(id);
+      if (seq < stApplied.current || id !== selectedRef.current) return;
+      stApplied.current = seq;
+      if (st) setState(st);
+    } catch (e) {
+      if (seq < stApplied.current || id !== selectedRef.current) return;
+      if (e?.fmCode === "FM_AUTH_REQUIRED" || e?.fmCode === "FM_FORBIDDEN") showToast(humanFmError(e, lang));
+    }
+  }, [api, showToast, lang]);
 
-  // Lista spotkań grupy: przy błędzie sieci ZOSTAWIAMY ostatnią listę i oznaczamy ją jako nieaktualną.
-  const refreshMeetings = useCallback(async () => {
+  // Lista spotkań grupy. Odczyt ma jawny limit czasu (wiszące API = błąd, nie „aktualne dane”).
+  // Wyzwalacze automatyczne (Realtime/interwał) w trakcie pobierania planują JEDNO kolejne
+  // odświeżenie zamiast serii równoległych; ręczne „Odśwież” zawsze wysyła nowe zapytanie.
+  const refreshMeetings = useCallback(async ({ manual = false } = {}) => {
     const gid = stateRef.current?.group_id;
     if (!gid) return;
-    try {
-      const rows = await api.listMeetings(gid);
-      setMeetings(rows || []);
-      setMeetingsMeta({ at: new Date(), stale: false });
-    } catch { setMeetingsMeta(m => ({ ...m, stale: true })); }
+    if (!manual && mtgInflight.current > 0) { mtgPending.current = true; return; }
+    const seq = ++mtgSeq.current;
+    mtgInflight.current += 1;
+    setMtg(m => (m.groupId === gid ? { ...m, loading: true } : { ...EMPTY_SCOPE, groupId: gid, loading: true }));
+    let rows = null, failed = false;
+    try { rows = await withReadTimeout(api.listMeetings(gid), LIST_TIMEOUT_MS); }
+    catch { failed = true; }
+    mtgInflight.current = Math.max(0, mtgInflight.current - 1);
+    const stillCurrent = gid === stateRef.current?.group_id;
+    if (seq >= mtgApplied.current && stillCurrent) {
+      mtgApplied.current = seq;
+      if (failed) setMtg(m => (m.groupId === gid ? { ...m, error: true, loading: false } : { ...EMPTY_SCOPE, groupId: gid, error: true }));
+      else setMtg({ groupId: gid, rows: rows || [], at: Date.now(), error: false, loading: false });
+    }
+    if (mtgPending.current && mtgInflight.current === 0) { mtgPending.current = false; refreshMeetingsRef.current?.(); }
   }, [api]);
+  refreshMeetingsRef.current = refreshMeetings;
 
   useEffect(() => { loadStations(); }, [loadStations]);
   useEffect(() => {
@@ -88,31 +125,50 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
     if (s?.state) setState(s.state);
     refreshState();
   }, [selectedId, stations, refreshState]);
+  // Zmiana grupy = natychmiastowe porzucenie danych poprzedniej grupy (zanim przyjdzie odpowiedź).
+  useEffect(() => {
+    const gid = state?.group_id || null;
+    setMtg(m => (m.groupId === gid ? m : { ...EMPTY_SCOPE, groupId: gid, loading: !!gid }));
+  }, [state?.group_id]);
   useEffect(() => { refreshMeetings(); }, [state?.group_id, state?.version, state?.group_version, refreshMeetings]);
   useEffect(() => {
     const gid = state?.group_id;
-    if (!gid) { setGroupStations([]); return; }
+    if (!gid) { setGroupStations({ groupId: null, rows: [] }); return; }
     let alive = true;
-    api.listStations(gid).then(rows => { if (alive) setGroupStations(rows || []); }).catch(() => { /* etykiety opcjonalne */ });
+    setGroupStations(g => (g.groupId === gid ? g : { groupId: gid, rows: [] }));
+    api.listStations(gid)
+      .then(rows => { if (alive && gid === stateRef.current?.group_id) setGroupStations({ groupId: gid, rows: rows || [] }); })
+      .catch(() => { /* etykiety opcjonalne */ });
     return () => { alive = false; };
   }, [api, state?.group_id]);
   useEffect(() => {
-    // Realtime (zmiany z drugiego tabletu) + polling: stan stanowiska zawsze, lista gdy jest otwarta.
-    const unsub = api.subscribe(() => { refreshState(); if (viewRef.current === "list") refreshMeetings(); });
+    // Realtime (zmiany z drugiego tabletu) + polling awaryjny: stan stanowiska zawsze,
+    // lista przy każdej zmianie (koalescencja) oraz co POLL_MS, gdy jest otwarta.
+    const unsub = api.subscribe(() => { refreshState(); refreshMeetings(); });
     const i = setInterval(() => { refreshState(); if (viewRef.current === "list") refreshMeetings(); }, POLL_MS);
     return () => { unsub(); clearInterval(i); };
   }, [api, refreshState, refreshMeetings]);
-  useEffect(() => { if (view === "list") refreshMeetings(); }, [view, refreshMeetings]);
+  useEffect(() => { if (view === "list") refreshMeetings({ manual: true }); }, [view, refreshMeetings]);
   useEffect(() => {
     const i = setInterval(() => setTick(x => x + 1), 1000);
-    const on = () => setOnline(true), off = () => setOnline(false);
+    // Powrót łącza / powrót do karty = natychmiastowe odświeżenie (dane mogły się zestarzeć).
+    const on = () => { setOnline(true); refreshState(); refreshMeetingsRef.current?.({ manual: true }); };
+    const off = () => setOnline(false);
+    const onVis = () => { if (typeof document !== "undefined" && document.visibilityState === "visible") { refreshState(); refreshMeetingsRef.current?.({ manual: true }); } };
     window.addEventListener("online", on); window.addEventListener("offline", off);
-    return () => { clearInterval(i); window.removeEventListener("online", on); window.removeEventListener("offline", off); };
-  }, []);
+    if (typeof document !== "undefined" && document.addEventListener) document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(i);
+      window.removeEventListener("online", on); window.removeEventListener("offline", off);
+      if (typeof document !== "undefined" && document.removeEventListener) document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [refreshState]);
 
   function pick(id) {
     setSelectedId(id);
     setView("station");
+    setMtg(EMPTY_SCOPE);
+    setGroupStations({ groupId: null, rows: [] });
     try { if (id) localStorage.setItem("fm_station_id", id); else localStorage.removeItem("fm_station_id"); } catch { /* noop */ }
   }
 
@@ -154,6 +210,9 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   const canUndo = undoLeft > 0 && (lastAction?.label === "start"
     || ((lastAction?.label === "no_show" || lastAction?.label === "finish") && !state?.current && lastAction?.nr != null && lastAction.nr === state?.last_called_nr));
 
+  // Wszystko, co pokazuje spotkania, bierze dane WYŁĄCZNIE z zakresu bieżącej grupy.
+  const scope = mtg.groupId && mtg.groupId === state?.group_id ? mtg : { ...EMPTY_SCOPE, groupId: state?.group_id || null, loading: !!state?.group_id };
+  const meetings = useMemo(() => scope.rows || [], [scope.rows]);
   const noShows = useMemo(() => meetings.filter(m => m.status === "no_show"), [meetings]);
   const upcoming = useMemo(() => {
     const last = state?.last_called_nr ?? 0;
@@ -161,8 +220,10 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   }, [meetings, state?.last_called_nr]);
   const readyReturnee = (state?.waiting_returnees || []).find(r => r.ready);
   const nextExceptionNr = Math.max(state?.last_called_nr || 0, ...meetings.map(m => m.nr || 0)) + 1;
-  // Etykiety stanowisk grupy: z fm_stations (pełne), awaryjnie z listy „moich” stanowisk.
-  const stationList = groupStations.length ? groupStations : stations.filter(s => s.state?.group_id === state?.group_id);
+  // Etykiety stanowisk grupy: z fm_stations (pełne), awaryjnie z listy „moich” stanowisk tej grupy.
+  const stationList = groupStations.groupId === state?.group_id && groupStations.rows.length
+    ? groupStations.rows
+    : stations.filter(s => s.state?.group_id === state?.group_id);
 
   async function addException(name) {
     const r = await act("add_exception", async (idem) => { await api.rpc.addException(state.group_id, name, idem); return null; });
@@ -217,8 +278,8 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
       {selected && state && view === "list" && (
         <main style={{ padding: "14px 16px 24px", maxWidth: 1100, margin: "0 auto", width: "100%", boxSizing: "border-box", flex: 1 }}>
           <StationHeader s={selected} state={state} t={t} lang={lang} />
-          <MeetingListView meetings={meetings} stations={stationList} meta={meetingsMeta} online={online} currentId={state.current?.id || state.returnee?.id || null}
-            t={t} lang={lang} onRefresh={refreshMeetings} onBack={() => setView("station")} initial={initial} />
+          <MeetingListView scope={scope} stations={stationList} online={online} currentId={state.current?.id || state.returnee?.id || null}
+            t={t} lang={lang} onRefresh={() => refreshMeetings({ manual: true })} onBack={() => setView("station")} initial={initial} />
         </main>
       )}
 
@@ -407,11 +468,13 @@ const STATUS_TONE = {
   cancelled: { color: C.muted, bg: C.bg },
 };
 
-function MeetingListView({ meetings, stations, meta, online, currentId, t, lang, onRefresh, onBack, initial = null }) {
+function MeetingListView({ scope, stations, online, currentId, t, lang, onRefresh, onBack, initial = null }) {
   const [filter, setFilter] = useState(MEETING_FILTERS.includes(initial?.filter) ? initial.filter : "all");
   const [query, setQuery] = useState(initial?.query || "");
   const [openId, setOpenId] = useState(null);
   const [openInit, setOpenInit] = useState(initial?.openNr || null);
+  const meetings = scope.rows || [];
+  const hasData = scope.rows !== null;                 // dane TEJ grupy zostały wczytane
   useEffect(() => {
     if (!openInit) return;
     const m = meetings.find(x => String(x.nr) === String(openInit));
@@ -419,26 +482,28 @@ function MeetingListView({ meetings, stations, meta, online, currentId, t, lang,
   }, [openInit, meetings]);
   const counts = useMemo(() => countByFilter(meetings), [meetings]);
   const rows = useMemo(() => filterMeetings(meetings, { filter, query }), [meetings, filter, query]);
-  const stale = meta.stale || !online;
+  // Nieaktualne = brak sieci LUB nieudany/wiszący odczyt LUB zbyt stare ostatnie udane odświeżenie.
+  // Sama dostępność Wi-Fi NIE oznacza aktualnych danych (review 8.09 — P2).
+  const stale = !online || scope.error || isDataStale(scope.at);
   const th = { textAlign: "left", fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", color: C.muted, padding: "10px 10px", borderBottom: `1px solid ${C.line}`, whiteSpace: "nowrap" };
   const td = { padding: "12px 10px", borderBottom: `1px solid ${C.line}`, verticalAlign: "top", fontSize: 16 };
   return (
     <section style={{ ...card, marginTop: 12 }} data-testid="meeting-list">
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <div style={eyebrow}>{t.list_title.toUpperCase()} · {t.list_count(rows.length, meetings.length)}</div>
+          <div style={eyebrow}>{t.list_title.toUpperCase()}{hasData ? ` · ${t.list_count(rows.length, meetings.length)}` : ""}</div>
           <div style={{ fontSize: 13, color: C.slate }}>{t.list_sub}</div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", fontSize: 12, color: C.muted }}>
-          {meta.at && !stale && <span>{t.refreshed_at} {fmtClock(meta.at)}</span>}
-          <SmallBtn onClick={onRefresh}>{t.refresh}</SmallBtn>
+          {scope.at && !stale && <span>{t.refreshed_at} {fmtClock(scope.at)}</span>}
+          <SmallBtn onClick={onRefresh}>{scope.loading ? t.refreshing : t.refresh}</SmallBtn>
           <SmallBtn tone="primary" onClick={onBack}>{t.btn_back_station}</SmallBtn>
         </div>
       </div>
 
       {stale && (
         <div role="status" data-testid="stale" style={{ marginTop: 10, padding: "10px 12px", borderRadius: 10, background: C.amberBg, border: "1px solid #fde68a", color: "#92400e", fontWeight: 700, fontSize: 14 }}>
-          {t.stale(meta.at ? fmtClock(meta.at) : null)}
+          {hasData ? t.stale(scope.at ? fmtClock(scope.at) : null) : t.list_error}
         </div>
       )}
 
@@ -463,9 +528,16 @@ function MeetingListView({ meetings, stations, meta, online, currentId, t, lang,
           );
         })}
       </div>
+      <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>{t.filters_hint}</div>
 
-      {meetings.length === 0 ? (
-        !stale && <div style={{ color: C.muted, fontSize: 15, padding: "18px 0 6px" }}>{t.list_none}</div>
+      {!hasData ? (
+        // Brak danych TEJ grupy: ładowanie albo błąd — nigdy lista poprzedniej sieci
+        // ani przedwczesne „brak spotkań” (review 8.09 — P1).
+        <div data-testid="list-nodata" style={{ color: C.muted, fontSize: 15, padding: "18px 0 6px" }}>
+          {scope.error ? t.list_error_body : t.list_loading}
+        </div>
+      ) : meetings.length === 0 ? (
+        <div style={{ color: C.muted, fontSize: 15, padding: "18px 0 6px" }}>{t.list_none}</div>
       ) : rows.length === 0 ? (
         <div style={{ color: C.muted, fontSize: 15, padding: "18px 0 6px" }}>{t.list_empty}</div>
       ) : (
