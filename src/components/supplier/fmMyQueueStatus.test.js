@@ -60,3 +60,21 @@ describe("TERAZ przy dwóch równoległych stanowiskach (Auchan ×2)", () => {
     expect(nowNumbers(groups.kwiaty)).toEqual([]);
   });
 });
+
+// ── review release 9.09: closing ≠ „wolno wywołać następnego” ────────────────
+describe("zamykanie kolejki nie zapowiada kolejnego dostawcy", () => {
+  it("jedyne stanowisko closing z trwającym nr 12: 13 nie dostaje „następny”, TERAZ nadal 12", () => {
+    const g = groupsFromSnapshot([st("g", 1, "closing", 12, 12)]).g;
+    expect(meetingStatusKey({ nr: 13, status: "planned" }, g)).toEqual({ key: "closing" });
+    expect(nowNumbers(g)).toEqual([12]);
+  });
+  it("closing + closed → closing; closing + open → nadal kolejka (drugie stanowisko może wywołać)", () => {
+    expect(meetingStatusKey({ nr: 13, status: "planned" }, groupsFromSnapshot([st("g", 1, "closing", 12, 12), st("g", 2, "closed", null, 12)]).g).key).toBe("closing");
+    expect(meetingStatusKey({ nr: 13, status: "planned" }, groupsFromSnapshot([st("g", 1, "closing", 11, 12), st("g", 2, "open", 12, 12)]).g).key).toBe("next_up");
+  });
+  it("„Zamknij wszystkie” (settings.closed_all_at) blokuje zapowiedź nawet przy stanowisku open", () => {
+    const g = groupsFromSnapshot([st("g", 1, "open", 12, 12)], { closed_all_at: "2026-09-24T15:00:00Z" }).g;
+    expect(meetingStatusKey({ nr: 13, status: "planned" }, g)).toEqual({ key: "closing" });
+    expect(meetingStatusKey({ nr: 12, status: "called" }, g)).toEqual({ key: "your_turn" });   // wywołany kończy normalnie
+  });
+});

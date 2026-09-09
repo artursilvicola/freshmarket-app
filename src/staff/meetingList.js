@@ -79,29 +79,5 @@ export function fmtClock(ts) {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
 }
 
-// [review 8.09] Wiek danych: lista służy do weryfikacji firmy, więc „ostatnie udane odświeżenie”
-// musi się starzeć samo — samo `navigator.onLine` nie wystarcza (Wi-Fi działa, API nie odpowiada).
-export const LIST_STALE_AFTER_MS = 25_000;   // ~2,5 × cykl pollingu (10 s)
-export const LIST_TIMEOUT_MS = 10_000;       // jak RPC_TIMEOUT_MS — wiszący odczyt kończy się błędem
-
-export function isDataStale(at, now = Date.now(), maxAgeMs = LIST_STALE_AFTER_MS) {
-  if (at == null) return false;
-  const ts = at instanceof Date ? at.getTime() : Number(at);
-  if (!Number.isFinite(ts)) return false;
-  return now - ts > maxAgeMs;
-}
-
-// Wyścig z limitem czasu: spóźniony wynik jest ignorowany przez sekwencjonowanie w panelu.
-export function withReadTimeout(promise, ms = LIST_TIMEOUT_MS) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const e = new Error("list read timeout");
-      e.network = true; e.timeout = true;
-      reject(e);
-    }, ms);
-    Promise.resolve(promise).then(
-      v => { clearTimeout(timer); resolve(v); },
-      e => { clearTimeout(timer); reject(e); },
-    );
-  });
-}
+// [review 8.09] Wiek danych i limit czasu odczytu — wspólne z kartą dostawcy (src/lib/fm-read.js).
+export { LIST_STALE_AFTER_MS, LIST_TIMEOUT_MS, isDataStale, withReadTimeout } from "../lib/fm-read.js";
