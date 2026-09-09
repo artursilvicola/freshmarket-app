@@ -12,6 +12,7 @@ import { newIdemKey, staffApi } from "../lib/fm-queue";
 import StaffLoginPage, { LangToggle } from "./StaffLoginPage";
 import { C, MODE_LABEL, fmtElapsed, humanFmError, statusLabel } from "./staffUi";
 import { useStaffLang } from "./staffI18n";
+import { fmtDatePL, warsawToday } from "../lib/fm-date";
 import {
   LIST_TIMEOUT_MS, MEETING_FILTERS, countByFilter, filterMeetings, fmtClock, isDataStale,
   isException, meetingName, stationLabelFor, withReadTimeout,
@@ -85,7 +86,9 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   const loadStations = useCallback(async () => {
     const gen = genRef.current, order = ++stateOrderRef.current, requestedAt = Date.now();
     try {
-      const rows = (await api.rpc.myStations()) || [];
+      // Stanowiska z DZISIEJSZEGO dnia (Europe/Warsaw): konto obsługi działa tylko w swoim dniu,
+      // a RPC bez daty brałby max(event_date) = 24.09 — operator dnia testowego widziałby pustą listę.
+      const rows = (await api.rpc.myStations(warsawToday())) || [];
       if (gen !== genRef.current || order < stationsAppliedOrderRef.current) return;
       stationsAppliedOrderRef.current = order;
       setStationSnapshot({ rows, gen, order, requestedAt });
@@ -317,7 +320,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
 
       {!selected && (
         <main style={{ padding: 20, maxWidth: 1100, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
-          <h1 style={{ fontSize: 22, margin: "4px 0 14px" }}>{t.pick_station}</h1>
+          <h1 style={{ fontSize: 22, margin: "4px 0 14px" }}>{t.pick_station} <span style={{ fontSize: 14, fontWeight: 600, color: C.slate }} data-testid="stations-day">· {t.stations_for(fmtDatePL(warsawToday()))}</span></h1>
           {stationsErr && <Note tone="error">{stationsErr}</Note>}
           {!stationsErr && stations.length === 0 && <Note>{t.no_stations}</Note>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 12 }}>

@@ -15,6 +15,7 @@ vi.mock("../i18n", () => ({ default: { language: "pl", changeLanguage: () => {} 
 
 import { Operator } from "./StaffPanel";
 import { STAFF_DICT } from "./staffI18n";
+import { warsawToday } from "../lib/fm-date";
 
 let tree;
 beforeEach(() => {
@@ -50,9 +51,9 @@ async function mount() {
   }]));
   const api = {
     rpc: {
-      myStations: async () => ["a", "b"].map(g => ({
+      myStations: vi.fn(async () => ["a", "b"].map(g => ({
         station_id: g, group_id: g, retailer_name: g === "a" ? "Auchan" : "Dino", station_idx: 1, state: states[g],
-      })),
+      }))),
       stationState: async id => states[id],
     },
     listMeetings: gid => new Promise((resolve, reject) => requests.push({ gid, resolve, reject, settled: false })),
@@ -269,5 +270,22 @@ describe("stan stanowiska: odczyty, Realtime i wyniki operacji przez jedną bram
     expect(calls[1]).toEqual(calls[0]);
     await act(async () => { h.actions.at(-1).resolve(); });
     expect(component("NowCard").props.state.current.status).toBe("in_progress");
+  });
+});
+
+// ── fix/fm-queue-day-scoping: dzień stanowisk = dzisiaj w Europe/Warsaw ─────────────────────
+describe("dzień, o który panel pyta bazę", () => {
+  it("myStations dostaje DZISIEJSZĄ datę (Europe/Warsaw), nie null — operator dnia testowego widzi swoje stanowiska", async () => {
+    const h = await mount();
+    const calls = h.api.rpc.myStations.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    for (const c of calls) expect(c[0]).toBe(warsawToday());
+    expect(warsawToday()).toMatch(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/);
+  });
+  it("wybór stanowiska pokazuje, na który dzień są stanowiska", async () => {
+    await mount();
+    await act(async () => { button("Zmień stanowisko").props.onClick(); });
+    const day = tree.root.findByProps({ "data-testid": "stations-day" });
+    expect(textOf(day)).toContain(warsawToday().split("-").reverse().join("."));
   });
 });

@@ -167,10 +167,15 @@ export async function listFmStations(groupId, { timeoutMs = READ_TIMEOUT_MS } = 
   return data || [];
 }
 
-// dostawca: własne spotkania (RLS company_id = app_company_id())
-export async function listMyFmQueueMeetings() {
+// dostawca: własne spotkania (RLS company_id = app_company_id()) — WYŁĄCZNIE z dnia produkcyjnego
+// (fm_settings.event_date). Spotkania z dni testowych (próba generalna na kopii planu, 21–22.09)
+// nie mogą trafić do uczestników. Bez znanej daty nie zwracamy nic: lepiej brak karty niż
+// próbny numer pokazany dostawcy jako prawdziwy. [fix/fm-queue-day-scoping]
+export async function listMyFmQueueMeetings(eventDate) {
+  if (!eventDate) return [];
   const { data, error } = await supabase.from("fm_queue_meetings")
-    .select("id,nr,status,queue_group_id,called_at,started_at,ended_at,return_after_nr").order("nr");
+    .select("id,nr,status,queue_group_id,called_at,started_at,ended_at,return_after_nr,fm_queue_groups!inner(event_date)")
+    .eq("fm_queue_groups.event_date", eventDate).order("nr");
   if (error) return softFail(error, []);
   return data || [];
 }
