@@ -130,3 +130,67 @@ describe("karta dostawcy — zamykanie kolejki i języki", () => {
     expect(textOf(byStatus("closing")[0])).toMatch(/closing/);
   });
 });
+
+// ── review 9.09 (uwagi eksploatacyjne Codexa): anulowanie transportu + komunikat pierwszego błędu ──
+describe("karta dostawcy — anulowanie transportu", () => {
+  it("limit czasu przerywa fetch snapshotu (sygnał abort), a kolejne cykle nie zostawiają wiszących żądań", async () => {
+    api.list.mockResolvedValue([meeting(12, "called")]);
+    const signals = [];
+    fetch.mockImplementation((url, init) => { signals.push(init.signal); return new Promise(() => {}); });   // snapshot wisi
+    await mount("2026-09-24");
+    expect(signals).toHaveLength(1);
+    expect(signals[0].aborted).toBe(false);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_500); });                 // timeout 10 s → abort
+    expect(signals[0].aborted).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2 * SNAP_MS + 12_000); }); // dwa kolejne cykle pollingu
+    expect(signals.length).toBeGreaterThanOrEqual(3);
+    expect(signals.filter(s => !s.aborted).length).toBeLessThanOrEqual(1);              // najwyżej jedno żywe żądanie
+    expect(byTestId("my-queue-stale")).toHaveLength(1);
+  });
+  it("odczyt spotkań dostaje sygnał, a zmiana daty anuluje żądanie w locie", async () => {
+    const seen = [];
+    api.list.mockImplementation((date, opts) => { seen.push({ date, signal: opts?.signal }); return new Promise(() => {}); });
+    await mount("2026-09-21");
+    expect(seen[0].signal).toBeTruthy();
+    expect(seen[0].signal.aborted).toBe(false);
+    await update("2026-09-24");
+    expect(seen[0].signal.aborted).toBe(true);
+    expect(seen.at(-1).date).toBe("2026-09-24");
+    expect(seen.at(-1).signal.aborted).toBe(false);
+  });
+  it("demontaż karty anuluje żądania w locie", async () => {
+    const seen = [];
+    api.list.mockImplementation((date, opts) => { seen.push(opts.signal); return new Promise(() => {}); });
+    await mount("2026-09-24");
+    await act(async () => { tree.unmount(); });
+    tree = undefined;
+    expect(seen[0].aborted).toBe(true);
+  });
+});
+
+describe("karta dostawcy — pierwszy błąd odczytu", () => {
+  it("nieudany pierwszy odczyt pokazuje komunikat z linkiem do tablicy z datą, bez cudzych numerów", async () => {
+    api.list.mockRejectedValueOnce(new Error("network")).mockResolvedValue([meeting(12, "called")]);
+    await mount("2026-09-24");
+    expect(byTestId("my-queue-error")).toHaveLength(1);
+    expect(byTestId("fm-my-queue")).toHaveLength(0);
+    const link = byTestId("my-queue-error")[0].findByType("a");
+    expect(link.props.href).toBe("/tablice?date=2026-09-24");
+    await act(async () => { await vi.advanceTimersByTimeAsync(MINE_MS); });               // ponowienie OK
+    expect(byTestId("my-queue-error")).toHaveLength(0);
+    expect(byTestId("my-meeting-12")).toHaveLength(1);
+  });
+  it("udana pusta lista (przed importem planu) nadal chowa kartę i nie pokazuje błędu", async () => {
+    api.list.mockResolvedValue([]);
+    await mount("2026-09-24");
+    expect(byTestId("my-queue-error")).toHaveLength(0);
+    expect(byTestId("fm-my-queue")).toHaveLength(0);
+  });
+  it("komunikat błędu PL/EN", async () => {
+    api.list.mockRejectedValue(new Error("network"));
+    await mount("2026-09-24", "pl");
+    expect(textOf(byTestId("my-queue-error")[0])).toMatch(/Nie udało się pobrać/);
+    await update("2026-09-24", "en");
+    expect(textOf(byTestId("my-queue-error")[0])).toMatch(/Could not load/);
+  });
+});

@@ -171,12 +171,22 @@ export async function listFmStations(groupId, { timeoutMs = READ_TIMEOUT_MS } = 
 // (fm_settings.event_date). Spotkania z dni testowych (próba generalna na kopii planu, 21–22.09)
 // nie mogą trafić do uczestników. Bez znanej daty nie zwracamy nic: lepiej brak karty niż
 // próbny numer pokazany dostawcy jako prawdziwy. [fix/fm-queue-day-scoping]
-export async function listMyFmQueueMeetings(eventDate) {
+// [review 9.09] `signal` — karta przerywa transport po limicie czasu / zmianie daty / demontażu,
+// żeby wiszące żądania nie kumulowały się przy awarii (kolejność wyników pilnuje komponent).
+export async function listMyFmQueueMeetings(eventDate, { signal = null, timeoutMs = READ_TIMEOUT_MS } = {}) {
   if (!eventDate) return [];
-  const { data, error } = await supabase.from("fm_queue_meetings")
+  let q = supabase.from("fm_queue_meetings")
     .select("id,nr,status,queue_group_id,called_at,started_at,ended_at,return_after_nr,fm_queue_groups!inner(event_date)")
     .eq("fm_queue_groups.event_date", eventDate).order("nr");
-  if (error) return softFail(error, []);
+  const sig = signal || readSignal(timeoutMs);
+  if (sig) q = q.abortSignal(sig);
+  let res;
+  try { res = await q; } catch (err) { throw readError(err); }
+  const { data, error } = res;
+  if (error) {
+    if (/abort|timeout|PGRST003|upstream|fetch/i.test(`${error.code || ""} ${error.message || ""}`)) throw readError(error);
+    return softFail(error, []);
+  }
   return data || [];
 }
 

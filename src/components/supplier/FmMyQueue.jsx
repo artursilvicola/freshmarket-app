@@ -26,6 +26,7 @@ const TXT = {
     closed: "stanowisko jeszcze nieotwarte", closing: "kolejka zamykana — trwa ostatnie spotkanie, nowe numery nie będą wywoływane; zgłoś się do obsługi",
     paused: "przerwa na stanowisku", free: "wolne wejście — podejdź bez numeru", gate: "GATE", board: "Tablica na telefonie ↗",
     offline: "Dane mogą być nieaktualne — sprawdź tablicę przy stanowisku",
+    load_error: "Nie udało się pobrać Twoich numerów (serwer nie odpowiedział). Spróbujemy ponownie automatycznie — do tego czasu sprawdź tablicę.",
   },
   en: {
     title: "Your turn — live", sub: "Board numbers refresh automatically. Go to the desk when your number is called.",
@@ -36,6 +37,7 @@ const TXT = {
     closed: "desk not open yet", closing: "queue closing — last meeting in progress, no new numbers will be called; please see the staff",
     paused: "desk on a break", free: "walk-in — approach without a number", gate: "GATE", board: "Board on your phone ↗",
     offline: "Data may be outdated — check the board at the desk",
+    load_error: "Could not load your numbers (the server did not respond). We will retry automatically — until then check the board.",
   },
 };
 
@@ -58,14 +60,22 @@ export default function FmMyQueue({ lang, eventDate }) {
     setMine({ ...EMPTY, date: eventDate });
     setSnap({ ...EMPTY, date: eventDate });
     const live = () => gen === genRef.current;
+    // [review 9.09] Limit czasu PRZERYWA transport (AbortController → fetch / abortSignal Supabase),
+    // a nie tylko rozstrzyga obietnicę; zmiana daty i demontaż anulują wszystkie żądania w locie.
+    // Kolejność wyników nadal pilnują sekwencje i generacja — anulowanie ich nie zastępuje.
+    const controllers = new Set();
     // Jeden odczyt na źródło naraz; spóźniona odpowiedź (starsza sekwencja albo inna data/generacja)
     // nigdy nie nadpisuje nowszej.
     const read = async (source, fetcher, setScope) => {
       if (inflight.current[source]) return;
       const n = ++seq.current[source];
       inflight.current[source] = true;
+      const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      if (ctrl) controllers.add(ctrl);
+      const timer = setTimeout(() => ctrl?.abort(), LIST_TIMEOUT_MS);
       let rows = null, failed = false;
-      try { rows = await withReadTimeout(fetcher(), LIST_TIMEOUT_MS); } catch { failed = true; }
+      try { rows = await withReadTimeout(fetcher(ctrl?.signal || null), LIST_TIMEOUT_MS); } catch { failed = true; }
+      finally { clearTimeout(timer); if (ctrl) controllers.delete(ctrl); }
       if (!live()) return;
       inflight.current[source] = false;
       if (n <= applied.current[source]) return;
@@ -74,15 +84,15 @@ export default function FmMyQueue({ lang, eventDate }) {
         ? { ...(prev.date === eventDate ? prev : { ...EMPTY, date: eventDate }), date: eventDate, error: true }
         : { date: eventDate, rows, at: Date.now(), error: false }));
     };
-    const loadMine = () => read("mine", () => listMyFmQueueMeetings(eventDate), setMine);
-    const loadSnap = () => read("snap", async () => {
-      const r = await fetch(`/.netlify/functions/fm-queue-snapshot?date=${encodeURIComponent(eventDate)}`, { cache: "no-store" });
+    const loadMine = () => read("mine", (signal) => listMyFmQueueMeetings(eventDate, { signal }), setMine);
+    const loadSnap = () => read("snap", async (signal) => {
+      const r = await fetch(`/.netlify/functions/fm-queue-snapshot?date=${encodeURIComponent(eventDate)}`, { cache: "no-store", signal });
       if (!r.ok) throw new Error(`snapshot ${r.status}`);
       return r.json();
     }, setSnap);
     loadMine(); loadSnap();
     const a = setInterval(loadMine, MINE_MS), b = setInterval(loadSnap, SNAP_MS), c = setInterval(() => setTick(x => x + 1), 1000);
-    return () => { clearInterval(a); clearInterval(b); clearInterval(c); };
+    return () => { clearInterval(a); clearInterval(b); clearInterval(c); controllers.forEach(x => x.abort()); controllers.clear(); };
   }, [eventDate]);
 
   // Render TYLKO z danych bieżącej daty — po zmianie daty poprzedni numer znika natychmiast.
@@ -92,7 +102,19 @@ export default function FmMyQueue({ lang, eventDate }) {
   const stale = (mine.date === eventDate && (mine.error || isDataStale(mine.at)))
     || (snap.date === eventDate && (snap.error || isDataStale(snap.at)));
 
-  if (!eventDate || !mineRows || mineRows.length === 0) return null; // przed importem planu nic nie pokazujemy
+  if (!eventDate) return null;
+  // [review 9.09] Pierwszy odczyt spotkań nieudany (jeszcze żadnych danych tej daty): krótki komunikat
+  // z linkiem do tablicy zamiast pustki. Udana pusta lista (przed importem planu) nadal chowa kartę.
+  if (mineRows === null) {
+    if (!(mine.date === eventDate && mine.error)) return null;
+    return (
+      <section data-testid="my-queue-error" style={{ background: "#0f172a", borderRadius: 14, padding: "12px 16px", marginBottom: 16, color: "#fca5a5", fontSize: 13, fontWeight: 700, display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+        <span>{t.load_error}</span>
+        <a href={`/tablice?date=${encodeURIComponent(eventDate)}`} target="_blank" rel="noreferrer" style={{ marginLeft: "auto", color: "#5eead4", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>{t.board}</a>
+      </section>
+    );
+  }
+  if (mineRows.length === 0) return null; // przed importem planu nic nie pokazujemy
 
   return (
     <section style={{ background: "#0f172a", borderRadius: 14, padding: "18px 20px", marginBottom: 16, color: "#f8fafc" }} data-testid="fm-my-queue" data-date={eventDate}>
