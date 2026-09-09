@@ -2537,6 +2537,14 @@
     }
   },
   "fm": {
+    "default_chance": {
+      "badge": "🤝 Daj szansę — automatycznie",
+      "notice": "Dla firmy, która wybrała sieć, brak odpowiedzi oznacza automatycznie „Daj szansę”. Akceptacje mają pierwszeństwo w przydziale i numeracji; jawne i automatyczne szanse są równorzędne i trafiają po akceptacjach. Odmowy są wykluczone. Nadal obowiązują limity pakietów i pojemności stanowisk.",
+      "saved_plan": "Zapisany plan nie zmienia się sam. Nową zasadę zastosujesz przez ponowne przeliczenie, sprawdzenie i zatwierdzenie planu.",
+      "unknown": "Do sprawdzenia — nieznany status",
+      "inputs_loading": "Wczytujemy komplet wyborów dostawców i odpowiedzi sieci. Przeliczanie i zatwierdzanie planu jest chwilowo zablokowane.",
+      "inputs_error": "Nie udało się pobrać kompletu wyborów lub odpowiedzi sieci. Błąd odczytu NIE oznacza „Daj szansę”. Przeliczanie i zatwierdzanie planu jest zablokowane. Odśwież stronę i spróbuj ponownie."
+    },
     "event_date": "24 września 2026",
     "phases": {
       "1": {
@@ -2652,7 +2660,7 @@
       "stats_want_label": "✅ Chcę się spotkać",
       "stats_chance_label": "🤝 Daj szansę",
       "card_interested_title": "Dostawcy, którzy wybrali Twoją sieć",
-      "card_interested_desc": "Tylko firmy, które zaznaczyły Twoją sieć w „Wybór sieci\". Algorytm dopasowuje wyłącznie pary, w których obie strony chcą spotkania.",
+      "card_interested_desc": "To firmy, które wybrały Twoją sieć. Zaakceptowane spotkania mają pierwszeństwo. „Daj szansę” oraz brak odpowiedzi oznaczają taką samą szansę na spotkanie, z numerem po zaakceptowanych. „Nie chcę” wyklucza spotkanie. Nie musisz klikać „Daj szansę” przy każdej pozostałej firmie; nadal obowiązują limity miejsc i pakietów.",
       "card_interested_empty_html": "Brak dostawców oczekujących na decyzję.<br/><span>Gdy dostawcy zaznaczą Twoją sieć w „Wybór sieci\", pojawią się tutaj.</span>",
       "pref_main": "⭐ Główna",
       "pref_backup": "👍 Rezerwowa",
@@ -2822,7 +2830,7 @@
         "chain_detail_meta_format_other": "{{country}} · {{cat}} · {{count}} zgłoszeń",
         "chain_group_want": "✅ Chcę",
         "chain_group_chance": "🤝 Daj szansę",
-        "chain_group_remove": "❌ Nie / brak",
+        "chain_group_remove": "❌ Nie chcę spotkania",
         "chain_group_label_format": "{{label}} ({{count}})",
         "chain_empty": "Brak zgłoszeń dla tej sieci."
       },

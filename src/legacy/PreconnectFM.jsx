@@ -80,7 +80,7 @@ import {
 } from "../lib/db";
 // [feat/shared-countries] Jedno źródło listy krajów (panel + rejestracja dostawcy).
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
-import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, scoreMatch, buildFMData } from "../lib/fm-algo.js";
+import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, isAutomaticChance, scoreMatch, buildFMData } from "../lib/fm-algo.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
@@ -2621,6 +2621,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const [fmPrefs, setFmPrefs] = useState({});
   const [fmResps, setFmResps] = useState({});
   const [fmRespsLoaded, setFmRespsLoaded] = useState(false);
+  const [fmInputsError, setFmInputsError] = useState(false);
+  const fmInputsRequestRef = useRef(0);
   // [feat/fm-queue] Pojemność sieci dla algorytmu = Σ(aktywne stanowiska × spotkania/stanowisko)
   // z modułu kolejek (fm_queue_groups + fm_stations, migracja 053). Brak konfiguracji
   // → buildFMData przyjmuje 1 stanowisko i wystawia ostrzeżenie `no_station_config`.
@@ -2663,16 +2665,23 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   useEffect(() => {
     if (!companiesLoaded || !retailersLoaded) return;
     let canceled = false;
+    const requestId = ++fmInputsRequestRef.current;
+    setFmRespsLoaded(false);
+    setFmInputsError(false);
     (async () => {
       try {
         const { groupedPrefs, grouped } = await loadFmInputs();
-        if (canceled) return;
-        if (Object.keys(groupedPrefs).length) setFmPrefs(prev => ({ ...prev, ...groupedPrefs }));
-        if (Object.keys(grouped).length) setFmResps(grouped);
+        if (canceled || requestId !== fmInputsRequestRef.current) return;
+        setFmPrefs(groupedPrefs);
+        setFmResps(grouped);
+        setFmRespsLoaded(true);
+        setFmInputsError(false);
         try { localStorage.removeItem("fm_fmResps"); } catch(e){}
         try { localStorage.removeItem("fm_fmPrefs"); } catch(e){}
-      } catch (e) { console.warn("[load fmResps]", e); }
-      finally { if (!canceled) setFmRespsLoaded(true); }
+      } catch (e) {
+        console.warn("[load fmResps]", e);
+        if (!canceled && requestId === fmInputsRequestRef.current) setFmInputsError(true);
+      }
     })();
     return () => { canceled = true; };
   }, [companiesLoaded, retailersLoaded, loadFmInputs]);
@@ -2684,13 +2693,19 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     const refresh = async () => {
       if (busy || document.visibilityState === "hidden") return;
       busy = true;
+      const requestId = ++fmInputsRequestRef.current;
       try {
         const { groupedPrefs, grouped } = await loadFmInputs({ replace: true });
-        if (canceled) return;
+        if (canceled || requestId !== fmInputsRequestRef.current) return;
         setFmPrefs(groupedPrefs);
         setFmResps(grouped);
+        setFmRespsLoaded(true);
+        setFmInputsError(false);
         setFmInputsRefreshedAt(new Date());
-      } catch (e) { console.warn("[refresh fm inputs]", e); }
+      } catch (e) {
+        console.warn("[refresh fm inputs]", e);
+        if (!canceled && requestId === fmInputsRequestRef.current) setFmInputsError(true);
+      }
       finally { busy = false; }
     };
     const t = setInterval(refresh, 60_000);
@@ -3737,10 +3752,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity} sends={sends} offers={offers}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
+    if (["fm-sched","fm-algo","fm-wyniki"].includes(pg) && (!fmRespsLoaded || fmInputsError) && !fmSettings.planPublished)
+      return <Alrt type="warning">{t(fmInputsError ? "fm.default_chance.inputs_error" : "fm.default_chance.inputs_loading")}</Alrt>;
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||account.id} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
       : <PageBuyerFM chainId={(retailers.find(r=>r.id===account.retailerId)?.fm26ChainId)||account.chainId} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
-    if(pg==="a-fm")         return <PageAdminFM onQueueConfigChanged={reloadFmStationCaps} fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
+    if(pg==="a-fm")         return <PageAdminFM fmInputsReady={fmRespsLoaded && !fmInputsError} fmInputsError={fmInputsError} onQueueConfigChanged={reloadFmStationCaps} fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
     // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
     // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.
     if(pg==="a-branding") {
@@ -13303,7 +13320,7 @@ function NumBadge({ num, size="md" }) {
 /* ═══════════════════════════════════════════════════════════════
    ADMIN PREFERENCES VIEW (Faza 2 podgląd dla admina)
 ═══════════════════════════════════════════════════════════════ */
-function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppliers, companies }) {
+export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppliers, companies }) {
   const { t, i18n } = useTranslation("legacy");
   const pluralSuffix = pluralSuffixPL;
   const _localeForDate = i18n.language?.startsWith("en") ? "en-GB" : "pl-PL";
@@ -13330,13 +13347,14 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
   const totalThumbs  = _suppliers.reduce((a,s)=>a+_chains.filter(c=>fmPrefs[s.id]?.[c.id]==="thumb").length,0);
   const totalWant    = _chains.reduce((a,c)=>a+_suppliers.filter(s=>fmResps[c.id]?.[s.id]==="want").length,0);
   const totalChance  = _chains.reduce((a,c)=>a+_suppliers.filter(s=>fmResps[c.id]?.[s.id]==="chance").length,0);
+  const totalAutomatic = _chains.reduce((a,c)=>a+_suppliers.filter(s=>isAutomaticChance(fmPrefs[s.id]?.[c.id], fmResps[c.id]?.[s.id])).length,0);
   const totalRemove  = _chains.reduce((a,c)=>a+_suppliers.filter(s=>fmResps[c.id]?.[s.id]==="remove").length,0);
 
   return (
     <div>
       {/* Global stats */}
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8,marginBottom:16 }}>
-        {[[totalStars,t("fm.admin.prefs_view.stat_total_stars"),"#d97706"],[totalThumbs,t("fm.admin.prefs_view.stat_total_thumbs"),"#0d9488"],[totalWant,t("fm.admin.prefs_view.stat_total_want"),"#059669"],[totalChance,t("fm.admin.prefs_view.stat_total_chance"),"#d97706"],[totalRemove,t("fm.admin.prefs_view.stat_total_remove"),"#dc2626"]].map(([v,l,c])=>(
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:16 }}>
+        {[[totalStars,t("fm.admin.prefs_view.stat_total_stars"),"#d97706"],[totalThumbs,t("fm.admin.prefs_view.stat_total_thumbs"),"#0d9488"],[totalWant,t("fm.admin.prefs_view.stat_total_want"),"#059669"],[totalChance,t("fm.admin.prefs_view.stat_total_chance"),"#d97706"],[totalAutomatic,t("fm.default_chance.badge"),"#b45309"],[totalRemove,t("fm.admin.prefs_view.stat_total_remove"),"#dc2626"]].map(([v,l,c])=>(
           <div key={l} style={{ padding:"10px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
             <div style={{ fontSize:20,fontWeight:800,color:c }}>{v}</div>
             <div style={{ fontSize:10,color:"#64748b",marginTop:2 }}>{l}</div>
@@ -13409,7 +13427,8 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                   <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>{t("fm.admin.prefs_view.supplier_stars_section_format", { count: stars.length })}</div>
                   <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:14 }}>
                     {stars.map(c=>{
-                      const resp = fmResps[c.id]?.[s.id];
+                      const resp = isAutomaticChance(prefs[c.id], fmResps[c.id]?.[s.id]) ? "chance" : fmResps[c.id]?.[s.id];
+                      const automatic = isAutomaticChance(prefs[c.id], fmResps[c.id]?.[s.id]);
                       const rc = resp==="want"?"#059669":resp==="chance"?"#d97706":resp==="remove"?"#dc2626":"#94a3b8";
                       // [B2B Round FM-buyer-rejection-logic] Semantic labels for
                       // admin clarity. "remove" maps to NIE CHCE SPOTKANIA per spec.
@@ -13418,7 +13437,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                       return(
                         <div key={c.id} title={rTitle} style={{ padding:"8px 10px",borderRadius:8,background:"#fffbeb",border:"1px solid #fde68a",display:"flex",alignItems:"center",gap:6 }}>
                           <span style={{ fontSize:11,fontWeight:700,color:"#1e293b",flex:1 }}>{c.name}</span>
-                          <span style={{ fontSize:10,fontWeight:700,color:rc,whiteSpace:"nowrap" }}>{rl}</span>
+                          <span title={automatic ? t("fm.default_chance.notice") : rTitle} style={{ fontSize:10,fontWeight:700,color:rc }}>{automatic ? t("fm.default_chance.badge") : rl}</span>
                         </div>
                       );
                     })}
@@ -13428,14 +13447,15 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                   <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>{t("fm.admin.prefs_view.supplier_thumbs_section_format", { count: thumbs.length })}</div>
                   <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:5 }}>
                     {thumbs.map(c=>{
-                      const resp = fmResps[c.id]?.[s.id];
+                      const resp = isAutomaticChance(prefs[c.id], fmResps[c.id]?.[s.id]) ? "chance" : fmResps[c.id]?.[s.id];
+                      const automatic = isAutomaticChance(prefs[c.id], fmResps[c.id]?.[s.id]);
                       const rc = resp==="want"?"#059669":resp==="chance"?"#d97706":resp==="remove"?"#dc2626":"#94a3b8";
                       const rl = resp==="want"?t("fm.admin.prefs_view.resp_badge_want"):resp==="chance"?t("fm.admin.prefs_view.resp_badge_chance"):resp==="remove"?t("fm.admin.prefs_view.resp_badge_remove"):t("fm.admin.prefs_view.resp_badge_none");
                       const rTitle = resp==="want"?t("fm.admin.prefs_view.resp_title_want"):resp==="chance"?t("fm.admin.prefs_view.resp_title_chance_short"):resp==="remove"?t("fm.admin.prefs_view.resp_title_remove_short"):t("fm.admin.prefs_view.resp_title_none");
                       return(
                         <div key={c.id} title={rTitle} style={{ padding:"7px 10px",borderRadius:8,background:"#f0fdfa",border:"1px solid #a7f3d0",display:"flex",alignItems:"center",gap:6 }}>
                           <span style={{ fontSize:11,color:"#1e293b",flex:1 }}>{c.name}</span>
-                          <span style={{ fontSize:10,fontWeight:700,color:rc,whiteSpace:"nowrap" }}>{rl}</span>
+                          <span title={automatic ? t("fm.default_chance.notice") : rTitle} style={{ fontSize:10,fontWeight:700,color:rc }}>{automatic ? t("fm.default_chance.badge") : rl}</span>
                         </div>
                       );
                     })}
@@ -13457,6 +13477,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
               const resps = fmResps[c.id]||{};
               const nWant = Object.values(resps).filter(v=>v==="want").length;
               const nChance = Object.values(resps).filter(v=>v==="chance").length;
+              const nAutomatic = _suppliers.filter(s=>isAutomaticChance(fmPrefs[s.id]?.[c.id], resps[s.id])).length;
               const nInterested = _suppliers.filter(s=>fmPrefs[s.id]?.[c.id]).length;
               return(
                 <div key={c.id} onClick={()=>setSelChain(c.id)}
@@ -13470,6 +13491,7 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
                       <span style={{ color:"#94a3b8" }}>{t("fm.admin.prefs_view.chain_signups_short_format", { count: nInterested })}</span>
                       <span style={{ color:"#059669",fontWeight:700 }}>✅{nWant}</span>
                       <span style={{ color:"#d97706",fontWeight:700 }}>🤝{nChance}</span>
+                      <span title={t("fm.default_chance.badge")} style={{ color:"#b45309",fontWeight:700 }}>🤝↻{nAutomatic}</span>
                     </div>
                   </div>
                 </div>
@@ -13482,16 +13504,18 @@ function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppl
             if(!ch) return null;
             const resps = fmResps[ch.id]||{};
             const interested = _suppliers.filter(s=>fmPrefs[s.id]?.[ch.id]);
-            const groups = {want:[],chance:[],remove:[]};
+            const groups = {want:[],chance:[],automatic:[],remove:[],none:[]};
             interested.forEach(s=>{
-              const r=resps[s.id]||"none";
-              if(groups[r]) groups[r].push(s); else groups.remove.push(s);
+              const raw = resps[s.id];
+              const r = isAutomaticChance(fmPrefs[s.id]?.[ch.id], raw) ? "automatic" : raw === "rejected" ? "remove" : raw;
+              if(Object.hasOwn(groups, r)) groups[r].push(s); else groups.none.push(s);
             });
             return(
               <div style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:12,padding:18,maxHeight:520,overflowY:"auto" }}>
                 <div style={{ fontSize:16,fontWeight:800,marginBottom:4 }}>{ch.name}</div>
                 <div style={{ fontSize:12,color:"#64748b",marginBottom:14 }}>{t("fm.admin.prefs_view.chain_detail_meta_format" + pluralSuffix(interested.length), { country: ch.country, cat: ch.cat, count: interested.length })}</div>
-                {[["want",t("fm.admin.prefs_view.chain_group_want"),"#059669","#f0fdf4","#bbf7d0"],["chance",t("fm.admin.prefs_view.chain_group_chance"),"#d97706","#fffbeb","#fde68a"],["remove",t("fm.admin.prefs_view.chain_group_remove"),"#dc2626","#fef2f2","#fca5a5"]].map(([key,lbl,c,bg,b])=>(
+                <Alrt type="info">{t("fm.default_chance.notice")}</Alrt>
+                {[["want",t("fm.admin.prefs_view.chain_group_want"),"#059669","#f0fdf4","#bbf7d0"],["chance",t("fm.admin.prefs_view.chain_group_chance"),"#d97706","#fffbeb","#fde68a"],["automatic",t("fm.default_chance.badge"),"#b45309","#fffbeb","#fde68a"],["remove",t("fm.admin.prefs_view.chain_group_remove"),"#dc2626","#fef2f2","#fca5a5"],["none",t("fm.default_chance.unknown"),"#64748b","#f8fafc","#e2e8f0"]].map(([key,lbl,c,bg,b])=>(
                   groups[key].length>0&&(
                     <div key={key} style={{ marginBottom:12 }}>
                       <div style={{ fontSize:11,fontWeight:700,color:c,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.06em" }}>{t("fm.admin.prefs_view.chain_group_label_format", { label: lbl, count: groups[key].length })}</div>
@@ -13936,7 +13960,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
 /* ═══════════════════════════════════════════════════════════════
    FM PAGE — BUYER
 ═══════════════════════════════════════════════════════════════ */
-function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, fmChains, fmSuppliers, companies, offers, sends, fmWishlists, setFmWishlists, fmLateResps, setFmLateResps, previewFor, retailers }) {
+export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, fmChains, fmSuppliers, companies, offers, sends, fmWishlists, setFmWishlists, fmLateResps, setFmLateResps, previewFor, retailers }) {
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
@@ -13956,7 +13980,8 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
   const chain      = _chains.find(c=>c.id===chainId);
   const allParticipants = _suppliers; // full FM participant list (used for late-resps section)
   // [B2B Round 4] Primary list = suppliers who picked THIS chain in their preferences.
-  // Only those count for matching (see buildFMData R1/R2 — supplierPref must be defined).
+  // Brak decyzji dla zgłoszonej firmy = szansa. Jawne wybory kupca spoza
+  // tej listy pozostają osobnymi kandydatami jednostronnymi w algorytmie.
   // Sort: ⭐ main first, then 👍 reserve, then by name.
   const interestedSuppliers = _suppliers
     .filter(s => fmPrefs[s.id]?.[chainId])
@@ -14111,6 +14136,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
           [interestedSuppliers.length, t("fm.buyer.stats_picked_label"), "#0d9488"],
           [Object.values(myResps).filter(v=>v==="want").length, t("fm.buyer.stats_want_label"), "#059669"],
           [Object.values(myResps).filter(v=>v==="chance").length, t("fm.buyer.stats_chance_label"), "#d97706"],
+          [interestedSuppliers.filter(s=>isAutomaticChance(fmPrefs[s.id]?.[chainId], myResps[s.id])).length, t("fm.default_chance.badge"), "#b45309"],
         ].map(([v,l,c])=>(
           <div key={l} style={{ flex:1,minWidth:90,padding:"14px 16px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
             <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
@@ -14125,6 +14151,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
           : interestedSuppliers.map(s=>{
               const resp = myResps[s.id];
               const supPref = fmPrefs[s.id]?.[chainId];
+              const automatic = isAutomaticChance(supPref, resp);
               const prefLbl = supPref==="star" ? t("fm.buyer.pref_main") : t("fm.buyer.pref_backup");
               const prefCol = supPref==="star" ? "#d97706" : "#0d9488";
               return (
@@ -14136,6 +14163,7 @@ function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo
                         <span style={{ fontSize:10,fontWeight:700,color:prefCol,background:prefCol+"15",padding:"1px 7px",borderRadius:10,border:`1px solid ${prefCol}33` }}>{prefLbl}</span>
                       </div>
                       <div style={{ fontSize:11,color:"#64748b" }}>{s.country} · {s.products}</div>
+                      {automatic && <div style={{ fontSize:11,color:"#b45309",fontWeight:600,marginTop:4 }}>{t("fm.default_chance.badge")}</div>}
                     </div>
                     <Btn sm outline onClick={()=>openFirmPreview(s)} style={{ fontSize:10 }}><Eye size={10}/> {t("fm.buyer.preview_btn")}</Btn>
                     <div style={{ display:"flex",gap:5 }}>
@@ -14383,7 +14411,7 @@ function fmNZ(n) {
 /* ═══════════════════════════════════════════════════════════════
    FM ADMIN CORRECTION PANEL — interaktywny grid
 ═══════════════════════════════════════════════════════════════ */
-function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains, fmSuppliers, fmWishlists, fmResps }) {
+function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains, fmSuppliers, fmWishlists, fmResps, inputsReady = false }) {
   const { t } = useTranslation("legacy");
   // [fix/fm-real-companies] bez fallbacku do danych demo
   const _chains    = fmChains    || [];
@@ -14408,7 +14436,9 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
   const visibleChains = filterChain === "all"
     ? _chains
     : _chains.filter(c => c.id === filterChain);
-  const maxRows = Math.max(..._chains.map(c => (data.cq[c.id] || []).filter(x => x).length), 20);
+  // Numeracja może mieć luki, zwłaszcza między akceptacjami a szansami.
+  // Liczba spotkań nie jest ostatnim numerem — nie ukrywaj końca kolejki.
+  const maxRows = Math.max(..._chains.map(c => (data.cq[c.id] || []).reduce((last, sid, i) => sid ? i + 1 : last, 0)), 20);
 
   // [B2B Round FM-buyer-rejection-logic] Lookup for "did this buyer/chain reject
   // this supplier?". Buyer-side reject is stored as fm_resps.zone === "remove"
@@ -14568,7 +14598,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
             <div style={{ fontSize:13,fontWeight:700,color:"#92400e" }}>{t("fm.corrections.status_unapproved_title")}</div>
             <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{t("fm.corrections.status_unapproved_desc")}</div>
           </div>
-          <button onClick={()=>{ setApproved(true); if(typeof onApprove==="function") onApprove(data); }}
+          <button disabled={!inputsReady} onClick={()=>{ if (!inputsReady) return; setApproved(true); if(typeof onApprove==="function") onApprove(data); }}
             style={{ padding:"10px 24px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#059669,#047857)",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap" }}>
             {t("fm.corrections.status_btn_approve")}
           </button>
@@ -14659,7 +14689,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
             </tr>
           </thead>
           <tbody>
-            {Array.from({ length: Math.min(maxRows + 5, 45) }, (_, row) => {
+            {Array.from({ length: maxRows + 5 }, (_, row) => {
               const zone = fmNZ(row + 1);
               const zc = FM_NZS[zone];
               return (
@@ -14731,7 +14761,7 @@ function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains,
 /* ═══════════════════════════════════════════════════════════════
    ALGORITHM TRIGGER CARD — admin button to run matching + schedule
 ═══════════════════════════════════════════════════════════════ */
-function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmAlgo, retailers, fmChains, fmSuppliers }) {
+function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmAlgo, retailers, fmChains, fmSuppliers, inputsReady = false }) {
   const { t } = useTranslation("legacy");
   // [fix/fm-real-companies] bez fallbacku do danych demo
   const _chains    = fmChains    || [];
@@ -14753,10 +14783,11 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   }).length;
 
   const totalMeetings = fmAlgo ? Object.values(fmAlgo.res).reduce((a,r)=>a+r.m.length,0) : 0;
-  const readyToRun = phase === 2 && suppliersDone >= Math.floor(_suppliers.length * 0.5);
+  const readyToRun = inputsReady && phase === 2 && suppliersDone >= Math.floor(_suppliers.length * 0.5);
   const alreadyRan = phase >= 3 && totalMeetings > 0;
 
   function runAlgorithm() {
+    if (!inputsReady) return;
     setRunning(true);
     setTimeout(() => {
       setRunning(false);
@@ -14788,6 +14819,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
       </div>
 
       {/* Progress stats */}
+      <Alrt type="info">{t("fm.default_chance.notice")} {t("fm.default_chance.saved_plan")}</Alrt>
       <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16 }}>
         {[[suppliersDone+"/"+_suppliers.length,t("fm.admin.algo_stat_suppliers_ready"),"#0d9488"],[chainsDone+"/"+_chains.length,t("fm.admin.algo_stat_chains_resp"),"#2563eb"],[totalMeetings,t("fm.admin.algo_stat_meetings_planned"),"#7c3aed"]].map(([v,l,c])=>(
           <div key={l} style={{ padding:"10px 12px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
@@ -14825,7 +14857,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
           <div style={{ padding:"10px 18px",background:"#059669",color:"white",borderRadius:10,fontWeight:700,fontSize:13,display:"flex",gap:6,alignItems:"center" }}>
             <CheckCircle size={14}/> {t("fm.admin.algo_active_badge_format", { phase })}
           </div>
-          <button onClick={runAlgorithm}
+          <button onClick={runAlgorithm} disabled={!inputsReady}
             style={{ padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:600,fontSize:12,cursor:"pointer",display:"flex",gap:6,alignItems:"center" }}>
             <RefreshCw size={13}/> {t("fm.admin.algo_rerun_btn")}
           </button>
@@ -14848,7 +14880,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   );
 }
 
-function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies, fl, onQueueConfigChanged }) {
+export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies, fl, onQueueConfigChanged, fmInputsReady = false, fmInputsError = false }) {
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
@@ -14858,10 +14890,13 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
   const [tab, setTab] = useState("zarzadzanie");
   const phase = fmSettings.currentPhase;
   // Full data with slot numbers for Faza 4 admin correction grid
-  const [fmFullData, setFmFullData] = useState(() => pickFMPlan(fmSchedule, buildFMData(fmPrefs, fmResps, _chains, _suppliers)));
+  const [fmFullData, setFmFullData] = useState(() => pickFMPlan(fmSchedule, fmInputsReady ? fmAlgo : null));
+  useEffect(() => {
+    if (fmInputsReady && !fmFullData) setFmFullData(pickFMPlan(fmSchedule, fmAlgo));
+  }, [fmInputsReady, fmFullData, fmSchedule, fmAlgo]);
   // Rebuild when prefs/resps change.
-  const rebuildFull = () => setFmFullData(buildFMData(fmPrefs, fmResps, _chains, _suppliers));
-  const approveAndPublish = (data) => { setFmSchedule(data); setFmFullData(data); };
+  const rebuildFull = () => { if (fmInputsReady) setFmFullData(buildFMData(fmPrefs, fmResps, _chains, _suppliers)); };
+  const approveAndPublish = (data) => { if (!fmInputsReady) return; setFmSchedule(data); setFmFullData(data); };
   const syncFromSchedule = () => { if(fmSchedule) setFmFullData(fmSchedule); };
 
   return (
@@ -14877,6 +14912,8 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
           <button key={tabKey} onClick={()=>setTab(tabKey)} style={{ padding:"8px 18px",borderRadius:8,border:"none",background:tab===tabKey?"white":"transparent",fontWeight:tab===tabKey?600:400,fontSize:12,cursor:"pointer",fontFamily:"inherit",color:tab===tabKey?"#1e293b":"#64748b",boxShadow:tab===tabKey?"0 1px 4px rgba(0,0,0,0.08)":"none",whiteSpace:"nowrap" }}>{l}</button>
         ))}
       </div>
+
+      {!fmInputsReady && <Alrt type="warning">{t(fmInputsError ? "fm.default_chance.inputs_error" : "fm.default_chance.inputs_loading")}</Alrt>}
 
       {/* ══ TAB: DZIEŃ WYDARZENIA (kolejki / numerki na żywo) ══ */}
       {tab==="dzien" && (
@@ -14921,7 +14958,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
                   }
                 </div>
                 <div style={{ display:"flex",gap:8 }}>
-                  <Btn primary onClick={()=>setFmSettings(s=>({...s,planPublished:true}))} disabled={fmSettings.planPublished} style={{ background:"#059669" }}><Send size={13}/> {t("fm.admin.publish_btn_publish")}</Btn>
+                  <Btn primary onClick={()=>{ if (fmInputsReady) setFmSettings(s=>({...s,planPublished:true})); }} disabled={fmSettings.planPublished || !fmInputsReady} style={{ background:"#059669" }}><Send size={13}/> {t("fm.admin.publish_btn_publish")}</Btn>
                   {fmSettings.planPublished&&<Btn outline onClick={()=>setFmSettings(s=>({...s,planPublished:false}))} style={{ color:"#dc2626",borderColor:"#fca5a5" }}>{t("fm.admin.publish_btn_revert")}</Btn>}
                 </div>
               </div>
@@ -15040,7 +15077,7 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
           <Suspense fallback={<div style={{ fontSize:12,color:"#64748b",padding:"10px 0" }}>…</div>}>
             <FmPlanExport fl={fl} adminEmail={(runtimeAccounts||[]).find(a=>a.role==="admin")?.email||null}/>
           </Suspense>
-          <AlgorithmTriggerCard fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} setFmSchedule={setFmSchedule}/>
+          <AlgorithmTriggerCard inputsReady={fmInputsReady} fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} setFmSchedule={setFmSchedule}/>
           {/* [B2B Round prod-rollout / FM scheduling v2] Warnings z algorytmu —
               admin widzi listę problemów do rozważenia (swap_star_thumb, no_meetings). */}
           {(() => {
@@ -15180,11 +15217,11 @@ function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, 
             </div>
             <div style={{display:"flex",gap:6}}>
               {fmSchedule&&<Btn outline sm onClick={syncFromSchedule} style={{color:"#059669",borderColor:"#bbf7d0"}}><CheckCircle size={12}/> {t("fm.admin.corr_btn_load_approved")}</Btn>}
-              <Btn outline sm onClick={rebuildFull}><RefreshCw size={12}/> {t("fm.admin.corr_btn_rebuild")}</Btn>
+              <Btn outline sm disabled={!fmInputsReady} onClick={rebuildFull}><RefreshCw size={12}/> {t("fm.admin.corr_btn_rebuild")}</Btn>
             </div>
           </div>
           <div style={{opacity:phase>=3?1:0.4,pointerEvents:phase>=3?"auto":"none",transition:"opacity 0.2s"}}>
-            <FMAdminCorrectionPanel data={fmFullData} setData={setFmFullData} onApprove={(d)=>{ approveAndPublish(d); setTab("plan"); }} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} fmWishlists={fmWishlists||{}} fmResps={fmResps}/>
+            <FMAdminCorrectionPanel inputsReady={fmInputsReady} data={fmFullData} setData={setFmFullData} onApprove={(d)=>{ approveAndPublish(d); setTab("plan"); }} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} fmWishlists={fmWishlists||{}} fmResps={fmResps}/>
           </div>
           {/* Preview For + Late Selection controls — UNDER correction panel */}
           <div style={{marginBottom:16,padding:"14px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10}}>

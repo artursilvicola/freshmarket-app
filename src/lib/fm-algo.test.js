@@ -20,15 +20,15 @@ function mutualAll(suppliers, chains) {
 }
 
 describe("scoreMatch — hierarchia A–F", () => {
-  it("mutual zawsze bije jednostronne", () => {
+  it("akceptacje przed szansami, a w ramach decyzji mutual przed jednostronnym", () => {
     expect(scoreMatch("star", "want")).toBe(FM_SCORE.MUTUAL_STAR_WANT);
     expect(scoreMatch("thumb", "want")).toBe(FM_SCORE.MUTUAL_THUMB_WANT);
     expect(scoreMatch("star", "chance")).toBe(FM_SCORE.MUTUAL_STAR_CHANCE);
     expect(scoreMatch("thumb", "chance")).toBe(FM_SCORE.MUTUAL_THUMB_CHANCE);
     expect(scoreMatch(undefined, "want")).toBe(FM_SCORE.ONE_SIDE_WANT);
     expect(scoreMatch(undefined, "chance")).toBe(FM_SCORE.ONE_SIDE_CHANCE);
-    expect(scoreMatch("star", undefined)).toBe(0);
-    expect(FM_SCORE.MUTUAL_THUMB_CHANCE).toBeGreaterThan(FM_SCORE.ONE_SIDE_WANT);
+    expect(scoreMatch("star", undefined)).toBe(FM_SCORE.MUTUAL_STAR_CHANCE);
+    expect(FM_SCORE.ONE_SIDE_WANT).toBeGreaterThan(FM_SCORE.MUTUAL_STAR_CHANCE);
   });
   it("Zasada 0: wykluczenia per-pair i per-supplier", () => {
     expect(isPairExcluded("star", "remove")).toBe(true);
@@ -172,13 +172,13 @@ describe("buildFMData — reguły przydziału i numeracji", () => {
     expect(out.res.s2.m).toEqual([]);
     expect(out.cs.c1.n).toBe(0);
   });
-  it("mutual (👍+🤝) idzie przed jednostronnym (✅ bez wyboru firmy) mimo późniejszej płatności", () => {
+  it("akceptacja jednostronna idzie przed mutual z szansą (decyzja 9.09.2026)", () => {
     const chains = [chain("c1", { stations: 1 })];
     const suppliers = [supp("s1", { paymentDate: "2026-07-01" }), supp("s2", { paymentDate: "2026-08-30" })];
     const prefs = { s1: {}, s2: { c1: "thumb" } };
     const resps = { c1: { s1: "want", s2: "chance" } };
     const out = buildFMData(prefs, resps, chains, suppliers);
-    expect(out.nums.s2.c1).toBe(1);
-    expect(out.nums.s1.c1).toBe(2);
+    expect(out.nums.s1.c1).toBe(1);
+    expect(out.nums.s2.c1).toBe(2);
   });
 });

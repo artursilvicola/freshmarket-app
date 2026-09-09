@@ -5,9 +5,10 @@
 // stanowisk skonfigurowanych w module kolejek (fm_queue_groups / fm_stations).
 //
 // Hierarchia priorytetów spotkań B2B (zatwierdzona przez biznes):
-//   1) mutual match wygrywa z jednostronnym ZAWSZE
-//   2) w obrębie tej samej kategorii: payment_date ASC (kto wcześniej zapłacił)
-//   3) sieci główne (⭐) przed zapasowymi (👍)
+//   1) akceptacje kupca ZAWSZE przed „Daj szansę” (decyzja 9.09.2026)
+//   2) brak odpowiedzi = „Daj szansę”, ale tylko gdy dostawca wybrał sieć
+//   3) w ramach decyzji: ⭐, potem 👍, potem jednostronny wybór kupca;
+//      w obrębie tej samej kategorii: payment_date ASC (kto wcześniej zapłacił)
 //   4) Premium przed Business przy remisie (pkgTier)
 //   5) Standard nie idzie do matchingu
 //   6) min odstęp ≥ FM_MIN_GAP między spotkaniami tej samej firmy
@@ -40,9 +41,9 @@ export const FM_MEETINGS_PER_STATION = 60;
 export const FM_SCORE = {
   MUTUAL_STAR_WANT:     6000, // A — firma ⭐ + sieć ✅
   MUTUAL_THUMB_WANT:    5000, // B — firma 👍 + sieć ✅
-  MUTUAL_STAR_CHANCE:   4000, // D — firma ⭐ + sieć 🤝
-  MUTUAL_THUMB_CHANCE:  3000, // E — firma 👍 + sieć 🤝
-  ONE_SIDE_WANT:        2000, // C — sieć ✅, firma nie wybrała
+  ONE_SIDE_WANT:        4500, // C — sieć ✅, firma nie wybrała; nadal przed 🤝
+  MUTUAL_STAR_CHANCE:   4000, // D — firma ⭐ + sieć 🤝 lub brak odpowiedzi
+  MUTUAL_THUMB_CHANCE:  3000, // E — firma 👍 + sieć 🤝 lub brak odpowiedzi
   ONE_SIDE_CHANCE:      1000, // F — sieć 🤝, firma nie wybrała
 };
 
@@ -81,11 +82,18 @@ export function isPairExcluded(supplierPref, chainResp) {
   return false;
 }
 
-// Ocena pary (supplier, chain) wg hierarchii biznesowej. Tylko PO Zasadzie 0.
+// Reguła wyliczana, nie decyzja zapisywana w fm_resps. Nieznanych statusów
+// nie zamieniamy na zgodę; bez wyboru dostawcy milczenie nie tworzy pary.
+export function isAutomaticChance(supplierPref, chainResp) {
+  return (supplierPref === "star" || supplierPref === "thumb")
+    && (chainResp == null || chainResp === "");
+}
+
+// Ocena pary (supplier, chain) wg hierarchii biznesowej.
 export function scoreMatch(supplierPref, chainResp) {
-  if (!chainResp) return 0;
+  if (isPairExcluded(supplierPref, chainResp)) return 0;
   const isWant   = chainResp === "want";
-  const isChance = chainResp === "chance";
+  const isChance = chainResp === "chance" || isAutomaticChance(supplierPref, chainResp);
   const isStar   = supplierPref === "star";
   const isThumb  = supplierPref === "thumb";
   const isMutual = isStar || isThumb;
@@ -170,7 +178,7 @@ export function buildFMData(prefs, resps, chains, suppliers, opts = {}) {
       const score = scoreMatch(sPref, cResp);
       if (score <= 0) return;
       candidates.push({
-        supplier: s, chain: ch, score,
+        supplier: s, chain: ch, score, accepted: cResp === "want",
         paymentDate: s.paymentDate || s.paidAt || "9999-99-99",
         pkgTier: s.pkg === "Premium" ? 0 : s.pkg === "Business" ? 1 : 2,
         sortIdx: s._sortIdx ?? 999,
@@ -187,34 +195,43 @@ export function buildFMData(prefs, resps, chains, suppliers, opts = {}) {
     return String(a.supplier.id).localeCompare(String(b.supplier.id));
   });
 
-  // FAZA 4 — przypisywanie multi-pass (round-robin po liczbie spotkań firmy)
+  // FAZA 4 — najpierw wszystkie akceptacje, potem szanse (jawne i domyślne).
+  // Samo sortowanie nie wystarcza: w jednym round-robin szansa mogłaby zająć
+  // ostatnie miejsce, zanim akceptacja innej firmy dotrze do drugiego obiegu.
+  // W każdej z dwóch pul zachowujemy round-robin po liczbie spotkań firmy.
   const maxPass = eligible.reduce((m, s) => Math.max(m, supplierCapacity(s)), FM_MAX_M);
   const pairsAssigned = new Set();
   const rejectedByCap = {};  // cid -> liczba par odrzuconych przez pojemność sieci
-  for (let pass = 1; pass <= maxPass; pass++) {
-    for (const cand of candidates) {
-      const sid = cand.supplier.id;
-      const cid = cand.chain.id;
-      if (res[sid].m.length >= supplierCapacity(cand.supplier)) continue;
-      if (res[sid].m.length >= pass) continue;
-      if (res[sid].m.length < pass - 1) continue;
-      if (pairsAssigned.has(`${sid}::${cid}`)) continue;
-      if (cs[cid].n >= capOfChain[cid]) { rejectedByCap[cid] = (rejectedByCap[cid] || 0) + 1; continue; }
-      res[sid].m.push(cid);
-      res[sid].r[cid] = cand.score;
-      cs[cid].n++;
-      cs[cid].list.push(sid);
-      pairsAssigned.add(`${sid}::${cid}`);
+  for (const accepted of [true, false]) {
+    const pool = candidates.filter(cand => cand.accepted === accepted);
+    for (let pass = 1; pass <= maxPass; pass++) {
+      for (const cand of pool) {
+        const sid = cand.supplier.id;
+        const cid = cand.chain.id;
+        if (res[sid].m.length >= supplierCapacity(cand.supplier)) continue;
+        if (res[sid].m.length >= pass) continue;
+        if (res[sid].m.length < pass - 1) continue;
+        if (pairsAssigned.has(`${sid}::${cid}`)) continue;
+        if (cs[cid].n >= capOfChain[cid]) { rejectedByCap[cid] = (rejectedByCap[cid] || 0) + 1; continue; }
+        res[sid].m.push(cid);
+        res[sid].r[cid] = cand.score;
+        cs[cid].n++;
+        cs[cid].list.push(sid);
+        pairsAssigned.add(`${sid}::${cid}`);
+      }
     }
   }
 
-  // FAZA 5 — numerowanie z FM_MIN_GAP (ten sam porządek co przy przypisaniu)
+  // FAZA 5 — szanse nie wypełniają luk PRZED ostatnią akceptacją tej sieci.
+  // Luki mogą być potrzebne dla FM_MIN_GAP między sieciami tej samej firmy.
+  const lastAcceptedNr = {};
   for (const cand of candidates) {
     const sid = cand.supplier.id;
     const cid = cand.chain.id;
     if (!pairsAssigned.has(`${sid}::${cid}`)) continue;
     if (nums[sid][cid] != null) continue;
-    let n = 1, safety = 0;
+    let n = cand.accepted ? 1 : (lastAcceptedNr[cid] || 0) + 1;
+    let safety = 0;
     while (safety++ < 1000) {
       const idx = n - 1;
       if (idx >= cq[cid].length) cq[cid].push(null);
@@ -227,6 +244,7 @@ export function buildFMData(prefs, resps, chains, suppliers, opts = {}) {
     cq[cid][n - 1] = sid;
     used[sid].add(n);
     nums[sid][cid] = n;
+    if (cand.accepted) lastAcceptedNr[cid] = Math.max(lastAcceptedNr[cid] || 0, n);
   }
 
   // FAZA 6 — ostrzeżenia dla admina
