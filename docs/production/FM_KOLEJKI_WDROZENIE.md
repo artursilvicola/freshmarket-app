@@ -134,3 +134,15 @@ Po zgodzie Artura „ok, sprawdz i wdróż to” wykonano fast-forward `origin/m
 Powtórzono 54/54 testy aplikacji, 9/9 niezależne testy review, build i `git diff --check`. Najpierw sprawdzono draft `6a9ff1d90223d0ff506d415d` z testowym Supabase, następnie potwierdzono produkcyjny commit i produkcyjny projekt w bundlu. Logowanie PL/EN, publiczna tablica i przekierowanie `/tablica` z query/hash działają. Snapshot: 24 stanowiska, wszystkie zamknięte, bez pól z nazwami dostawców. Lokalny podgląd z danymi w pamięci potwierdził listę, historię, wyszukiwanie, zmianę Auchan → Dino i ostrzeżenie po błędzie odczytu.
 
 Pełny raport z granicami testów: **`NOTATKA_DLA_CLAUDE_2026-09-08_LISTA_WDROZONA.md`**. Nie wykonano w tej turze testu zalogowanego operatora na nowej produkcji ani fizycznych tabletów. Nadal potrzebne są przypisania GATE, konta/przypisania obsługi, aktualizacja instrukcji PDF i próba generalna. Przy filtrze `?gate=1` tablica pokazuje obecnie nieaktywność; bez filtra widoczne są stanowiska. Nie zmieniać GATE bez potwierdzonego planu sali.
+
+## 9. Wdrożenie release/2026-09-09 — 9.09.2026 (zgoda Artura, akceptacja techniczna Codexa)
+
+| Element | Wartość |
+|---|---|
+| main | `48dd1b4` → **`7819e62`** (fast-forward; kod: e58e9d1 dni testowe/„Twoja kolej”, 78bc617 automatyczna szansa, c64d8a4 npm audit, 4c9f981 karta dostawcy po review) |
+| Netlify prod | **`6aa126c7e333bc0008a3d330`** (ready 09:29:06 UTC, 20 s, 24 funkcje) |
+| Punkt powrotu | deploy `6a9ff29d50868c000867539e` (a7e87db) = tag `prod-rollback-2026-09-09` (48dd1b4); przywracać deploy, nie cofać bazy |
+| Migracje / plan / kolejki | brak migracji; plan NIE przeliczany ani publikowany; dzień NIE otwarty; 24 stanowiska `closed`, `closed_all_at` null |
+| Kontrole po deployu | `/login`, `/obsluga`, `/tablice`, `/tablica?gate=1`, `/admin` 200; serwowane paczki zawierają znaczniki release (data stanowisk, „kolejka zamykana”, „JESTEŚ NASTĘPNY”, snapshot `?date=`, „Daj szansę — automatycznie”, `FM_INPUTS_INCOMPLETE`), 0× demo/test-renderer/skrypt hostowany; ekrany: `/obsluga` PL↔EN, `/tablica?gate=1#kontrola` → `/tablice?gate=1#kontrola` (GATE 1, „nieaktywna” bo bramy nieprzypisane), `/tablice` 24 wiersze, `/login` PL; konsola bez błędów |
+| Niewykonane | karta „Twoja kolej” na prawdziwym koncie dostawcy (brak planu w kolejkach 24.09); logowanie obsługi na nowym buildzie (konta tworzy super admin); próba na fizycznych tabletach 21–22.09; dwie uwagi eksploatacyjne Codexa (timeout nie anuluje transportu; pierwszy błąd odczytu bez komunikatu) — osobna poprawka przed próbą |
+
