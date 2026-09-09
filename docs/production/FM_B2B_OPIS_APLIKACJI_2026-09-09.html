@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Fresh Market B2B — jak działa aplikacja (stan na 9.09.2026)</title>
+<style>
+  @page { size: A4; margin: 18mm 17mm 20mm 17mm; }
+  html { font-family: "Segoe UI", "Noto Sans", Arial, sans-serif; color: #0f172a; }
+  body { font-size: 10.6pt; line-height: 1.45; margin: 0; }
+  h1 { font-size: 20pt; margin: 0 0 6pt; color: #0f766e; letter-spacing: -0.01em; }
+  h2 { font-size: 14.5pt; margin: 22pt 0 8pt; color: #0f172a; border-bottom: 1.5pt solid #0d9488; padding-bottom: 3pt; page-break-after: avoid; }
+  h3 { font-size: 11.8pt; margin: 14pt 0 5pt; color: #0f766e; page-break-after: avoid; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 8pt 0; padding-left: 18pt; }
+  li { margin-bottom: 2.5pt; }
+  li > ul, li > ol { margin-top: 2pt; margin-bottom: 2pt; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0 10pt; font-size: 9.8pt; page-break-inside: avoid; }
+  th, td { border: 0.6pt solid #cbd5e1; padding: 4pt 6pt; vertical-align: top; text-align: left; }
+  th { background: #f1f5f9; font-weight: 700; }
+  .cover { page-break-after: always; padding-top: 40mm; }
+  .cover .brand { font-size: 11pt; letter-spacing: 0.18em; color: #0d9488; font-weight: 800; text-transform: uppercase; }
+  .cover h1 { font-size: 30pt; margin: 10pt 0 6pt; line-height: 1.1; }
+  .cover .sub { font-size: 13pt; color: #475569; margin-bottom: 26pt; }
+  .cover .meta { font-size: 10pt; color: #64748b; border-top: 1pt solid #e2e8f0; padding-top: 10pt; }
+  .box { border: 0.8pt solid #99f6e4; background: #f0fdfa; border-radius: 6pt; padding: 8pt 11pt; margin: 8pt 0 10pt; page-break-inside: avoid; }
+  .warn { border-color: #fde68a; background: #fffbeb; }
+  .note { font-size: 9.6pt; color: #475569; }
+  .section { page-break-before: always; }
+  .toc ol { columns: 2; column-gap: 22pt; padding-left: 16pt; }
+  .toc li { break-inside: avoid; }
+  .kv td:first-child { width: 34%; font-weight: 600; background: #f8fafc; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9.4pt; background: #f1f5f9; padding: 0 3pt; border-radius: 3pt; }
+  .small { font-size: 9.4pt; }
+  .steps li { margin-bottom: 4pt; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="brand">Fresh Market 2026 · panel B2B</div>
+  <h1>Jak działa aplikacja Fresh Market B2B</h1>
+  <div class="sub">Opis funkcjonalny z perspektywy dostawcy, sieci handlowej, administratora i obsługi numerków — do przeglądu przed próbą generalną i wydarzeniem 24 września 2026</div>
+  <div class="meta">
+    Stan na 9 września 2026, po wdrożeniu modułu kolejek (7.09), listy spotkań obsługi (8.09) i zasady „brak odpowiedzi = daj szansę” (9.09).<br>
+    Opracowanie: Claude i Codex na podstawie aktualnego kodu aplikacji <code>b2b.freshmarket.eu</code>. Dokument opisuje to, co aplikacja robi dziś, i osobno wskazuje, co wymaga jeszcze decyzji organizacyjnej.
+  </div>
+</div>
+
+<div class="toc">
+  <h2>Spis treści</h2>
+  <ol>
+    <li>Dwa zadania aplikacji i kto z niej korzysta</li>
+    <li>Dostawca</li>
+    <li>Kupiec i sieć handlowa</li>
+    <li>Jak aplikacja ustala spotkania</li>
+    <li>Administrator</li>
+    <li>Obsługa numerków w dniu wydarzenia</li>
+    <li>Tablica na rzutniku i w telefonie</li>
+    <li>Języki, materiały i instrukcje</li>
+    <li>Co warto jeszcze przeanalizować</li>
+    <li>Co powinno zakończyć próbę 21–22 września</li>
+    <li>Aneks: kalendarz, adresy, stan wdrożeń</li>
+  </ol>
+</div>
+
+<h2>1. Dwa zadania aplikacji i kto z niej korzysta</h2>
+<p>Aplikacja ma dwa powiązane, ale odrębne zadania:</p>
+<ul>
+  <li><strong>PreConnect</strong> — całoroczne prezentowanie firmy i wysyłanie propozycji produktowych do sieci handlowych.</li>
+  <li><strong>Spotkania Fresh Market</strong> — wybór partnerów, przygotowanie planu spotkań na wydarzenie i obsługa numerków na sali.</li>
+</ul>
+<div class="box"><strong>Trzy rzeczy, których nie należy mylić.</strong> Wysłanie propozycji produktowej nie jest zapisaniem się na spotkanie. Odczytanie propozycji przez kupca nie oznacza akceptacji spotkania ani zgody na współpracę. Wybór sieci przez dostawcę jest zgłoszeniem zainteresowania, a nie rezerwacją.</div>
+<table>
+  <tr><th style="width:24%">Rola</th><th>Co robi w aplikacji</th></tr>
+  <tr><td>Dostawca</td><td>Prezentuje firmę i produkty, wysyła propozycje do sieci, wybiera sieci do spotkań, sprawdza swój plan i w dniu wydarzenia swoją kolejkę.</td></tr>
+  <tr><td>Kupiec (sieć handlowa)</td><td>Przegląda propozycje i katalog firm, zaznacza zainteresowanie spotkaniami, otrzymuje plan spotkań swojej sieci.</td></tr>
+  <tr><td>Administrator Fresh Market</td><td>Zarządza firmami, sieciami, dostępami, moderacją i wysyłkami, rozliczeniami, planem spotkań i konfiguracją dnia wydarzenia.</td></tr>
+  <tr><td>Obsługa numerków</td><td>Pracuje na tabletach przy przypisanych sieciach: sprawdza dostawców, wywołuje kolejne numery, oznacza przebieg spotkań.</td></tr>
+  <tr><td>Publiczna tablica</td><td>Każdy może ją otworzyć bez logowania. Pokazuje kolejki, ale nigdy nazw dostawców ani ich danych kontaktowych.</td></tr>
+</table>
+<p>Wspólne dla wszystkich zalogowanych: logowanie e-mailem i hasłem lub linkiem do logowania, odzyskiwanie hasła, przełącznik języka polski/angielski, pływający czat z organizatorem, pasek komunikatów i strona „Instrukcja” ustawiane przez administratora, stopka ze sponsorami.</p>
+
+<h2 class="section">2. Dostawca</h2>
+
+<h3>Konto i dostęp</h3>
+<p>Dostawca może sam założyć konto przez formularz rejestracji. Podaje dane firmy i kontaktu: nazwę, kraj, NIP lub VAT, e-mail, osobę kontaktową, telefon. Po rejestracji konto czeka na sprawdzenie przez administratora. W tym czasie dostawca może uzupełniać profil, ale wysyłki i spotkania są zablokowane. Baner na górze pokazuje status konta: oczekuje, aktywne, odrzucone z powodem, wstrzymane. Z banera można jednym kliknięciem napisać do administratora o aktywację.</p>
+<p>Administrator osobno decyduje o dostępie do wysyłek PreConnect i do umawiania spotkań Fresh Market. Firma może korzystać z jednego obszaru albo z obu.</p>
+
+<h3>„Twoja firma” — wizytówka dla kupców</h3>
+<p>To nie jest tylko formularz z nazwą i telefonem. Profil ma pomóc kupcowi zrozumieć, czym firma się zajmuje i czy pasuje do jego potrzeb. Dostawca uzupełnia między innymi:</p>
+<ul>
+  <li>logo, nazwę, adres internetowy i dane podstawowe;</li>
+  <li>opis krótki i standardowy, po polsku, z tłumaczeniem na angielski;</li>
+  <li>rodzaj działalności (producent, eksporter, importer, dystrybutor), kategorie, produkty, rynki sprzedaży;</li>
+  <li>profil rozszerzony: rok założenia, liczba pracowników, produkty całoroczne i sezonowe, typy klientów, pakowanie, przechowywanie i transport, marka własna;</li>
+  <li>certyfikaty, zdjęcia, katalogi i materiały;</li>
+  <li>osoby kontaktowe ze stanowiskami, telefonami i e-mailami.</li>
+</ul>
+<p>Aplikacja pomaga przygotować opisy z użyciem AI, także na podstawie strony WWW. To pomoc w pisaniu, nie potwierdzenie prawdziwości informacji; opis trzeba sprawdzić. Wskaźnik pokazuje kompletność profilu. Dostawca może obejrzeć swoją wizytówkę oczami kupca i ograniczyć jej widoczność w katalogu dla wybranych sieci. Ograniczenie widoczności nie cofa wcześniej wysłanej propozycji ani nie anuluje spotkania. Dodanie osoby do kontaktów firmy nie tworzy jej osobnego konta do logowania.</p>
+
+<h3>„Mój profil” — dane osoby</h3>
+<p>Dotyczy zalogowanego użytkownika, nie firmy: imię i nazwisko, stanowisko, telefon, hasło. Zmiana adresu e-mail konta lub przypisania do firmy wymaga administratora.</p>
+
+<h3>„Moje propozycje” — przygotowanie oferty</h3>
+<p>Dostawca tworzy propozycję konkretnego produktu lub programu dostaw; jedna firma może mieć wiele propozycji. Kreator prowadzi przez trzy kroki:</p>
+<ol>
+  <li><strong>Produkt</strong> — nazwa, odmiana, kategoria i podkategoria, kraj i region pochodzenia, typ propozycji (dostawy regularne, sezon, promocja, partia jednorazowa), rola na półce, kaliber, klasa jakości, marka, tryb sprzedaży (w tym marka własna sieci), certyfikat bio, Brix, kolor; dla kwiatów długość pędu, faza otwarcia, liczba sztuk w pęczku, deklarowany vase life; do trzech zdjęć.</li>
+  <li><strong>Szczegóły</strong> — okres dostępności, model dostępności, wolumen tygodniowy minimalny i maksymalny, jednostka, minimalne zamówienie, opakowania i paletyzacja, warunki logistyczne, identyfikowalność, opcjonalne informacje cenowe, korzyści dla kupca.</li>
+  <li><strong>Prezentacja</strong> — tytuł wewnętrzny (porządkowy, dla dostawcy) i tytuł dla kupca, podgląd oczami kupca.</li>
+</ol>
+<p>Wersję roboczą można zapisać i poprawiać. Propozycja oznaczona jako gotowa jest zamrożona: zmiany robi się przez duplikat, który przyspiesza też dodawanie podobnych produktów. Usunąć można tylko propozycję, która nie została nigdzie wysłana. Zapisanie gotowej propozycji nie oznacza jej wysłania.</p>
+
+<h3>„Wysyłki” — przekazanie propozycji do sieci</h3>
+<p>Dostawca wybiera przygotowaną propozycję i sieć. Widzi wymagania danej sieci wpisane przez organizatora i musi potwierdzić, że się z nimi zapoznał. Potwierdza, że wysyłka pobiera jeden kredyt z pakietu. Dalsza droga:</p>
+<ol class="steps">
+  <li>Dostawca zgłasza propozycję do wybranej sieci.</li>
+  <li>Propozycja trafia do moderacji Fresh Market.</li>
+  <li>Administrator ją zatwierdza albo odrzuca (z możliwością wiadomości do dostawcy).</li>
+  <li>Zatwierdzona propozycja może zostać udostępniona kupcowi w jego panelu.</li>
+  <li>Wysyłka mailowa do sieci jest osobną czynnością organizatora, według harmonogramu sieci (domyślnie pierwszy wtorek miesiąca).</li>
+</ol>
+<div class="box warn">Nie ma zasady „kliknąłem wyślij, więc kupiec natychmiast dostał e-mail”. Dostawca ma historię wysyłek (wszystkie, wysłane, w kolejce, wygasłe) i widzi, przy których system odnotował odczyt.</div>
+
+<h3>„Finanse” — pakiety i rozliczenia PreConnect</h3>
+<p>Dostawca widzi aktywny pakiet, wykorzystane i pozostałe kredyty, ważność pakietu, saldo portfela, zwroty, historię wysyłek z kosztem efektywnym i wskaźnikiem odczytu. Cennik obejmuje pakiety Standard i Premium po 5, 10, 20 i 50 kredytów. Zakup przez płatność internetową PayU albo przelewem na podstawie proformy; przy przelewie administrator potwierdza wpłatę i uruchamia pakiet. Faktura trafia na e-mail.</p>
+<p><strong>Istotna zasada rozliczania:</strong> kredyt jest rozliczany przy pierwszym zarejestrowanym wyświetleniu propozycji kupcowi, nie za podpisanie umowy czy odbycie spotkania. Wyświetlenie może zostać zarejestrowane już na liście propozycji w panelu kupca, więc status „odczytana” nie dowodzi, że kupiec szczegółowo przeczytał całą ofertę. Za brak odczytu w przewidzianym czasie dostawca dostaje zwrot kredytu do portfela.</p>
+<p>Trzeba wyraźnie rozdzielać trzy rzeczy: pakiet kredytów PreConnect, pakiet uczestnictwa w wydarzeniu Fresh Market oraz uprawnienie i limit spotkań B2B. To nie są trzy nazwy tego samego zakupu.</p>
+
+<h3>Wybór sieci na Fresh Market</h3>
+<p>Jeżeli firma jest dopuszczona do spotkań i trwa etap wyborów, dostawca wskazuje sieci, z którymi chce się spotkać. Jedno kliknięcie to <strong>sieć główna (gwiazdka)</strong>, drugie to <strong>sieć rezerwowa (kciuk)</strong>, trzecie usuwa wybór. Liczba głównych wyborów zależy od liczby przypisanych pakietów: pięć na pakiet, więc dwa pakiety dają dziesięć. Rezerwowych można wskazać więcej.</p>
+<p>Przycisk „Potwierdź wybór” tylko sygnalizuje administratorowi, że wybór jest finalny (wymaga pięciu sieci głównych). Zaznaczenia zapisują się na bieżąco, zmiany są możliwe do 16 września, po zmianach warto potwierdzić ponownie. Po zamknięciu etapu wybory są tylko do odczytu; zmiana wymaga uzgodnienia z organizatorem. Pakiet Standard nie daje spotkań.</p>
+
+<h3>Plan, „Twoje spotkania” i „Twoja kolej”</h3>
+<p>Jeśli administrator włączy podgląd, dostawca widzi roboczy plan z wyraźnym zastrzeżeniem, że nie jest ostateczny. Od publikacji (22 września) widzi finalny harmonogram z numerami. Nie uruchamia algorytmu, nie zatwierdza planu, nie zmienia numerów. Może otrzymać od organizatora kartę spotkań PDF.</p>
+<p>W dniu wydarzenia w zakładce spotkań pojawia się karta <strong>„Twoja kolej”</strong>: dla każdego spotkania jego numer, numer obsługiwany teraz przy stanowisku (przy dwóch równoległych stanowiskach oba numery), brama, oraz status: przed Tobą około N numerów, jesteś następny — przygotuj się, Twoja kolej — podejdź (wyłącznie po faktycznym wywołaniu przez obsługę), spotkanie trwa, zakończone, nieobecność, zgłoszono powrót, przerwa, wolne wejście, kolejka zamykana. Jest link do tablicy na telefonie. Karta pokazuje wyłącznie spotkania z dnia wydarzenia, więc próba generalna nie trafia do uczestników. Karta pojawia się dopiero, gdy administrator zaimportuje plan do kolejek. Przy problemach z pobraniem danych karta ostrzega, że dane mogą być nieaktualne, i odsyła do tablicy.</p>
+<div class="box"><strong>Nowa zasada od 9 września:</strong> jeśli dostawca wybrał sieć, a kupiec nie odpowiedział, aplikacja traktuje to jak „daj szansę”. Akceptacje kupców mają pierwszeństwo w przydziale i numeracji. Odmowa wyklucza spotkanie. Limity pakietów i pojemność stanowisk nadal obowiązują.</div>
+
+<h2 class="section">3. Kupiec i sieć handlowa</h2>
+
+<h3>Konto przypisane do sieci</h3>
+<p>Kupiec korzysta z konta powiązanego z konkretną siecią. Nie może przełączyć się na inną sieć ani zobaczyć jej propozycji. Jedna sieć może mieć kilku kupców z różnymi stanowiskami i kategoriami odpowiedzialności. Kupiec zmienia swoje dane kontaktowe, hasło i ustawienie mailingu; zmiana przypisania do sieci wymaga administratora.</p>
+
+<h3>Propozycje asortymentowe i katalog dostawców</h3>
+<p>Głównym ekranem są propozycje skierowane do jego sieci po moderacji. Można je filtrować (kategorie, kraj, cechy dostawcy i propozycji), oznaczać jako zapisane, potwierdzać odczyt. Odznaki: Premium, Nowa, Bio. Szczegół propozycji pokazuje firmę stojącą za produktem, możliwości dostaw i materiały oraz podpowiada działania: próbka, specyfikacja, cena, program dostaw. Część przycisków przygotowuje wiadomość e-mail; nie jest to zamawianie towaru. Zapisanie propozycji nie jest akceptacją spotkania.</p>
+<p>Osobno katalog „Dostawcy”: baza zweryfikowanych firm z filtrami kraju i kategorii oraz profil firmy z certyfikatami i historią. Nie daje dostępu do propozycji wysłanych innym sieciom.</p>
+<div class="box"><strong>Zasada prywatności:</strong> kupiec może widzieć osobę kontaktową i telefon dostawcy. Dostawca nigdy nie widzi nazwisk ani kontaktów kupców sieci handlowej — ani w aplikacji, ani na karcie spotkań, ani na tablicy.</div>
+
+<h3>Decyzje o spotkaniach Fresh Market</h3>
+<p>W etapie preferencji kupiec widzi listę „Dostawcy, którzy wybrali Twoją sieć” z oznaczeniem, czy jako główną czy rezerwową, i może zajrzeć do ich profili. Dla każdej firmy wybiera:</p>
+<table>
+  <tr><th style="width:26%">Decyzja</th><th>Znaczenie</th></tr>
+  <tr><td>Chcę się spotkać</td><td>Akceptacja. Ma pierwszeństwo w przydziale miejsc i numeracji.</td></tr>
+  <tr><td>Daj szansę</td><td>Spotkanie odbędzie się, jeśli będzie miejsce po akceptacjach. Przy odrzucaniu aplikacja proponuje tę opcję jako zalecaną („przenieś na koniec kolejki”).</td></tr>
+  <tr><td>Nie chcę</td><td>Wykluczenie. Wymaga dodatkowego potwierdzenia. Administrator może ręcznie zmienić.</td></tr>
+  <tr><td>Brak odpowiedzi</td><td>Traktowany jak „daj szansę” (oznaczenie „Daj szansę — automatycznie”). Kupiec nie musi klikać przy każdej firmie.</td></tr>
+</table>
+<p>Decyzje są powiązane z siecią i firmą dostawcy; przy kilku kupcach jednej sieci nie są to osobne zestawy decyzji dla każdej osoby. Po zamknięciu wyborów odpowiedzi są tylko do wglądu. Jeśli administrator włączy podgląd, kupiec widzi roboczy plan. Jeśli administrator odblokuje danej sieci „wybory po terminie”, kupiec może zaznaczyć dodatkowe firmy jako informację dla administratora — bez wpływu na algorytm.</p>
+<p>Po publikacji kupiec widzi listę firm, z którymi się spotyka, oraz listę życzeń „firmy, z którymi chciałbym się jeszcze spotkać”. Życzenia trafiają do administratora i nie przebudowują opublikowanego planu. W dniu wydarzenia kupiec prowadzi rozmowy; numerkami steruje obsługa.</p>
+
+<h2 class="section">4. Jak aplikacja ustala spotkania</h2>
+<p>Algorytm działa według ustalonych reguł. Nie jest to AI, które ocenia, czy firmy powinny ze sobą handlować.</p>
+
+<h3>Pierwszeństwo mają akceptacje</h3>
+<p>Najpierw przydzielane są spotkania zaakceptowane przez kupców. Dopiero później wykorzystywane są szanse — zaznaczone ręcznie i wynikające z braku odpowiedzi. W obrębie tych grup znaczenie mają wybory główne i rezerwowe dostawcy, potem data płatności i kolejność pakietu (Premium przed Business). Kupiec może też zaakceptować firmę, która go nie wybrała; taka akceptacja ma pierwszeństwo przed pulą „daj szansę”. Jeśli żadna strona nie wskazała drugiej, milczenie nie tworzy spotkania.</p>
+
+<h3>Przykład</h3>
+<p>Do jednej sieci zgłosiło się pięć firm: A i B kupiec zaakceptował, C dostała „daj szansę”, D nie dostała żadnej odpowiedzi, E została odrzucona. Aplikacja najpierw przydziela A i B, potem rozpatruje C i D na zasadach puli szans, a E nie otrzymuje spotkania z tą siecią. C i D nie mają gwarancji miejsca — obowiązują limity i pojemność.</p>
+
+<h3>Limity dostawcy i sieci</h3>
+<p>Po stronie dostawcy: pięć spotkań na przypisany pakiet. Po stronie sieci: pojemność liczona ze stanowisk — domyślnie 60 spotkań na aktywne stanowisko, parametr do zmiany przez administratora. To limit organizacyjny, nie obietnica, że fizycznie uda się przeprowadzić tyle rozmów niezależnie od ich długości. Pomiędzy spotkaniami jednej firmy w różnych sieciach zachowywany jest odstęp numerów.</p>
+
+<h3>Numerek nie jest godziną</h3>
+<p>System układa kolejność w każdej sieci. Nie oznacza to rezerwacji typu „Auchan o 10:20, Dino o 10:40”. Każda kolejka porusza się w innym tempie. Nawet przy dobrze rozłożonych numerach dwie sieci mogą wywołać tego samego dostawcę w podobnym momencie — obsługa musi mieć ustaloną zasadę postępowania (patrz rozdział 9).</p>
+
+<h3>Administrator zatwierdza wynik</h3>
+<p>Algorytm przygotowuje propozycję. Administrator ją sprawdza, koryguje, zatwierdza i publikuje. Zapisany plan nie zmienia się sam po zmianie kodu ani po późniejszej odpowiedzi kupca. Jeżeli nie uda się pobrać kompletu wyborów i odpowiedzi, aplikacja blokuje przeliczenie, zatwierdzenie i publikację: nieodczytana odmowa nie może zostać potraktowana jak brak odpowiedzi.</p>
+
+<h2 class="section">5. Administrator</h2>
+<p>Administrator zarządza całorocznym PreConnect i wydarzeniem. Menu: Pipeline, Sieci, Firmy, Rozliczenia, Wiadomości, FM Spotkania, Branding, Administratorzy (tylko super admin).</p>
+
+<h3>Firmy i konta</h3>
+<ul>
+  <li>Zakładki: Aktywne, Do zatwierdzenia, Wstrzymane, Odrzucone, B2B FM26, Wszystkie; filtry kraju, pakietu, dostępu do PreConnect i FM, opisu AI.</li>
+  <li>Zatwierdzanie, odrzucanie, wstrzymywanie i ponowna aktywacja z notatką dla dostawcy; wiadomość o zmianie statusu.</li>
+  <li>Osobne włączniki dostępu do PreConnect i do Spotkań B2B; pakiet i limit kredytów; liczba pakietów B2B wpływająca na limit spotkań.</li>
+  <li>Opis AI: generowanie ze strony WWW, edycja, zatwierdzenie, tłumaczenie na angielski; podgląd profilu, czat i pakiet w szufladzie firmy; osoba kontaktowa i operator konta.</li>
+  <li>Zakładanie kont przez link do logowania (magic link) po zatwierdzeniu rejestracji.</li>
+</ul>
+<p>Zawieszenie konta lub wyłączenie modułu nie jest usunięciem danych. Podgląd panelu w kontekście wybranego użytkownika pomaga przy wsparciu, ale nie zastępuje testu na prawdziwym koncie.</p>
+
+<h3>Sieci i kupcy</h3>
+<p>Dodawanie sieci: nazwa, kraj, logo, pierwsza i następna wysyłka, opis i notatka administratora, identyfikator sieci FM 2026 (bez niego sieć nie pojawi się w wyborze u dostawcy), przełącznik udziału w Fresh Market, uwagi i wymagania dla dostawców, brama (GATE) drukowana na kartach, kupcy: imię i nazwisko, e-mail, telefon, stanowisko, odpowiedzialność. Sieć może mieć kilku kupców. Kupca jako osobę należy odróżniać od stanowiska i od kolejki.</p>
+
+<h3>Pipeline — moderacja i wysyłki PreConnect</h3>
+<ul>
+  <li>Moderacja: podgląd pełny, zatwierdź, odrzuć, analiza ChatGPT, wiadomość do dostawcy; koszyk mailingu per sieć i „Wyślij zatwierdzone”.</li>
+  <li>Wysłane i tracking: mail otwarty, odczyt na liście w aplikacji, potwierdzenie ręczne, nieprzeczytana, rozliczona; potwierdzenie odczytu uzyskane poza automatem (np. po telefonie) z historią i cofaniem — ma znaczenie dla rozliczeń, nie jest kosmetyką.</li>
+  <li>Rozliczenie kredytów i przychodu z wysyłek per dostawca.</li>
+</ul>
+<p>Udostępnienie propozycji w panelu kupca i wysłanie mailingu to oddzielne etapy.</p>
+
+<h3>Rozliczenia</h3>
+<p>Proformy (oczekuje, opłacona, anulowana) i potwierdzanie przelewów, zamówienia PayU ze statusami, kredyty dostawców (aktywne, wygasłe), historia rozliczania wysyłek. To panel operacyjny, nie system księgowy.</p>
+
+<h3>Wiadomości, instrukcje, wygląd, zespół</h3>
+<p>Wątki z uczestnikami, odpowiedzi, podpowiedź odpowiedzi AI (nie wysyła automatycznie). Branding: logo, treść strony „Instrukcja”, komunikaty w pasku i oknie, logotypy sponsorów w stopce. Super admin zarządza administratorami i wykonuje wrażliwe czynności na kontach obsługi.</p>
+
+<h3>FM Spotkania — przygotowanie planu</h3>
+<ol class="steps">
+  <li><strong>Zarządzanie:</strong> cztery fazy (rejestracja sieci, preferencje do 16.09, algorytm i korekty 17–21.09, publikacja 22.09 i wydarzenie 24.09), otwieranie i zamykanie dostępu uczestników, podgląd roboczy dla uczestników, odblokowanie wyboru po terminie dla wybranej sieci, publikacja planu finalnego i jej cofnięcie.</li>
+  <li><strong>Dane wejściowe:</strong> gwiazdki i kciuki dostawców, odpowiedzi kupców (chcę, daj szansę, automatyczna szansa, nie chcę), liczniki, dostawcy bez wyborów, gotowi bez potwierdzenia, sieci bez odpowiedzi; odświeżanie co minutę.</li>
+  <li><strong>Plan spotkań:</strong> uruchomienie algorytmu, ostrzeżenia (firmy bez spotkań, sugestie zamian, pojemność sieci wobec stanowisk), tabela planu.</li>
+  <li><strong>Korekty:</strong> numery kolejkowe per sieć, „wczytaj zatwierdzony”, „przebuduj z preferencji”, ręczne przesunięcia; odpowiedzi po terminie i życzenia kupców jako materiał do zmian; zatwierdzenie.</li>
+  <li><strong>Publikacja</strong> planu finalnego.</li>
+</ol>
+<p>To administrator odpowiada za to, aby wynik był nie tylko poprawny matematycznie, lecz także rozsądny organizacyjnie.</p>
+
+<h3>Karty spotkań i eksport</h3>
+<p>Z planu powstają: indywidualne karty dostawców, karty sieci z kolejnością dostawców, zbiorcze pliki PDF do druku, arkusz Excel dla organizatora, archiwum plików. Administrator ogląda podglądy, wysyła test na własny adres, potem karty do uczestników. Karta dostawcy nie zawiera nazwisk ani kontaktów kupców; materiały organizatora mają szerszy zakres danych i nie powinny być publikowane. Język karty jest dziś wybierany według kraju firmy (Polska: PL, pozostałe: EN).</p>
+
+<h3>„Dzień wydarzenia” — kolejki</h3>
+<ul>
+  <li><strong>Stanowiska:</strong> grupy per sieć, liczba stanowisk (nie ma ograniczenia do 24), brama, spotkania na stanowisko. Dwa warianty: dwa równoległe stanowiska jednej sieci (np. Auchan) = jedna wspólna kolejka; oddzielne kolejki tematyczne (np. Dino Owoce i Dino Kwiaty) = osobne listy i numeracja, spotkania kierowane według kategorii firmy, przypadki niejednoznaczne do decyzji administratora.</li>
+  <li><strong>Spotkania:</strong> „Otwórz dzień / import planu” przygotowuje kolejki z opublikowanego planu i raportuje problemy (brak mapowania, konflikt numeru, nieprzypisana kategoria); synchronizacja po zmianach; przenoszenie spotkań między grupami.</li>
+  <li><strong>Obsługa:</strong> konta z kodem i sześciocyfrowym PIN-em pokazanym jeden raz, przypisania do sieci, blokada, reset PIN-u, odpięcie tabletu. Przypisanie działa na poziomie sieci.</li>
+  <li><strong>Na żywo:</strong> tryby stanowisk, bieżące numery, sytuacja kolejek.</li>
+  <li><strong>Tablica i dzień:</strong> ustawienia tablicy (rotacja, pozycji na stronę, przypięte grupy), tryb testowy i reset dnia testowego (tylko uprawniona osoba, nigdy data wydarzenia), „Zamknij wszystkie” (stanowiska z trwającą rozmową przechodzą w zamykanie i domykają się po jej zakończeniu), „Otwórz dzień ponownie”.</li>
+  <li><strong>Log:</strong> dziennik operacji.</li>
+</ul>
+<p>Import nie uruchamia rozmów: obsługa otwiera konkretne stanowiska ręcznie, gdy kupcy są gotowi. Konta obsługi działają tylko w dniu, na który zostały założone, dlatego konta na próbę i na wydarzenie trzeba przygotować osobno.</p>
+
+<h2 class="section">6. Obsługa numerków w dniu wydarzenia</h2>
+
+<h3>Start pracy</h3>
+<p>Obsługa nie używa prywatnego e-maila. Organizator przekazuje adres <code>b2b.freshmarket.eu/obsluga</code>, kod konta i PIN. Logowanie działa w przeglądarce wypożyczonego tabletu, bez instalacji. Pierwsze urządzenie zostaje przypięte do konta; przy wymianie tabletu pomoże super administrator (odpięcie lub reset PIN-u). Limity błędnych prób i blokada chronią konto. Panel jest po polsku i po angielsku. Po zalogowaniu operator widzi tylko przypisane sieci i stanowiska z dzisiejszego dnia. Tryb kiosku, wyłączenie usypiania i blokada innych aplikacji to osobne przygotowanie urządzenia.</p>
+
+<h3>Ekran stanowiska</h3>
+<p>Nazwa sieci i stanowiska, stan (zamknięte, otwarte, przerwa, wolne wejście, zamykanie), ostatnio wywołany numer i liczba w kolejce. Pole TERAZ: bieżący numer, pełna nazwa firmy, status (wywołany — oczekujemy, w trakcie), czas od wywołania lub trwania oraz wskazówka: „Przed rozpoczęciem porównaj firmę i numer z kartą spotkania oraz identyfikatorem uczestnika. Sam numer nie wystarcza”. Pole NASTĘPNY z nazwą firmy i kolejnymi pozycjami.</p>
+<p>Przyciski: Otwórz stanowisko, Wywołaj następny, Rozpocznij spotkanie, Nieobecny, Zakończ i wywołaj następny, Zakończ, Cofnij (do 30 sekund, tylko gdy nie narusza numeracji), Przerwa, Wolne wejście, Zamknij, Dodaj wyjątek, Lista spotkań. Sekcje: Powracający (obsłuż po barierze, rezygnuje) i Nieobecni (wrócił).</p>
+
+<h3>Sprawdzenie dostawcy</h3>
+<ol class="steps">
+  <li>Dostawca pokazuje kartę spotkań lub ekran „Twoja kolej”.</li>
+  <li>Operator porównuje sieć, numer i nazwę firmy z tym, co widzi przy TERAZ, albo wyszukuje pozycję na liście.</li>
+  <li>Sprawdza właściwe stanowisko lub dział (Owoce, Kwiaty).</li>
+  <li>Porównuje z identyfikatorem uczestnika.</li>
+  <li>Dopiero wtedy klika „Rozpocznij spotkanie”. Przy rozbieżności wyjaśnia sprawę z administratorem.</li>
+</ol>
+<p>Nie ma automatycznego rozpoznawania osoby ani skanowania kodu. To kontrola wykonywana przez człowieka z pomocą danych w aplikacji.</p>
+
+<h3>Lista spotkań</h3>
+<p>Pełna kolejka grupy: numer, firma, status tekstem, stanowisko, po dotknięciu godziny wywołania, rozpoczęcia i zakończenia. Szukanie po numerze i nazwie (bez polskich znaków). Filtry: wszystkie, oczekujące, wywołane i w trakcie, odbyte, pominięte i anulowane, nieobecni i powracający. Oznaczenia WYJĄTEK i TO STANOWISKO. Status pochodzi z zapisu spotkania — niższy numer nie jest automatycznie „odbyty”, co ma znaczenie przy dwóch równoległych stanowiskach. Lista jest tylko do odczytu; przeglądanie nie rozpoczyna ani nie kończy spotkania. Dino Owoce i Dino Kwiaty mają osobne listy; Auchan ma wspólną z kolumną stanowiska.</p>
+
+<h3>Zwykły przebieg i sytuacje nietypowe</h3>
+<ul>
+  <li><strong>Zwykły przebieg:</strong> otwórz stanowisko → wywołaj numer (pojawia się na tablicy) → dostawca podchodzi, sprawdzenie firmy → rozpocznij → zakończ i wywołaj następny (albo zakończ bez wywołania). System nie kończy rozmowy po określonym czasie.</li>
+  <li><strong>Nieobecny:</strong> operator oznacza nieobecność i kontynuuje. Gdy firma wróci, „Wrócił” ustawia ją do obsłużenia po bieżącym i następnym spotkaniu (bariera), poza zwykłym postępem tablicy. Publiczny numer nigdy się nie cofa.</li>
+  <li><strong>Przerwa i wolne wejście:</strong> przerwa wstrzymuje wywoływanie; wolne wejście informuje, że kupiec przyjmuje bez numerków (włączane ręcznie po uzgodnieniu, gdy stanowisko jest wolne; nie tworzy imiennej historii rozmów).</li>
+  <li><strong>Wyjątek:</strong> firma bez umówionego spotkania dostaje numer na końcu kolejki, po wpisaniu nazwy i potwierdzeniu. To kontrolowana furtka obsługi, nie samodzielna rejestracja uczestników.</li>
+  <li><strong>Pomyłki:</strong> „Cofnij” działa krótko po czynności i tylko gdy nie narusza numeracji; wywołania numeru nie da się cofnąć.</li>
+  <li><strong>Internet:</strong> przy braku łącza przyciski są zablokowane, a lista ostrzega o nieaktualnych danych; operacje bez odpowiedzi serwera są bezpiecznie ponawiane, czasem z prośbą o sprawdzenie stanu przed kolejnym kliknięciem. To nie jest system do pracy offline. Dwa tablety tej samej sieci widzą swoje zmiany na bieżąco.</li>
+</ul>
+
+<h2 class="section">7. Tablica na rzutniku i w telefonie</h2>
+<p>Publiczny adres: <code>b2b.freshmarket.eu/tablice</code>. Pokazuje sieci i stanowiska, numer TERAZ i NASTĘPNY oraz stany: zamknięte, przerwa, wolne wejście, zamykanie. Nie pokazuje nazw firm dostawców ani danych kontaktowych. Warianty: wszystkie stanowiska, tylko GATE 1 (<code>?gate=1</code>), tylko GATE 2 (<code>?gate=2</code>), wybrany dzień testowy (<code>?date=2026-09-21</code>). Na dużym ekranie lista dzieli się na rotujące strony (domyślnie 12 pozycji, czas rotacji ustawiany przez administratora lub parametrem); na telefonie układ do przewijania. Komunikaty są dwujęzyczne. Tablica odświeża się cyklicznie; nie ma SMS-a ani powiadomienia „teraz Twoja kolej”, uczestnik obserwuje tablicę lub otwartą kartę w panelu.</p>
+
+<h2>8. Języki, materiały i instrukcje</h2>
+<p>Ekrany dostawcy, kupca i obsługi mają wersje polską i angielską; tablica jest dwujęzyczna. Język przycisków to co innego niż treści wpisane przez użytkowników: polski opis firmy nie staje się angielskim po przełączeniu aplikacji, choć są narzędzia tłumaczenia. Dwie rzeczy do świadomego potwierdzenia: część administracyjna „Dzień wydarzenia” ma stałe polskie etykiety; język kart PDF zależy od kraju firmy, nie od języka aplikacji.</p>
+
+<h2 class="section">9. Co warto jeszcze przeanalizować</h2>
+<p>Nie wszystkie punkty wymagają programowania. Część wymaga jasnej decyzji organizacyjnej.</p>
+<ol class="steps">
+  <li><strong>Czy pakiety są opisane jednoznacznie?</strong> Kredyty PreConnect, udział w wydarzeniu i limit spotkań to trzy różne rzeczy. Algorytm liczy pięć spotkań na pakiet — nie utożsamiać z innymi obietnicami pakietu Premium.</li>
+  <li><strong>Czy kupcy rozumieją, że milczenie oznacza szansę?</strong> Zasada powinna być w instrukcji i komunikacji do sieci, inaczej ktoś uzna niezaznaczone firmy za wykluczone.</li>
+  <li><strong>Sieć z kilkoma działami.</strong> Czy firma sprzedająca owoce i kwiaty ma spotkać się z jednym czy dwoma kupcami Dino? Podział stanowisk nie tworzy sam dwóch spotkań dla jednej pary firma–sieć.</li>
+  <li><strong>Kto sprawdza dopasowanie branżowe?</strong> Automatyczna szansa nie ocenia sensu handlowego spotkania. Przy braku reakcji kupca liczą się poprawne profile, wymagania sieci i kontrola organizatora.</li>
+  <li><strong>Dwie sieci wywołują tę samą firmę naraz.</strong> Potrzebna prosta zasada: gdzie dostawca idzie najpierw i jak druga kolejka zapisuje jego późniejszy powrót (nieobecny → wrócił).</li>
+  <li><strong>Zmiana opublikowanego planu.</strong> Kto poprawia plan, synchronizuje kolejki, wydaje nową kartę i informuje zainteresowanych. Nie „przy okazji”.</li>
+  <li><strong>Zastępstwo przedstawiciela firmy.</strong> Gdy przychodzi inna osoba niż w kontaktach, obsługa potrzebuje zasady weryfikacji; zgodność numeru nie wystarcza.</li>
+  <li><strong>Kiedy wolno włączyć wolne wejście?</strong> Czy dopiero po obsłużeniu wszystkich obecnych umówionych i jak traktujemy spóźnionych.</li>
+  <li><strong>Raport po wydarzeniu.</strong> Liczba odbytych rozmów, nieobecności, powrotów i wyjątków per sieć. Obecny ekran logu pokazuje ograniczoną liczbę ostatnich wpisów i nie jest kompletnym raportem dnia; wolne wejście nie tworzy imiennego rejestru.</li>
+  <li><strong>Czy instrukcje mówią to samo co aplikacja?</strong> Starsze materiały opisują wcześniejsze zasady. Ujednolicić instrukcję PDF, pomoc w aplikacji i materiały dla asystenta AI — zwłaszcza płatności, automatyczna szansa, limity, numerki zamiast godzin.</li>
+  <li><strong>Scenariusz awaryjny.</strong> Zapasowy tablet, ładowarki, reset dostępu, internet zapasowy, kontakt do administratora, wydrukowany plan.</li>
+  <li><strong>Kupiec bez własnego ekranu na żywo.</strong> Kupiec przy stole widzi kolejność z wydrukowanej karty sieci, a kolejkę prowadzi obsługa. Jeśli kupcy mają sami widzieć, kto jest następny, potrzebny byłby widok kupca.</li>
+  <li><strong>Brak rejestracji wejścia uczestników.</strong> Godzina 8:00–9:00 jest poza systemem; obsługa nie wie, czy dostawca dotarł, dopóki go nie wywoła.</li>
+  <li><strong>Brak ocen po spotkaniu.</strong> Nie ma modułu opinii kupca ani dostawcy po rozmowie — do rozważenia po wydarzeniu.</li>
+  <li><strong>Organizacyjnie nadal otwarte:</strong> bramy dla 22 sieci, docelowa liczba stanowisk, konta i przypisania obsługi, próba na tabletach.</li>
+</ol>
+
+<h2>10. Co powinno zakończyć próbę 21–22 września</h2>
+<p>Za udaną próbę uznajemy przejście całej drogi na prawdziwych urządzeniach, w trybie testowym na dacie próby (bez zmiany daty wydarzenia i produkcyjnych kolejek):</p>
+<ul>
+  <li>logowanie wszystkich operatorów kodem i PIN-em oraz poprawne przypisania sieci;</li>
+  <li>zgodność karty dostawcy z nazwą na liście obsługi, wyszukanie po firmie i numerze;</li>
+  <li>zwykłe spotkanie, nieobecność, powrót, przerwa i wolne wejście, wyjątek, cofnięcie;</li>
+  <li>dwa równoległe stanowiska Auchan oraz oddzielne kolejki Dino Owoce i Kwiaty;</li>
+  <li>utrata internetu i powrót, ostrzeżenie o nieaktualnych danych, spóźnione odczyty;</li>
+  <li>ekran „Twoja kolej” na prawdziwym koncie dostawcy, w tym w języku angielskim;</li>
+  <li>rzutnik z <code>/tablice?date=…</code>: czytelność z końca sali, rotacja stron, filtr bramy;</li>
+  <li>„Zamknij wszystkie” bez przerywania trwających rozmów, potem reset dnia testowego.</li>
+</ul>
+
+<h2 class="section">11. Aneks: kalendarz, adresy, stan wdrożeń</h2>
+<table class="kv">
+  <tr><td>do 16 września</td><td>Wybory dostawców i decyzje kupców (faza preferencji).</td></tr>
+  <tr><td>przed 17 września</td><td>Zatwierdzona lista stanowisk, kolejek i pojemności — wpływa na algorytm.</td></tr>
+  <tr><td>17–21 września</td><td>Algorytm, korekty, zatwierdzenie planu.</td></tr>
+  <tr><td>21–22 września</td><td>Próba generalna w trybie testowym na tabletach (konta obsługi na datę próby).</td></tr>
+  <tr><td>22 września</td><td>Publikacja planu finalnego; karty spotkań dla uczestników.</td></tr>
+  <tr><td>23 września</td><td>Import planu do kolejek na 24.09, sprawdzenie problemów importu, kont, przypisań i bram; stanowiska pozostają zamknięte.</td></tr>
+  <tr><td>24 września</td><td>Wydarzenie: obsługa otwiera stanowiska ręcznie; rzutniki <code>/tablice?gate=1</code> i <code>?gate=2</code>; o 17:00 „Zamknij wszystkie”.</td></tr>
+</table>
+<table class="kv">
+  <tr><td>Panel</td><td><code>https://b2b.freshmarket.eu</code> (dostawca, kupiec, administrator)</td></tr>
+  <tr><td>Obsługa</td><td><code>https://b2b.freshmarket.eu/obsluga</code></td></tr>
+  <tr><td>Tablica</td><td><code>https://b2b.freshmarket.eu/tablice</code>, <code>?gate=1</code>, <code>?gate=2</code>, <code>?date=RRRR-MM-DD</code>, <code>?rotate=8</code>, <code>?perPage=10</code>, <code>?page=2</code></td></tr>
+  <tr><td>Stan produkcji 9.09.2026</td><td>Wdrożone: moduł kolejek (7.09), lista spotkań obsługi (8.09), rozdzielenie dni testowych i dnia wydarzenia, karta „Twoja kolej” z zabezpieczeniami odczytu, zasada automatycznej szansy, aktualizacja zależności (9.09). Skonfigurowane: 23 grupy i 24 stanowiska na 24.09, wszystkie zamknięte, bramy nieprzypisane. Plan nie został przeliczony ani zaimportowany do kolejek.</td></tr>
+</table>
+<p class="note">Zasada nadrzędna, obowiązująca we wszystkich ekranach i materiałach: dostawca nigdy nie widzi nazwisk ani kontaktów kupców sieci handlowych. PIN-y obsługi nie są zapisywane w logach ani zwracane ponownie. Nazwy dostawców nie trafiają do publicznej tablicy.</p>
+
+</body>
+</html>
