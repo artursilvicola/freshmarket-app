@@ -146,3 +146,13 @@ Pełny raport z granicami testów: **`NOTATKA_DLA_CLAUDE_2026-09-08_LISTA_WDROZO
 | Kontrole po deployu | `/login`, `/obsluga`, `/tablice`, `/tablica?gate=1`, `/admin` 200; serwowane paczki zawierają znaczniki release (data stanowisk, „kolejka zamykana”, „JESTEŚ NASTĘPNY”, snapshot `?date=`, „Daj szansę — automatycznie”, `FM_INPUTS_INCOMPLETE`), 0× demo/test-renderer/skrypt hostowany; ekrany: `/obsluga` PL↔EN, `/tablica?gate=1#kontrola` → `/tablice?gate=1#kontrola` (GATE 1, „nieaktywna” bo bramy nieprzypisane), `/tablice` 24 wiersze, `/login` PL; konsola bez błędów |
 | Niewykonane | karta „Twoja kolej” na prawdziwym koncie dostawcy (brak planu w kolejkach 24.09); logowanie obsługi na nowym buildzie (konta tworzy super admin); próba na fizycznych tabletach 21–22.09; dwie uwagi eksploatacyjne Codexa (timeout nie anuluje transportu; pierwszy błąd odczytu bez komunikatu) — osobna poprawka przed próbą |
 
+## 10. Wdrożenie fix/fm-my-queue-transport — 9.09.2026 (zgoda Artura, akceptacja Codexa d8a4b01)
+
+| Element | Wartość |
+|---|---|
+| main | `fc34f80` → **`d8a4b01`** (fast-forward; kod 9fb91eb: AbortController na odczyty karty „Twoja kolej” + komunikat pierwszego błędu PL/EN z linkiem `/tablice?date=`) |
+| Netlify prod | **`6aa12daac2bb9e0007629034`** (ready 09:58 UTC) |
+| Punkt powrotu | deploy `6aa126c7e333bc0008a3d330` (7819e62) = tag `prod-rollback-2026-09-09b` (fc34f80) |
+| Migracje / plan / kolejki | brak migracji; plan nie przeliczany ani publikowany; dzień nie otwarty; 24 stanowiska `closed` |
+| Pozostaje | konfiguracja wydarzenia (stanowiska/GATE/konta obsługi), próba na prawdziwych kontach i tabletach 21–22.09, instrukcja PDF |
+
