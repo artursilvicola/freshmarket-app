@@ -78,7 +78,8 @@
   <tr><td>Obsługa numerków</td><td>Pracuje na tabletach przy przypisanych sieciach: sprawdza dostawców, wywołuje kolejne numery, oznacza przebieg spotkań.</td></tr>
   <tr><td>Publiczna tablica</td><td>Każdy może ją otworzyć bez logowania. Pokazuje kolejki, ale nigdy nazw dostawców ani ich danych kontaktowych.</td></tr>
 </table>
-<p>Wspólne dla wszystkich zalogowanych: logowanie e-mailem i hasłem lub linkiem do logowania, odzyskiwanie hasła, przełącznik języka polski/angielski, pływający czat z organizatorem, pasek komunikatów i strona „Instrukcja” ustawiane przez administratora, stopka ze sponsorami.</p>
+<p><strong>Dwa różne sposoby logowania.</strong> Dostawca, kupiec i administrator korzystają ze wspólnego panelu: logowanie e-mailem i hasłem albo linkiem do logowania, odzyskiwanie hasła, przełącznik języka polski/angielski, pływający czat z organizatorem, pasek komunikatów i strona „Instrukcja” ustawiane przez administratora, stopka ze sponsorami.</p>
+<p>Obsługa numerków ma <strong>osobny panel</strong> pod adresem <code>/obsluga</code>: logowanie kodem operatora i sześciocyfrowym PIN-em, bez konta e-mail. Panel obsługi ma tylko przełącznik języka i ekran stanowiska — nie ma w nim czatu, strony instrukcji ani pozostałych elementów zwykłego panelu. Szczegóły w rozdziale 6.</p>
 
 <h2 class="section">2. Dostawca</h2>
 
@@ -111,7 +112,7 @@
 <p>Wersję roboczą można zapisać i poprawiać. Propozycja oznaczona jako gotowa jest zamrożona: zmiany robi się przez duplikat, który przyspiesza też dodawanie podobnych produktów. Usunąć można tylko propozycję, która nie została nigdzie wysłana. Zapisanie gotowej propozycji nie oznacza jej wysłania.</p>
 
 <h3>„Wysyłki” — przekazanie propozycji do sieci</h3>
-<p>Dostawca wybiera przygotowaną propozycję i sieć. Widzi wymagania danej sieci wpisane przez organizatora i musi potwierdzić, że się z nimi zapoznał. Potwierdza, że wysyłka pobiera jeden kredyt z pakietu. Dalsza droga:</p>
+<p>Dostawca wybiera przygotowaną propozycję i sieć. Widzi wymagania danej sieci wpisane przez organizatora i musi potwierdzić, że się z nimi zapoznał. Dalsza droga:</p>
 <ol class="steps">
   <li>Dostawca zgłasza propozycję do wybranej sieci.</li>
   <li>Propozycja trafia do moderacji Fresh Market.</li>
@@ -122,13 +123,17 @@
 <div class="box warn">Nie ma zasady „kliknąłem wyślij, więc kupiec natychmiast dostał e-mail”. Dostawca ma historię wysyłek (wszystkie, wysłane, w kolejce, wygasłe) i widzi, przy których system odnotował odczyt.</div>
 
 <h3>„Finanse” — pakiety i rozliczenia PreConnect</h3>
-<p>Dostawca widzi aktywny pakiet, wykorzystane i pozostałe kredyty, ważność pakietu, saldo portfela, zwroty, historię wysyłek z kosztem efektywnym i wskaźnikiem odczytu. Cennik obejmuje pakiety Standard i Premium po 5, 10, 20 i 50 kredytów. Zakup przez płatność internetową PayU albo przelewem na podstawie proformy; przy przelewie administrator potwierdza wpłatę i uruchamia pakiet. Faktura trafia na e-mail.</p>
-<p><strong>Istotna zasada rozliczania:</strong> kredyt jest rozliczany przy pierwszym zarejestrowanym wyświetleniu propozycji kupcowi, nie za podpisanie umowy czy odbycie spotkania. Wyświetlenie może zostać zarejestrowane już na liście propozycji w panelu kupca, więc status „odczytana” nie dowodzi, że kupiec szczegółowo przeczytał całą ofertę. Za brak odczytu w przewidzianym czasie dostawca dostaje zwrot kredytu do portfela.</p>
+<p>Panel pokazuje aktywny pakiet, liczbę kredytów wykorzystanych i pozostałych, ważność pakietu oraz historię wysyłek ze statusem rozliczenia. Cennik obejmuje pakiety Standard i Premium po 5, 10, 20 i 50 kredytów.</p>
+<div class="box"><strong>Jak naprawdę zużywa się kredyt.</strong> Samo zgłoszenie propozycji do wysyłki nie oznacza zużycia kredytu. Kredyt jest rozliczany po <strong>pierwszym zarejestrowanym wyświetleniu propozycji kupcowi</strong> — otwarciu maila albo wyświetleniu na liście lub w szczegółach w panelu kupca. Brak wyświetlenia nie oznacza automatycznie dodatkowego kredytu ani zwrotu pieniędzy: skoro nie było obciążenia, nie ma czego zwracać.</div>
+<p>Wyświetlenie bywa rejestrowane już na liście propozycji, więc status „odczytana” nie dowodzi, że kupiec przeczytał całą ofertę. Kredyt jest rozliczany za dotarcie propozycji przed oczy kupca, nie za odbycie spotkania ani podpisanie umowy.</p>
+<p>Zakup pakietu: płatność internetowa PayU albo przelew na podstawie proformy. <strong>Aplikacja generuje i udostępnia proformę</strong> (dostawca pobiera ją z panelu), a po zaksięgowaniu wpłaty administrator oznacza proformę jako opłaconą i pakiet zostaje aktywowany. <strong>Właściwą fakturę wystawia i wysyła organizator poza aplikacją</strong> — nie jest to automat uruchamiany przez każdą płatność.</p>
 <p>Trzeba wyraźnie rozdzielać trzy rzeczy: pakiet kredytów PreConnect, pakiet uczestnictwa w wydarzeniu Fresh Market oraz uprawnienie i limit spotkań B2B. To nie są trzy nazwy tego samego zakupu.</p>
+<p class="note"><strong>Uwaga do ujednolicenia w treściach:</strong> panel dostawcy operuje dziś pojęciem kredytów, a widok salda portfela i „kosztu efektywnego” jest ukryty. Część starszych komunikatów w oknie potwierdzenia wysyłki nadal mówi o pobraniu wysyłki z pakietu i o zwrocie kredytu po czternastu dniach — to opis wcześniejszego modelu i wymaga poprawienia, żeby nie obiecywać dostawcom zwrotów, które przy obecnej zasadzie nie powstają.</p>
 
 <h3>Wybór sieci na Fresh Market</h3>
 <p>Jeżeli firma jest dopuszczona do spotkań i trwa etap wyborów, dostawca wskazuje sieci, z którymi chce się spotkać. Jedno kliknięcie to <strong>sieć główna (gwiazdka)</strong>, drugie to <strong>sieć rezerwowa (kciuk)</strong>, trzecie usuwa wybór. Liczba głównych wyborów zależy od liczby przypisanych pakietów: pięć na pakiet, więc dwa pakiety dają dziesięć. Rezerwowych można wskazać więcej.</p>
-<p>Przycisk „Potwierdź wybór” tylko sygnalizuje administratorowi, że wybór jest finalny (wymaga pięciu sieci głównych). Zaznaczenia zapisują się na bieżąco, zmiany są możliwe do 16 września, po zmianach warto potwierdzić ponownie. Po zamknięciu etapu wybory są tylko do odczytu; zmiana wymaga uzgodnienia z organizatorem. Pakiet Standard nie daje spotkań.</p>
+<p>Przycisk „Potwierdź wybór” tylko sygnalizuje administratorowi, że wybór jest finalny (wymaga pięciu sieci głównych). Zaznaczenia zapisują się na bieżąco, zmiany są możliwe do 16 września, po zmianach warto potwierdzić ponownie. Po zamknięciu etapu wybory są tylko do odczytu; zmiana wymaga uzgodnienia z organizatorem.</p>
+<p><strong>Pakiet Standard wydarzenia nie uczestniczy w przydziale numerowanych spotkań przez algorytm.</strong> Nie oznacza to zakazu rozmów: firma z takim pakietem może korzystać z networkingu, wolnego wejścia przy stanowisku i innych form kontaktu na sali. Standard pakietu wydarzenia to co innego niż Standard w cenniku kredytów PreConnect — to dwa różne cenniki.</p>
 
 <h3>Plan, „Twoje spotkania” i „Twoja kolej”</h3>
 <p>Jeśli administrator włączy podgląd, dostawca widzi roboczy plan z wyraźnym zastrzeżeniem, że nie jest ostateczny. Od publikacji (22 września) widzi finalny harmonogram z numerami. Nie uruchamia algorytmu, nie zatwierdza planu, nie zmienia numerów. Może otrzymać od organizatora kartę spotkań PDF.</p>
@@ -180,12 +185,14 @@
 
 <h3>Firmy i konta</h3>
 <ul>
-  <li>Zakładki: Aktywne, Do zatwierdzenia, Wstrzymane, Odrzucone, B2B FM26, Wszystkie; filtry kraju, pakietu, dostępu do PreConnect i FM, opisu AI.</li>
+  <li>Lista podzielona na zakładki: Aktywne, Do zatwierdzenia, Wstrzymane, Odrzucone, B2B FM26, Wszystkie. W wierszu firmy: osoba kontaktowa, operator konta i szybkie akcje kontaktowe (kopiuj e-mail lub telefon).</li>
   <li>Zatwierdzanie, odrzucanie, wstrzymywanie i ponowna aktywacja z notatką dla dostawcy; wiadomość o zmianie statusu.</li>
   <li>Osobne włączniki dostępu do PreConnect i do Spotkań B2B; pakiet i limit kredytów; liczba pakietów B2B wpływająca na limit spotkań.</li>
-  <li>Opis AI: generowanie ze strony WWW, edycja, zatwierdzenie, tłumaczenie na angielski; podgląd profilu, czat i pakiet w szufladzie firmy; osoba kontaktowa i operator konta.</li>
+  <li>Szczegóły firmy otwierają się w oknie podglądu: profil, pakiet, historia wysyłek, notatki.</li>
+  <li>Opis AI: generowanie ze strony WWW, edycja, zatwierdzenie, tłumaczenie na angielski.</li>
   <li>Zakładanie kont przez link do logowania (magic link) po zatwierdzeniu rejestracji.</li>
 </ul>
+<p class="note"><strong>Uwaga o stanie interfejsu:</strong> w kodzie istnieją także pasek wyszukiwania z filtrami firm (kraj, pakiet, dostępy, status opisu AI) oraz boczny panel firmy z zakładkami. Oba warianty są dziś <strong>wyłączone przełącznikiem</strong> i nie widać ich w panelu — obowiązuje opis powyżej. Wyłączone jest również trwałe usuwanie kont.</p>
 <p>Zawieszenie konta lub wyłączenie modułu nie jest usunięciem danych. Podgląd panelu w kontekście wybranego użytkownika pomaga przy wsparciu, ale nie zastępuje testu na prawdziwym koncie.</p>
 
 <h3>Sieci i kupcy</h3>
@@ -271,6 +278,8 @@
 <p>Nie wszystkie punkty wymagają programowania. Część wymaga jasnej decyzji organizacyjnej.</p>
 <ol class="steps">
   <li><strong>Czy pakiety są opisane jednoznacznie?</strong> Kredyty PreConnect, udział w wydarzeniu i limit spotkań to trzy różne rzeczy. Algorytm liczy pięć spotkań na pakiet — nie utożsamiać z innymi obietnicami pakietu Premium.</li>
+  <li><strong>Teksty o kredytach w panelu dostawcy.</strong> Okno potwierdzenia wysyłki i część komunikatów nadal opisują wcześniejszy model (pobranie kredytu przy wysyłce, zwrot po czternastu dniach), podczas gdy obowiązuje rozliczenie po pierwszym wyświetleniu propozycji kupcowi. Do ujednolicenia w aplikacji, regulaminie i materiałach sprzedażowych, żeby nie obiecywać zwrotów, które nie powstają.</li>
+  <li><strong>Faktury.</strong> Aplikacja generuje proformę; właściwe faktury wystawia organizator poza systemem. Warto sprawdzić, czy komunikaty w panelu nie sugerują automatycznej faktury po każdej płatności.</li>
   <li><strong>Czy kupcy rozumieją, że milczenie oznacza szansę?</strong> Zasada powinna być w instrukcji i komunikacji do sieci, inaczej ktoś uzna niezaznaczone firmy za wykluczone.</li>
   <li><strong>Sieć z kilkoma działami.</strong> Czy firma sprzedająca owoce i kwiaty ma spotkać się z jednym czy dwoma kupcami Dino? Podział stanowisk nie tworzy sam dwóch spotkań dla jednej pary firma–sieć.</li>
   <li><strong>Kto sprawdza dopasowanie branżowe?</strong> Automatyczna szansa nie ocenia sensu handlowego spotkania. Przy braku reakcji kupca liczą się poprawne profile, wymagania sieci i kontrola organizatora.</li>
@@ -295,10 +304,15 @@
   <li>zwykłe spotkanie, nieobecność, powrót, przerwa i wolne wejście, wyjątek, cofnięcie;</li>
   <li>dwa równoległe stanowiska Auchan oraz oddzielne kolejki Dino Owoce i Kwiaty;</li>
   <li>utrata internetu i powrót, ostrzeżenie o nieaktualnych danych, spóźnione odczyty;</li>
-  <li>ekran „Twoja kolej” na prawdziwym koncie dostawcy, w tym w języku angielskim;</li>
   <li>rzutnik z <code>/tablice?date=…</code>: czytelność z końca sali, rotacja stron, filtr bramy;</li>
   <li>„Zamknij wszystkie” bez przerywania trwających rozmów, potem reset dnia testowego.</li>
 </ul>
+<div class="box warn"><strong>Karta „Twoja kolej” wymaga osobnego scenariusza.</strong> Karta u dostawcy celowo pokazuje wyłącznie dzień produkcyjny, żeby zwykli uczestnicy nigdy nie zobaczyli prób. Dlatego utworzenie testowych kolejek na 21 września <strong>nie sprawdzi tej karty</strong> — u dostawcy pozostanie pusta. Bezpieczne warianty testu, do wyboru przed próbą:
+<ul style="margin-top:5pt">
+  <li><strong>Środowisko testowe</strong> (osobny projekt bazy i podgląd aplikacji): pełny test karty na koncie testowego dostawcy, z dowolną datą, bez wpływu na produkcję. Wariant zalecany.</li>
+  <li><strong>Krótkie okno na produkcji</strong>, świadomie i o ustalonej porze: import planu do kolejek na dzień produkcyjny, sprawdzenie karty na koncie testowego dostawcy, potem cofnięcie zmian. Wymaga zgody organizatora, bo w tym czasie kartę mogą zobaczyć także prawdziwi dostawcy.</li>
+</ul>
+Nie należy w tym celu zmieniać produkcyjnej daty wydarzenia — zmieniłaby ona widok wszystkim użytkownikom naraz.</div>
 
 <h2 class="section">11. Aneks: kalendarz, adresy, stan wdrożeń</h2>
 <table class="kv">
