@@ -2537,6 +2537,14 @@
     }
   },
   "fm": {
+    "default_chance": {
+      "badge": "🤝 Give a chance — automatic",
+      "notice": "For a supplier who selected the retailer, no response automatically means “Give a chance”. Acceptances have priority for both allocation and queue numbers; explicit and automatic chances are equal and follow accepted meetings. Rejections are excluded. Package and station capacity limits still apply.",
+      "saved_plan": "A saved plan does not change automatically. Recalculate, review and approve the plan to apply the new rule.",
+      "unknown": "Needs review — unknown status",
+      "inputs_loading": "Loading the complete supplier choices and retailer responses. Plan calculation and approval are temporarily blocked.",
+      "inputs_error": "Could not load all supplier choices or retailer responses. A read error does NOT mean “Give a chance”. Plan calculation and approval are blocked. Refresh the page and try again."
+    },
     "event_date": "24 September 2026",
     "phases": {
       "1": {
@@ -2652,7 +2660,7 @@
       "stats_want_label": "✅ Want to meet",
       "stats_chance_label": "🤝 Give a chance",
       "card_interested_title": "Suppliers who picked your retailer",
-      "card_interested_desc": "Only companies that selected your retailer in “Choose retailers”. The algorithm matches only pairs where both sides want a meeting.",
+      "card_interested_desc": "These companies selected your retailer. Accepted meetings have priority. “Give a chance” and no response provide the same chance of a meeting, with a queue number after accepted meetings. “Not interested” excludes the meeting. You do not need to click “Give a chance” for every remaining company; capacity and package limits still apply.",
       "card_interested_empty_html": "No suppliers awaiting a decision.<br/><span>When suppliers select your retailer in “Choose retailers”, they'll appear here.</span>",
       "pref_main": "⭐ Priority",
       "pref_backup": "👍 Backup",
@@ -2822,7 +2830,7 @@
         "chain_detail_meta_format_other": "{{country}} · {{cat}} · {{count}} signups",
         "chain_group_want": "✅ Want",
         "chain_group_chance": "🤝 Give a chance",
-        "chain_group_remove": "❌ No / none",
+        "chain_group_remove": "❌ Not interested",
         "chain_group_label_format": "{{label}} ({{count}})",
         "chain_empty": "No signups for this retailer."
       },

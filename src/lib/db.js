@@ -10,6 +10,7 @@
  * tej funkcji.
  */
 import { supabase } from "./supabase";
+import { readAllFmInputRows } from "./fm-input-read.js";
 // [B2B Round prod-rollout / i18n MVP — P2-2 buyer panel]
 // i18n singleton dla bilingual error messages w funkcjach wywoływanych
 // z buyer flow (updateOwnBuyerProfile, updateOwnSupplierProfile,
@@ -1598,16 +1599,11 @@ export async function getCompanyByLegacyFmId(legacyFmId) {
 // ===================================================================
 
 export async function getFmResps(retailerId) {
-  let q = supabase.from("fm_resps").select("*");
-  if (retailerId !== undefined && retailerId !== null) {
-    q = q.eq("retailer_id", retailerId);
-  }
-  const { data, error } = await q.order("position", { ascending: true });
-  if (error) {
-    console.warn("[getFmResps]", error.message);
-    return [];
-  }
-  return data || [];
+  return readAllFmInputRows(() => {
+    let q = supabase.from("fm_resps").select("*", { count: "exact" });
+    if (retailerId !== undefined && retailerId !== null) q = q.eq("retailer_id", retailerId);
+    return q.order("position", { ascending: true }).order("id", { ascending: true });
+  });
 }
 
 /**
@@ -1720,15 +1716,11 @@ export async function getCompanyTargetRetailers(companyId) {
 }
 
 export async function getAllCompanyTargetRetailers() {
-  const { data, error } = await supabase
+  return readAllFmInputRows(() => supabase
     .from("company_target_retailers")
-    .select("company_id, retailer_id, priority, note, retailer:retailers(*)")
-    .order("priority", { ascending: false });
-  if (error) {
-    console.warn("[getAllCompanyTargetRetailers]", error.message);
-    return [];
-  }
-  return data || [];
+    .select("company_id, retailer_id, priority, note, retailer:retailers(*)", { count: "exact" })
+    .order("priority", { ascending: false })
+    .order("company_id", { ascending: true }).order("retailer_id", { ascending: true }));
 }
 
 // [B2B Round supplier-FM-UX] Mark a supplier's FM 2026 chain selection as
