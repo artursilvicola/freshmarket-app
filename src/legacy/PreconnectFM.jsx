@@ -81,6 +81,7 @@ import {
 // [feat/shared-countries] Jedno źródło listy krajów (panel + rejestracja dostawcy).
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
 import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, isAutomaticChance, scoreMatch, buildFMData } from "../lib/fm-algo.js";
+import { FM_STARS_MIN, fmPackagesOf, fmStarsMax, fmStarsState, findSupplierCompany } from "../lib/fm-stars.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
@@ -8386,7 +8387,7 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
           const _phSub = t(`fm.phases.${_ph.id}.sub`, { defaultValue: _ph.sub });
           const _phDates = t(`fm.phases.${_ph.id}.dates`, { defaultValue: _ph.dates });
           const _suppliers = fmSuppliers || [];
-          const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=5).length;
+          const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=FM_STARS_MIN).length;
           const _fmRetailers = (retailers||[]).filter(r => r.fm26Active && r.active!==false && r.fm26ChainId);
           const _cr = _fmRetailers.filter(r => Object.values(fmResps[r.fm26ChainId]||{}).some(hasBuyerResponse)).length;
           const _mt = fmSchedule ? Object.values(fmSchedule.res||{}).reduce((a,r)=>a+r.m.length,0) : 0;
@@ -8489,7 +8490,7 @@ function PageAdminDash({ sends, nav, fmSettings, fmPrefs, fmResps, fmSchedule, r
         const _phSub = t(`fm.phases.${_ph.id}.sub`, { defaultValue: _ph.sub });
         const _phDates = t(`fm.phases.${_ph.id}.dates`, { defaultValue: _ph.dates });
         const _suppliers = fmSuppliers || [];
-        const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=5).length;
+        const _sr = _suppliers.filter(s=>Object.values(fmPrefs[s.id]||{}).filter(v=>v==="star").length>=FM_STARS_MIN).length;
         // FM chains: use fm26ChainId for fmResps lookup (keys are chX, not numeric retailer IDs)
         const _fmRetailers = (retailers||[]).filter(r => r.fm26Active && r.active!==false && r.fm26ChainId);
         const _cr = _fmRetailers.filter(r => Object.values(fmResps[r.fm26ChainId]||{}).some(hasBuyerResponse)).length;
@@ -13381,7 +13382,8 @@ export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, 
               const prefs = fmPrefs[s.id]||{};
               const stars = Object.values(prefs).filter(v=>v==="star").length;
               const thumbs = Object.values(prefs).filter(v=>v==="thumb").length;
-              const filled = stars>=5;
+              const filled = stars>=FM_STARS_MIN;
+              const starsMax = fmStarsMax(findCo(s));
               const confirmedAt = findCo(s)?.fm_selection_confirmed_at;
               return(
                 <div key={s.id} onClick={()=>setSelSup(s.id)}
@@ -13393,7 +13395,7 @@ export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, 
                       <div style={{ fontSize:10,color:"#94a3b8" }}>{s.country}{confirmedAt && <span style={{color:"#059669",marginLeft:6,fontWeight:700}}>{t("fm.admin.prefs_view.supplier_confirmed_inline")}</span>}</div>
                     </div>
                     <div style={{ fontSize:10,display:"flex",gap:4 }}>
-                      <span style={{ color:"#d97706",fontWeight:700 }}>⭐{stars}</span>
+                      <span style={{ color:"#d97706",fontWeight:700 }}>⭐{stars}/{starsMax}</span>
                       <span style={{ color:"#0d9488",fontWeight:700 }}>👍{thumbs}</span>
                     </div>
                     {filled
@@ -13424,7 +13426,7 @@ export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, 
                   {confirmedAt && <Badge color="#059669" bg="#f0fdf4">{t("fm.admin.prefs_view.supplier_confirmed_badge_format", { date: new Date(confirmedAt).toLocaleDateString(_localeForDate) })}</Badge>}
                 </div>
                 {stars.length>0&&<>
-                  <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>{t("fm.admin.prefs_view.supplier_stars_section_format", { count: stars.length })}</div>
+                  <div style={{ fontSize:11,fontWeight:700,color:"#1e293b",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em" }}>{t("fm.admin.prefs_view.supplier_stars_section_format", { count: stars.length, max: fmStarsMax(findCo(s)) })}</div>
                   <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:14 }}>
                     {stars.map(c=>{
                       const resp = isAutomaticChance(prefs[c.id], fmResps[c.id]?.[s.id]) ? "chance" : fmResps[c.id]?.[s.id];
@@ -13665,7 +13667,7 @@ function RetailerPreviewModal({ retailer, onClose }) {
 /* ═══════════════════════════════════════════════════════════════
    FM PAGE — SUPPLIER
 ═══════════════════════════════════════════════════════════════ */
-function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers, accountId, confirmFmSelection }) {
+export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers, accountId, confirmFmSelection }) {
   const { t, i18n } = useTranslation("legacy");
   // [fix/fm-real-companies] bez fallbacku do danych demo
   const _chains    = fmChains    || [];
@@ -13685,12 +13687,12 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
   // Count only from _chains that are displayed (avoids seed keys for non-displayed chains)
   const stars    = _chains.filter(c => myPrefs[c.id] === "star").length;
   const thumbs   = _chains.filter(c => myPrefs[c.id] === "thumb").length;
-  // [feat/fm-b2b-packages] Limit sieci głównych (⭐) = 5 × liczba pakietów
-  // Business firmy. "Gotowy" pozostaje od 5⭐ (minimum), a niewykorzystaną
-  // pulę komunikuje żółta podpowiedź niżej.
-  const myFmCo = (companies || []).find(c => c.id === accountId || (fmId && (c.fmId === fmId || c.legacy_fm_id === fmId)));
-  const fmPackages = Math.max(1, Math.min(5, Number(myFmCo?.fm_b2b_packages) || 1));
-  const starsMax = 5 * fmPackages;
+  // [fix/fm-stars-limit-ux] Dwie osobne liczby: minimum ⭐ do potwierdzenia
+  // (FM_STARS_MIN = 5) i limit ⭐ z pakietów Business (5 × N, fm-stars.js).
+  // Firma po dokładnym company_id konta, dopiero potem po kluczach legacy.
+  const myFmCo = findSupplierCompany(companies, { accountId, fmId });
+  const fmPackages = fmPackagesOf(myFmCo);
+  const starsMax = fmStarsMax(myFmCo);
   const meetings = currentPlan?.res?.[sid]?.m || [];
 
   function toggle(cid) {
@@ -13716,7 +13718,10 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
   // ══ WYBÓR SIECI (phase 2: preferencje, read-only after) ══════════════════
   if (activeSubPage === "fm-sched") {
     const readOnly = phase !== 2;
-    const ready = stars >= 5;
+    const ready = stars >= FM_STARS_MIN;
+    // stan puli ⭐: pending (< min) / min_reached (min..max-1) / full (= max)
+    const starsState = fmStarsState(stars, starsMax);
+    const starsLeft = Math.max(0, starsMax - stars);
     return (
       <div style={{ maxWidth:900 }}>
         {previewFirm && <CompanyPreviewModal co={previewFirm} offers={offers} onClose={()=>setPreviewFirm(null)}/>}
@@ -13730,9 +13735,11 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
         {!readOnly&&(
           <div style={{ display:"flex",gap:10,marginBottom:16,flexWrap:"wrap" }}>
             {[
-              [t("fm.supplier.stats_stars_format", { count: stars }), t("fm.supplier.stats_stars_label"), stars>=5?"#059669":"#d97706"],
+              [t("fm.supplier.stats_stars_format", { count: stars, max: starsMax }), t("fm.supplier.stats_stars_label"), starsState==="full"?"#059669":starsState==="min_reached"?"#0d9488":"#d97706"],
               [t("fm.supplier.stats_thumbs_count_format", { count: thumbs }), t("fm.supplier.stats_thumbs_label"), "#64748b"],
-              [ready?t("fm.supplier.stats_status_ready"):t("fm.supplier.stats_status_pending"), t("fm.supplier.stats_status_label"), ready?"#059669":"#dc2626"],
+              [starsState==="full"?t("fm.supplier.stats_status_ready"):starsState==="min_reached"?t("fm.supplier.stats_status_min_reached"):t("fm.supplier.stats_status_pending", { min: FM_STARS_MIN }),
+               starsState==="min_reached"?t("fm.supplier.stats_status_label_more", { count: starsLeft }):t("fm.supplier.stats_status_label"),
+               starsState==="full"?"#059669":starsState==="min_reached"?"#0d9488":"#dc2626"],
             ].map(([v,l,c])=>(
               <div key={l} style={{ flex:1,minWidth:100,padding:"12px 14px",background:"white",border:`1.5px solid ${c+"33"}`,borderRadius:10,textAlign:"center" }}>
                 <div style={{ fontSize:22,fontWeight:800,color:c }}>{v}</div>
@@ -13741,11 +13748,12 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
             ))}
           </div>
         )}
-        {!readOnly&&ready&&<Alrt type="success"><Trans i18nKey="fm.supplier.ready_alert_html" ns="legacy" components={{ strong: <strong /> }}/></Alrt>}
-        {/* [feat/fm-b2b-packages] Firma z >1 pakietem ma większą pulę ⭐ — żółta
-            podpowiedź o niewykorzystanych wyborach (nie blokuje potwierdzenia). */}
-        {!readOnly&&ready&&stars<starsMax&&(
-          <Alrt type="warning">{t("fm.supplier.stars_remaining_hint", { count: starsMax - stars, max: starsMax })}</Alrt>
+        {/* [fix/fm-stars-limit-ux] Zielone „Gotowe” dopiero przy pełnej puli ⭐.
+            Po minimum (5) z wolnymi ⭐ jeden komunikat: minimum osiągnięte,
+            możesz dodać jeszcze N — nie blokuje potwierdzenia. */}
+        {!readOnly&&starsState==="full"&&<Alrt type="success"><Trans i18nKey="fm.supplier.ready_alert_html" ns="legacy" values={{ max: starsMax }} components={{ strong: <strong /> }}/></Alrt>}
+        {!readOnly&&starsState==="min_reached"&&(
+          <Alrt type="info"><Trans i18nKey="fm.supplier.min_reached_alert_html" ns="legacy" values={{ min: FM_STARS_MIN, count: starsLeft, max: starsMax, packages: fmPackages }} components={{ strong: <strong /> }}/></Alrt>
         )}
         {(() => {
           // [B2B Round supplier-FM-UX] Confirmation block. Shown only in editable
@@ -13773,7 +13781,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
                 ) : (
                   <>
                     <div style={{ fontWeight:700,fontSize:13,color:ready?"#0d9488":"#64748b" }}>
-                      {ready ? t("fm.supplier.confirm_ready_title") : t("fm.supplier.confirm_not_ready_title")}
+                      {starsState==="full" ? t("fm.supplier.confirm_ready_title") : starsState==="min_reached" ? t("fm.supplier.confirm_ready_more_title", { count: starsLeft }) : t("fm.supplier.confirm_not_ready_title", { min: FM_STARS_MIN })}
                     </div>
                     <div style={{ fontSize:11,color:"#64748b",marginTop:3 }}>
                       <Trans i18nKey="fm.supplier.confirm_unconfirmed_meta_html" ns="legacy" components={{ em: <em /> }}/>
@@ -13826,7 +13834,7 @@ function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo
               );
             })}
           </div>
-          {!readOnly&&<div style={{ marginTop:10,fontSize:11,color:"#94a3b8" }}>{t("fm.supplier.chains_hint")}</div>}
+          {!readOnly&&<div style={{ marginTop:10,fontSize:11,color:"#94a3b8" }}>{t("fm.supplier.chains_hint", { min: FM_STARS_MIN, max: starsMax })}</div>}
         </Card>
       </div>
     );
@@ -14770,10 +14778,10 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   const [done, setDone] = useState(false);
   const phase = fmSettings.currentPhase;
 
-  // Count how many suppliers have filled preferences (>=5 stars)
+  // Count how many suppliers have filled preferences (>= FM_STARS_MIN stars)
   const suppliersDone = _suppliers.filter(s => {
     const p = fmPrefs[s.id] || {};
-    return Object.values(p).filter(v=>v==="star").length >= 5;
+    return Object.values(p).filter(v=>v==="star").length >= FM_STARS_MIN;
   }).length;
 
   // Count how many chains have responded to at least some suppliers
@@ -15002,7 +15010,7 @@ export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFm
 
       {/* ══ TAB: DANE WEJŚCIOWE ══ */}
       {tab==="dane" && (()=>{
-        const _sr = _suppliers.filter(s=>_chains.filter(c=>fmPrefs[s.id]?.[c.id]==="star").length>=5).length;
+        const _sr = _suppliers.filter(s=>_chains.filter(c=>fmPrefs[s.id]?.[c.id]==="star").length>=FM_STARS_MIN).length;
         const _cr = _chains.filter(c=>_suppliers.some(s=>hasBuyerResponse(fmResps[c.id]?.[s.id]))).length;
         const _rp = Math.round((_sr/Math.max(_suppliers.length,1))*100);
         const noPickSuppliers = _suppliers.filter(s => Object.keys(fmPrefs[s.id]||{}).length === 0);
@@ -15019,7 +15027,7 @@ export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFm
         );
         const confirmedSuppliers = _suppliers.filter(s => findCo(s)?.fm_selection_confirmed_at);
         const unconfirmedReady = _suppliers.filter(s => {
-          const isReady = _chains.filter(c => fmPrefs[s.id]?.[c.id]==="star").length >= 5;
+          const isReady = _chains.filter(c => fmPrefs[s.id]?.[c.id]==="star").length >= FM_STARS_MIN;
           return isReady && !findCo(s)?.fm_selection_confirmed_at;
         });
         if (_suppliers.length === 0 && _chains.length === 0) {
