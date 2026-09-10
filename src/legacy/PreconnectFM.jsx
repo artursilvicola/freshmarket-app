@@ -1468,7 +1468,7 @@ const KNOWLEDGE_BASE = [
   },
   {
     keywords: ["preferencje", "wybrać", "wybrac", "sieć", "sieci", "gwiazdka", "gwiazda", "rezerwow", "rezerwowa", "rezerwę"],
-    answer: "Do 16 września 2026 możesz wybierać sieci handlowe — ⭐ główne (maks. 5) oraz dowolną liczbę rezerwowych (👍). Zmiany dowolnie do tej daty. Po zamknięciu — kontakt z adminem przez Chat."
+    answer: "Do 16 września 2026 możesz wybierać sieci handlowe — ⭐ główne (minimum 5, maksymalnie 5 na każdy pakiet Business) oraz dowolną liczbę rezerwowych (👍). Zmiany dowolnie do tej daty. Po zamknięciu — kontakt z adminem przez Chat."
   },
   {
     keywords: ["pakiet wysylek", "pakiet wysyłek", "kredyt", "wysylka kredyt", "wysyłka kredyt", "tokeny preconnect"],
