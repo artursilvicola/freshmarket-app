@@ -156,3 +156,16 @@ Pełny raport z granicami testów: **`NOTATKA_DLA_CLAUDE_2026-09-08_LISTA_WDROZO
 | Migracje / plan / kolejki | brak migracji; plan nie przeliczany ani publikowany; dzień nie otwarty; 24 stanowiska `closed` |
 | Pozostaje | konfiguracja wydarzenia (stanowiska/GATE/konta obsługi), próba na prawdziwych kontach i tabletach 21–22.09, instrukcja PDF |
 
+
+## 11. Wdrożenie fix/fm-stars-limit-ux — 10.09.2026 (zgoda Artura, akceptacja Codexa dcfd60b)
+
+Poza modułem kolejek — panel wyboru sieci dostawcy. Zgłoszenie KRZYŚ-MAR (2 × Business): ekran po piątej ⭐ pokazywał „5/5”, „Gotowe ✓”, „max 5”, choć limit w kodzie i algorytmie wynosił 10.
+
+| Element | Wartość |
+|---|---|
+| main | `2c2e2c0` → **`dcfd60b`** (fast-forward; cc35c6b: `src/lib/fm-stars.js` — minimum 5 vs limit 5 × pakiety, licznik `{{count}}/{{max}}`, „Minimum ✓ · możesz dodać jeszcze N ⭐”, zielone „Gotowe” tylko przy pełnej puli, admin ⭐5/10, firma po dokładnym `company_id`; dcfd60b: FAQ „minimum 5, maksymalnie 5 na każdy pakiet Business”) |
+| Netlify prod | **`6aa2af37de9af70008257cf0`** (ready 13:23 UTC); smoke test paczki: nowe teksty PL/EN obecne, stare (`{{count}}/5`, `stars_remaining_hint`) nieobecne |
+| Punkt powrotu | deploy `6aa12daac2bb9e0007629034` (d8a4b01) = tag `prod-rollback-2026-09-10` (2c2e2c0) |
+| Migracje / dane / algorytm | brak migracji; zapis wyborów, algorytm (`supplierCapacity`), dane firm bez zmian; kolejki nietknięte |
+| Testy | 132/132 (nowe: `fm-stars.test.js` 6, `FmStarsLimit.test.jsx` 8); notatka `NOTATKA_DLA_CODEX_2026-09-10_LIMIT_GWIAZDEK.md` |
+| Pozostaje | wiadomość do firm z >1 pakietem (mogą dobrać sieci główne do 16.09); KRZYŚ-MAR — potwierdzić konto (`agnieszka.p@…`), duplikat „P.W. KRZYŚ-MAR” do decyzji |
