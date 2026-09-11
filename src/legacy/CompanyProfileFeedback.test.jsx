@@ -4,8 +4,13 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("../lib/supabase", () => ({ supabase: {} }));
 vi.mock("../i18n", () => ({ default: { language: "pl", t: key => key } }));
+// t zwraca klucz + parametry, żeby test widział listę braków w komunikacie
+const fmt = (key, opts) => {
+  const vals = opts && Object.entries(opts);
+  return vals && vals.length ? `${key}(${vals.map(([k, v]) => `${k}=${v}`).join(",")})` : key;
+};
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: key => key, i18n: { language: "pl" } }),
+  useTranslation: () => ({ t: fmt, i18n: { language: "pl" } }),
   Trans: ({ i18nKey }) => i18nKey,
 }));
 const updateCompany = vi.fn(async (id, patch) => ({ id, ...patch }));
@@ -38,27 +43,40 @@ function props(co, fl = vi.fn()) {
   };
 }
 const saveButton = (tree) => tree.root.findAllByType("button").find(b => b.children.includes("supplier.company.actions.save_btn"));
-const blockersBox = (tree) => tree.root.findAll(n => n.props && n.props["data-testid"] === "save-blockers");
+const gapsBox = (tree) => tree.root.findAll(n => n.props && n.props["data-testid"] === "profile-gaps");
+const GAP_LOGO = "supplier.company.gaps.logo";
+const JOIN = "supplier.company.gaps.joiner";
 
-describe("Profil firmy — wymagania przed zapisem widoczne przy przycisku", () => {
-  it("bez logo: ramka nad „Zapisz profil” z powodem, zapis zatrzymany z komunikatem, bez zapisu do bazy", async () => {
+describe("Profil firmy — braki ostrzegają, ale nie blokują zapisu", () => {
+  it("bez logo: ostrzeżenie nad „Zapisz profil”, a zapis idzie do bazy z opisem i kończy się toastem o niekompletnym profilu", async () => {
     const fl = vi.fn();
     const tree = render(<PageCompany {...props(CO, fl)}/>);
-    expect(blockersBox(tree)).toHaveLength(1);
-    expect(text(tree)).toContain("supplier.company.actions.blocked_title");
-    expect(text(tree)).toContain("supplier.company.toasts.logo_required");
-    await act(async () => { await saveButton(tree).props.onClick(); });
-    expect(fl).toHaveBeenCalledWith("supplier.company.toasts.logo_required", "warning");
-    expect(updateCompany).not.toHaveBeenCalled();
-  });
-
-  it("z logo i NIP: brak ramki, zapis idzie do bazy i kończy się potwierdzeniem", async () => {
-    const fl = vi.fn();
-    const tree = render(<PageCompany {...props({ ...CO, logo: "https://x/logo.png" }, fl)}/>);
-    expect(blockersBox(tree)).toHaveLength(0);
+    expect(gapsBox(tree)).toHaveLength(1);
+    expect(text(tree)).toContain(`supplier.company.actions.incomplete_notice(missing=${GAP_LOGO})`);
+    const ta = tree.root.findAllByType("textarea")[0];
+    act(() => ta.props.onChange({ target: { value: "opis proba 11.09 godz 14:51" } }));
     await act(async () => { await saveButton(tree).props.onClick(); });
     expect(updateCompany).toHaveBeenCalledTimes(1);
     expect(updateCompany.mock.calls[0][0]).toBe("co-1");
+    expect(updateCompany.mock.calls[0][1].description_short).toBe("opis proba 11.09 godz 14:51");
+    expect(fl).toHaveBeenCalledWith(`supplier.company.toasts.saved_incomplete(missing=${GAP_LOGO})`, "warning");
+  });
+
+  it("bez logo i bez NIP: obie pozycje w ostrzeżeniu, zapis nadal przechodzi", async () => {
+    const fl = vi.fn();
+    const tree = render(<PageCompany {...props({ ...CO, nip: "" }, fl)}/>);
+    expect(text(tree)).toContain(`incomplete_notice(missing=${GAP_LOGO}${JOIN}supplier.company.gaps.nip)`);
+    await act(async () => { await saveButton(tree).props.onClick(); });
+    expect(updateCompany).toHaveBeenCalledTimes(1);
+    expect(updateCompany.mock.calls[0][1].nip).toBeNull();
+  });
+
+  it("z logo i NIP: brak ostrzeżenia, zwykłe „Profil zapisany.”", async () => {
+    const fl = vi.fn();
+    const tree = render(<PageCompany {...props({ ...CO, logo: "https://x/logo.png" }, fl)}/>);
+    expect(gapsBox(tree)).toHaveLength(0);
+    await act(async () => { await saveButton(tree).props.onClick(); });
+    expect(updateCompany).toHaveBeenCalledTimes(1);
     expect(fl).toHaveBeenCalledWith("supplier.company.toasts.saved");
   });
 

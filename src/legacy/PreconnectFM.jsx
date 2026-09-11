@@ -82,7 +82,7 @@ import {
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
 import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, isAutomaticChance, scoreMatch, buildFMData } from "../lib/fm-algo.js";
 import { FM_STARS_MIN, fmPackagesOf, fmStarsMax, fmStarsState, findSupplierCompany } from "../lib/fm-stars.js";
-import { companySaveBlockers } from "../lib/company-profile.js";
+import { companyProfileGaps } from "../lib/company-profile.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
@@ -5360,16 +5360,14 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
   const addContact=(role="sales")=>u("contacts",[...contacts,{ role, name:"", position:"", phone:"", email:"" }]);
   const updateContact=(i,patch)=>u("contacts",contacts.map((ct,idx)=>idx===i?{...ct,...patch}:ct));
   const removeContact=(i)=>u("contacts",contacts.filter((_,idx)=>idx!==i));
-  // [fix/fm-company-profile-feedback] Wymagania przed zapisem (logo; NIP za flagą
-  // [feat/nip-required #1]) liczone w jednym miejscu — ten sam tekst idzie do
-  // toastu i do ramki nad przyciskiem „Zapisz profil”.
-  const saveBlockers = companySaveBlockers(c);
-  const blockerText = (list) => list
-    .map((k) => t(k === "logo" ? "supplier.company.toasts.logo_required" : "supplier.company.toasts.nip_required"))
-    .join(" ");
+  // [fix/fm-company-profile-feedback] Braki (logo; NIP za flagą [feat/nip-required #1])
+  // NIE blokują zapisu — decyzja 11.09: „Zapisz profil” zawsze zapisuje uzupełnione
+  // pola, a braki są ostrzeżeniem w ramce nad przyciskiem i w toaście po zapisie.
+  const profileGaps = companyProfileGaps(c);
+  const gapsText = (list) => list
+    .map((k) => t(k === "logo" ? "supplier.company.gaps.logo" : "supplier.company.gaps.nip"))
+    .join(t("supplier.company.gaps.joiner"));
   const saveProfile=async()=>{
-    const blockers = companySaveBlockers(c);
-    if(blockers.length){fl(blockerText(blockers),"warning");return;}
     const nextContacts = normalizeContacts(contacts);
     const nextCerts = normalizeCompanyCertList(c.certs || []);
     const id = c.id;
@@ -5409,7 +5407,9 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
       const savedProfile = {...next, contacts:savedContacts, certs:savedCerts, completeness:calcCompleteness({...next, contacts:savedContacts, certs:savedCerts})};
       setDirty(false);
       setCo(savedProfile);
-      fl(t("supplier.company.toasts.saved"));
+      const gapsAfterSave = companyProfileGaps(savedProfile);
+      if (gapsAfterSave.length) fl(t("supplier.company.toasts.saved_incomplete", { missing: gapsText(gapsAfterSave) }), "warning");
+      else fl(t("supplier.company.toasts.saved"));
     } catch(e) {
       // [P2-5 i18n] Raw e.message z dbSaveCompanyContacts/dbUpdateCompany —
       // saveCompanyContacts już bilingual (P2-5 errors.db.company_id_required),
@@ -5714,10 +5714,10 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
           </div>
         )}
       </Card>
-      {saveBlockers.length>0&&(
-        <div data-testid="save-blockers" style={{ display:"flex",gap:8,alignItems:"flex-start",padding:"10px 14px",marginBottom:10,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,fontSize:12,color:"#92400e" }}>
+      {profileGaps.length>0&&(
+        <div data-testid="profile-gaps" style={{ display:"flex",gap:8,alignItems:"flex-start",padding:"10px 14px",marginBottom:10,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,fontSize:12,color:"#92400e" }}>
           <AlertTriangle size={14} style={{ flexShrink:0,marginTop:1 }}/>
-          <div><strong>{t("supplier.company.actions.blocked_title")}</strong> {blockerText(saveBlockers)}</div>
+          <div>{t("supplier.company.actions.incomplete_notice", { missing: gapsText(profileGaps) })}</div>
         </div>
       )}
       <div style={{ display:"flex",gap:8,justifyContent:"flex-end",marginBottom:24 }}>

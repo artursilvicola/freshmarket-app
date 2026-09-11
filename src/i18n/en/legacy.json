@@ -1338,13 +1338,19 @@
       "actions": {
         "preview_buyer": "Buyer preview",
         "save_btn": "Save profile",
-        "blocked_title": "Before you can save:",
+        "incomplete_notice": "The profile will be saved, but it is not complete yet. Add {{missing}}.",
         "saving": "Saving..."
+      },
+      "gaps": {
+        "logo": "the company logo",
+        "nip": "the Tax ID",
+        "joiner": " and "
       },
       "toasts": {
         "logo_required": "Upload the company logo.",
         "nip_required": "Provide the company Tax ID. This field is required for registration and billing.",
         "saved": "Profile saved.",
+        "saved_incomplete": "Profile saved. It is not complete yet — add {{missing}}.",
         "contacts_error_format": "Failed to save contacts: {{message}}"
       }
     }

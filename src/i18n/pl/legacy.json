@@ -1338,13 +1338,19 @@
       "actions": {
         "preview_buyer": "Podgląd kupca",
         "save_btn": "Zapisz profil",
-        "blocked_title": "Zanim zapiszesz:",
+        "incomplete_notice": "Profil zostanie zapisany, ale nie jest kompletny. Uzupełnij {{missing}}.",
         "saving": "Zapisywanie..."
+      },
+      "gaps": {
+        "logo": "logo firmy",
+        "nip": "NIP",
+        "joiner": " i "
       },
       "toasts": {
         "logo_required": "Wgraj logo firmy.",
         "nip_required": "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
         "saved": "Profil zapisany.",
+        "saved_incomplete": "Profil zapisany. Nie jest jeszcze kompletny — uzupełnij {{missing}}.",
         "contacts_error_format": "Nie udało się zapisać kontaktów: {{message}}"
       }
     }

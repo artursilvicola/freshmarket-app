@@ -15,24 +15,21 @@ Wylogowanie/zalogowanie → wpisany „opis proba 11.09 godz 14:51” w „Opis 
 
 Skala: 7 firm z FM B2B nie ma logo (Yuksel Seeds, Paweko, wierniccy.co, Moolenaar, Fresh roots, AGROSAD, Grupa Producentów Agros) — żadna z nich nie może dziś zapisać profilu firmy i żadna nie widzi dlaczego. Braku NIP nie ma w żadnej firmie FM. KRZYŚ-MAR (aktywny rekord) ma logo i NIP — ich wczorajsze zgłoszenie to osobny, już wdrożony błąd „Mój profil”.
 
-## Zmiana
+## Zmiana (wersja po decyzji 11.09: braki NIE blokują zapisu)
 
-- `src/lib/company-profile.js` (nowy): `companySaveBlockers(company, { nipRequired })` → `["logo"|"nip"]` — jedno źródło dla blokady w `saveProfile` i dla komunikatu w UI.
-- `PageCompany`: ramka nad przyciskami „Podgląd kupca / Zapisz profil” („Zanim zapiszesz: Wgraj logo firmy.”) widoczna od razu, dopóki wymagania nie są spełnione; `saveProfile` używa tej samej listy i tego samego tekstu w toaście; opisy oznaczają formularz jako zmieniony (`setDirty`).
+- `src/lib/company-profile.js` (nowy): `companyProfileGaps(company, { nipRequired })` → `["logo"|"nip"]` — jedno źródło dla ostrzeżenia w UI i toastu po zapisie.
+- `PageCompany`: „Zapisz profil” **zawsze zapisuje** uzupełnione pola (usunięte wczesne `return` przy braku logo/NIP). Nad przyciskami ramka „Profil zostanie zapisany, ale nie jest kompletny. Uzupełnij logo firmy i NIP.” (lista dynamiczna); po zapisie toast „Profil zapisany. Nie jest jeszcze kompletny — uzupełnij …” (ostrzeżenie) albo zwykłe „Profil zapisany.”. Opisy oznaczają formularz jako zmieniony (`setDirty`).
+- NIP pozostaje wymagany osobno przy zakupie pakietu (payment modal, `NIP_REQUIRED`) — bez zmian.
 - App: toast `flash` w obudowie `position: sticky; top: 8px` — widoczny także po przewinięciu strony (wszystkie panele; treść i czas 3,8 s bez zmian).
-- i18n: `supplier.company.actions.blocked_title` PL/EN; poprawione dwa teksty PL sekcji certyfikatów.
+- i18n: `supplier.company.actions.incomplete_notice`, `toasts.saved_incomplete`, `gaps.{logo,nip,joiner}` PL/EN; poprawione dwa teksty PL sekcji certyfikatów; klucze `toasts.logo_required/nip_required` zostają (nieużywane w PageCompany).
 - `export` na `PageCompany` tylko na potrzeby testu.
-
-**Nie zmieniam reguły** „logo wymagane do zapisu” — to decyzja produktowa (patrz niżej).
 
 ## Testy
 
 - `src/lib/company-profile.test.js` (3): brak logo, brak NIP za flagą, komplet/pusty rekord.
-- `src/legacy/CompanyProfileFeedback.test.jsx` (3, react-test-renderer): bez logo → ramka z powodem, klik „Zapisz” → toast ostrzegawczy, `updateCompany` niewołane; z logo i NIP → brak ramki, zapis do bazy + „Profil zapisany.”; wpisany opis nie ginie przy odświeżeniu rekordu firmy w tle (ten sam id).
-- `npm test` **142/142**, `npm run build` OK, `git diff --check` OK. Bez podglądu w przeglądarce (konto dostawcy) — render sprawdzony testami.
+- `src/legacy/CompanyProfileFeedback.test.jsx` (4, react-test-renderer): bez logo → ostrzeżenie nad przyciskiem, zapis idzie do bazy z wpisanym opisem, toast „niekompletny”; bez logo i NIP → obie pozycje, zapis przechodzi; z logo i NIP → brak ostrzeżenia, „Profil zapisany.”; wpisany opis nie ginie przy odświeżeniu rekordu w tle.
+- `npm test` **143/143**, `npm run build` OK, `git diff --check` OK.
 
-## Do decyzji (Artur)
+## Decyzja (Artur/Codex, 11.09)
 
-1. Czy brak logo ma nadal **blokować** zapis całego profilu? Alternatywa: zapis zawsze możliwy, brak logo tylko jako ostrzeżenie (karty planu i katalog mają fallback na inicjały). Zmiana to jedna linia w `saveProfile` (ostrzeżenie zamiast `return`) + tekst.
-2. Wdrożenie tej poprawki (osobny deploy, bez migracji) po review i zgodzie.
-3. Odpowiedź dla Anny: zapis zatrzymał wymóg logo; po wgraniu logo (sekcja „Logo firmy” na górze profilu) zapis przejdzie. Po wdrożeniu komunikat będzie widoczny przy przycisku.
+Brak logo i brak NIP nie blokują zapisu profilu — są ostrzeżeniem o niekompletnym profilu. Wdrożenie: merge `fix/fm-company-profile-feedback` → `main`, osobny deploy bez migracji. Po wdrożeniu test na koncie `wierniccy.co`: wpisanie opisu → zapis → odświeżenie → ponowne logowanie. Tekst Anny z 14:51 nie został zapisany — trzeba go wpisać ponownie.
