@@ -2048,6 +2048,13 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       name: currentUser?.company_name || currentUser?.name || "Dostawca",
       title: currentUser?.country ? `Dostawca · ${currentUser.country}` : "Dostawca",
       email: currentUser?.email || "",
+      // [fix/fm-supplier-profile-prefill] dane osoby obsługującej konto (profiles):
+      // strona „Mój profil” czyta je stąd. Wcześniej account ich nie miał, więc po
+      // każdym zalogowaniu formularz był pusty mimo poprawnego zapisu w bazie
+      // (account.name to nazwa firmy — pokazywała się w polu „Imię i nazwisko”).
+      personName: currentUser?.name || "",
+      phone: currentUser?.phone || "",
+      position: currentUser?.position || "",
       fmId,
       legacySupplierId,
       chainId: null,
@@ -2059,6 +2066,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     currentUser?.id,
     currentUser?.email,
     currentUser?.name,
+    currentUser?.phone,
+    currentUser?.position,
     currentUser?.retailer_id,
     currentUser?.retailer_name,
     currentUser?.company_id,
@@ -2078,7 +2087,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         String(prev?.id || "") !== String(next?.id || "") ||
         String(prev?.legacySupplierId || "") !== String(next?.legacySupplierId || "") ||
         String(prev?.retailerId || "") !== String(next?.retailerId || "") ||
-        String(prev?.name || "") !== String(next?.name || "");
+        String(prev?.name || "") !== String(next?.name || "") ||
+        String(prev?.personName || "") !== String(next?.personName || "") ||
+        String(prev?.phone || "") !== String(next?.phone || "") ||
+        String(prev?.position || "") !== String(next?.position || "");
       return changed ? next : prev;
     });
   }, [lockedRole, buildAccountFromCurrentUser]);
@@ -3738,7 +3750,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
     if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} pkgPlan={pkgPlan} retailers={retailers} accountId={mySupplierKey}/>;
-    if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl}/>;
+    if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl} onSaved={(patch) => setAccount(prev => ({ ...prev, personName: patch.name, phone: patch.phone, position: patch.position }))}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
@@ -7834,26 +7846,38 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
 // imię/nazwisko, telefon, stanowisko. Sekcja zmiany hasła (3 pola: aktualne,
 // nowe, potwierdzenie nowego). Zapis przez dbUpdateOwnSupplierProfile -> RLS
 // pozwala self-edit (profiles.id = auth.uid()).
-function PageSupplierProfile({ account, co, fl }) {
+export function PageSupplierProfile({ account, co, fl, onSaved }) {
   const { t } = useTranslation("legacy");
-  const initial = {
-    name: account?.name || "",
-    email: account?.email || "",
-    phone: account?.phone || "",
-    position: account?.position || "",
-  };
-  const [p, setP] = useState(initial);
+  // [fix/fm-supplier-profile-prefill] account.name = nazwa firmy; osoba jest w
+  // account.personName, telefon i stanowisko w account.phone/position (z profiles).
+  const fromAccount = (a) => ({
+    name: a?.personName || "",
+    email: a?.email || "",
+    phone: a?.phone || "",
+    position: a?.position || "",
+  });
+  const [p, setP] = useState(() => fromAccount(account));
+  const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const u = (k, v) => setP((prev) => ({ ...prev, [k]: v }));
+  const u = (k, v) => { setDirty(true); setP((prev) => ({ ...prev, [k]: v })); };
+  // profil doczytany po zamontowaniu strony — nie nadpisuje edycji w toku
+  useEffect(() => {
+    if (dirty) return;
+    setP(fromAccount(account));
+  }, [account?.personName, account?.email, account?.phone, account?.position, dirty]);
   async function save() {
     if (!account?.id) { fl(t("supplier.profile.toasts.missing_id")); return; }
     if (!p.name?.trim()) { fl(t("supplier.profile.toasts.name_required")); return; }
     try {
       setSaving(true);
-      await dbUpdateOwnSupplierProfile(account.id, {
+      const saved = await dbUpdateOwnSupplierProfile(account.id, {
         name: p.name, phone: p.phone, position: p.position,
       });
       fl(t("supplier.profile.toasts.saved"));
+      setDirty(false);
+      if (typeof onSaved === "function") {
+        onSaved({ name: saved?.name ?? p.name, phone: saved?.phone ?? p.phone, position: saved?.position ?? p.position });
+      }
     } catch (e) {
       // [P2-5 i18n] Raw e.message z dbUpdateOwnSupplierProfile jest już
       // bilingual (P2-2c). Wrapper "Błąd zapisu: " i fallback "nieznany"
