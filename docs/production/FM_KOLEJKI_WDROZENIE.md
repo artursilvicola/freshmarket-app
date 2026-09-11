@@ -182,3 +182,16 @@ Poza modułem kolejek — strona „Mój profil” dostawcy. Zgłoszenie KRZYŚ-
 | Migracje / dane | brak; RLS i B2B bez zmian; dotyczy wszystkich dostawców |
 | Testy | 136/136 (nowe: `SupplierProfilePrefill.test.jsx` 4); notatka `NOTATKA_DLA_CODEX_2026-09-11_MOJ_PROFIL.md` |
 | Pozostaje | sprawdzenie na prawdziwym koncie KRZYŚ-MAR (logowanie → Mój profil → odświeżenie → ponowne logowanie) — Artur/Anna; informacja do firmy, że danych z 10.09 nie trzeba wpisywać ponownie |
+
+## 13. Wdrożenie fix/fm-company-profile-feedback — 11.09.2026 (decyzja Artura/Codexa: braki nie blokują zapisu)
+
+Poza modułem kolejek — strona „Profil firmy” dostawcy. Zgłoszenie wierniccy.co (Anna Wiernicka): „Zapisz profil” bez żadnej informacji, wpisany opis „znika”. Przyczyna: wymóg logo przerywał zapis, a jedyny komunikat (toast) renderował się na górze strony poza ekranem; szkic przepadł przy odświeżeniu. 7 firm FM bez logo nie mogło zapisać profilu.
+
+| Element | Wartość |
+|---|---|
+| main | `8a11db4` → **`4df75d1`** (fast-forward; e8fdb10 + 4df75d1: `companyProfileGaps`, brak logo/NIP = ostrzeżenie „Profil zostanie zapisany, ale nie jest kompletny. Uzupełnij …” + toast `saved_incomplete`, zapis zawsze; toast `flash` sticky u góry okna (wszystkie panele); opisy oznaczają formularz jako zmieniony; poprawione teksty PL certyfikatów) |
+| Netlify prod | **`6aa400f355b82e00084566c2`** (ready 13:24 UTC); smoke test paczki: nowe teksty PL obecne, „Zanim zapiszesz” nieobecne, poprzednia poprawka (`personName`) nadal w paczce |
+| Punkt powrotu | deploy `6aa3e4944f9f8d00086e0cf3` (943e130) = tag `prod-rollback-2026-09-11b` (8a11db4) |
+| Migracje / dane | brak; RLS bez zmian; NIP nadal wymagany osobno przy zakupie pakietu |
+| Testy | 143/143 (nowe: `company-profile.test.js` 3, `CompanyProfileFeedback.test.jsx` 4); notatka `NOTATKA_DLA_CODEX_2026-09-11_PROFIL_FIRMY_ZAPIS.md` |
+| Pozostaje | test na koncie `wierniccy.co` (wpisanie opisu → zapis → odświeżenie → ponowne logowanie) — Artur/Anna; tekst Anny z 14:51 nie był zapisany, trzeba wpisać ponownie; 7 firm bez logo może teraz zapisać profil i uzupełnić logo później |
