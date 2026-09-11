@@ -82,6 +82,7 @@ import {
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
 import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, isAutomaticChance, scoreMatch, buildFMData } from "../lib/fm-algo.js";
 import { FM_STARS_MIN, fmPackagesOf, fmStarsMax, fmStarsState, findSupplierCompany } from "../lib/fm-stars.js";
+import { companySaveBlockers } from "../lib/company-profile.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
@@ -4077,7 +4078,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               </div>
             </div>
           ))}
-          {flash&&<Alrt type={flash.t}>{flash.m}</Alrt>}
+          {/* [fix/fm-company-profile-feedback] sticky: komunikat widoczny również po
+              przewinięciu do dołu strony (np. przy „Zapisz profil”). */}
+          {flash&&<div style={{ position:"sticky",top:8,zIndex:40 }}><Alrt type={flash.t}>{flash.m}</Alrt></div>}
           {renderPage()}
         </main>
         {(role==="supplier"||role==="buyer")&&(
@@ -5210,7 +5213,7 @@ function parseCompanyCertNames(value) {
     .filter(Boolean);
 }
 
-function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers, retailers = [], hiddenRetailers = [], setHiddenRetailers }) {
+export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers, retailers = [], hiddenRetailers = [], setHiddenRetailers }) {
   const { t } = useTranslation("legacy");
   const toCompanyDraft = (row = {}) => ({ ...row, contacts: Array.isArray(row.contacts) ? row.contacts : [] });
   const [c,setC]=useState(()=>toCompanyDraft(co)); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
@@ -5357,10 +5360,16 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
   const addContact=(role="sales")=>u("contacts",[...contacts,{ role, name:"", position:"", phone:"", email:"" }]);
   const updateContact=(i,patch)=>u("contacts",contacts.map((ct,idx)=>idx===i?{...ct,...patch}:ct));
   const removeContact=(i)=>u("contacts",contacts.filter((_,idx)=>idx!==i));
+  // [fix/fm-company-profile-feedback] Wymagania przed zapisem (logo; NIP za flagą
+  // [feat/nip-required #1]) liczone w jednym miejscu — ten sam tekst idzie do
+  // toastu i do ramki nad przyciskiem „Zapisz profil”.
+  const saveBlockers = companySaveBlockers(c);
+  const blockerText = (list) => list
+    .map((k) => t(k === "logo" ? "supplier.company.toasts.logo_required" : "supplier.company.toasts.nip_required"))
+    .join(" ");
   const saveProfile=async()=>{
-    if(!c.logo){fl(t("supplier.company.toasts.logo_required"),"warning");return;}
-    // [feat/nip-required #1] NIP obowiązkowy przy zapisie profilu firmy (za flagą).
-    if(NIP_REQUIRED && !String(c.nip||"").trim()){fl(t("supplier.company.toasts.nip_required"),"warning");return;}
+    const blockers = companySaveBlockers(c);
+    if(blockers.length){fl(blockerText(blockers),"warning");return;}
     const nextContacts = normalizeContacts(contacts);
     const nextCerts = normalizeCompanyCertList(c.certs || []);
     const id = c.id;
@@ -5508,7 +5517,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           label={t("supplier.company.desc.short_label")}
           ta
           value={c.description_short || ""}
-          onChange={e=>setC(prev=>({ ...prev, description_short:e.target.value, ai_review_status:"edited" }))}
+          onChange={e=>{ setDirty(true); setC(prev=>({ ...prev, description_short:e.target.value, ai_review_status:"edited" })); }}
           style={{ minHeight: 56 }}
           hint={t("supplier.company.desc.short_hint")}
         />
@@ -5516,7 +5525,7 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           label={t("supplier.company.desc.standard_label")}
           ta
           value={c.description || ""}
-          onChange={e=>setC(prev=>({ ...prev, description:e.target.value, ai_review_status:"edited" }))}
+          onChange={e=>{ setDirty(true); setC(prev=>({ ...prev, description:e.target.value, ai_review_status:"edited" })); }}
           hint={t("supplier.company.desc.standard_hint")}
         />
       </Card>
@@ -5705,6 +5714,12 @@ function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, ru
           </div>
         )}
       </Card>
+      {saveBlockers.length>0&&(
+        <div data-testid="save-blockers" style={{ display:"flex",gap:8,alignItems:"flex-start",padding:"10px 14px",marginBottom:10,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,fontSize:12,color:"#92400e" }}>
+          <AlertTriangle size={14} style={{ flexShrink:0,marginTop:1 }}/>
+          <div><strong>{t("supplier.company.actions.blocked_title")}</strong> {blockerText(saveBlockers)}</div>
+        </div>
+      )}
       <div style={{ display:"flex",gap:8,justifyContent:"flex-end",marginBottom:24 }}>
         <Btn outline onClick={()=>setShowPreview(true)}><Eye size={13}/> {t("supplier.company.actions.preview_buyer")}</Btn>
         <Btn primary disabled={saving} onClick={()=>void saveProfile()}>{saving?t("supplier.company.actions.saving"):t("supplier.company.actions.save_btn")}</Btn>

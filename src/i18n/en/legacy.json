@@ -1338,6 +1338,7 @@
       "actions": {
         "preview_buyer": "Buyer preview",
         "save_btn": "Save profile",
+        "blocked_title": "Before you can save:",
         "saving": "Saving..."
       },
       "toasts": {

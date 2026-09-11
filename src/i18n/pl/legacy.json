@@ -1308,11 +1308,11 @@
       },
       "certs": {
         "card_title": "Certyfikaty",
-        "info": "Wybierz certyfikaty, ktĂłre chcesz pokazaÄ‡ kupcom. W profilu pokazujemy tylko nazwy certyfikatĂłw.",
+        "info": "Wybierz certyfikaty, które chcesz pokazać kupcom. W profilu pokazujemy tylko nazwy certyfikatów.",
         "popular_label": "Typowe certyfikaty",
         "custom_label": "Inne certyfikaty",
         "custom_placeholder": "np. BIO, IFS Food, HACCP",
-        "custom_hint": "JeĹ›li masz wiÄ™cej niĹĽ jeden, wpisz je po przecinku.",
+        "custom_hint": "Jeśli masz więcej niż jeden, wpisz je po przecinku.",
         "number_prefix_format": "Nr: {{number}}",
         "valid_prefix_format": "do {{date}}"
       },
@@ -1338,6 +1338,7 @@
       "actions": {
         "preview_buyer": "Podgląd kupca",
         "save_btn": "Zapisz profil",
+        "blocked_title": "Zanim zapiszesz:",
         "saving": "Zapisywanie..."
       },
       "toasts": {
