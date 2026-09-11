@@ -169,3 +169,16 @@ Poza modułem kolejek — panel wyboru sieci dostawcy. Zgłoszenie KRZYŚ-MAR (2
 | Migracje / dane / algorytm | brak migracji; zapis wyborów, algorytm (`supplierCapacity`), dane firm bez zmian; kolejki nietknięte |
 | Testy | 132/132 (nowe: `fm-stars.test.js` 6, `FmStarsLimit.test.jsx` 8); notatka `NOTATKA_DLA_CODEX_2026-09-10_LIMIT_GWIAZDEK.md` |
 | Pozostaje | wiadomość do firm z >1 pakietem (mogą dobrać sieci główne do 16.09); KRZYŚ-MAR — potwierdzić konto (`agnieszka.p@…`), duplikat „P.W. KRZYŚ-MAR” do decyzji |
+
+## 12. Wdrożenie fix/fm-supplier-profile-prefill — 11.09.2026 (zgoda Artura, akceptacja Codexa 943e130)
+
+Poza modułem kolejek — strona „Mój profil” dostawcy. Zgłoszenie KRZYŚ-MAR: po każdym logowaniu puste imię/telefon/stanowisko mimo poprawnego zapisu w `profiles` (formularz czytał `account`, który dla dostawcy nie miał `phone/position`, a `account.name` = nazwa firmy).
+
+| Element | Wartość |
+|---|---|
+| main | `f0e68b9` → **`943e130`** (fast-forward; `account.personName/phone/position` z profilu, formularz z tych pól, synchronizacja bez kasowania edycji, `onSaved` → `setAccount`) |
+| Netlify prod | **`6aa3e4944f9f8d00086e0cf3`** (ready 11:23 UTC); smoke test paczki: `personName` obecne |
+| Punkt powrotu | deploy `6aa2af37de9af70008257cf0` (dcfd60b) = tag `prod-rollback-2026-09-11` (f0e68b9) |
+| Migracje / dane | brak; RLS i B2B bez zmian; dotyczy wszystkich dostawców |
+| Testy | 136/136 (nowe: `SupplierProfilePrefill.test.jsx` 4); notatka `NOTATKA_DLA_CODEX_2026-09-11_MOJ_PROFIL.md` |
+| Pozostaje | sprawdzenie na prawdziwym koncie KRZYŚ-MAR (logowanie → Mój profil → odświeżenie → ponowne logowanie) — Artur/Anna; informacja do firmy, że danych z 10.09 nie trzeba wpisywać ponownie |
