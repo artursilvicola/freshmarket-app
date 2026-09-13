@@ -195,3 +195,15 @@ Poza modułem kolejek — strona „Profil firmy” dostawcy. Zgłoszenie wierni
 | Migracje / dane | brak; RLS bez zmian; NIP nadal wymagany osobno przy zakupie pakietu |
 | Testy | 143/143 (nowe: `company-profile.test.js` 3, `CompanyProfileFeedback.test.jsx` 4); notatka `NOTATKA_DLA_CODEX_2026-09-11_PROFIL_FIRMY_ZAPIS.md` |
 | Pozostaje | test na koncie `wierniccy.co` (wpisanie opisu → zapis → odświeżenie → ponowne logowanie) — Artur/Anna; tekst Anny z 14:51 nie był zapisany, trzeba wpisać ponownie; 7 firm bez logo może teraz zapisać profil i uzupełnić logo później |
+
+## 14. Wdrożenie feat/fm-plan-sponsor-sem-ecopack — 13.09.2026 (zgoda Artura)
+
+Logo sponsora SEM ECOpack na kartach spotkań PDF (`src/lib/fm-plan/assets.js`, 472×120 PNG obok Tekasya 458×120 i Redpack 436×120). Stopka paneli (Tekasya/Redpack/SEM ECOpack) to dane w `fm_settings.ui_content.partners` + bucket `brand-assets/partners/` — SEM ECOpack dodany 12.09 przez Supabase, bez deployu, bez linku.
+
+| Element | Wartość |
+|---|---|
+| main | `fb95cf1` → **`d3d416a`** (fast-forward; tylko assets.js) |
+| Netlify prod | **`6aa699cdd5920c0008e798cd`** (ready 12:41 UTC) |
+| Punkt powrotu | deploy `6aa400f355b82e00084566c2` (4df75d1) = tag `prod-rollback-2026-09-13` (fb95cf1) |
+| Migracje / dane | brak |
+| Pozostaje | karty generowane 23.09 — sponsorzy w stopce karty: 3 loga po 66×22 pt |
