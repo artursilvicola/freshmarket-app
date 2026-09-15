@@ -207,3 +207,16 @@ Logo sponsora SEM ECOpack na kartach spotkań PDF (`src/lib/fm-plan/assets.js`, 
 | Punkt powrotu | deploy `6aa400f355b82e00084566c2` (4df75d1) = tag `prod-rollback-2026-09-13` (fb95cf1) |
 | Migracje / dane | brak |
 | Pozostaje | karty generowane 23.09 — sponsorzy w stopce karty: 3 loga po 66×22 pt |
+
+## 15. Wdrożenie fix/auth-magic-link-existing-only — 15.09.2026 (zgoda Artura, akceptacja Codexa 7626b4c)
+
+Poza modułem kolejek — logowanie. Zgłoszenie Umai Group: magic link na adres bez konta zakładał nowego usera (profil supplier bez firmy → ekran „Konto bez przypisanej firmy”); 5 kont-sierot od czerwca.
+
+| Element | Wartość |
+|---|---|
+| main | `6d4e490` → **`7626b4c`** (fast-forward; `signInWithOtp` z `shouldCreateUser: false`, `src/auth/authErrors.js`, komunikat `login.magic_link_no_account` PL/EN) |
+| Netlify prod | **`6aa8fd3b26cd2e00081e2038`** (ready 2026-09-15T08:09:52.255Z); smoke test paczki: `shouldCreateUser:!1` + nowe teksty PL/EN obecne |
+| Punkt powrotu | deploy `6aa699cdd5920c0008e798cd` (d3d416a) = tag `prod-rollback-2026-09-15` (6d4e490) |
+| Migracje / dane | brak migracji; osobno (SQL 15.09, zgoda Artura): profil `i.kaliuzhnaia@market.kg` przepięty na kupca sieci Umai (id 143) + wpis `audit_log` |
+| Testy | 145/145 (nowy: `authErrors.test.js` 2); notatka `NOTATKA_DLA_CODEX_2026-09-15_MAGIC_LINK.md` |
+| Pozostaje | potwierdzenie wejścia Iriny nowym magic linkiem; 4 pozostałe konta-sieroty do wyjaśnienia (Leclerc + 3 gmail) |
