@@ -234,3 +234,16 @@ Podgląd firmy przez kupca w „Spotkania FM 2026" pokazywał ubogi zastępczy o
 | Skala | stara mapa `CHAIN_TO_RETAILER` (27 kluczy) nie znała m.in. ch39 Biedronka, umaigroup26 Umai, ch36 Makro, ch31 Rohlik, ch41 Albert, ch35 Mega Image, ch38 Fantastico, ch44 PROMO, ch46 AIBĖ — kupcy tych sieci nie widzieli własnych propozycji w podglądzie |
 | Testy | 153/153 (`FmBuyerPreview.test.jsx` 8: 3 Claude + 5 Codex); notatka `NOTATKA_DLA_CODEX_2026-09-15_PODGLAD_KUPCA.md` |
 | Pozostaje | kontrola na rzeczywistym koncie kupca (Biedronka/Umai): profil w katalogu = profil w FM, własne oferty widoczne, oferty innych sieci ukryte |
+
+## 17. Wdrożenie feat/country-kyrgyzstan — 15.09.2026 (zgoda Artura: „popraw wszystko")
+
+Lista krajów (`src/lib/countries-data.js`) to jedno źródło dla rejestracji dostawcy, kraju firmy, formularza oferty, kraju sieci w adminie i filtrów. Brakowały dwa kody faktycznie potrzebne uczestnikom.
+
+| Element | Wartość |
+|---|---|
+| main | `cee9a88` → `81846bd` (KG) → **`24564e7`** (CH) |
+| Netlify prod | `6aa9289b790f2c0008d750c0` (KG, ready 11:14 UTC) → **`6aa9291a3cafe00008073d7e`** (CH, ready 11:17 UTC); smoke test paczki: KG i CH w obu językach + flagi |
+| Punkt powrotu | deploy `6aa9204b7c59ee0008620eaa` (8b0a9d4) = tag `prod-rollback-2026-09-15c` (cee9a88) |
+| Testy | 155/155 (nowy `countries.test.js`: spójność 46 kodów — flaga + PL + EN, obecność krajów uczestników) |
+| Korekta danych (SQL, ten sam dzień) | sieć 143 Umai Group: `country PL → KG`; firma PPO Services AG (Däniken, @ppo.ch): `country (puste) → CH`; oba z wpisem `audit_log.country_fix` |
+| Pozostaje | opcjonalnie GB/RS i inne kody spoza listy — dodać, gdy pojawi się uczestnik z takiego kraju |
