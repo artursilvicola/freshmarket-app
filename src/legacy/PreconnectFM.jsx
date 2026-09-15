@@ -14106,8 +14106,18 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
     });
   }
 
+  // [fix/fm-buyer-preview-full] Kupiec w module FM ma widzieć ten sam profil
+  // firmy co w zakładce „Dostawcy" (ten sam CompanyPreviewModal, role="buyer").
+  // Wcześniej szukaliśmy firmy tylko po legacy `fmId` i `"sup-<id>"`, czego
+  // realne firmy nie mają (fmId = null, id = UUID) — dopasowanie nigdy nie
+  // trafiało i kupiec dostawał ubogi fallback (nazwa + „nazwa — produkty"),
+  // bez certyfikatów, rynków, materiałów i kontaktów.
   function openFirmPreview(s) {
-    const realCo = companies ? companies.find(c => c.fmId === s.id || c.id === "sup-"+s.id) : null;
+    const realCo = findSupplierCompany(companies, {
+      accountId: s.companyId || s.id,
+      fmId: s.id,
+      legacySupplierId: s.id ? `sup-${s.id}` : null,
+    });
     setPreviewFirm(realCo || { name:s.name, country:s.country, description:`${s.name} — ${s.products}`, types:["producent"], contacts:[], certs:[] });
   }
 
