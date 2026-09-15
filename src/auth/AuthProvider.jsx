@@ -200,10 +200,15 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  // [fix/auth-magic-link-existing-only] shouldCreateUser: false — magic link
+  // tylko dla istniejących kont. Domyślnie Supabase zakładało NOWEGO usera dla
+  // nieznanego adresu (np. literówka albo inny e-mail niż w koncie kupca);
+  // trigger handle_new_user tworzył profil supplier bez firmy i użytkownik
+  // lądował na ekranie „Konto bez przypisanej firmy” (zgłoszenie Umai Group 15.09).
   const sendMagicLink = useCallback(async (email) => {
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin },
+      options: { emailRedirectTo: window.location.origin, shouldCreateUser: false },
     });
     if (error) throw error;
   }, []);

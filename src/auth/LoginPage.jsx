@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useAuth } from "./AuthProvider";
 import FreshMarketLogo from "../components/FreshMarketLogo";
 import LanguageSwitcher from "../components/LanguageSwitcher";
+import { loginErrorKey } from "./authErrors.js";
 import { normalizeLocale } from "../i18n/locale";
 
 export default function LoginPage() {
@@ -49,7 +50,9 @@ export default function LoginPage() {
         setMsg(t("login.reset_link_sent"));
       }
     } catch (e) {
-      setErr(e.message || t("login.error_default"));
+      // [fix/auth-magic-link-existing-only] nieznany adres przy magic linku → czytelny tekst
+      const key = loginErrorKey(e, mode);
+      setErr(key ? t(key) : (e.message || t("login.error_default")));
     } finally {
       setBusy(false);
     }
