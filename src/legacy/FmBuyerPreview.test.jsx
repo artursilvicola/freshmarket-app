@@ -96,3 +96,55 @@ describe("podgląd firmy przez kupca w module FM = pełny profil", () => {
     expect(text(tree)).toContain("Producent czarnego czosnku z Warki.");
   });
 });
+
+describe("review: actual retailer mapping and offer privacy", () => {
+  it("keeps offers hidden when the retailer cannot be resolved", () => {
+    const chainId = "unmapped-fm-chain";
+    const fmChains = [{ id: chainId, name: "Unmapped chain", stations: 1 }];
+    const fmPrefs = { [COMPANY.id]: { [chainId]: "star" } };
+    const fmAlgo = buildFMData(fmPrefs, {}, fmChains, [SUPPLIER_FM]);
+    const tree = render(<PageBuyerFM {...props({
+      chainId, fmChains, fmPrefs, fmAlgo, retailers: [],
+      offers: [{ id: 801, supplierId: COMPANY.id, status: "active", title: "HIDDEN_OFFER" }],
+      sends: [{ id: 901, offerId: 801, retailerId: 143, status: "sent" }],
+    })}/>);
+    act(() => previewButton(tree).props.onClick());
+    expect(text(tree)).not.toContain("HIDDEN_OFFER");
+    expect(text(tree)).toContain("common.company_preview.no_retailer_assigned");
+  });
+
+  it.each([
+    [2, "ch39", 100],
+    [4, "ch39", 100],
+    [2, "umaigroup26", 143],
+    [4, "umaigroup26", 143],
+  ])("phase %s, chain %s resolves retailer %s for the full profile", (phase, chainId, retailerId) => {
+    const fmChains = [{ id: chainId, name: "Retailer under review", stations: 1 }];
+    const fmPrefs = { [COMPANY.id]: { [chainId]: "star" } };
+    const fmAlgo = buildFMData(fmPrefs, {}, fmChains, [SUPPLIER_FM]);
+    const ownTitle = "OFFER_FOR_CURRENT_RETAILER";
+    const otherTitle = "OFFER_FOR_OTHER_RETAILER";
+    const ownOffer = { id: 801, supplierId: COMPANY.id, status: "active", title: ownTitle };
+    const otherOffer = { ...ownOffer, id: 802, title: otherTitle };
+    const input = props({
+      chainId, fmChains, fmPrefs, fmAlgo,
+      fmSettings: { currentPhase: phase, schedulingOpen: true, planPublished: false },
+      retailers: [{ id: retailerId, fm26ChainId: chainId }],
+      offers: [ownOffer, otherOffer],
+      sends: [
+        { id: 901, offerId: 801, retailerId, status: "sent" },
+        { id: 902, offerId: 802, retailerId: 999, status: "sent" },
+      ],
+    });
+    const tree = render(<PageBuyerFM {...input}/>);
+    expect(previewButton(tree)).toBeTruthy();
+    act(() => previewButton(tree).props.onClick());
+    const output = text(tree);
+    expect(output).toContain("Producent czarnego czosnku z Warki.");
+    expect(output).not.toContain(otherTitle);
+    expect(output).not.toContain("common.company_preview.account_operator_title");
+    expect(input.setFmResps).not.toHaveBeenCalled();
+    expect(output.includes(ownTitle), "The buyer's own offer must be visible, as in the catalog").toBe(true);
+    expect(output).not.toContain("common.company_preview.no_retailer_assigned");
+  });
+});

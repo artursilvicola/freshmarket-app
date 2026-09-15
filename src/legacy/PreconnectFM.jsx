@@ -14135,7 +14135,7 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
   // FAZA 1-2: wybór preferencji przez kupca
   if (phase <= 2) return (
     <div style={{ maxWidth:900 }}>
-      {previewFirm&&<CompanyPreviewModal co={previewFirm} offers={offers} sends={sends} role="buyer" buyerRetailerId={CHAIN_TO_RETAILER[chainId]||null} onClose={()=>setPreviewFirm(null)}/>}
+      {previewFirm&&<CompanyPreviewModal co={previewFirm} offers={offers} sends={sends} role="buyer" buyerRetailerId={resolveRetailerIdFromChain(chainId, retailers)} onClose={()=>setPreviewFirm(null)}/>}
 
       {/* Friction rejection dialog */}
       {removeDialog && (() => {
@@ -14379,7 +14379,7 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
 
   return (
     <div style={{ maxWidth:800 }}>
-      {previewFirm&&<CompanyPreviewModal co={previewFirm} offers={offers} sends={sends} role="buyer" buyerRetailerId={CHAIN_TO_RETAILER[chainId]||null} onClose={()=>setPreviewFirm(null)}/>}
+      {previewFirm&&<CompanyPreviewModal co={previewFirm} offers={offers} sends={sends} role="buyer" buyerRetailerId={resolveRetailerIdFromChain(chainId, retailers)} onClose={()=>setPreviewFirm(null)}/>}
       {phBanner}
 
       {/* Firmy z którymi się spotykasz */}

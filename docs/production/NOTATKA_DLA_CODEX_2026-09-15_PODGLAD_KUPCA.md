@@ -33,3 +33,15 @@ To dokładnie to, co widać na zrzucie („Adam Gabler Ferment Garlic — Czarny
 ## Do decyzji
 
 Wdrożenie dziś (osobny deploy, bez migracji) — wybory kupców trwają do **16.09 23:59**, więc pełny profil jest przydatny właśnie teraz. Po wdrożeniu wystarczy odświeżyć panel kupca.
+
+---
+
+## Uzupełnienie po review Codexa (15.09, commit 2)
+
+Dołączony patch Codexa (`fm-buyer-preview-2026-09-15-followup.patch`, zastosowany czysto na `73ab36e`): oba wywołania modala w `PageBuyerFM` dostają `buyerRetailerId={resolveRetailerIdFromChain(chainId, retailers)}` zamiast `CHAIN_TO_RETAILER[chainId]||null`. Helper jest już używany w tym samym komponencie przy zapisie odpowiedzi kupca (linie 14048/14063/14085) i zachowuje starą mapę jako drugi krok, więc niczego nie odbiera.
+
+**Weryfikacja tezy — problem jest szerszy, niż zakładała notatka.** Statyczna `CHAIN_TO_RETAILER` ma 27 kluczy i brakuje w niej m.in.: `ch39` (Biedronka), `umaigroup26` (Umai), `ch36` (Makro), `ch31` (Rohlik), `ch41` (Albert CZ), `ch35` (Mega Image), `ch38` (Fantastico), `ch44` (PROMO), `ch46` (AIBĖ). Z 13 sprawdzonych sieci mapa zna tylko 5 (`ch2` Auchan, `ch9` Carrefour, `ch11` Dino, `ch19` Stokrotka + pozostałe stare). Czyli kupcy większości sieci widzieli w podglądzie „Brak przypisanej sieci detalicznej" i nie widzieli własnych propozycji — także ci z 12 sieci wpisanych 15.09 dla „Orange for Agricultural Crops".
+
+Testy Codexa (5) sprawdzają: Biedronka i Umai w fazach 2 i 4 (własna oferta widoczna, oferta innej sieci ukryta, sekcja operatora konta ukryta, otwarcie podglądu nie zapisuje odpowiedzi kupca) oraz nierozpoznaną sieć (oferty nadal ukryte).
+
+`npm test` **153/153**, `npm run build` OK, `git diff --check` OK.
