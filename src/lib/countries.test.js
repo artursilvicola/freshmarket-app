@@ -20,11 +20,13 @@ describe("lista krajów", () => {
   });
 
   it("zawiera kraje uczestników FM 2026, w tym Kirgistan (Umai Group)", () => {
-    for (const code of ["KG", "PL", "NL", "ES", "IT", "CL", "EG", "IN", "MA", "ZA", "EC", "PE", "UA", "BY", "LT", "LV", "RO", "BG", "CZ", "GR"]) {
+    for (const code of ["KG", "CH", "PL", "NL", "ES", "IT", "CL", "EG", "IN", "MA", "ZA", "EC", "PE", "UA", "BY", "LT", "LV", "RO", "BG", "CZ", "GR"]) {
       expect(CNAMES[code], `brak kraju ${code}`).toBeTruthy();
     }
     expect(CNAMES.KG).toBe("Kirgistan");
     expect(CNAMES_EN.KG).toBe("Kyrgyzstan");
     expect(FLAGS.KG).toBe("🇰🇬");
+    expect(CNAMES.CH).toBe("Szwajcaria");
+    expect(CNAMES_EN.CH).toBe("Switzerland");
   });
 });
