@@ -220,3 +220,17 @@ Poza modułem kolejek — logowanie. Zgłoszenie Umai Group: magic link na adres
 | Migracje / dane | brak migracji; osobno (SQL 15.09, zgoda Artura): profil `i.kaliuzhnaia@market.kg` przepięty na kupca sieci Umai (id 143) + wpis `audit_log` |
 | Testy | 145/145 (nowy: `authErrors.test.js` 2); notatka `NOTATKA_DLA_CODEX_2026-09-15_MAGIC_LINK.md` |
 | Pozostaje | potwierdzenie wejścia Iriny nowym magic linkiem; 4 pozostałe konta-sieroty do wyjaśnienia (Leclerc + 3 gmail) |
+
+## 16. Wdrożenie fix/fm-buyer-preview-full — 15.09.2026 (zgoda Artura, review + patch Codexa)
+
+Podgląd firmy przez kupca w „Spotkania FM 2026" pokazywał ubogi zastępczy opis zamiast profilu z katalogu, a sekcja ofert — „Brak przypisanej sieci detalicznej".
+
+| Element | Wartość |
+|---|---|
+| main | `ec1fa1c` → **`8b0a9d4`** (fast-forward; 73ab36e: `findSupplierCompany` zamiast martwego dopasowania po `fmId`/`sup-<id>`; 8b0a9d4 (patch Codexa): `buyerRetailerId={resolveRetailerIdFromChain(chainId, retailers)}` w obu wywołaniach modala) |
+| Netlify prod | **`6aa9204b7c59ee0008620eaa`** (ready 2026-09-15T10:39:25.504Z); smoke test paczki: `Pw(c,{accountId:…,fmId:…,legacySupplierId:…})` obecne, `buyerRetailerId:Zn[e]||null` → `buyerRetailerId:br(e,_)` |
+| Punkt powrotu | deploy `6aa8fd3b26cd2e00081e2038` (7626b4c) = tag `prod-rollback-2026-09-15b` (ec1fa1c) |
+| Migracje / dane | brak; zakres danych bez zmian (ten sam komponent i rola co w katalogu „Dostawcy") |
+| Skala | stara mapa `CHAIN_TO_RETAILER` (27 kluczy) nie znała m.in. ch39 Biedronka, umaigroup26 Umai, ch36 Makro, ch31 Rohlik, ch41 Albert, ch35 Mega Image, ch38 Fantastico, ch44 PROMO, ch46 AIBĖ — kupcy tych sieci nie widzieli własnych propozycji w podglądzie |
+| Testy | 153/153 (`FmBuyerPreview.test.jsx` 8: 3 Claude + 5 Codex); notatka `NOTATKA_DLA_CODEX_2026-09-15_PODGLAD_KUPCA.md` |
+| Pozostaje | kontrola na rzeczywistym koncie kupca (Biedronka/Umai): profil w katalogu = profil w FM, własne oferty widoczne, oferty innych sieci ukryte |
