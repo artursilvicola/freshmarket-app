@@ -247,3 +247,17 @@ Lista krajów (`src/lib/countries-data.js`) to jedno źródło dla rejestracji d
 | Testy | 155/155 (nowy `countries.test.js`: spójność 46 kodów — flaga + PL + EN, obecność krajów uczestników) |
 | Korekta danych (SQL, ten sam dzień) | sieć 143 Umai Group: `country PL → KG`; firma PPO Services AG (Däniken, @ppo.ch): `country (puste) → CH`; oba z wpisem `audit_log.country_fix` |
 | Pozostaje | opcjonalnie GB/RS i inne kody spoza listy — dodać, gdy pojawi się uczestnik z takiego kraju |
+
+## 18. Wdrożenie fix/profile-impersonation-guard — 16.09.2026 (zgoda Artura, review + 3 commity Codexa)
+
+Incydent 16.09 11:13: admin (jagoda.knadel) w podglądzie konta dostawcy Fresh roots zapisał „Mój profil" — dane osoby kontaktowej dostawcy trafiły na profil admina (`updateOwnSupplierProfile` pisze zawsze do sesji). Ten sam ekran zmieniał hasło zalogowanego.
+
+| Element | Wartość |
+|---|---|
+| main | `93b5b69` → **`008504d`** (57a3ebc Claude: profile-guard, readOnly obu stron profilu, odmowa w db; 40d5e74/dde3011 Codex: kupiec po id profilu, obowiązkowa zgodność roli, sprawdzenie sesji też dla kupca, pola kupca readOnly; 008504d docs) |
+| Netlify prod | **`6aaa69eb3efff20007827d64`** (ready 10:05 UTC); smoke test paczki: teksty `profile.impersonation.*` i `profile_not_own` PL/EN obecne |
+| Punkt powrotu | deploy `6aa9291a3cafe00008073d7e` (24564e7) = tag `prod-rollback-2026-09-16` (93b5b69) |
+| Migracje | brak |
+| Korekta danych (SQL, po deployu) | profil admina b8669ba2…: `name Nancy → Jagoda Knadel`, `position Muhammed → null`, `company_id → null`; usunięty pusty rekord firmy „Jagoda Knadel" (388d73e0…, suspended, 0 powiązań poza tym profilem — pozostałość po rejestracji 10.08); `audit_log`: `profile_restore` + `company_delete` |
+| Testy | 162/162 (`profile-guard.test.js` 5, `SupplierProfilePrefill.test.jsx` +2); notatka `NOTATKA_DLA_CODEX_2026-09-16_PODGLAD_KONTA.md` |
+| Pozostaje | poinformować Jagodę: dane przywrócone, jej hasło nie było zmienione; w podglądzie cudzego konta „Mój profil" jest teraz tylko do odczytu |
