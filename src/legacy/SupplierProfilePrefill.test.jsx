@@ -34,11 +34,35 @@ afterEach(() => {
 });
 // pola w kolejności renderu: imię i nazwisko, stanowisko, firma, e-mail, telefon (dalej pola hasła)
 const values = (tree) => tree.root.findAllByType("input").map(i => i.props.value);
+const text = (tree) => JSON.stringify(tree.toJSON());
 const ACCOUNT = {
   id: "co-1", role: "supplier",
   name: "PRZEDSIĘBIORSTWO WIELOBRANŻOWE KRZYŚ-MAR S.C.", email: "a@krzysmar.eu",
   personName: "Agnieszka Piechaczek", phone: "696774645", position: "Handlowiec",
 };
+
+describe("Mój profil w podglądzie cudzego konta (admin) — tylko odczyt", () => {
+  it("readOnly: brak przycisku zapisu i sekcji hasła, ostrzeżenie widoczne, zapis nie rusza bazy", async () => {
+    const fl = vi.fn();
+    const tree = render(<PageSupplierProfile account={ACCOUNT} co={null} fl={fl} readOnly/>);
+    const t = text(tree);
+    expect(t).toContain("profile.impersonation.notice");
+    expect(tree.root.findAllByType("button").find(b => b.children.includes("supplier.profile.save_button"))).toBeUndefined();
+    // sekcja zmiany hasła (zmieniałaby hasło ZALOGOWANEGO admina) jest ukryta
+    expect(t).not.toContain("buyer.password");
+    expect(updateOwnSupplierProfile).not.toHaveBeenCalled();
+    // pola są tylko do odczytu
+    expect(tree.root.findAllByType("input").every(i => i.props.readOnly === true || i.props.value === ACCOUNT.email || i.props.value === ACCOUNT.name)).toBe(true);
+  });
+
+  it("bez readOnly (własne konto) zapis działa jak dotąd", async () => {
+    const tree = render(<PageSupplierProfile account={ACCOUNT} co={null} fl={vi.fn()}/>);
+    const save = tree.root.findAllByType("button").find(b => b.children.includes("supplier.profile.save_button"));
+    expect(save).toBeTruthy();
+    await act(async () => { await save.props.onClick(); });
+    expect(updateOwnSupplierProfile).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("Mój profil dostawcy — dane osoby po zalogowaniu", () => {
   it("wypełnia imię/stanowisko/telefon z profilu, a w polu osoby nie ma nazwy firmy", () => {

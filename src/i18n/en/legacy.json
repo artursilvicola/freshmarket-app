@@ -2956,7 +2956,8 @@
       "package_plan_required": "No package selected.",
       "package_limit_invalid": "Submission limit must be a number equal to or greater than 0.",
       "package_plan_inactive": "The selected package does not exist or is inactive.",
-      "package_limit_below_used_format": "Limit cannot be lower than submissions already used ({{used}})."
+      "package_limit_below_used_format": "Limit cannot be lower than submissions already used ({{used}}).",
+      "profile_not_own": "Cannot save the profile of another account. Switch back to your own account and try again."
     }
   },
   "shell": {
@@ -3148,5 +3149,11 @@
     "status_ok": "sent",
     "status_err": "error",
     "status_skip": "skipped"
+  },
+  "profile": {
+    "impersonation": {
+      "notice": "You are viewing another account. The „My profile” page and the password change always apply to your own administrator account, so editing is disabled here. Change this person’s data in the admin panel (Companies / Buyers).",
+      "blocked": "Viewing another account — saving is disabled so your own profile is not overwritten."
+    }
   }
 }

@@ -18,6 +18,7 @@ import { readAllFmInputRows } from "./fm-input-read.js";
 // db.js mają dalej hardcoded PL — będą bilingualizowane w kolejnych
 // branchach P2-N razem ze swoimi konsumentami w PreconnectFM.
 import i18n from "../i18n";
+import { isOwnProfileTarget } from "./profile-guard.js";
 
 const BUYER_CATEGORY_OPTIONS = new Set(["owoce", "warzywa", "kwiaty"]);
 
@@ -482,6 +483,17 @@ export async function updateOwnSupplierProfile(id, patch) {
   const { data: authData, error: authErr } = await supabase.auth.getUser();
   const uid = authData?.user?.id;
   if (authErr || !uid) throw new Error(i18n.t("legacy:errors.db.password_no_session"));
+  // [fix/profile-impersonation-guard] Skoro zapis idzie zawsze do profilu z sesji,
+  // musimy odrzucić wywołanie wskazujące CUDZE konto — inaczej admin oglądający
+  // panel dostawcy nadpisuje własny profil (incydent 16.09.2026).
+  const { data: meRow } = await supabase
+    .from("profiles")
+    .select("company_id")
+    .eq("id", uid)
+    .maybeSingle();
+  if (!isOwnProfileTarget({ argId: id, uid, companyId: meRow?.company_id })) {
+    throw new Error(i18n.t("legacy:errors.db.profile_not_own"));
+  }
   const row = {
     name: normalizeText(patch.name),
     phone: normalizeText(patch.phone),

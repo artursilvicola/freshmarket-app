@@ -2956,7 +2956,8 @@
       "package_plan_required": "Brak wybranego pakietu.",
       "package_limit_invalid": "Limit wysyłek musi być liczbą 0 lub większą.",
       "package_plan_inactive": "Wybrany pakiet nie istnieje albo jest nieaktywny.",
-      "package_limit_below_used_format": "Limit nie może być mniejszy niż już wykorzystane wysyłki ({{used}})."
+      "package_limit_below_used_format": "Limit nie może być mniejszy niż już wykorzystane wysyłki ({{used}}).",
+      "profile_not_own": "Nie można zapisać profilu innego konta. Wróć na swoje konto i spróbuj ponownie."
     }
   },
   "shell": {
@@ -3148,5 +3149,11 @@
     "status_ok": "wysłano",
     "status_err": "błąd",
     "status_skip": "pominięto"
+  },
+  "profile": {
+    "impersonation": {
+      "notice": "Oglądasz panel innego konta. Strona „Mój profil” i zmiana hasła zawsze dotyczą Twojego konta administratora, dlatego edycja jest tutaj wyłączona. Dane tej osoby zmienisz w panelu administratora (Firmy / Kupcy).",
+      "blocked": "Podgląd cudzego konta — zapis wyłączony, żeby nie nadpisać Twojego profilu."
+    }
   }
 }

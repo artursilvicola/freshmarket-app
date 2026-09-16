@@ -83,6 +83,7 @@ import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCount
 import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, isAutomaticChance, scoreMatch, buildFMData } from "../lib/fm-algo.js";
 import { FM_STARS_MIN, fmPackagesOf, fmStarsMax, fmStarsState, findSupplierCompany } from "../lib/fm-stars.js";
 import { companyProfileGaps } from "../lib/company-profile.js";
+import { isOwnAccount } from "../lib/profile-guard.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
@@ -2080,6 +2081,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     currentUser?.pkg_plan,
   ]);
   const [account, setAccount] = useState(() => buildAccountFromCurrentUser());
+  // [fix/profile-impersonation-guard] Pasek przełączania kont (admin) pokazuje
+  // panel cudzego konta. „Mój profil" i zmiana hasła dotyczą ZAWSZE zalogowanego
+  // użytkownika, więc w podglądzie muszą być tylko do odczytu.
+  const viewingOtherAccount = !isOwnAccount(account, currentUser);
   useEffect(() => {
     if (!lockedRole) return;
     const next = buildAccountFromCurrentUser();
@@ -3751,12 +3756,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
     if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} pkgPlan={pkgPlan} retailers={retailers} accountId={mySupplierKey}/>;
-    if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl} onSaved={(patch) => setAccount(prev => ({ ...prev, personName: patch.name, phone: patch.phone, position: patch.position }))}/>;
+    if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl} readOnly={viewingOtherAccount} onSaved={(patch) => setAccount(prev => ({ ...prev, personName: patch.name, phone: patch.phone, position: patch.position }))}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offersForBuyer} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers} profiles={adminChatProfiles}/>;
-    if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl}/>;
+    if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl} readOnly={viewingOtherAccount}/>;
     if(pg==="instructions") return <PageInstructions role={role} fmSettings={fmSettings}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offersForBuyer} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
@@ -7830,7 +7835,7 @@ function PageBuyerCatalog({ companies, offers, nav, sends, buyerRetailerId, role
   );
 }
 
-function PageBuyerProfile({ buyer, setBuyer, fl }) {
+function PageBuyerProfile({ buyer, setBuyer, fl, readOnly = false }) {
   // [Krok P2-2] Bilingual via legacy.buyer.profile namespace
   const { t, i18n } = useTranslation("legacy");
   const nextMailingDateLabel = formatMailingDate(getNextBuyerSubscriptionMailingDate(), i18n.language);
@@ -7838,6 +7843,7 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
   return (
     <div style={{ maxWidth:560 }}>
       <h2 style={{ marginBottom:16,fontSize:16 }}>{t("buyer.profile.page_title")}</h2>
+      {readOnly && <Alrt type="warning">{t("profile.impersonation.notice")}</Alrt>}
       <Card title={t("buyer.profile.card_data_title")} icon={User}>
         <Row>
           <Inp label={t("buyer.profile.labels.name")} required value={b.name} onChange={e=>u("name",e.target.value)}/>
@@ -7850,8 +7856,8 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
         <Inp label={t("buyer.profile.labels.phone")} value={b.phone} onChange={e=>u("phone",e.target.value)}/>
       </Card>
       <Card title={t("buyer.profile.subscription_card_title")} icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{t("buyer.profile.subscription_consent_label")}</div><div style={{ fontSize:12,color:"#64748b" }}>{t("buyer.profile.subscription_consent_hint")}</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>{t("buyer.profile.subscription_active_notice", { date: nextMailingDateLabel })}</div>}</Card>
-      <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl(t("buyer.profile.saved_flash")); }}>{t("buyer.profile.save_button")}</Btn></div>
-      <ChangePasswordSection fl={fl}/>
+      {!readOnly && <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl(t("buyer.profile.saved_flash")); }}>{t("buyer.profile.save_button")}</Btn></div>}
+      {!readOnly && <ChangePasswordSection fl={fl}/>}
     </div>
   );
 }
@@ -7861,7 +7867,7 @@ function PageBuyerProfile({ buyer, setBuyer, fl }) {
 // imię/nazwisko, telefon, stanowisko. Sekcja zmiany hasła (3 pola: aktualne,
 // nowe, potwierdzenie nowego). Zapis przez dbUpdateOwnSupplierProfile -> RLS
 // pozwala self-edit (profiles.id = auth.uid()).
-export function PageSupplierProfile({ account, co, fl, onSaved }) {
+export function PageSupplierProfile({ account, co, fl, onSaved, readOnly = false }) {
   const { t } = useTranslation("legacy");
   // [fix/fm-supplier-profile-prefill] account.name = nazwa firmy; osoba jest w
   // account.personName, telefon i stanowisko w account.phone/position (z profiles).
@@ -7881,6 +7887,7 @@ export function PageSupplierProfile({ account, co, fl, onSaved }) {
     setP(fromAccount(account));
   }, [account?.personName, account?.email, account?.phone, account?.position, dirty]);
   async function save() {
+    if (readOnly) { fl(t("profile.impersonation.blocked"), "warning"); return; }
     if (!account?.id) { fl(t("supplier.profile.toasts.missing_id")); return; }
     if (!p.name?.trim()) { fl(t("supplier.profile.toasts.name_required")); return; }
     try {
@@ -7905,24 +7912,27 @@ export function PageSupplierProfile({ account, co, fl, onSaved }) {
   return (
     <div style={{ maxWidth: 560 }}>
       <h2 style={{ marginBottom: 16, fontSize: 16 }}>{t("supplier.profile.page_title")}</h2>
+      {readOnly && <Alrt type="warning">{t("profile.impersonation.notice")}</Alrt>}
       <Card title={t("supplier.profile.card_data_title")} icon={User}>
         <Row>
-          <Inp label={t("supplier.profile.labels.name")} required value={p.name} onChange={(e) => u("name", e.target.value)} />
-          <Inp label={t("supplier.profile.labels.position")} value={p.position} onChange={(e) => u("position", e.target.value)} />
+          <Inp label={t("supplier.profile.labels.name")} required value={p.name} onChange={(e) => u("name", e.target.value)} readOnly={readOnly} />
+          <Inp label={t("supplier.profile.labels.position")} value={p.position} onChange={(e) => u("position", e.target.value)} readOnly={readOnly} />
         </Row>
         <Row>
           <Inp label={t("supplier.profile.labels.company")} value={co?.name || account?.name || ""} readOnly />
           <Inp label={t("supplier.profile.labels.email_admin_change")} type="email" value={p.email} readOnly />
         </Row>
-        <Inp label={t("supplier.profile.labels.phone")} value={p.phone} onChange={(e) => u("phone", e.target.value)} />
+        <Inp label={t("supplier.profile.labels.phone")} value={p.phone} onChange={(e) => u("phone", e.target.value)} readOnly={readOnly} />
         <div style={{ fontSize: 12, color: "#64748b", marginTop: 8 }}>
           {t("supplier.profile.admin_notice")}
         </div>
       </Card>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
-        <Btn primary onClick={save} disabled={saving}>{saving ? t("supplier.profile.saving") : t("supplier.profile.save_button")}</Btn>
-      </div>
-      <ChangePasswordSection fl={fl} />
+      {!readOnly && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+          <Btn primary onClick={save} disabled={saving}>{saving ? t("supplier.profile.saving") : t("supplier.profile.save_button")}</Btn>
+        </div>
+      )}
+      {!readOnly && <ChangePasswordSection fl={fl} />}
     </div>
   );
 }
