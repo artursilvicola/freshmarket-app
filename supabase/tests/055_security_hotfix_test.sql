@@ -345,6 +345,8 @@ SET LOCAL ROLE authenticated;
 SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co2') || ''', ''[]''::jsonb)', 'brak uprawnie');
 RESET ROLE;  -- wiersze cudzej firmy sprawdzamy jako postgres (RLS ukrywa je przed sup1)
 SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co2')) = 1, 'T6 RPC: cudza firma nietknieta');
+SELECT pg_temp.ok((SELECT count(*) FROM public.audit_log WHERE action = 'fm_targets_saved' AND entity_id = pg_temp.id('co1')::text AND user_id = pg_temp.id('sup1') AND (meta->>'count')::int = 2) = 1, 'T6 RPC: slad zapisu w audit_log (kto, firma, liczba sieci)');
+SELECT pg_temp.ok((SELECT count(*) FROM public.audit_log WHERE action = 'fm_targets_saved' AND entity_id = pg_temp.id('co2')::text) = 0, 'T6 RPC: odrzucony zapis cudzej firmy bez sladu zapisu');
 SELECT pg_temp.login('sup1');
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co1') || ''', ''[{"retailer_id":990101,"priority":1000},{"retailer_id":123456789,"priority":1000}]''::jsonb)', 'nieznana sie');

@@ -4,6 +4,10 @@
     "language_code": "en",
     "_note": "Krok 1: minimalna struktura. Wszystkie klucze muszą być symetryczne z pl/common.json."
   },
+  "new_version": {
+    "text": "A new version of the app is available. Refresh the page so your next changes are saved correctly.",
+    "button": "Refresh now"
+  },
   "actions": {
     "add": "Add",
     "edit": "Edit",

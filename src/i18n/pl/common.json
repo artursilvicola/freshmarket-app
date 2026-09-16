@@ -4,6 +4,10 @@
     "language_code": "pl",
     "_note": "Krok 1: minimalna struktura. Klucze dodawane sukcesywnie w kolejnych krokach P0/P1/P2."
   },
+  "new_version": {
+    "text": "Dostępna jest nowa wersja aplikacji. Odśwież stronę, żeby Twoje kolejne zmiany zapisywały się poprawnie.",
+    "button": "Odśwież teraz"
+  },
   "actions": {
     "add": "Dodaj",
     "edit": "Edytuj",

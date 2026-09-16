@@ -712,6 +712,14 @@ begin
             from jsonb_array_elements(p_items) e) x
    group by rid;
 
+  -- ślad każdego zapisu (kto, która firma, ile sieci): po wdrożeniu pozwala
+  -- potwierdzić, że prawdziwe zapisy dostawców przechodzą, bez kont testowych
+  -- widocznych dla uczestników; tłumaczy też różnice przed/po w porównaniu kopii
+  insert into public.audit_log (user_id, action, entity, entity_id, meta)
+  values (v_uid, 'fm_targets_saved', 'company', p_company_id::text,
+          jsonb_build_object('count', (select count(*) from public.company_target_retailers where company_id = p_company_id),
+                             'role', v_role, 'saved_at', clock_timestamp()));
+
   return (select coalesce(jsonb_agg(to_jsonb(t) order by t.priority desc, t.retailer_id), '[]'::jsonb)
             from public.company_target_retailers t where t.company_id = p_company_id);
 end $$;

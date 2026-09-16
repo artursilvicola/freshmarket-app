@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
+import NewVersionBanner from "./components/NewVersionBanner";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import LoginPage from "./auth/LoginPage";
 import RegisterPage from "./auth/RegisterPage";
@@ -30,6 +31,8 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        {/* [fix/security-hotfix] po deployu prosi otwarte karty o odświeżenie (stary bundle nie zapisze wyborów po 055) */}
+        <NewVersionBanner />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           {/* [B2B Round auth-forgot-password] Strona resetu hasla.

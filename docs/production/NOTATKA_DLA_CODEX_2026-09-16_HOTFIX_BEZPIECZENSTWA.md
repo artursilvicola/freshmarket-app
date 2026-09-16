@@ -5,6 +5,23 @@ Historia: v1 7d90826 (4×P1) → v2 c8842c8 (3×P1 + 2×P2) → v3 79b4b24 (3×P
 Wszystko przetestowane od zera na oddzielnej bazie (embedded Postgres 17.10, `--shim`): migracje 001–055, `--reapply 054,055`, test kolejek 053 (T0–T16), test 055 (T0–T8), test równoległych zapisów (8 scenariuszy); vitest 189/189 + regresje Codexa v3 i v4 uruchomione na tej gałęzi (PASS); build OK.
 Nic tu nie wysyła maili, nie publikuje planu, nie zmienia wyborów uczestników, nie zmienia fazy, terminu ani flag uczestników na produkcji.
 
+## 000. Stan po wdrożeniu 054 i plan testów bez podmiotów widocznych dla uczestników (v6)
+
+**054 wdrożone 16.09 17:46** (runbook §19): kopie DPAPI przed/po (Codex zweryfikował niezależnie: 0 różnic w 17 tabelach, 785 wyborów / 156 odpowiedzi zachowane), anon → 401 na `consent_audit`/`v_admin_*`, DELETE przez widok → 401, admin czyta jak dotąd, dostawca widzi tylko własny wiersz `consent_audit`. **Otwarte**: dostawca nadal widzi `retailers.buyer_*` (44 sieci) — zamyka 055; kontrola prawdziwego panelu drugiej aplikacji — Artur.
+
+**Testy produkcyjne bez widocznych podmiotów testowych** (uwaga Codexa: sieć/firma testowa widoczna choćby chwilowo = ryzyko cudzego wyboru i późniejszego sprzątania w cudzych danych):
+- **Ścieżki zapisu z sukcesem** (RPC dostawcy, odpowiedź kupca, blokady, zamknięcie fazy) są dowiedzione **wyłącznie w izolacji**: migracje od zera, testy SQL 053/055, 8 scenariuszy równoległości, regresje UI. Na produkcji nie tworzymy żadnej firmy `fm_b2b_enabled` ani sieci `fm26_active` — nawet na minuty.
+- **Konta testowe na produkcji = tylko odczyt + zapisy, które MAJĄ być odrzucone**: firma testowa `account_status='suspended'`, `fm_b2b_enabled=false` (niewidoczna dla kupców przez RLS `companies_select_all_authenticated`, poza `fmSuppliers` i algorytmem) z kontem dostawcy testowego; sieć testowa `active=false`, `fm26_active=false` (niewidoczna na liście sieci, poza planem) z kontem kupca testowego. Sondy `fm-permission-probe.mjs`: odczyty potwierdzają izolację (zero kontaktów kupców, zero cudzych decyzji, zero planu), `--writes` potwierdza odmowy (`fm_inputs_forbidden`, RLS storage, przywracanie kolumn administracyjnych). Żaden z tych podmiotów nie może wejść do wyborów ani do planu, bo nie spełnia warunków udziału.
+- **Sukces prawdziwych zapisów po deployu** obserwujemy bez testów: RPC `fm_set_company_targets` zapisuje `audit_log` (`fm_targets_saved`: kto, firma, liczba sieci, czas) — po wdrożeniu admin widzi w SQL pierwsze zapisy uczestników (`select action, entity_id, meta, created_at from audit_log where action='fm_targets_saved' order by created_at desc`), a odpowiedzi kupców po `fm_resps.created_at`. Te same wpisy tłumaczą różnice w porównaniu kopii przed/po.
+- Smoke test w przeglądarce: konto testowe dostawcy (zawieszone) ma zobaczyć ekran „konto zawieszone” / brak dostępu do FM, nie listę sieci; admin — panel sieci z kontaktami awaryjnymi, „Dane wejściowe”, `fm_my_schedule` = całość.
+
+**Okno wdrożenia 055 + front i odświeżenie kart**:
+1. Świeży snapshot (narzędzie Codexa) + `before.json`; lista kupców do włączenia (decyzja Artura) wykonana **przed** 055 albo po — osobno, konto po koncie.
+2. 055 w SQL Editorze → `fm_backup_inputs('po-055-…')`.
+3. Deploy frontu natychmiast po 055 (tag `prod-rollback-…`). Nowy front ma **`NewVersionBanner`**: co 5 min i przy powrocie do karty porównuje `/version.json` z identyfikatorem builda i pokazuje pasek „Dostępna nowa wersja — odśwież teraz”. To nie jest egzekwowanie (nim jest baza: stary bundle nie zapisze wyborów, nic nie skasuje), ale skraca czas, w którym uczestnik klika w starej wersji. Uwaga: pasek zadziała dopiero od tego deployu — dziś otwarte karty go nie mają; w oknie wdrożenia stare karty nie zapiszą nowych wyborów do przeładowania (w konsoli błąd RLS), odpowiedzi kupców zapisują się jak dotąd.
+4. `after.json` + `fm-inputs-compare` (różnice tylko wyjaśnione wpisami `fm_targets_saved` / nowymi `fm_resps`), sondy na kontach testowych (jak wyżej), kontrola „dostawca nie widzi kontaktów kupców” (`retailers.buyer_*` = null, `retailer_contacts` = 0 wierszy dla dostawcy).
+5. Proponowana pora: wieczór (po 20:00) albo wcześnie rano — najmniej otwartych kart; bez maili.
+
 ## 00. Odpowiedź na review 78e9dc9 (v5)
 
 | Ustalenie | Poprawka | Dowód |
