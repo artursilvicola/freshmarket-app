@@ -42,6 +42,16 @@ Nie zmieniam samego paska przełączania kont ani uprawnień admina — podgląd
 - `src/legacy/SupplierProfilePrefill.test.jsx` (+2): tryb podglądu — ostrzeżenie, brak przycisku zapisu, brak sekcji hasła, `updateOwnSupplierProfile` niewołane; własne konto działa jak dotąd.
 - `npm test` **162/162**, `npm run build` OK, `git diff --check` OK.
 
+## Review Codexa (16.09)
+
+Codex potwierdził diagnozę, ale znalazł dwie dodatkowe furtki w pierwszej wersji poprawki i domknął je na tej samej gałęzi:
+
+1. Kupiec był rozpoznawany po `retailer_id`. Dwa różne konta kupców tej samej sieci mogły więc zostać uznane za to samo konto. Teraz kupiec jest porównywany po konkretnym `profiles.id`, a `updateOwnBuyerProfile` niezależnie potwierdza `auth.uid()` przed zapisem. Pola kupca w podglądzie są rzeczywiście `readOnly`, a zgoda mailingowa jest wyłączona.
+2. Profil Jagody nadal ma historyczne `company_id`. Pierwsza wersja mogła potraktować podgląd tej konkretnej starej firmy jako konto własne admina. Teraz zgodność roli jest obowiązkowa, a zapis profilu dostawcy wymaga, aby profil bieżącej sesji miał rolę `supplier`.
+
+Commity review: `40d5e74`, `dde3011`. Aktualny HEAD gałęzi: `dde3011`.
+Po poprawkach ponownie: `npm test` **162/162**, `npm run build` OK, `git diff --check` OK.
+
 ## Do decyzji (Artur)
 
 1. Przywrócenie danych konta Jagody: `name = "Jagoda Knadel"`, `position` → puste (poprzedniej wartości nie znamy; „Muhammed" na pewno nią nie było). Jedno zapytanie + wpis w `audit_log`.
