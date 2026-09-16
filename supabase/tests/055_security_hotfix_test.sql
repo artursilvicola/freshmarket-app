@@ -479,5 +479,19 @@ END $$;
 -- ── T8 legacy_sends bez adresow ──────────────────────────────────────────────
 SELECT pg_temp.ok(NOT EXISTS (SELECT 1 FROM public.legacy_sends WHERE data ? 'resendBuyerEmails'), 'T8 legacy_sends.data bez resendBuyerEmails');
 
-SELECT '✅ OK — wszystkie testy 055_security_hotfix_test (T0–T8) przeszly' AS wynik;
+-- ── T9 audit_log: zdarzen serwerowych nie da sie podrobic (review f504f09) ───
+SELECT pg_temp.login('sup1');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_error('INSERT INTO public.audit_log (user_id, action, entity, entity_id, meta) VALUES (''' || pg_temp.id('admin') || ''', ''fm_targets_saved'', ''company'', ''' || pg_temp.id('co2') || ''', ''{}'')', 'row-level security');
+SELECT pg_temp.expect_error('INSERT INTO public.audit_log (user_id, action, entity, entity_id, meta) VALUES (''' || pg_temp.id('buyer1') || ''', ''fm_resp_update'', ''fm_resp'', ''x'', ''{}'')', 'row-level security');
+SELECT pg_temp.expect_error('INSERT INTO public.audit_log (user_id, action, entity, entity_id, meta) VALUES (''' || pg_temp.id('sup1') || ''', ''fm_targets_saved'', ''company'', ''' || pg_temp.id('co1') || ''', ''{}'')', 'row-level security');
+SELECT pg_temp.expect_error('INSERT INTO public.audit_log (user_id, action, entity, entity_id, meta) VALUES (''' || pg_temp.id('sup2') || ''', ''confirm'', ''offer'', ''x'', ''{}'')', 'row-level security');
+INSERT INTO public.audit_log (user_id, action, entity, entity_id, meta) VALUES (pg_temp.id('sup1'), 'confirm', 'offer', 'test-offer', '{}'::jsonb);  -- wlasne zdarzenie klienckie (logAction) nadal dziala
+SELECT pg_temp.ok((SELECT count(*) FROM public.audit_log) = 0, 'T9 dostawca nie czyta audit_log');
+RESET ROLE;
+SELECT pg_temp.ok((SELECT count(*) FROM public.audit_log WHERE action = 'confirm' AND entity_id = 'test-offer' AND user_id = pg_temp.id('sup1')) = 1, 'T9 wlasne zdarzenie klienckie zapisane');
+SELECT pg_temp.ok((SELECT count(*) FROM public.audit_log WHERE action = 'fm_targets_saved' AND entity_id = pg_temp.id('co2')::text) = 0, 'T9 podrobiony wpis nie istnieje');
+SELECT pg_temp.ok((SELECT count(*) FROM public.audit_log WHERE action IN ('fm_targets_saved', 'fm_resp_insert', 'fm_resp_update')) >= 3, 'T9 zdarzenia serwerowe z RPC/triggerow nadal sa zapisywane');
+
+SELECT '✅ OK — wszystkie testy 055_security_hotfix_test (T0–T9) przeszly' AS wynik;
 ROLLBACK;

@@ -5,6 +5,18 @@ Historia: v1 7d90826 (4×P1) → v2 c8842c8 (3×P1 + 2×P2) → v3 79b4b24 (3×P
 Wszystko przetestowane od zera na oddzielnej bazie (embedded Postgres 17.10, `--shim`): migracje 001–055, `--reapply 054,055`, test kolejek 053 (T0–T16), test 055 (T0–T8), test równoległych zapisów (8 scenariuszy); vitest 189/189 + regresje Codexa v3 i v4 uruchomione na tej gałęzi (PASS); build OK.
 Nic tu nie wysyła maili, nie publikuje planu, nie zmienia wyborów uczestników, nie zmienia fazy, terminu ani flag uczestników na produkcji.
 
+## 00000. Odpowiedź na review f504f09 (v8) — zakres pilnego wdrożenia bez dodatków
+
+Za rekomendacją Codexa pilne 055 idzie **bez** opcjonalnego paska i **bez** produkcyjnych prób zapisu:
+
+| Ustalenie | Poprawka v8 | Dowód |
+|---|---|---|
+| **P1 sondy: błąd składni, zapisy po nieudanym preflight, próba aktywacji firmy testowej, `retailer_id: 1`** | `--writes` **usunięty** (flaga kończy skrypt z komunikatem). Skrypt jest wyłącznie odczytowy: anon / dostawca testowy / kupiec testowy / admin — w tym twarde kontrole „dostawca nie widzi `buyer_*` ani `retailer_contacts`”, `fm_my_schedule = null` dla kont testowych, `audit_log` niewidoczny dla nie-admina; błąd transportu / brak obiektu = FAIL. Próby zapisu (odmowy udziału, właściciela, RLS, storage, przywracanie kolumn) pozostają dowiedzione w izolacji: SQL 055 T4/T6/T7, równoległość 1–8 | `node --check` OK; kod skryptu |
+| **P2 pasek przeładowywał po nieudanym ostatnim zapisie** | rejestr pending-work w PageSupplierFM zgłasza także `savedRev ≠ editRev` (nieudany / niepotwierdzony ostatni zapis) → pasek po odczekaniu pyta, „Anuluj” zostawia szkic; **pasek nie jest zamontowany w App** w tym wdrożeniu (komponent, `version.json` i testy zostają do osobnego review/deployu) | `FmReloadPending.test.jsx` (scenariusz Codexa f504f09: obie próby padają → 0 przeładowań, pytanie, szkic zostaje, po udanym zapisie przeładowanie); test Codexa `ReviewV7FailedSaveReload` na tej gałęzi: PASS |
+| **P2 wpisy audytowe do podrobienia** (`audit_insert_authenticated`: dowolny `user_id`/akcja) | polityka zastąpiona `audit_insert_own_client`: klient (`logAction`: confirm/create/undo) wstawia tylko **własne** zdarzenia (`user_id = auth.uid()`) o akcjach **spoza** puli serwerowej (`fm_targets_*`, `fm_resp_*`, `security_*`, `fm_inputs_*`); zdarzenia serwerowe wstawiają wyłącznie RPC/triggery security definer i SQL Editor; odczyt nadal tylko admin | SQL T9: podrobiony `fm_targets_saved` z `user_id` admina → RLS; podrobiony `fm_resp_update` → RLS; własne `fm_targets_saved` → RLS; cudzy `user_id` przy zwykłej akcji → RLS; własny `confirm` → zapisany; dostawca nie czyta audit_log; zdarzenia z RPC/triggerów nadal są |
+
+Nadal obowiązuje: wpis audytowy **nie jest samodzielnym dowodem** — każdą różnicę w porównaniu kopii przed/po wyjaśniamy rekord po rekordzie; snapshot pozostaje źródłem prawdy.
+
 ## 0000. Odpowiedź na review c3c1e66 (v7)
 
 | Ustalenie | Poprawka | Dowód |

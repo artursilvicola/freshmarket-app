@@ -824,6 +824,22 @@ update public.legacy_sends
                         then jsonb_array_length(data->'resendBuyerEmails') else 0 end)
  where data ? 'resendBuyerEmails';
 
+-- ─── 8b. audit_log: zdarzenia serwerowe nie do podrobienia przez klienta ─────
+-- Dotychczasowa polityka z 002 (`with check (auth.uid() is not null)`) pozwalała
+-- każdemu zalogowanemu wstawić dowolny wpis z dowolnym user_id i akcją (review
+-- Codexa f504f09). Klient (logAction w db.js: confirm/create/undo) może zapisywać
+-- tylko WŁASNE zdarzenia o akcjach spoza puli zarezerwowanej dla serwera;
+-- fm_targets_saved / fm_resp_* / security_* / fm_inputs_* wstawiają wyłącznie
+-- funkcje security definer (RPC, triggery) i SQL Editor. Odczyt: nadal tylko admin.
+drop policy if exists audit_insert_authenticated on public.audit_log;
+drop policy if exists audit_insert_own_client on public.audit_log;
+create policy audit_insert_own_client on public.audit_log
+  for insert with check (
+    auth.uid() is not null
+    and user_id = auth.uid()
+    and action !~ '^(fm_targets_|fm_resp_|security_|fm_inputs_)'
+  );
+
 -- ─── 9. Ślad w audit_log (pomijany w pustej bazie testowej bez administratora) ─
 insert into public.audit_log (user_id, action, entity, entity_id, meta)
 select coalesce(auth.uid(), a.id), 'security_hotfix', 'migration', '055',

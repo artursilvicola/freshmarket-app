@@ -2,7 +2,6 @@ import { lazy, Suspense, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useTranslation, Trans } from "react-i18next";
 import { AuthProvider, useAuth } from "./auth/AuthProvider";
-import NewVersionBanner from "./components/NewVersionBanner";
 import { ProtectedRoute } from "./auth/ProtectedRoute";
 import LoginPage from "./auth/LoginPage";
 import RegisterPage from "./auth/RegisterPage";
@@ -31,8 +30,9 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        {/* [fix/security-hotfix] po deployu prosi otwarte karty o odświeżenie (stary bundle nie zapisze wyborów po 055) */}
-        <NewVersionBanner />
+        {/* [fix/security-hotfix] NewVersionBanner (src/components) celowo NIE jest tu zamontowany:
+            pilne wdrożenie 055 idzie bez opcjonalnego paska (review Codexa f504f09); montaż po
+            osobnym review. Egzekwowaniem bezpiecznej ścieżki zapisu jest baza, nie pasek. */}
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           {/* [B2B Round auth-forgot-password] Strona resetu hasla.

@@ -13744,8 +13744,12 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
       }
     );
   }
-  // pasek „nowa wersja — odśwież" nie przeładuje karty, dopóki zapis wyborów trwa / czeka w kolejce
-  useEffect(() => registerPendingWork(() => !!(targetsSaverRef.current && targetsSaverRef.current.busy)), []);
+  // pasek „nowa wersja — odśwież" nie przeładuje karty, dopóki zapis wyborów trwa / czeka
+  // w kolejce ALBO ostatnie kliknięcie nie ma potwierdzenia z bazy (nieudany zapis —
+  // review Codexa f504f09): wtedy pyta, a „Anuluj" zostawia szkic w karcie
+  useEffect(() => registerPendingWork(() =>
+    !!(targetsSaverRef.current && targetsSaverRef.current.busy) || savedRevRef.current !== editRevRef.current
+  ), []);
   // [fix/fm-real-companies] bez fallbacku do danych demo
   const _chains    = fmChains    || [];
   const _suppliers = fmSuppliers || [];
