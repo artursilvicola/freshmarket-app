@@ -40,16 +40,19 @@ async function login(role) {
   if (me.role !== role) { console.error(`[${role}] konto ma role ${me.role}, oczekiwano ${role} - sondy pominiete`); return null; }
   return { c, me };
 }
+// GET z limit 1 zamiast HEAD: przy HEAD supabase-js nie oddaje bledu 401/42501 (count=0 wygladalo jak sukces)
 async function count(c, table, mod = (q) => q) {
-  const r = await mod(c.from(table).select("*", { count: "exact", head: true }));
-  return { error: r.error, n: r.count ?? 0 };
+  const r = await mod(c.from(table).select("*", { count: "exact" }).limit(1));
+  return { error: r.error, n: r.count ?? (r.data ? r.data.length : 0) };
 }
 async function probeAdminViews(role, c, uid) {
   for (const v of ["v_admin_registrations", "v_admin_stats", "consent_audit"]) {
     const r = await c.from(v).select("*");
     const rows = r.data || [];
     const onlySelf = v === "consent_audit" && rows.every(x => x.id === uid);
-    rec(role, `${v}: odmowa albo 0 wierszy${v === "consent_audit" ? " (lub tylko wlasny)" : ""}`, isDenied(r.error) || (!r.error && (rows.length === 0 || onlySelf)), r.error?.message || `rows=${rows.length}`);
+    // v_admin_stats to widok agregujacy: dla nie-admina (RLS event_registrations) zwraca 1 wiersz samych zer — brak danych
+    const allZero = v === "v_admin_stats" && rows.length === 1 && Object.values(rows[0]).every(x => x === 0 || x === "0" || x == null);
+    rec(role, `${v}: odmowa albo 0 wierszy${v === "consent_audit" ? " (lub tylko wlasny)" : v === "v_admin_stats" ? " (lub same zera)" : ""}`, isDenied(r.error) || (!r.error && (rows.length === 0 || onlySelf || allZero)), r.error?.message || `rows=${rows.length}`);
   }
 }
 
