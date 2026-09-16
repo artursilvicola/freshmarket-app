@@ -5,7 +5,8 @@
 //   DATABASE_URL=postgres://postgres:pw@localhost:5432/fmtest node scripts/fm-queue-sql-test.mjs [--shim] [--only-test] [--from 052]
 //
 //   --shim       najpierw supabase/tests/000_supabase_shim.sql (ZWYKLY Postgres, NIE Supabase)
-//   --only-test  pomija migracje, uruchamia tylko supabase/tests/053_fm_queue_test.sql
+//   --only-test  pomija migracje, uruchamia tylko testy SQL (domyslnie 053)
+//   --test NNN   ktore testy z supabase/tests/NNN_*_test.sql (np. --test 053,054)
 //   --from NNN   migracje od numeru NNN (np. --from 052 gdy 001..051 juz sa)
 //   --skip a,b   pomin migracje o tych prefiksach (np. --skip 030)
 //
@@ -56,7 +57,12 @@ if (!flag("--only-test") && okAll) {
     if (!(await runFile(resolve(root, "supabase/migrations", f), f))) { okAll = false; break; }
   }
 }
-if (okAll) okAll = await runFile(resolve(root, "supabase/tests/053_fm_queue_test.sql"), "053_fm_queue_test.sql");
+for (const n of (opt("--test", "053") || "053").split(",").filter(Boolean)) {
+  if (!okAll) break;
+  const f = readdirSync(resolve(root, "supabase/tests")).find(x => x.startsWith(n + "_") && x.endsWith("_test.sql"));
+  if (!f) { console.error(`brak pliku supabase/tests/${n}_*_test.sql`); okAll = false; break; }
+  okAll = await runFile(resolve(root, "supabase/tests", f), f);
+}
 await client.end();
 console.log(okAll ? "✅ SQL: migracje + testy OK" : "❌ SQL: FAIL");
 process.exit(okAll ? 0 : 1);

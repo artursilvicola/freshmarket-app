@@ -2957,7 +2957,8 @@
       "package_limit_invalid": "Limit wysyłek musi być liczbą 0 lub większą.",
       "package_plan_inactive": "Wybrany pakiet nie istnieje albo jest nieaktywny.",
       "package_limit_below_used_format": "Limit nie może być mniejszy niż już wykorzystane wysyłki ({{used}}).",
-      "profile_not_own": "Nie można zapisać profilu innego konta. Wróć na swoje konto i spróbuj ponownie."
+      "profile_not_own": "Nie można zapisać profilu innego konta. Wróć na swoje konto i spróbuj ponownie.",
+      "fm_inputs_locked": "Etap zbierania wyborów jest już zamknięty — ta zmiana nie została zapisana. W sprawie korekty skontaktuj się z organizatorem."
     }
   },
   "shell": {

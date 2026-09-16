@@ -30,6 +30,7 @@ import {
   getFmMessages as dbGetFmMessages, saveFmMessage as dbSaveFmMessage,
   markFmMessageRead as dbMarkFmMessageRead,
   generateCompanyDescriptionAI as dbGenerateCompanyDescriptionAI,
+  // [fix/security-hotfix] patrz src/lib/retailer-contacts.js, src/lib/fm-input-lock.js
   translateCompanyDescriptionAI as dbTranslateCompanyDescriptionAI,
   translateOfferAI as dbTranslateOfferAI,
   suggestAdminChatReplyAI as dbSuggestAdminChatReplyAI,
@@ -78,6 +79,8 @@ import {
   demoteFromAdmin as dbDemoteFromAdmin, setSuperAdmin as dbSetSuperAdmin,
   getProfilesForAdminChat as dbGetProfilesForAdminChat,
 } from "../lib/db";
+import { retailerContact } from "../lib/retailer-contacts.js";
+import { isFmInputsLockedError } from "../lib/fm-input-lock.js";
 // [feat/shared-countries] Jedno źródło listy krajów (panel + rejestracja dostawcy).
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
 import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, isAutomaticChance, scoreMatch, buildFMData } from "../lib/fm-algo.js";
@@ -1142,7 +1145,10 @@ function hasRetailerEmailMarker(send) {
   const data = send?.data || {};
   const messageIds = send?.resendMessageIds || data.resendMessageIds || [];
   const buyerEmails = send?.resendBuyerEmails || data.resendBuyerEmails || [];
+  // [fix/security-hotfix] od 054 funkcja zapisuje tylko liczbę adresatów
+  const buyerCount = Number(send?.resendBuyerCount ?? data.resendBuyerCount ?? 0);
   return Boolean(
+    buyerCount > 0 ||
     send?.resendMessageId ||
     send?.resend_message_id ||
     data.resendMessageId ||
@@ -2481,11 +2487,13 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 fm26Active: !!(b.fm26_active ?? r.fm26_active),
                 isManaged: true,
               }));
+            // [fix/security-hotfix] kontakt awaryjny z retailer_contacts (tylko admin)
+            const contact = retailerContact(r);
             const fallbackBuyers = profileBuyers.length ? profileBuyers : [{
               id: r.id + "_b1",
-              name: r.buyer_name || "",
-              email: r.buyer_email || "",
-              phone: r.buyer_phone || "",
+              name: contact.name,
+              email: contact.email,
+              phone: contact.phone,
               position: "",
               cats: r.cats || [],
               active: true,
@@ -2650,7 +2658,6 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     dbGetFmQueueCapacityByRetailer().then(setFmStationCaps).catch(e => console.warn("[fm-queue caps]", e));
   }, []);
   useEffect(() => { if (retailersLoaded && account.role) reloadFmStationCaps(); }, [retailersLoaded, account.role, reloadFmStationCaps]);
-  const fmRespsSavePrimedRef = useRef(false);
   // [feat/fm-admin-autorefresh] Wybory dostawców (company_target_retailers) i odpowiedzi
   // sieci (fm_resps) — jedna funkcja ładująca: start + (admin) co 60 s i po powrocie do karty,
   // żeby „Dane wejściowe” nie pokazywały stanu sprzed godzin. Odświeżenie u admina ZASTĘPUJE
@@ -3033,9 +3040,6 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   //   - fmResps:               saved per-action by handlers (Accept/Reject); also debounced fallback below
   //   - fmWishlists/fmLateResps/messages: hydrated from Supabase
   //   - UI-only state (previewFor, refundNotifs): localStorage OK
-  useEffect(() => {
-    fmRespsSavePrimedRef.current = false;
-  }, [account.id, account.role]);
   // Debounced save of fmSchedule:
   useEffect(() => {
     if (!fmSchedule) return;
@@ -3044,38 +3048,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     }, 800);
     return () => clearTimeout(t);
   }, [fmSchedule]);
-  // Debounced fallback save of fmResps should only ever run for the currently
-  // logged-in buyer. Supplier/admin views may hydrate fm_resps for display, but
-  // they must not try to write buyer decisions back to the table.
-  useEffect(() => {
-    if (account.role !== "buyer" || !account.retailerId || !fmRespsLoaded) return;
-    if (!fmRespsSavePrimedRef.current) {
-      fmRespsSavePrimedRef.current = true;
-      return;
-    }
-    const chainId = retailers.find(r => r.id === account.retailerId)?.fm26ChainId;
-    if (!chainId) return;
-    const t = setTimeout(() => {
-      try {
-        const inner = fmResps?.[chainId];
-        if (!inner) return;
-        for (const supKey of Object.keys(inner)) {
-          const zone = inner[supKey];
-          const supCompany = companies.find(c => c.fmId === supKey || c.id === supKey);
-          const supplier_company_id = supCompany?.id;
-          if (!supplier_company_id) continue;
-          dbSaveFmResp({
-            retailer_id: account.retailerId,
-            supplier_company_id,
-            zone,
-            status: zone,
-            meta: { supplier_legacy_id: supKey, chain_id: chainId }
-          }).catch(e => console.warn("[saveFmResp]", e));
-        }
-      } catch(e) { console.warn("[debounced fmResps save]", e); }
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [fmResps, companies, retailers, account.role, account.retailerId, fmRespsLoaded]);
+  // [fix/security-hotfix] Usunięty zbiorczy „fallback save" fmResps: dla sieci
+  // z kilkoma kupcami zapisywał CAŁY stan jednego kupca (łącznie z odpowiedziami
+  // kolegi sprzed odświeżenia) i nadpisywał nowsze decyzje. Odpowiedzi zapisuje
+  // wyłącznie setResp w PageBuyerFM (jeden wiersz na kliknięcie).
   useEffect(() => {
     if (account.role !== "supplier" || refundedSendsForWallet.length === 0) return;
     setRefundNotifs(prev => {
@@ -13755,7 +13731,15 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
     const company = (companies || []).find(c => c.fmId === sid || c.legacy_fm_id === sid || c.id === sid);
     if (company?.id) {
       const rows = buildTargetRetailerRowsFromPrefs(np[sid], retailers);
-      dbSetCompanyTargetRetailers(company.id, rows).catch(e => console.warn("[save target retailers]", e));
+      dbSetCompanyTargetRetailers(company.id, rows).catch(e => {
+        // [fix/security-hotfix] baza odrzuca zapis po zamknięciu fazy (054) → cofnij lokalną zmianę
+        if (isFmInputsLockedError(e)) {
+          setFmPrefs(fmPrefs);
+          if (typeof window !== "undefined") window.alert(t("errors.db.fm_inputs_locked"));
+          return;
+        }
+        console.warn("[save target retailers]", e);
+      });
     }
   }
 
@@ -14065,7 +14049,15 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
         zone: val,
         status: val,
         meta: { supplier_legacy_id: sid, chain_id: chainId }
-      }).catch(e => console.warn("[save buyer fm resp]", e));
+      }).catch(e => {
+        // [fix/security-hotfix] baza odrzuca zapis po zamknięciu fazy (054) → cofnij lokalną zmianę
+        if (isFmInputsLockedError(e)) {
+          setFmResps(fmResps);
+          if (typeof window !== "undefined") window.alert(t("errors.db.fm_inputs_locked"));
+          return;
+        }
+        console.warn("[save buyer fm resp]", e);
+      });
     }
   }
   function toggleWish(sid) {

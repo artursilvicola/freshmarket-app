@@ -301,11 +301,25 @@ function toRetailerDbRow(r = {}) {
   };
 }
 
+// [fix/security-hotfix] Kontakty awaryjne sieci (retailer_contacts, 054) osadzone
+// jako `contacts` — RLS oddaje je tylko adminowi; u dostawcy/kupca null.
+// Fallback bez osadzenia, gdy front wejdzie przed migracją (brak relacji).
 export async function getRetailers() {
-  const { data, error } = await supabase
+  const embed = "contacts:retailer_contacts(buyer_name, buyer_email, buyer_phone),";
+  const first = await getRetailersQuery(embed);
+  if (!first.error) return first.data;
+  if (!/retailer_contacts/i.test(first.error.message || "")) throw first.error;
+  const second = await getRetailersQuery("");
+  if (second.error) throw second.error;
+  return second.data;
+}
+
+function getRetailersQuery(embed) {
+  return supabase
     .from("retailers")
     .select(`
       *,
+      ${embed}
       buyers:profiles!fk_profiles_retailer(
         id,
         role,
@@ -320,8 +334,6 @@ export async function getRetailers() {
       )
     `)
     .order("name");
-  if (error) throw error;
-  return data;
 }
 
 export async function generateCompanyDescriptionAI({ company_id = null, company }) {
@@ -1690,33 +1702,54 @@ export async function deleteFmResp(id) {
 // FM 2026 — SCHEDULE (publikowany przez admina, czytaja wszyscy)
 // ===================================================================
 
+// [fix/security-hotfix] Plan spotkań żyje w fm_plan_private (RLS: admin), a
+// RPC fm_my_schedule() zwraca: admin → całość, dostawca → własne wiersze,
+// kupiec → spotkania własnej sieci (obie role dopiero po publikacji). Do czasu
+// migracji 054 (brak RPC) czytamy jak dotąd z fm_settings.schedule.
 export async function getFmSchedule() {
-  const settings = await getFmSettings();
-  const sched = settings?.schedule;
+  const { data, error } = await supabase.rpc("fm_my_schedule");
+  if (error) {
+    if (!/fm_my_schedule/i.test(error.message || "")) throw error;
+    const settings = await getFmSettings();
+    return normalizeFmSchedule(settings?.schedule);
+  }
+  return normalizeFmSchedule(data);
+}
+
+function normalizeFmSchedule(sched) {
   if (!sched || typeof sched !== "object" || !sched.res) return null;
   return sched;
 }
 
+// Zapis planu (tylko admin — RLS fm_plan_private). Stary bundle piszący do
+// fm_settings.schedule i tak trafia do fm_plan_private przez trigger z 054.
 export async function saveFmSchedule(schedule) {
-  // fm_settings ma 1-row pattern (limit 1, order updated_at desc)
+  const { data, error } = await supabase
+    .from("fm_plan_private")
+    .upsert({ id: 1, schedule, updated_at: new Date().toISOString() }, { onConflict: "id" })
+    .select("id, updated_at")
+    .single();
+  if (!error) return data;
+  if (!/fm_plan_private/i.test(error.message || "")) throw error;
+  // przed migracją 054: dotychczasowa ścieżka
   const existing = await getFmSettings();
   if (existing?.id) {
-    const { data, error } = await supabase
+    const { data: row, error: updErr } = await supabase
       .from("fm_settings")
       .update({ schedule, updated_at: new Date().toISOString() })
       .eq("id", existing.id)
       .select()
       .single();
-    if (error) throw error;
-    return data;
+    if (updErr) throw updErr;
+    return row;
   }
-  const { data, error } = await supabase
+  const { data: inserted, error: insErr } = await supabase
     .from("fm_settings")
     .insert({ schedule })
     .select()
     .single();
-  if (error) throw error;
-  return data;
+  if (insErr) throw insErr;
+  return inserted;
 }
 
 // ===================================================================

@@ -82,6 +82,12 @@ export async function handler(event) {
 
   const settingsQ = await db.from("fm_settings").select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle();
   if (settingsQ.error) return fail("fm_settings", settingsQ.error);
+  // [fix/security-hotfix] plan spotkań żyje w fm_plan_private (054); fm_settings.schedule = null
+  const planQ = await db.from("fm_plan_private").select("schedule, updated_at").eq("id", 1).maybeSingle();
+  if (planQ.error && !/fm_plan_private/i.test(planQ.error.message || "")) return fail("fm_plan_private", planQ.error);
+  const settings = settingsQ.data
+    ? { ...settingsQ.data, schedule: planQ.data?.schedule ?? settingsQ.data.schedule ?? null }
+    : null;
 
   const companiesQ = await db
     .from("companies")
@@ -118,7 +124,7 @@ export async function handler(event) {
   return json(200, {
     ok: true,
     generated_at: new Date().toISOString(),
-    settings: settingsQ.data || null,
+    settings,
     companies: companiesQ.data || [],
     supplier_profiles: supplierProfiles,
     retailers: retailersQ.data || [],

@@ -45,7 +45,8 @@ const cors = {
 function hasRetailerEmailMarker(row) {
   const data = row?.data || {};
   const messageIds = data.resendMessageIds || [];
-  const buyerEmails = data.resendBuyerEmails || [];
+  // [fix/security-hotfix] od 054 w legacy_sends.data zostaje tylko liczba adresatów
+  const buyerCount = Number(data.resendBuyerCount || 0) || (Array.isArray(data.resendBuyerEmails) ? data.resendBuyerEmails.length : 0);
   return Boolean(
     row?.resend_message_id ||
     data.resendMessageId ||
@@ -53,7 +54,7 @@ function hasRetailerEmailMarker(row) {
     data.emailSentAt ||
     data.email_sent_at ||
     (Array.isArray(messageIds) && messageIds.length) ||
-    (Array.isArray(buyerEmails) && buyerEmails.length)
+    buyerCount > 0
   );
 }
 
@@ -354,7 +355,9 @@ export const handler = async (event) => {
         email_sent_at: sentAtIso,
         daysLeft: 14,
         resendMessageIds: successfulMessageIds,
-        resendBuyerEmails: resendResults.filter((r) => r.ok).map((r) => r.buyer),
+        // [fix/security-hotfix] bez adresów kupców w wierszu widocznym dla dostawcy
+        resendBuyerEmails: undefined,
+        resendBuyerCount: resendResults.filter((r) => r.ok).length,
       };
       const updatePayload = { status: "sent", data: newData };
       if (firstSuccessfulMessageId) {

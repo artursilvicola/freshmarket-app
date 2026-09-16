@@ -2957,7 +2957,8 @@
       "package_limit_invalid": "Submission limit must be a number equal to or greater than 0.",
       "package_plan_inactive": "The selected package does not exist or is inactive.",
       "package_limit_below_used_format": "Limit cannot be lower than submissions already used ({{used}}).",
-      "profile_not_own": "Cannot save the profile of another account. Switch back to your own account and try again."
+      "profile_not_own": "Cannot save the profile of another account. Switch back to your own account and try again.",
+      "fm_inputs_locked": "The selection stage is already closed — this change was not saved. Please contact the organiser for corrections."
     }
   },
   "shell": {
