@@ -5,6 +5,34 @@ Historia: v1 7d90826 (4×P1) → v2 c8842c8 (3×P1 + 2×P2) → v3 79b4b24 (3×P
 Wszystko przetestowane od zera na oddzielnej bazie (embedded Postgres 17.10, `--shim`): migracje 001–055, `--reapply 054,055`, test kolejek 053 (T0–T16), test 055 (T0–T8), test równoległych zapisów (8 scenariuszy); vitest 189/189 + regresje Codexa v3 i v4 uruchomione na tej gałęzi (PASS); build OK.
 Nic tu nie wysyła maili, nie publikuje planu, nie zmienia wyborów uczestników, nie zmienia fazy, terminu ani flag uczestników na produkcji.
 
+## 000000. Checklista wykonawcza wdrożenia 055 (zgoda warunkowa Artura 16.09, commit dae3740, review Codexa OK)
+
+Warunki wstępne (kolejność obowiązkowa):
+1. **Lista 11 kupców rozstrzygnięta przez Artura** (konto po koncie); włączenie flag tylko wskazanym, każde z wpisem `audit_log` (`buyer_fm_enabled`, action klienckie z SQL Editora = sesja serwerowa). Migracji nie zaczynać przed rozstrzygnięciem.
+2. **Konta testowe tylko do odczytu** — na produkcji nie istnieją żadne konta/podmioty testowe (sprawdzone 16.09: brak firm/sieci „TEST”; jedyna zawieszona firma to rzeczywisty klient, sieroty to realne osoby). Artur zakłada 2 użytkowników Auth w dashboardzie (Authentication → Users → Add user, hasło, auto-confirm; **bez zaproszeń i maili**), hasła tylko w `FM_PROBE_SUPPLIER_PASSWORD` / `FM_PROBE_BUYER_PASSWORD`. Potem (za zgodą) SQL Editor:
+   ```sql
+   insert into companies (id, name, country, account_status, fm_b2b_enabled, preconnect_enabled)
+   values (gen_random_uuid(), 'TEST Fresh Market — konto testowe (nie uczestniczy)', 'PL', 'suspended', false, false) returning id;
+   update profiles set company_id = '<id z returning>', name = 'Konto testowe dostawcy' where email = '<e-mail dostawcy testowego>';
+   insert into retailers (id, name, country, active, fm26_active, fm26_chain_id) values (990901, 'TEST Fresh Market — sieć testowa (nie uczestniczy)', 'PL', false, false, null);
+   update profiles set role = 'buyer', retailer_id = 990901, company_id = null, fm26_active = false, buyer_categories = '{}', name = 'Konto testowe kupca' where email = '<e-mail kupca testowego>';
+   insert into audit_log (user_id, action, entity, entity_id, meta) values (null, 'test_accounts_created', 'test', '990901', '{"purpose":"sondy odczytowe 055"}');
+   ```
+   Firma `suspended` + `fm_b2b_enabled=false` jest niewidoczna dla kupców (RLS) i poza `fmSuppliers`; sieć `active=false` + `fm26_active=false` nie jest na liście sieci FM ani w planie. **Nigdy nie aktywować, nawet chwilowo.**
+3. **Front i wycofanie gotowe**: `origin/fix/security-hotfix-2026-09-16` (dae3740) jest fast-forward względem `origin/main` (467cbe4). Deploy = worktree `C:\Users\Artur\AppData\Local\Temp\fm-merge-partners`: `git tag prod-rollback-2026-09-16b HEAD` → `git merge --ff-only origin/fix/security-hotfix-2026-09-16` → `git push origin main prod-rollback-2026-09-16b` → Netlify build → smoke bundle. **Wycofanie frontu** = Netlify „Publish deploy” poprzedniego deployu `6aaa69eb3efff20007827d64` (008504d) — stary bundle współpracuje z bazą po 055 (odczyty z fallbackiem; zapisy wyborów blokowane przez RLS, nic nie ginie). **Bazy nie cofamy** (zasada fail-closed z §5): naprawa konkretnej funkcji `create or replace`, ewentualnie jawne zamrożenie zapisów `selection_deadline` — decyzją Artura.
+4. **Okno** (do uzgodnienia): po 20:00 albo 06:30–07:30; czas trwania ok. 20 min (snapshot 3 min, 055 <1 min, build Netlify ~2 min, eksport i porównanie 5 min, sondy 3 min).
+
+Wykonanie w oknie (każdy krok raportowany, STOP przy niewyjaśnionej różnicy lub błędzie uprawnień):
+5. Świeży snapshot narzędziem Codexa (`Init` → eksport → schowek → `Part`/`Finalize`/`Verify`, SHA-256 z bazy = z pliku) do `FreshMarket-Backups\FM-B2B-<ts>-przed-055` + `before.json` (`scripts/fm-inputs-export.sql`, poza repo). Kopie z 15:53, przed-054 i po-054 zostają nietknięte.
+6. `055_security_hotfix.sql` w SQL Editorze (cały plik, jedna transakcja) → kontrola: funkcje/triggery/polityki z T0, `audit_log` `security_hotfix/055`, `retailer_contacts` = 44 wiersze, `retailers.buyer_*` = null, `fm_settings.schedule` = null, `select fm_backup_inputs('po-055-<ts>')`.
+7. Deploy frontu (pkt 3) — natychmiast po 055; smoke: `curl` bundla (`fm_set_company_targets`, `retailer_contacts`, `fm_my_schedule` w JS), brak `NewVersionBanner` w App.
+8. `after.json` + snapshot `po-055` → `node scripts/fm-inputs-compare.mjs before.json after.json` (exit 0 = zgodne; 1 = różnice wyjaśniane rekord po rekordzie z `audit_log fm_targets_saved.items` / `fm_resp_*` jako wskazówką, nie dowodem; 2 = eksport wadliwy) + `fm-secure-snapshot.ps1 -Mode Compare` przed/po. `fm_settings` różni się tylko `schedule` → null i (opcjonalnie) `selection_deadline`.
+9. Sondy **odczytowe**: `node scripts/fm-permission-probe.mjs` z anon + dostawca testowy + kupiec testowy + **admin obowiązkowo** (`FM_PROBE_ADMIN_*` = konto Artura, hasło tylko w env). Wymagane: dostawca — `retailers.buyer_*` puste, `retailer_contacts` 0, `fm_plan_private` 0, `fm_my_schedule` null, `fm_resps`/`company_target_retailers` tylko własne (0), profile kupców 0, `consent_audit` ≤ własny; admin — `retailer_contacts` 44, `fm_plan_private` odczyt, `audit_log` odczyt. Dodatkowo symulacja SQL (rollback) sesji prawdziwego aktywnego dostawcy: `count(*) from retailers where buyer_email is not null` = 0, `retailer_contacts` = 0.
+10. Panel admina w przeglądarce (Artur): lista sieci z kontaktami awaryjnymi (FRAC, SPAR/GK Specjał, Nasz Sklep), „Dane wejściowe”, zapis szkicu planu → `fm_plan_private`.
+11. Raport końcowy: commit i deploy, lokalizacje kopii, wynik porównania, wyniki kontroli dostępu, kontrole niewykonane (panel drugiej aplikacji po 054 — Artur).
+
+Bez zmiany fazy/terminu, bez przeliczania i publikacji planu, bez maili.
+
 ## 00000. Odpowiedź na review f504f09 (v8) — zakres pilnego wdrożenia bez dodatków
 
 Za rekomendacją Codexa pilne 055 idzie **bez** opcjonalnego paska i **bez** produkcyjnych prób zapisu:
