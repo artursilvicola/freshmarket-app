@@ -16,6 +16,10 @@ export function isOwnAccount(account, currentUser) {
   if (!account) return false;
   if (!currentUser) return true; // brak danych sesji (testy/demo) — nie blokujemy
   const same = (a, b) => String(a ?? "") === String(b ?? "") && String(a ?? "") !== "";
+  // Historyczne profile administratorów mogą nadal mieć company_id lub
+  // retailer_id. Samo takie przypisanie nie czyni panelu dostawcy/kupca
+  // "własnym kontem" administratora.
+  if (currentUser.role && account.role !== currentUser.role) return false;
   if (account.role === "supplier") return same(account.id, currentUser.company_id);
   // Sieć nie identyfikuje konta: jedna sieć może mieć wielu kupców.
   // Porównanie po retailer_id uznawałoby cudze konto tej samej sieci za własne.

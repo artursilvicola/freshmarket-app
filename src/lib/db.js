@@ -497,10 +497,10 @@ export async function updateOwnSupplierProfile(id, patch) {
   // panel dostawcy nadpisuje własny profil (incydent 16.09.2026).
   const { data: meRow } = await supabase
     .from("profiles")
-    .select("company_id")
+    .select("company_id, role")
     .eq("id", uid)
     .maybeSingle();
-  if (!isOwnProfileTarget({ argId: id, uid, companyId: meRow?.company_id })) {
+  if (meRow?.role !== "supplier" || !isOwnProfileTarget({ argId: id, uid, companyId: meRow?.company_id })) {
     throw new Error(i18n.t("legacy:errors.db.profile_not_own"));
   }
   const row = {

@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { isOwnAccount, isOwnProfileTarget } from "./profile-guard.js";
 
-const ADMIN = { id: "admin-uid", company_id: "co-admin", retailer_id: null };
-const SUPPLIER_USER = { id: "sup-uid", company_id: "co-1", retailer_id: null };
-const BUYER_USER = { id: "buyer-uid", company_id: null, retailer_id: 100 };
+const ADMIN = { id: "admin-uid", role: "admin", company_id: "co-admin", retailer_id: null };
+const SUPPLIER_USER = { id: "sup-uid", role: "supplier", company_id: "co-1", retailer_id: null };
+const BUYER_USER = { id: "buyer-uid", role: "buyer", company_id: null, retailer_id: 100 };
 
 describe("rozpoznanie podglądu cudzego konta", () => {
   it("admin na swoim koncie = własne; po przełączeniu na dostawcę lub innego admina = podgląd", () => {
@@ -11,6 +11,8 @@ describe("rozpoznanie podglądu cudzego konta", () => {
     expect(isOwnAccount({ role: "admin", id: "inny-admin" }, ADMIN)).toBe(false);
     // przypadek z 16.09: admin przełączony na konto dostawcy (account.id = companies.id)
     expect(isOwnAccount({ role: "supplier", id: "co-fresh-roots" }, ADMIN)).toBe(false);
+    // historyczne company_id administratora nie może otworzyć furtki
+    expect(isOwnAccount({ role: "supplier", id: "co-admin" }, ADMIN)).toBe(false);
     expect(isOwnAccount({ role: "buyer", retailerId: 100 }, ADMIN)).toBe(false);
   });
 
