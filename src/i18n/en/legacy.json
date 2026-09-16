@@ -2617,6 +2617,7 @@
       "confirm_confirmed_title": "Selection confirmed",
       "confirm_confirmed_meta_html": "Saved: <strong>{{date}}</strong>. You can still change selections until September 16 — click <em>Confirm selection</em> again after changes so the admin sees the current decision.",
       "confirm_ready_title": "Ready — click Confirm selection",
+      "targets_save_failed": "Your latest changes to the retailer selection could not be saved ({{message}}). Refresh the page and check the list before confirming.",
       "confirm_ready_more_title": "You can confirm — or add {{count}} more ⭐",
       "confirm_not_ready_title": "First choose {{min}} priority retailers",
       "confirm_unconfirmed_meta_html": "Your selections are saved on the fly, but only clicking <em>Confirm selection</em> tells the administrator your choice is final.",

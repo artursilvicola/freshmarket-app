@@ -57,6 +57,13 @@ if (!flag("--only-test") && okAll) {
     if (!(await runFile(resolve(root, "supabase/migrations", f), f))) { okAll = false; break; }
   }
 }
+// --reapply NNN[,NNN]: ponowne zastosowanie migracji po pelnym lancuchu (test idempotencji)
+for (const n of (opt("--reapply", "") || "").split(",").filter(Boolean)) {
+  if (!okAll) break;
+  const f = readdirSync(resolve(root, "supabase/migrations")).find(x => x.startsWith(n + "_") && x.endsWith(".sql"));
+  if (!f) { console.error(`brak migracji ${n}`); okAll = false; break; }
+  okAll = await runFile(resolve(root, "supabase/migrations", f), `${f} (ponownie)`);
+}
 for (const n of (opt("--test", "053") || "053").split(",").filter(Boolean)) {
   if (!okAll) break;
   const f = readdirSync(resolve(root, "supabase/tests")).find(x => x.startsWith(n + "_") && x.endsWith("_test.sql"));

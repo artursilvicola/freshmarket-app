@@ -2617,6 +2617,7 @@
       "confirm_confirmed_title": "Wybór potwierdzony",
       "confirm_confirmed_meta_html": "Zapisano: <strong>{{date}}</strong>. Możesz jeszcze zmieniać wybory do 16 września — kliknij ponownie <em>Potwierdź wybór</em> po zmianach, żeby admin widział aktualną decyzję.",
       "confirm_ready_title": "Gotowe — kliknij Potwierdź wybór",
+      "targets_save_failed": "Nie udało się zapisać Twoich ostatnich zmian wyboru sieci ({{message}}). Odśwież stronę i sprawdź listę, zanim potwierdzisz wybór.",
       "confirm_ready_more_title": "Możesz potwierdzić — albo dodać jeszcze {{count}} ⭐",
       "confirm_not_ready_title": "Wybierz najpierw {{min}} głównych sieci",
       "confirm_unconfirmed_meta_html": "Twoje zaznaczenia są zapisywane na bieżąco, ale dopiero kliknięcie <em>Potwierdź wybór</em> oznacza dla administratora, że Twój wybór jest finalny.",

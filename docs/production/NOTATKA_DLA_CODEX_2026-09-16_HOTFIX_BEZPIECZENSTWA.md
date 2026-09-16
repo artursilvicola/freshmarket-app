@@ -1,93 +1,103 @@
-# Hotfix bezpieczeństwa B2B — propozycja do akceptacji (16.09.2026)
+# Hotfix bezpieczeństwa B2B — wersja 2 po review Codexa (16.09.2026)
 
-**Status: NIE ZASTOSOWANE.** Gałąź `fix/security-hotfix-2026-09-16` (z `origin/main` 467cbe4).
-Migracja `supabase/migrations/054_security_hotfix.sql` czeka na zgodę Artura; frontend czeka na review.
-Nic z tego nie wysyła maili, nie publikuje planu i nie zmienia wyborów uczestników.
+**Status: NIE ZASTOSOWANE na produkcji.** Gałąź `fix/security-hotfix-2026-09-16` (z `origin/main` 467cbe4).
+Poprzednia wersja (7d90826) dostała od Codexa 4 blokery P1 (`1FMK2026/outputs/b2b-audit-20260916/REVIEW_HOTFIX_054_7d90826.md`) — ta wersja je usuwa i **została przetestowana od zera na oddzielnej bazie** (embedded Postgres 17.10, `--shim`): migracje 001–055, ponowne zastosowanie 054+055, test kolejek 053 (T0–T16) i nowy test 055 (T0–T8) — wszystko ✅.
+Nic tu nie wysyła maili, nie publikuje planu, nie zmienia wyborów uczestników, nie zmienia fazy produkcyjnej.
 
-Odpowiedź na audyt Codexa z 16.09 i jego 6 korekt do mojego pierwszego planu:
-(1) nie tylko anon, także zalogowany dostawca; (2) kontakty kupców natychmiast;
-(3) plan ukryty przed dostawcą/kupcem zanim ktokolwiek zapisze szkic, logo działa;
-(4) ryzyko zapisu wyborów nie kończy się o 23:59 — blokada w bazie; (5) zbiorczy
-resave kupca nadpisuje kolegę; (6) triggery nie mogą blokować zapisu profilu,
-kontaktów, certyfikatów, `fm_selection_confirmed_at`.
+Podział na dwa pliki (zalecenie Codexa):
 
----
-
-## 1. Co jest dziś na produkcji (stan zweryfikowany 16.09, SQL Editor)
-
-| Problem | Dowód |
-|---|---|
-| `consent_audit`, `company_capacity`, `v_admin_registrations`, `v_admin_stats`, `articles_with_facts` — widoki bez `security_invoker`, właściciel `postgres`, ACL `anon=arwdDxtm` | `pg_class.relacl`; anon `HEAD consent_audit` → 142 wierszy (24 kupców z e-mailem); prosty widok `consent_audit` jest **aktualizowalny** → anon ma prawo `DELETE` przez widok z pominięciem RLS profiles |
-| `retailers.buyer_name/buyer_email/buyer_phone` czytelne dla każdego zalogowanego | polityka `retailers_select_all_authenticated using (auth.uid() is not null)` + `getRetailers()` robi `select *`; 44 sieci mają wpisany kontakt (41 z kontem kupca, 3 bez — m.in. FRAC) |
-| `fm_settings.schedule` czytelne dla wszystkich (także anon) | `fm_settings_public_read using (true)`; dziś `{}`, ale pierwszy zapis szkicu 23.09 byłby publiczny |
-| dostawca czyta wszystkie `fm_prefs` | stara polityka z 002 `fm_prefs_select_role_based (… or app_role() = 'supplier')`; duplikaty na `fm_resps`, `fm_settings` |
-| właściciel firmy może zmienić **każdą** kolumnę `companies` (37 kolumn UPDATE dla authenticated, RLS `id = app_company_id()`), własny profil — `company_id`, `retailer_id`, `active`, `fm26_active`, `buyer_categories` | `information_schema.column_privileges`; trigger 033 chroni tylko `role`/`admin_level` |
-| storage `company-logos` / `offer-photos`: każdy zalogowany może nadpisać/usunąć **dowolny** plik | polityki `*_authenticated` (dryf od migracji 003, która była per-folder) |
-| brak blokady zapisów wyborów po zamknięciu fazy na poziomie bazy | tylko UI (`phase !== 2`); `setCompanyTargetRetailers` = DELETE + INSERT |
-| zbiorczy „fallback save” `fmResps` u kupca | `PreconnectFM.jsx` ~3050: co zmianę stanu zapisywał wszystkie odpowiedzi sieci ze stanu jednego kupca |
-| `send-retailer-batch` zapisuje adresy kupców w `legacy_sends.data.resendBuyerEmails` (wiersz czytelny dla dostawcy) | dziś 0 wierszy, ale każdy kolejny mailing by je dodał |
+| Plik | Co | Kiedy |
+|---|---|---|
+| `supabase/migrations/054_views_lockdown.sql` | **pilne, małe**: widoki `consent_audit`, `company_capacity`, `v_admin_registrations`, `v_admin_stats` → `security_invoker`; zero praw zapisu przez widoki (także `articles_with_facts`); anon bez SELECT na `consent_audit`/`v_admin_*` | od razu po zgodzie Artura (~1 s, bez zmian w kodzie) |
+| `supabase/migrations/055_security_hotfix.sql` | reszta hotfixu (kontakty, plan, polityki 002, triggery, storage, atomowy zapis wyborów, blokada fazy/terminu, kopia wejść, legacy_sends) | po review Codexa, osobna zgoda, z kopią i porównaniem wejść |
 
 ---
 
-## 2. Dokładny SQL — `supabase/migrations/054_security_hotfix.sql`
+## 1. Odpowiedź na blokery P1 z review 7d90826
 
-Plik jest w repo (jedna transakcja, idempotentny). Streszczenie sekcji:
+| P1 | Było | Jest teraz | Test |
+|---|---|---|---|
+| **Częściowa aktualizacja kontaktu kasowała pozostałe pola** | `ON CONFLICT … SET = excluded` nadpisywał nullami | most zgodności `retailer_contacts_merge()` używa `coalesce(excluded.x, istniejące.x)` — pola niewysłane (null/'') zostają; **świadome czyszczenie** tylko przez `admin_set_retailer_contact(id, name, email, phone)` (wartości dokładne, wszystkie puste = usunięcie); `toRetailerDbRow` w ogóle nie wysyła już `buyer_*` | 055 T1: zmiana samego telefonu / e-maila / nazwiska osobno, zapis nazwy sieci z pustymi `buyer_*`, pełny zapis, czyszczenie jednego pola i całego kontaktu przez RPC, odmowa dla dostawcy, ponowne zastosowanie migracji (`--reapply`) bez utraty danych |
+| **Luka INSERT profilu** (konto Auth bez profilu) | guard tylko na UPDATE | self-INSERT bez admina: rola admin/staff lub `admin_level` → błąd 42501; pozostałe wartości **wymuszone**: `role='supplier'`, `company_id=null`, `retailer_id=null`, `active=true`, `fm26_active=false`, `buyer_categories='{}'`. `handle_new_user`, `admin-create-user`, `register-supplier-self` (service role / security definer) bez zmian | 055 T4: konto Auth bez profilu próbuje `INSERT … role='buyer', retailer_id=990101, company_id=co2` → dostaje profil dostawcy bez firmy/sieci, 0 dostępu do `fm_prefs`/wyborów; INSERT z rolą admin → błąd |
+| **DELETE + INSERT wyborów mógł zostawić pustą listę** | dwa żądania z klienta | RPC `fm_set_company_targets(company_id, items)` (security definer, jedna transakcja): sprawdza właściciela (admin lub dostawca własnej firmy), fazę/termin, poprawność sieci, scala duplikaty; **albo cała nowa lista, albo cała stara**. Klient: `setCompanyTargetRetailers` → RPC (fallback do starej ścieżki tylko przed migracją); `createSerialSaver` szereguje szybkie kliknięcia (ostatni stan wygrywa, brak równoległych żądań); błąd zapisu widoczny na stronie (`fm.supplier.targets_save_failed` / `errors.db.fm_inputs_locked`); **„Potwierdź wybór” czeka na zakończenie zapisu i jest zablokowany przy błędzie** | 055 T6: błędna sieć w liście → stara lista w całości zostaje; cudza firma → 42501; kupiec → 42501; faza `matching` → `fm_inputs_locked` i lista nietknięta (RPC i bezpośredni DELETE/INSERT); termin `selection_deadline` w przeszłości → zablokowane, w przyszłości → działa; admin zapisuje po zamknięciu. Vitest `serial-save.test.js`: 3 szybkie kliknięcia = 2 żądania, pośredni stan pominięty; błąd trafia do `flush()` |
+| **RPC planu bez kontroli aktywności/udziału** | tylko rola + przypisanie | dostawca: `profiles.active`, `companies.account_status='active'`, `fm_b2b_enabled` (jak filtr `fmSuppliers`); kupiec: `profiles.active`, `retailers.active`, `retailers.fm26_active`; wszystko nadal dopiero po publikacji | 055 T5: dostawca A/B — **dokładnie** własny klucz `res` i własne `nums`; kupiec X/Y — dokładny zbiór firm z własnym chainem, `m=[chain]`, `nums` tylko własnego chainu, bez `r`; nieaktywny profil, zawieszona firma, firma bez `fm_b2b_enabled`, sieć bez `fm26_active`, nieaktywny kupiec → `null` |
 
-1. **Widoki**: `alter view … set (security_invoker = true)` dla `consent_audit`, `company_capacity`, `v_admin_registrations`, `v_admin_stats`; `revoke insert, update, delete, truncate, references, trigger` na wszystkich pięciu widokach od `anon, authenticated`; `revoke select` od `anon` na `consent_audit`, `v_admin_*`. Po zmianie `v_admin_*` przechodzą przez RLS tabel `event_registrations` (admin_all + self_read) i `participant_profiles` → zalogowany nie-admin widzi tylko własne rejestracje. `company_capacity` dla anon = 0 wierszy, dla dostawcy = jak `companies` (katalog).
-2. **Kontakty kupców**: nowa tabela `retailer_contacts(retailer_id pk → retailers, buyer_name, buyer_email, buyer_phone, updated_at)`, RLS `is_admin()`, `revoke all from anon`. Kopia 44 kontaktów, potem `retailers.buyer_* = null`. Dwa triggery (`before update` / `after insert`) przenoszą każdy przyszły zapis `buyer_*` (panel admina, druga aplikacja, stary bundle) do `retailer_contacts` i zerują kolumny.
-3. **Plan**: nowa tabela `fm_plan_private(id=1, schedule jsonb, updated_at, updated_by)`, RLS `is_admin()`. Trigger `before insert or update` na `fm_settings` przenosi `schedule` do `fm_plan_private` i zostawia `null` (stary bundle dalej działa). RPC `fm_my_schedule()` (security definer): admin → całość; dostawca → `res`/`nums` tylko dla własnych kluczy (company_id, legacy_fm_id, legacy_supplier_id); kupiec → tylko firmy z jego chainem w `m`, `m = [własny chain]`, `nums` tylko własnego chainu, bez `r` (ocen); dostawca i kupiec dostają `null`, dopóki `algo_phase ∉ {published, final_published, event_day}`. `fm_current_phase()` (definer) — faza bez zależności od RLS. `getBrandSettings()` (`brand_logo_url` + `order by updated_at`) i `getFmSettings()` (`select *`) działają bez zmian — kolumna `schedule` istnieje, jest tylko pusta.
-4. **Stare polityki 002**: drop `fm_prefs_select_role_based`, `fm_prefs_modify_buyer_or_admin`, `fm_resps_select_role_based`, `fm_resps_modify_admin`, `fm_settings_admin_write`, `fm_settings_modify_admin`, `fm_settings_select_authenticated`, `fms_read_all`. Zostają `fmp_*`, `fmr_*`, `fms_admin_write`, `fm_settings_public_read` (logo/partnerzy/faza dla ekranu logowania; anon widzi też `venue`, `event_date`, `message` — do decyzji, czy to problem).
-5. **Triggery ochronne** (`fm_is_privileged_session()`: service_role / security definer / SQL Editor / admin = bez ograniczeń; funkcje są SECURITY INVOKER, więc `purchase_package`, `handle_new_user`, `touch_last_active` nie są blokowane):
-   - `profiles`: INSERT z rolą admin/staff lub `admin_level` przez nie-admina → błąd 42501; UPDATE przez nie-admina **przywraca** `company_id`, `retailer_id`, `active`, `fm26_active`, `buyer_categories`, `archived_*` (nie rzuca błędu → „Mój profil”, locale, `last_active_at`, zgody zapisują się jak dotąd).
-   - `companies`: INSERT przez nie-admina → kolumny administracyjne na wartości domyślne (`pending_review`, `fm_b2b_enabled=false`, `fm_b2b_packages=1`, `fm_b2b_tier='business'`, `pkg_plan=null`…); UPDATE przez właściciela **przywraca** `account_status`, `preconnect_enabled`, `fm_b2b_enabled`, `fm_b2b_packages`, `fm_b2b_tier`, `approved_at/by`, `pkg_plan`, `pkg_expiry`, `legacy_*`, `fm_plan_sent_at`, `status_note`, `created_at`. Wszystko inne (profil, `completeness`, `profile_data`, `ai_review_status`, `fm_selection_confirmed_at`, kontakty, certyfikaty) przechodzi. Dodatkowa korzyść: zapis profilu ze stanem sprzed zmiany pakietu przez admina nie cofnie już tej zmiany.
-6. **Storage**: drop sześciu polityk `*_authenticated`; `company_logos_modify_owner_or_admin` / `offer_photos_modify_owner_or_admin` = `is_admin() or (storage.foldername(name))[1] = app_company_id()::text` (ścieżki w aplikacji to `${companyId}/…`; loga sieci wgrywa admin do `retailer-<id>/`). Publiczny odczyt bez zmian.
-7. **Blokada wyborów**: trigger `fm_inputs_phase_lock` (before insert/update/delete) na `company_target_retailers` i `fm_resps` → dla nie-admina błąd `fm_inputs_locked` (P0001), gdy `algo_phase ≠ preferences_open`. Dziś faza = `preferences_open`, więc do 23.09 nic się nie zmienia; po przełączeniu na `matching` baza odrzuca zapisy niezależnie od wersji bundla. `fm_selection_confirmed_at` nadal zapisywalne. Tabela `fm_inputs_snapshots` + `select fm_backup_inputs('etykieta')` (admin) — kopia wyborów, odpowiedzi, prefs, wishlist, firm FM, sieci i fm_settings przed przeliczeniem.
-8. **legacy_sends**: `data - 'resendBuyerEmails' || {resendBuyerCount: n}` (dziś 0 wierszy).
-9. Wpis do `audit_log` (`security_hotfix` / `migration` / `054`).
+Dodatkowo z review:
+- **Termin serwerowy**: `fm_settings.selection_deadline timestamptz` (null = brak). `fm_inputs_are_locked()` = faza ≠ `preferences_open` **lub** `now() > selection_deadline`. Blokada nie obiecuje nic na podstawie zegara w UI — admin ustawia termin w bazie (`update fm_settings set selection_deadline = '2026-09-22 23:59:59+02'`), a do tego czasu produkcyjna faza pozostaje nietknięta.
+- **Moduł kolejek**: `fm_queue_open_day` (053) czytał plan z `fm_settings.schedule` — 055 zawiera kopię tej funkcji z jedyną zmianą: `LEFT JOIN fm_plan_private` jako źródło planu (faza/data nadal z `fm_settings`). Test 053 przechodzi w całości (T0–T16) na nowym źródle; edycje planu w teście 053 wskazują teraz `fm_plan_private`.
+- **Sondy** `scripts/fm-permission-probe.mjs`: tryb domyślny = zero zapytań zmieniających (DELETE przez widok tylko pod `--writes`); upload testowy = poprawny 1-pikselowy PNG z kontrolą stanu przed/po (lista plików), a nie sam kod błędu; kupiec — każdy wpis planu sprawdzany (`m=[własny chain]`, `nums` tylko własnego chainu, bez `r`); dostawca — klucze `res`/`nums` ⊆ własne identyfikatory; sondy `v_admin_*`/`consent_audit` dla dostawcy i kupca; próby zapisu wyborów cudzej firmy i przez kupca; nic nie wypisuje kontaktów. `--writes` tylko na kontach testowych.
+- **Kolejność wdrożenia** (nie jest dowolna dla wszystkich zachowań): patrz §4.
+- **Rollback** nie może przywracać publicznych kontaktów/planu ani szerokich praw Storage: patrz §5.
 
-**Rollback** (jeśli trzeba): `drop trigger` ×7 i funkcje (`fm_inputs_phase_lock`, `profiles_guard_protected`, `companies_guard_protected`, `fm_is_privileged_session`, `retailers_route_buyer_contacts`, `retailers_clear_buyer_contacts`, `fm_settings_route_schedule`, `fm_my_schedule`, `fm_current_phase`, `fm_backup_inputs`); przywrócenie polityk storage `*_authenticated` z produkcji; kontakty wracają przez `update retailers r set buyer_name = c.buyer_name, … from retailer_contacts c where c.retailer_id = r.id`; plan przez `update fm_settings set schedule = (select schedule from fm_plan_private)` po usunięciu triggera. Nie da się cofnąć: revoke na widokach (można nadać ponownie `grant`), drop polityk 002 (są w `002_rls_policies.sql`).
+Nieobjęte tym hotfixem (poza repo): `participant_profiles_authenticated_read using (true)` w drugiej aplikacji (tabela dziś pusta — 0 wierszy — ale polityka do zmiany u właściciela drugiej aplikacji; wspólna baza i rola `authenticated` oznaczają, że użytkownik B2B może ją czytać). `fm_settings` dla anon: `ui_content` zawiera dziś tylko `partners` (logotypy stopki), `message` = 57 znaków komunikatu publicznego — zostaje publiczne; jeśli kiedyś trafią tam treści dla ról, ograniczyć kolumnami.
 
 ---
 
-## 3. Zakres zmian w kodzie (gałąź `fix/security-hotfix-2026-09-16`)
+## 2. Dokładny SQL
+
+**`054_views_lockdown.sql`** (pilne):
+```sql
+alter view … set (security_invoker = true)   -- consent_audit, company_capacity, v_admin_registrations, v_admin_stats
+revoke insert, update, delete, truncate, references, trigger on … from anon, authenticated  -- + articles_with_facts
+revoke select on consent_audit, v_admin_registrations, v_admin_stats from anon
+insert into audit_log (…'security_views_lockdown'…)
+```
+Skutek: anon nie czyta 24 e-maili z `consent_audit` ani rejestracji; nikt nie zapisze przez widok (dziś anon ma prawo `DELETE` przez `consent_audit` → `profiles` bez RLS); zalogowany nie-admin przez `v_admin_*` widzi tylko własne rejestracje (RLS `event_registrations`); admin czyta jak dotąd (test 055 T2). Legalny odczyt drugiej aplikacji: jeśli jej panel loguje się jako admin — bez zmian; jeśli używał klucza anon — przestanie czytać `v_admin_*` (to właśnie luka). Kontrola po zastosowaniu: zapytania na końcu pliku.
+
+**`055_security_hotfix.sql`** — sekcje: 2 kontakty (`retailer_contacts`, `retailer_contacts_merge`, 2 triggery-mosty, `admin_set_retailer_contact`, zerowanie kolumn), 3 plan (`fm_plan_private`, trigger `fm_settings_route_schedule`, `fm_current_phase`, `fm_my_schedule`), 3b `fm_queue_open_day` z nowym źródłem, 4 drop 8 polityk z 002, 5 `fm_is_privileged_session`, `profiles_guard_protected`, `companies_guard_protected`, 6 storage per folder, 7 `selection_deadline`, `fm_inputs_are_locked`, `fm_inputs_phase_lock` (triggery na `company_target_retailers`, `fm_resps`), `fm_set_company_targets`, `fm_inputs_snapshots` + `fm_backup_inputs`, 8 `legacy_sends`, 9 `audit_log`. Pełny tekst w pliku; idempotentna (sprawdzone `--reapply`).
+
+---
+
+## 3. Zakres kodu (gałąź)
 
 | Plik | Zmiana |
 |---|---|
-| `src/lib/db.js` | `getRetailers()` osadza `contacts:retailer_contacts(...)` (u dostawcy/kupca null; fallback bez osadzenia, gdy front wejdzie przed migracją). `getFmSchedule()` → `rpc('fm_my_schedule')` (fallback do `fm_settings.schedule` przed migracją). `saveFmSchedule()` → upsert `fm_plan_private` (fallback jak dotąd). |
-| `src/legacy/PreconnectFM.jsx` | kontakt awaryjny z `retailerContact(r)`; **usunięty** zbiorczy „fallback save” `fmResps` (zapisy tylko per klik w `setResp`); po błędzie `fm_inputs_locked` cofnięcie lokalnej zmiany + komunikat; `hasRetailerEmailMarker` rozumie `resendBuyerCount`. |
-| `src/lib/retailer-contacts.js`, `src/lib/fm-input-lock.js` (+ testy) | helpery |
-| `netlify/functions/send-retailer-batch.js` | zapisuje `resendBuyerCount` zamiast listy adresów |
-| `netlify/functions/fm-plan-data.js` | `settings.schedule` czytane z `fm_plan_private` (service role) — eksport planu bez zmian dla odbiorcy |
-| `src/i18n/{pl,en}/legacy.json` | `errors.db.fm_inputs_locked` |
-| `scripts/fm-queue-sql-test.mjs` | `--test 053,054` |
-| `supabase/tests/054_security_hotfix_test.sql` | T1–T8 (kontakty, anon, fm_prefs, triggery, plan per rola, blokada fazy + backup, storage, legacy_sends), całość w ROLLBACK |
-| `scripts/fm-permission-probe.mjs` | sondy PRAWDZIWYCH kont przez PostgREST (anon / dostawca / kupiec / admin), `--writes` = bezpieczne próby zapisu |
+| `src/lib/db.js` | `setCompanyTargetRetailers` → RPC `fm_set_company_targets` (fallback DELETE+INSERT tylko gdy RPC nie istnieje); `getRetailers` osadza `retailer_contacts` (fallback bez osadzenia); `getFmSchedule` → RPC `fm_my_schedule` (fallback); `saveFmSchedule` → `fm_plan_private` (fallback); `toRetailerDbRow` bez `buyer_*` |
+| `src/lib/serial-save.js` (+test) | szeregowanie zapisów, `flush()` |
+| `src/lib/retailer-contacts.js`, `src/lib/fm-input-lock.js` (+testy) | helpery |
+| `src/legacy/PreconnectFM.jsx` | PageSupplierFM: saver + widoczny błąd + potwierdzenie po zapisie; usunięty zbiorczy resave `fmResps` kupca; kontakt awaryjny z `retailerContact`; `hasRetailerEmailMarker` z `resendBuyerCount` |
+| `netlify/functions/send-retailer-batch.js`, `fm-plan-data.js` | liczba adresatów zamiast e-maili; plan z `fm_plan_private` |
+| `src/i18n/{pl,en}/legacy.json` | `errors.db.fm_inputs_locked`, `fm.supplier.targets_save_failed` |
+| `scripts/fm-queue-sql-test.mjs` | `--test 053,055`, `--reapply 054,055` |
+| `scripts/fm-permission-probe.mjs` | sondy prawdziwych kont (patrz §1) |
+| `scripts/fm-inputs-export.sql`, `scripts/fm-inputs-compare.mjs` | kopia i porównanie wejść wybór po wyborze (§4) |
+| `supabase/tests/053_fm_queue_test.sql` | 2 linie: edycja planu w `fm_plan_private` |
+| `supabase/tests/055_security_hotfix_test.sql` | T0–T8 |
 
-Testy jednostkowe: **167/167**; `vite build` OK. Poza zakresem (bez zmian): wybory, odpowiedzi, plan, maile, Fozzy, daty wpłat.
-
-Kolejność wdrożenia jest **dowolna** — kod ma fallbacki na brak tabel/RPC, a migracja ma trigger na stary bundle. Rekomendacja: najpierw SQL (zamyka wycieki od razu), potem deploy frontu.
-
----
-
-## 4. Plan testów rzeczywistych uprawnień (po zastosowaniu SQL)
-
-1. **Baza testowa** (nie produkcja): `DATABASE_URL=… node scripts/fm-queue-sql-test.mjs --only-test --test 053,054` — 053 musi nadal przechodzić (kolejki), 054 = T1–T8.
-2. **Sondy PostgREST na produkcji, prawdziwe konta**: potrzebne konto testowe dostawcy (z firmą, hasło) i konto testowe kupca (przypisane do sieci testowej lub istniejącej, hasło) — Artur zakłada je w panelu admina (`/register`) i podaje mi tylko e-maile; hasła ustawia w zmiennych środowiskowych:
-   ```
-   FM_PROBE_URL, FM_PROBE_ANON_KEY, FM_PROBE_SUPPLIER_EMAIL/PASSWORD, FM_PROBE_BUYER_EMAIL/PASSWORD, (FM_PROBE_ADMIN_EMAIL/PASSWORD)
-   node scripts/fm-permission-probe.mjs            # odczyty
-   node scripts/fm-permission-probe.mjs --writes   # + próby zapisu, które mają zostać odrzucone
-   ```
-   Odczyty: anon nie czyta `consent_audit`/`v_admin_*`/`retailer_contacts`/`fm_plan_private`, `company_capacity` = 0, `fm_settings.schedule` = null; dostawca widzi sieci bez kontaktów, 0 `retailer_contacts`, 0 profili kupców, 0 `fm_prefs`, `fm_my_schedule` = null, `fm_resps`/wybory tylko własne, `legacy_sends` bez adresów; kupiec analogicznie + `profiles` tylko własny.
-   Próby zapisu (`--writes`): dostawca próbuje podnieść sobie `fm_b2b_tier`/`fm_b2b_packages` (trigger przywraca), odpiąć `company_id` (przywraca), wgrać plik do cudzego folderu (RLS odrzuca), wgrać i usunąć 1-bajtowy plik we własnym folderze (działa); kupiec próbuje zmienić `retailer_id` (przywraca). **Żadna sonda nie dotyka wyborów sieci, odpowiedzi ani planu.**
-3. **Ręcznie w aplikacji** (konta testowe): dostawca — zapis „Mój profil”, zapis profilu firmy z logo, wybór sieci ⭐/👍 w fazie 2 (działa), potwierdzenie wyboru; kupiec — odpowiedź na dostawcę (działa); admin — panel sieci pokazuje kontakt awaryjny (np. FRAC), „Dane wejściowe”, zapis szkicu planu trafia do `fm_plan_private`, `fm_my_schedule` zwraca całość.
-4. **Symulacja zamknięcia fazy** (tylko na koncie testowym, w uzgodnionej minucie): admin przełącza `algo_phase` na `matching`, dostawca testowy klika ⭐ → komunikat „Etap zbierania wyborów jest już zamknięty”, wybór cofnięty; admin wraca na `preferences_open`.
+Vitest **169/169**, `vite build` OK. SQL: migracje 001–055 od zera + `--reapply 054,055` + testy 053 (T0–T16) i 055 (T0–T8) ✅ na lokalnym embedded Postgresie 17.10 (`--shim`, bez kont klientów).
 
 ---
 
-## 5. Otwarte decyzje dla Artura
+## 4. Procedura wdrożenia (po zgodzie Artura, każdy krok osobno)
 
-- **Zgoda na `054_security_hotfix.sql`** (SQL Editor, jedna transakcja; ~1 s). Mogę najpierw zrobić próbę na sucho (`begin … rollback`) — też wymaga zgody, bo dotyka produkcji.
-- `fm_settings` dla anon: zostawić `venue`/`event_date`/`message`/`ui_content` publiczne (ekran logowania) czy ograniczyć do `brand_logo_url` + `ui_content` (wymaga przepisania `getFmSettings` na jawną listę kolumn)?
-- `participant_profiles_authenticated_read using (true)` (druga aplikacja rejestracyjna) — każdy zalogowany widzi wszystkie profile uczestników; to nie jest w tym hotfixie (cudza tabela) — do przekazania właścicielowi drugiej aplikacji.
-- Konta testowe dostawcy i kupca do sond (pkt 4.2).
+Warunek nadrzędny: **hotfix nie może zmienić ani usunąć żadnego wyboru dostawcy ani decyzji kupca.**
+
+1. **054 (pilne)**: SQL Editor → cały plik → Run. Kontrola: zapytania z końca pliku + `node scripts/fm-permission-probe.mjs` (sekcja anon; bez kont) — `consent_audit`/`v_admin_*` zabronione dla anon, `company_capacity` = 0 wierszy; admin w aplikacji nadal widzi „Dane wejściowe” i pojemności.
+2. **Kopia wejść PRZED 055**: SQL Editor → `scripts/fm-inputs-export.sql` → zapisać wynik jako `before.json` (bez danych osobowych). Dodatkowo zaraz po 055: `select fm_backup_inputs('po-055-2026-09-XX')` (snapshot w bazie, tylko admin).
+3. **055**: krótkie okno (kilka minut), najlepiej gdy ruch jest mały. SQL Editor → cały plik → Run (jedna transakcja, ~40 ms lokalnie). **Nie owijać zewnętrznym `begin`** — plik ma własne `begin/commit`; próba „na sucho” na produkcji nie zastępuje testu (blokady tabel) — test był na oddzielnej bazie.
+4. **Porównanie PO 055**: `scripts/fm-inputs-export.sql` → `after.json`; `node scripts/fm-inputs-compare.mjs before.json after.json` — oczekiwane: `company_target_retailers`, `fm_resps`, `companies.fm_selection_confirmed_at`, przypisania `profiles` **bez różnic** poza zmianami, które uczestnicy zrobili w oknie (widoczne jako konkretne DODANY/ZMIENIONY z identyfikatorami — każdą wyjaśnić). Jakakolwiek nieoczekiwana różnica = STOP: bez przeliczania, publikowania, maili, do wyjaśnienia. Nigdy nie przywracać starej kopii całej bazy (nadpisałaby nowsze decyzje).
+5. **Deploy frontu** (`git tag prod-rollback-… ; merge --ff-only; push`) zaraz po 055 — stary bundle po 055: admin nie widzi kontaktu awaryjnego 3 sieci ani planu (plan dziś pusty), zapis wyborów idzie starą ścieżką przez triggery (nadal chroniony fazą, ale nie atomowo) → dlatego okno ma być krótkie, a admini odświeżają sesję (Ctrl+F5) po deployu.
+6. **Sondy prawdziwych uprawnień** na kontach testowych (nie klientów): `node scripts/fm-permission-probe.mjs` (odczyty) → potem `--writes`. Potrzebne: konto testowe dostawcy z firmą testową (`fm_b2b_enabled`) i konto testowe kupca przypisane do sieci testowej `fm26_active` — Artur zakłada w panelu admina, hasła tylko w zmiennych `FM_PROBE_*`.
+7. **Ręcznie w aplikacji na kontach testowych**: dostawca — ⭐/👍 (zapis przez RPC), „Potwierdź wybór”, zapis „Mój profil” i profilu firmy z logo; kupiec — odpowiedź na dostawcę; admin — panel sieci z kontaktem awaryjnym (FRAC, SPAR/GK Specjał, Nasz Sklep), „Dane wejściowe”, zapis szkicu planu → `fm_plan_private`, `fm_my_schedule` = całość. **Bez zmiany fazy produkcyjnej** — zamknięcie fazy przetestowane na oddzielnej bazie (055 T6).
+
+---
+
+## 5. Wycofanie bez ponownego otwierania luk
+
+Domyślnie: **nie** przywracać `buyer_*` do `retailers`, planu do `fm_settings.schedule` ani polityk `*_authenticated` storage. Gdy coś nie działa:
+- zapis wyborów: `drop function fm_set_company_targets(uuid, jsonb)` → klient sam wraca do starej ścieżki (DELETE+INSERT pod triggerem fazy);
+- plan: `drop function fm_my_schedule()` → klient czyta `fm_settings.schedule` (null → brak planu, nic nie wycieka);
+- kontakty: `getRetailers` bez osadzenia działa (fallback); dane są w `retailer_contacts`;
+- blokada fazy/terminu: `alter table company_target_retailers disable trigger trg_ctr_phase_lock` (i analogicznie `fm_resps`) — tylko decyzją Artura;
+- triggery ochronne: `alter table profiles disable trigger trg_profiles_guard_protected` / `companies … trg_companies_guard_protected` — tymczasowo, z wpisem w audit_log.
+Front: tag `prod-rollback-…` jak zwykle; stary bundle współpracuje z nową bazą (fallbacki + mosty).
+
+---
+
+## 6. Otwarte decyzje dla Artura
+
+1. Zgoda na **054** teraz.
+2. Zgoda na **055** po review Codexa tej wersji (+ termin `selection_deadline`, jeśli ma obowiązywać przed zmianą fazy).
+3. Konta testowe dostawcy i kupca do sond (§4.6).
+4. Przekazanie właścicielowi drugiej aplikacji: `participant_profiles_authenticated_read using (true)`.
+5. Przed przeliczeniem (osobno): Fozzy (rozpoznawanie istniejących wyborów, bez zmiany decyzji), migracja 049 + daty wpłat (po dodaniu `fm_payment_date` dopisać ją do listy kolumn chronionych w `companies_guard_protected`), snapshot `fm_backup_inputs`.

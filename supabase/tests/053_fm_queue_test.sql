@@ -302,7 +302,7 @@ SELECT pg_temp.ok((SELECT (SELECT count(*) FROM jsonb_array_elements(j->'problem
 RESET ROLE;
 SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_meetings m JOIN public.fm_queue_groups g ON g.id = m.queue_group_id WHERE g.retailer_id = (SELECT id FROM t_ret WHERE cid = 'test-c') AND m.source = 'plan') = 5, 'T12 5 spotkan w bazie dla sieci C');
 -- powtorka bez force: nic nowego; z force + zmieniony numer co5 5->7 -> updated; co4 na 3 (zajete przez co3) -> nr_conflict
-UPDATE public.fm_settings SET schedule = jsonb_set(jsonb_set(schedule, ARRAY['nums', pg_temp.id('co5')::text, 'test-c'], '7'), ARRAY['nums', pg_temp.id('co4')::text, 'test-c'], '3') WHERE event_date = (SELECT today FROM t_day);
+UPDATE public.fm_plan_private SET schedule = jsonb_set(jsonb_set(schedule, ARRAY['nums', pg_temp.id('co5')::text, 'test-c'], '7'), ARRAY['nums', pg_temp.id('co4')::text, 'test-c'], '3') WHERE id = 1;  -- [055] plan żyje w fm_plan_private
 SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
 DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_open_day((SELECT today FROM t_day), false);
 SELECT pg_temp.ok((SELECT (j->>'inserted')::int FROM t_json) = 0 AND (SELECT (j->>'skipped_groups')::int FROM t_json) = 2, 'T12 powtorka bez force: 0 nowych, 2 grupy pominiete');
@@ -318,7 +318,7 @@ SELECT pg_temp.ok((SELECT nr FROM public.fm_queue_meetings m JOIN public.fm_queu
 INSERT INTO public.companies (id, name, categories) VALUES (gen_random_uuid(), 'TEST Firma 6 bez kategorii', '{}');
 UPDATE public.fm_queue_groups SET categories = '{owoce}' WHERE retailer_id = (SELECT id FROM t_ret WHERE cid = 'test-c');
 INSERT INTO public.fm_queue_groups (event_date, retailer_id, label, categories) VALUES ((SELECT today FROM t_day), (SELECT id FROM t_ret WHERE cid = 'test-c'), 'Kwiaty', '{kwiaty}');
-UPDATE public.fm_settings SET schedule = jsonb_set(schedule, ARRAY['nums', (SELECT id::text FROM public.companies WHERE name = 'TEST Firma 6 bez kategorii'), 'test-c'], '8', true) WHERE event_date = (SELECT today FROM t_day);
+UPDATE public.fm_plan_private SET schedule = jsonb_set(schedule, ARRAY['nums', (SELECT id::text FROM public.companies WHERE name = 'TEST Firma 6 bez kategorii'), 'test-c'], '8', true) WHERE id = 1;  -- [055] plan żyje w fm_plan_private
 SET LOCAL ROLE authenticated; SELECT pg_temp.login('admin');
 DELETE FROM t_json; INSERT INTO t_json SELECT public.fm_queue_open_day((SELECT today FROM t_day), true);
 SELECT pg_temp.ok((SELECT (SELECT count(*) FROM jsonb_array_elements(j->'problems') p WHERE p->>'reason' = 'unrouted') >= 1 FROM t_json), 'T12 split bez zgodnej kategorii -> unrouted (decyzja admina), nie losowa grupa');

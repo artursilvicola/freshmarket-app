@@ -279,9 +279,8 @@ function toRetailerDbRow(r = {}) {
     color: r.color || null,
     bg: r.bg || null,
     initials: r.initials || null,
-    buyer_name: r.buyer_name || primaryBuyer?.name || r.buyer || null,
-    buyer_email: r.buyer_email || primaryBuyer?.email || r.email || null,
-    buyer_phone: r.buyer_phone || primaryBuyer?.phone || r.phone || null,
+    // [fix/security-hotfix] buyer_name/email/phone nie są już zapisywane w retailers
+    // (kontakty żyją w retailer_contacts — migracja 055; most w bazie i tak by je przeniósł)
     next_send: r.next_send || r.nextSend || null,
     active: r.active !== false,
     // [B2B Round prod-rollout / admin-toggle-fix] PRIORITY: camelCase z state'u aplikacji
@@ -1799,11 +1798,30 @@ export async function saveFmSelectionConfirmation(companyId, confirmedAt = new D
  * Replace-set: zastąp całą listę preferencji dostawcy nową listą par
  * { retailer_id, priority, note }.
  */
+// [fix/security-hotfix] Zapis wyborów jako JEDNA transakcja w bazie
+// (RPC fm_set_company_targets, migracja 055): albo zapisuje się cała nowa lista,
+// albo zostaje cała poprzednia — nigdy stan „usunięte, ale nie zapisane".
+// RPC sprawdza właściciela firmy i fazę/termin (błąd fm_inputs_locked).
+// Przed migracją (brak RPC) działa dotychczasowa ścieżka DELETE + INSERT.
 export async function setCompanyTargetRetailers(companyId, items) {
   // [P2-final-qa post-review] Dev sanity assertion — UI ścieżki podają companyId.
   if (!companyId) throw new Error("setCompanyTargetRetailers: companyId wymagane");
-  // Wymaz stare i wpisz nowe (transactional via supabase function w przyszlosci;
-  // teraz: 2 osobne kroki)
+  const payload = (items || []).map((it) => ({
+    retailer_id: it.retailer_id,
+    priority: it.priority || 0,
+    note: it.note || null,
+  }));
+  const { data: saved, error: rpcErr } = await supabase.rpc("fm_set_company_targets", {
+    p_company_id: companyId,
+    p_items: payload,
+  });
+  if (!rpcErr) return Array.isArray(saved) ? saved : [];
+  if (!/fm_set_company_targets/i.test(rpcErr.message || "")) throw rpcErr;
+  return setCompanyTargetRetailersLegacy(companyId, items);
+}
+
+async function setCompanyTargetRetailersLegacy(companyId, items) {
+  // Wymaz stare i wpisz nowe — 2 osobne kroki (tylko do czasu migracji 055)
   const { error: delErr } = await supabase
     .from("company_target_retailers")
     .delete()

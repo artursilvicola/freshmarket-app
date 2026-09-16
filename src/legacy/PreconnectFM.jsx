@@ -81,6 +81,7 @@ import {
 } from "../lib/db";
 import { retailerContact } from "../lib/retailer-contacts.js";
 import { isFmInputsLockedError } from "../lib/fm-input-lock.js";
+import { createSerialSaver } from "../lib/serial-save.js";
 // [feat/shared-countries] Jedno źródło listy krajów (panel + rejestracja dostawcy).
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
 import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, isAutomaticChance, scoreMatch, buildFMData } from "../lib/fm-algo.js";
@@ -13694,6 +13695,24 @@ function RetailerPreviewModal({ retailer, onClose }) {
 ═══════════════════════════════════════════════════════════════ */
 export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers, accountId, confirmFmSelection }) {
   const { t, i18n } = useTranslation("legacy");
+  // [fix/security-hotfix] zapisy wyborów szeregowane (ostatni stan wygrywa, bez
+  // równoległych żądań), błąd widoczny na stronie, „Potwierdź wybór" czeka na zapis
+  const [targetsSaveError, setTargetsSaveError] = useState(null);
+  const [targetsSaving, setTargetsSaving] = useState(false);
+  const targetsSaverRef = useRef(null);
+  if (!targetsSaverRef.current) {
+    targetsSaverRef.current = createSerialSaver(
+      ({ companyId, rows }) => dbSetCompanyTargetRetailers(companyId, rows),
+      {
+        onError: (e) => {
+          setTargetsSaveError(e);
+          console.warn("[save target retailers]", e);
+          if (isFmInputsLockedError(e) && typeof window !== "undefined") window.alert(t("errors.db.fm_inputs_locked"));
+        },
+        onSettled: () => setTargetsSaving(false),
+      }
+    );
+  }
   // [fix/fm-real-companies] bez fallbacku do danych demo
   const _chains    = fmChains    || [];
   const _suppliers = fmSuppliers || [];
@@ -13731,15 +13750,9 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
     const company = (companies || []).find(c => c.fmId === sid || c.legacy_fm_id === sid || c.id === sid);
     if (company?.id) {
       const rows = buildTargetRetailerRowsFromPrefs(np[sid], retailers);
-      dbSetCompanyTargetRetailers(company.id, rows).catch(e => {
-        // [fix/security-hotfix] baza odrzuca zapis po zamknięciu fazy (054) → cofnij lokalną zmianę
-        if (isFmInputsLockedError(e)) {
-          setFmPrefs(fmPrefs);
-          if (typeof window !== "undefined") window.alert(t("errors.db.fm_inputs_locked"));
-          return;
-        }
-        console.warn("[save target retailers]", e);
-      });
+      setTargetsSaveError(null);
+      setTargetsSaving(true);
+      targetsSaverRef.current.save({ companyId: company.id, rows }).catch(() => {});
     }
   }
 
@@ -13759,6 +13772,13 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
       <div style={{ maxWidth:900 }}>
         {previewFirm && <CompanyPreviewModal co={previewFirm} offers={offers} onClose={()=>setPreviewFirm(null)}/>}
         <FMPhaseBanner phase={Math.min(phase,2)}/>
+        {targetsSaveError && (
+          <div role="alert" style={{ padding:"10px 14px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,marginBottom:12,fontSize:13,color:"#991b1b",fontWeight:600 }}>
+            {isFmInputsLockedError(targetsSaveError)
+              ? t("errors.db.fm_inputs_locked")
+              : t("fm.supplier.targets_save_failed", { message: targetsSaveError?.message || "" })}
+          </div>
+        )}
         <div style={{ padding:"14px 18px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,marginBottom:16,fontSize:13,color:"#1e40af",lineHeight:1.75 }}>
           {readOnly
             ? <Trans i18nKey="fm.supplier.sched_intro_readonly_html" ns="legacy" components={{ strong: <strong /> }}/>
@@ -13823,8 +13843,14 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
                 )}
               </div>
               <button
-                onClick={() => { if (typeof confirmFmSelection === "function") confirmFmSelection(); }}
-                disabled={!ready || typeof confirmFmSelection !== "function"}
+                onClick={async () => {
+                  if (typeof confirmFmSelection !== "function") return;
+                  // [fix/security-hotfix] potwierdzenie dopiero po zakończonym zapisie wyborów
+                  const err = await targetsSaverRef.current.flush();
+                  if (err) { setTargetsSaveError(err); return; }
+                  confirmFmSelection();
+                }}
+                disabled={!ready || targetsSaving || !!targetsSaveError || typeof confirmFmSelection !== "function"}
                 style={{
                   padding:"11px 22px",
                   background: !ready ? "#e2e8f0" : confirmedAt ? "#0d9488" : "#059669",
