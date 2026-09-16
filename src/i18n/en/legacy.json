@@ -2959,7 +2959,8 @@
       "package_plan_inactive": "The selected package does not exist or is inactive.",
       "package_limit_below_used_format": "Limit cannot be lower than submissions already used ({{used}}).",
       "profile_not_own": "Cannot save the profile of another account. Switch back to your own account and try again.",
-      "fm_inputs_locked": "The selection stage is already closed — this change was not saved. Please contact the organiser for corrections."
+      "fm_inputs_locked": "The selection stage is already closed — this change was not saved. Please contact the organiser for corrections.",
+      "fm_targets_rpc_missing": "Saving selections is temporarily unavailable (system update in progress). Your existing selections are safe — refresh the page in a moment."
     }
   },
   "shell": {

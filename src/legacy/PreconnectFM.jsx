@@ -13699,10 +13699,26 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
   // równoległych żądań), błąd widoczny na stronie, „Potwierdź wybór" czeka na zapis
   const [targetsSaveError, setTargetsSaveError] = useState(null);
   const [targetsSaving, setTargetsSaving] = useState(false);
+  const retailersRef = useRef(retailers);
+  retailersRef.current = retailers;
   const targetsSaverRef = useRef(null);
   if (!targetsSaverRef.current) {
     targetsSaverRef.current = createSerialSaver(
-      ({ companyId, rows }) => dbSetCompanyTargetRetailers(companyId, rows),
+      async ({ companyId, rows, sid: savedSid }) => {
+        const saved = await dbSetCompanyTargetRetailers(companyId, rows);
+        // stan lokalny = lista faktycznie zapisana w bazie (inna karta / drugie konto
+        // firmy mogło zapisać później — wygrywa ostatni zapis w całości, nie suma)
+        const savedPrefs = {};
+        for (const row of saved || []) {
+          const cid = resolveChainIdFromRetailer(row.retailer_id, retailersRef.current, { note: row.note });
+          if (cid) savedPrefs[cid] = Number(row.priority || 0) >= 1000 ? "star" : "thumb";
+        }
+        setFmPrefs(prev => {
+          const cur = (prev && prev[savedSid]) || {};
+          const same = Object.keys(cur).length === Object.keys(savedPrefs).length && Object.keys(cur).every(k => cur[k] === savedPrefs[k]);
+          return same ? prev : { ...prev, [savedSid]: savedPrefs };
+        });
+      },
       {
         onError: (e) => {
           setTargetsSaveError(e);
@@ -13752,7 +13768,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
       const rows = buildTargetRetailerRowsFromPrefs(np[sid], retailers);
       setTargetsSaveError(null);
       setTargetsSaving(true);
-      targetsSaverRef.current.save({ companyId: company.id, rows }).catch(() => {});
+      targetsSaverRef.current.save({ companyId: company.id, rows, sid }).catch(() => {});
     }
   }
 

@@ -231,10 +231,12 @@ begin
   end if;
 
   if v_role = 'buyer' then
+    -- własny przełącznik udziału kupca (profiles.fm26_active) + sieć aktywna i w FM
     select r.fm26_chain_id into v_chain
       from public.profiles p join public.retailers r on r.id = p.retailer_id
      where p.id = v_uid
        and p.active is distinct from false
+       and p.fm26_active is true
        and r.active is distinct from false
        and r.fm26_active is true;
     if v_chain is null then return null; end if;
@@ -525,11 +527,73 @@ $$;
 revoke all on function public.fm_inputs_are_locked() from public;
 grant execute on function public.fm_inputs_are_locked() to authenticated, anon;
 
+-- Sesja serwerowa (service_role / security definer / SQL Editor / pg_cron):
+-- triggery wejść jej nie ograniczają — RPC sprawdza uprawnienia samo.
+create or replace function public.fm_is_server_session()
+returns boolean language plpgsql stable as $$
+declare v_jwt_role text;
+begin
+  if current_user not in ('authenticated', 'anon') then return true; end if;
+  v_jwt_role := coalesce(
+    nullif(current_setting('request.jwt.claim.role', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role');
+  return v_jwt_role = 'service_role';
+end $$;
+
+-- Prawo do zapisu wejść (wybory / odpowiedzi) dla sesji użytkownika: null = OK,
+-- inaczej kod powodu. Reguła (review Codexa P1/3, P2/5): profil aktywny — także
+-- admina; dostawca: firma account_status = active i fm_b2b_enabled (jak filtr
+-- fmSuppliers w aplikacji); kupiec: własny przełącznik profiles.fm26_active
+-- + sieć active i fm26_active. Odebranie aktywności NIE kasuje zapisanych
+-- wyborów — blokuje tylko dalsze operacje.
+create or replace function public.fm_inputs_write_check()
+returns text language plpgsql security definer stable set search_path = public as $$
+declare
+  v_uid uuid := auth.uid();
+  p public.profiles;
+  c public.companies;
+  r public.retailers;
+begin
+  if v_uid is null then return 'no_session'; end if;
+  select * into p from public.profiles where id = v_uid;
+  if not found then return 'no_profile'; end if;
+  if p.active is false then return 'profile_inactive'; end if;
+  if p.role::text = 'admin' then return null; end if;
+  if p.role::text = 'supplier' then
+    if p.company_id is null then return 'no_company'; end if;
+    select * into c from public.companies where id = p.company_id;
+    if not found then return 'no_company'; end if;
+    if coalesce(c.account_status, 'active') <> 'active' then return 'company_' || coalesce(c.account_status, 'inactive'); end if;
+    if c.fm_b2b_enabled is not true then return 'company_not_in_fm'; end if;
+    return null;
+  end if;
+  if p.role::text = 'buyer' then
+    if p.fm26_active is not true then return 'buyer_not_in_fm'; end if;
+    if p.retailer_id is null then return 'no_retailer'; end if;
+    select * into r from public.retailers where id = p.retailer_id;
+    if not found then return 'no_retailer'; end if;
+    if r.active is false then return 'retailer_inactive'; end if;
+    if r.fm26_active is not true then return 'retailer_not_in_fm'; end if;
+    return null;
+  end if;
+  return 'role_' || p.role::text;
+end $$;
+revoke all on function public.fm_inputs_write_check() from public;
+grant execute on function public.fm_inputs_write_check() to authenticated;
+
+-- Trigger na company_target_retailers / fm_resps: sesja użytkownika musi mieć
+-- prawo udziału (fm_inputs_forbidden), a poza fazą/terminem zapisuje tylko admin
+-- (fm_inputs_locked). Stary bundle / bezpośredni zapis przechodzi przez to samo sito.
 create or replace function public.fm_inputs_phase_lock()
 returns trigger language plpgsql as $$
+declare v_reason text;
 begin
-  if public.fm_is_privileged_session() then return coalesce(new, old); end if;
-  if public.fm_inputs_are_locked() then
+  if public.fm_is_server_session() then return coalesce(new, old); end if;
+  v_reason := public.fm_inputs_write_check();
+  if v_reason is not null then
+    raise exception 'fm_inputs_forbidden' using errcode = '42501', hint = v_reason;
+  end if;
+  if not coalesce(public.is_admin(), false) and public.fm_inputs_are_locked() then
     raise exception 'fm_inputs_locked'
       using errcode = 'P0001',
             hint = 'Etap zbierania wyborów jest zamknięty (algo_phase=' || coalesce(public.fm_current_phase(), '') || ').';
@@ -545,16 +609,29 @@ create trigger trg_fm_resps_phase_lock
   before insert or update or delete on public.fm_resps
   for each row execute function public.fm_inputs_phase_lock();
 
--- Atomowy zapis całego zestawu wyborów firmy (zastępuje DELETE + INSERT z klienta).
--- Albo zapisuje się cała nowa lista, albo zostaje cała poprzednia.
+-- Wybory dostawcy zapisuje WYŁĄCZNIE RPC fm_set_company_targets (security definer):
+-- dostawca ma na company_target_retailers tylko SELECT. Stary bundle robiący
+-- DELETE + INSERT: DELETE nie trafia w żaden wiersz (RLS), INSERT jest odrzucony —
+-- nic nie ginie, zapis po prostu nie następuje do odświeżenia strony.
+drop policy if exists ctr_supplier_own on public.company_target_retailers;
+drop policy if exists ctr_supplier_read on public.company_target_retailers;
+create policy ctr_supplier_read on public.company_target_retailers
+  for select using (public.app_role() = 'supplier'::user_role and company_id = public.app_company_id());
+
+-- Atomowy zapis całego zestawu wyborów firmy. Albo zapisuje się cała nowa lista,
+-- albo zostaje cała poprzednia. Równoległe zapisy tej samej firmy (dwie karty,
+-- dwa konta firmy) są szeregowane blokadą wiersza firmy — wygrywa OSTATNI
+-- zatwierdzony zapis W CAŁOŚCI (nigdy suma list). Zwraca listę faktycznie
+-- zapisaną w bazie — klient ma do niej dopasować swój stan.
 -- p_items: [{retailer_id, priority, note}] — duplikaty sieci scalane (max priority).
 create or replace function public.fm_set_company_targets(p_company_id uuid, p_items jsonb)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare
-  v_uid  uuid := auth.uid();
-  v_role text;
-  v_cid  uuid;
-  v_bad  text;
+  v_uid    uuid := auth.uid();
+  v_role   text;
+  v_cid    uuid;
+  v_bad    text;
+  v_reason text;
 begin
   if v_uid is null then
     raise exception 'fm_set_company_targets: brak sesji' using errcode = '42501';
@@ -563,6 +640,10 @@ begin
   if v_role is distinct from 'admin' and not (v_role = 'supplier' and v_cid is not null and v_cid = p_company_id) then
     raise exception 'fm_set_company_targets: brak uprawnień do tej firmy' using errcode = '42501';
   end if;
+  v_reason := public.fm_inputs_write_check();
+  if v_reason is not null then
+    raise exception 'fm_inputs_forbidden' using errcode = '42501', hint = v_reason;
+  end if;
   if v_role is distinct from 'admin' and public.fm_inputs_are_locked() then
     raise exception 'fm_inputs_locked'
       using errcode = 'P0001',
@@ -570,6 +651,11 @@ begin
   end if;
   if p_items is null or jsonb_typeof(p_items) <> 'array' then
     raise exception 'fm_set_company_targets: p_items musi być tablicą';
+  end if;
+  -- blokada firmy: kolejne zapisy tej samej firmy czekają na zatwierdzenie poprzedniego
+  perform 1 from public.companies where id = p_company_id for update;
+  if not found then
+    raise exception 'fm_set_company_targets: nie ma firmy %', p_company_id;
   end if;
   select string_agg(coalesce(e->>'retailer_id', '?'), ',') into v_bad
     from jsonb_array_elements(p_items) e

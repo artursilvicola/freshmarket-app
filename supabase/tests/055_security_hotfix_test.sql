@@ -46,7 +46,8 @@ CREATE OR REPLACE FUNCTION pg_temp.contact(rid integer) RETURNS text LANGUAGE pl
 BEGIN RETURN (SELECT coalesce(buyer_name,'-') || '|' || coalesce(buyer_email,'-') || '|' || coalesce(buyer_phone,'-') FROM public.retailer_contacts WHERE retailer_id = rid); END $$;
 
 -- ── T0 obiekty ───────────────────────────────────────────────────────────────
-SELECT pg_temp.ok((SELECT count(*) FROM pg_proc WHERE proname IN ('fm_my_schedule','fm_set_company_targets','fm_inputs_are_locked','fm_backup_inputs','admin_set_retailer_contact','fm_is_privileged_session')) = 6, 'T0 funkcje 055 istnieja');
+SELECT pg_temp.ok((SELECT count(*) FROM pg_proc WHERE proname IN ('fm_my_schedule','fm_set_company_targets','fm_inputs_are_locked','fm_backup_inputs','admin_set_retailer_contact','fm_is_privileged_session','fm_inputs_write_check','fm_is_server_session')) = 8, 'T0 funkcje 055 istnieja');
+SELECT pg_temp.ok((SELECT count(*) FROM pg_policies WHERE tablename = 'company_target_retailers' AND policyname = 'ctr_supplier_own') = 0 AND (SELECT cmd FROM pg_policies WHERE tablename = 'company_target_retailers' AND policyname = 'ctr_supplier_read') = 'SELECT', 'T0 dostawca ma na company_target_retailers tylko SELECT (zapis przez RPC)');
 SELECT pg_temp.ok((SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_profiles_guard_protected','trg_companies_guard_protected','trg_ctr_phase_lock','trg_fm_resps_phase_lock','trg_retailers_route_buyer_contacts','trg_retailers_clear_buyer_contacts','trg_fm_settings_route_schedule')) = 7, 'T0 triggery 055 istnieja');
 SELECT pg_temp.ok((SELECT count(*) FROM pg_policies WHERE tablename = 'fm_prefs' AND policyname = 'fm_prefs_select_role_based') = 0, 'T0 polityka 002 fm_prefs_select_role_based usunieta');
 SELECT pg_temp.ok((SELECT count(*) FROM information_schema.columns WHERE table_name = 'fm_settings' AND column_name = 'selection_deadline') = 1, 'T0 fm_settings.selection_deadline');
@@ -78,9 +79,9 @@ INSERT INTO public.retailers (id, name, fm26_active, fm26_chain_id, buyer_name, 
   (990101, 'TEST Siec A', true, 'test-a', 'Anna Test', 'anna@siec-a.test', '+48 600 000 001'),
   (990102, 'TEST Siec B', true, 'test-b', NULL, NULL, NULL),
   (990103, 'TEST Siec C (bez FM)', false, 'test-c', NULL, NULL, NULL);
-UPDATE public.profiles SET role = 'buyer', retailer_id = 990101 WHERE id = pg_temp.id('buyer1');
-UPDATE public.profiles SET role = 'buyer', retailer_id = 990102 WHERE id = pg_temp.id('buyer2');
-UPDATE public.profiles SET role = 'buyer', retailer_id = 990103 WHERE id = pg_temp.id('buyer3');
+UPDATE public.profiles SET role = 'buyer', retailer_id = 990101, fm26_active = true WHERE id = pg_temp.id('buyer1');
+UPDATE public.profiles SET role = 'buyer', retailer_id = 990102, fm26_active = true WHERE id = pg_temp.id('buyer2');
+UPDATE public.profiles SET role = 'buyer', retailer_id = 990103, fm26_active = true WHERE id = pg_temp.id('buyer3');
 INSERT INTO public.fm_settings (algo_phase, event_date) SELECT 'preferences_open', '2026-09-24'
   WHERE NOT EXISTS (SELECT 1 FROM public.fm_settings);
 UPDATE public.fm_settings SET algo_phase = 'preferences_open', schedule = NULL, selection_deadline = NULL;
@@ -218,8 +219,9 @@ SELECT pg_temp.login('admin');
 SET LOCAL ROLE authenticated;
 UPDATE public.companies SET fm_b2b_tier = 'premium', fm_b2b_packages = 3 WHERE id = pg_temp.id('co1');
 SELECT pg_temp.ok((SELECT fm_b2b_tier = 'premium' AND fm_b2b_packages = 3 FROM public.companies WHERE id = pg_temp.id('co1')), 'T4 admin zmienia pakiet');
+UPDATE public.profiles SET fm26_active = false WHERE id = pg_temp.id('buyer1');
+SELECT pg_temp.ok((SELECT fm26_active FROM public.profiles WHERE id = pg_temp.id('buyer1')) = false, 'T4 admin zmienia fm26_active');
 UPDATE public.profiles SET fm26_active = true WHERE id = pg_temp.id('buyer1');
-SELECT pg_temp.ok((SELECT fm26_active FROM public.profiles WHERE id = pg_temp.id('buyer1')), 'T4 admin zmienia fm26_active');
 RESET ROLE;
 SELECT pg_temp.ok(public.fm_is_privileged_session(), 'T4 sesja postgres (security definer / SQL Editor / pg_cron) = uprzywilejowana');
 DELETE FROM public.profiles WHERE id = pg_temp.id('noprof');
@@ -296,6 +298,17 @@ SELECT pg_temp.login('buyer3');
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.ok(public.fm_my_schedule() IS NULL, 'T5 kupiec sieci bez fm26_active: null');
 RESET ROLE;
+-- dwoch kupcow tej samej sieci z rozna flaga udzialu (review P2/5): bez wlasnej flagi brak planu
+UPDATE public.profiles SET fm26_active = false WHERE id = pg_temp.id('buyer2');
+SELECT pg_temp.login('buyer2');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.ok(public.fm_my_schedule() IS NULL, 'T5 kupiec bez wlasnej flagi fm26_active: null (siec aktywna, faza published)');
+RESET ROLE;
+UPDATE public.profiles SET fm26_active = true WHERE id = pg_temp.id('buyer2');
+SELECT pg_temp.login('buyer2');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.ok((public.fm_my_schedule()->'res') ? pg_temp.id('co2')::text, 'T5 ten sam kupiec z flaga fm26_active: plan wraca');
+RESET ROLE;
 UPDATE public.profiles SET active = false WHERE id = pg_temp.id('buyer2');
 SELECT pg_temp.login('buyer2');
 SET LOCAL ROLE authenticated;
@@ -311,6 +324,12 @@ SELECT pg_temp.ok(jsonb_array_length(public.fm_set_company_targets(pg_temp.id('c
   '[{"retailer_id":990101,"priority":1000,"note":"chain:test-a"},{"retailer_id":990102,"priority":100,"note":"chain:test-b"},{"retailer_id":990102,"priority":1000}]'::jsonb)) = 2,
   'T6 RPC: zapis 2 sieci (duplikat scalony)');
 SELECT pg_temp.ok((SELECT priority FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1') AND retailer_id = 990102) = 1000, 'T6 RPC: duplikat -> max priority');
+SELECT pg_temp.ok((SELECT count(*) FROM pg_locks WHERE relation = 'public.companies'::regclass AND mode = 'RowShareLock' AND pid = pg_backend_pid()) >= 1, 'T6 RPC trzyma blokade wiersza firmy (FOR UPDATE) do konca transakcji');
+-- stary bundle (DELETE + INSERT wprost, review P1): DELETE nie trafia w wiersze (RLS), INSERT odrzucony — nic nie ginie
+DELETE FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1');
+SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')) = 2, 'T6 stary klient: bezposredni DELETE bez efektu (RLS)');
+SELECT pg_temp.expect_error('INSERT INTO public.company_target_retailers (company_id, retailer_id, priority) VALUES (''' || pg_temp.id('co1') || ''', 990103, 100)', 'row-level security');
+SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')) = 2, 'T6 stary klient: lista nietknieta');
 SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co2') || ''', ''[]''::jsonb)', 'brak uprawnie');
 RESET ROLE;  -- wiersze cudzej firmy sprawdzamy jako postgres (RLS ukrywa je przed sup1)
 SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co2')) = 1, 'T6 RPC: cudza firma nietknieta');
@@ -329,12 +348,49 @@ SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp
 INSERT INTO public.fm_resps (retailer_id, supplier_company_id, zone, status, meta) VALUES (990101, pg_temp.id('co1'), 'green', 'green', '{}'::jsonb);
 SELECT pg_temp.ok((SELECT count(*) FROM public.fm_resps WHERE retailer_id = 990101) = 1, 'T6 faza otwarta: kupiec odpowiada');
 RESET ROLE;
+-- prawo udzialu (review P1/3): nieaktywny profil, zawieszona firma, firma poza FM, nieaktywny admin, kupiec bez udzialu
+SELECT pg_temp.login('sup3');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co3') || ''', ''[{"retailer_id":990101,"priority":1000}]''::jsonb)', 'fm_inputs_forbidden');
+RESET ROLE;
+SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co3')) = 0, 'T6 nieaktywny profil dostawcy: nic nie zapisane');
+SELECT pg_temp.login('sup4');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co4') || ''', ''[{"retailer_id":990101,"priority":1000}]''::jsonb)', 'fm_inputs_forbidden');
+RESET ROLE;
+SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co4')) = 0, 'T6 zawieszona firma: nic nie zapisane');
+UPDATE public.companies SET fm_b2b_enabled = false WHERE id = pg_temp.id('co1');
+SELECT pg_temp.login('sup1');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co1') || ''', ''[]''::jsonb)', 'fm_inputs_forbidden');
+RESET ROLE;
+SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')) = 2, 'T6 firma poza FM: dotychczasowe wybory NIE sa kasowane, tylko zapis zablokowany');
+UPDATE public.companies SET fm_b2b_enabled = true WHERE id = pg_temp.id('co1');
+UPDATE public.profiles SET active = false WHERE id = pg_temp.id('admin');
+SELECT pg_temp.login('admin');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co1') || ''', ''[]''::jsonb)', 'fm_inputs_forbidden');
+RESET ROLE;
+UPDATE public.profiles SET active = true WHERE id = pg_temp.id('admin');
+UPDATE public.profiles SET active = false WHERE id = pg_temp.id('buyer1');
+SELECT pg_temp.login('buyer1');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_error('UPDATE public.fm_resps SET zone = ''red'' WHERE retailer_id = 990101', 'fm_inputs_forbidden');
+SELECT pg_temp.expect_error('INSERT INTO public.fm_resps (retailer_id, supplier_company_id, zone, status, meta) VALUES (990101, ''' || pg_temp.id('co2') || ''', ''green'', ''green'', ''{}''::jsonb)', 'fm_inputs_forbidden');
+RESET ROLE;
+UPDATE public.profiles SET active = true, fm26_active = false WHERE id = pg_temp.id('buyer1');
+SELECT pg_temp.login('buyer1');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.expect_error('UPDATE public.fm_resps SET zone = ''red'' WHERE retailer_id = 990101', 'fm_inputs_forbidden');
+RESET ROLE;
+UPDATE public.profiles SET fm26_active = true WHERE id = pg_temp.id('buyer1');
+SELECT pg_temp.ok((SELECT zone FROM public.fm_resps WHERE retailer_id = 990101) = 'green' AND (SELECT count(*) FROM public.fm_resps WHERE retailer_id = 990101) = 1, 'T6 odpowiedz kupca nietknieta po odmowach');
 -- zamkniecie fazy
 UPDATE public.fm_settings SET algo_phase = 'matching';
 SELECT pg_temp.login('sup1');
 SET LOCAL ROLE authenticated;
 SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co1') || ''', ''[]''::jsonb)', 'fm_inputs_locked');
-SELECT pg_temp.expect_error('DELETE FROM public.company_target_retailers WHERE company_id = ''' || pg_temp.id('co1') || '''', 'fm_inputs_locked');
+DELETE FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1');  -- stary klient: 0 wierszy (RLS), bez bledu
 SELECT pg_temp.expect_error('INSERT INTO public.company_target_retailers (company_id, retailer_id, priority) VALUES (''' || pg_temp.id('co1') || ''', 990103, 1000)', 'fm_inputs_locked');
 SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')) = 2, 'T6 wybory nietkniete po zablokowaniu (RPC i bezposrednio)');
 UPDATE public.companies SET fm_selection_confirmed_at = now() WHERE id = pg_temp.id('co1');

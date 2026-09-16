@@ -154,6 +154,13 @@ async function probeSupplier() {
   }
   const t = await c.rpc("fm_set_company_targets", { p_company_id: otherId || ZERO, p_items: [] });
   rec("supplier", "write: zapis wyborów CUDZEJ firmy odrzucony", !!t.error, t.error?.message || "brak błędu!");
+  // stary bundle (DELETE + INSERT wprost): DELETE = 0 wierszy, INSERT odrzucony — własne wybory konta testowego nietknięte
+  const beforeN = (await c.from("company_target_retailers").select("retailer_id")).data?.length ?? -1;
+  const anyRetailer = rows[0]?.id;
+  const d = await c.from("company_target_retailers").delete().eq("company_id", me.company_id).select("retailer_id");
+  const ins = anyRetailer ? await c.from("company_target_retailers").insert({ company_id: me.company_id, retailer_id: anyRetailer, priority: 1 }) : { error: new Error("brak sieci") };
+  const afterN = (await c.from("company_target_retailers").select("retailer_id")).data?.length ?? -2;
+  rec("supplier", "write: bezpośredni DELETE/INSERT wyborów bez efektu (tylko RPC)", !d.error && (d.data || []).length === 0 && !!ins.error && beforeN === afterN, d.error?.message || ins.error?.message || `przed=${beforeN} po=${afterN} usunięte=${(d.data || []).length}`);
 }
 
 // ── kupiec ───────────────────────────────────────────────────────────────────
