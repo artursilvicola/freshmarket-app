@@ -10,14 +10,16 @@
 
 // Czy `account` z panelu to konto zalogowanego użytkownika (a nie podgląd cudzego)?
 // supplier: account.id = companies.id  → porównujemy z profiles.company_id
-// buyer:    account.retailerId         → porównujemy z profiles.retailer_id
+// buyer:    account.id                 → porównujemy z id profilu
 // admin:    account.id = profiles.id   → porównujemy z id zalogowanego
 export function isOwnAccount(account, currentUser) {
   if (!account) return false;
   if (!currentUser) return true; // brak danych sesji (testy/demo) — nie blokujemy
   const same = (a, b) => String(a ?? "") === String(b ?? "") && String(a ?? "") !== "";
   if (account.role === "supplier") return same(account.id, currentUser.company_id);
-  if (account.role === "buyer") return same(account.retailerId, currentUser.retailer_id);
+  // Sieć nie identyfikuje konta: jedna sieć może mieć wielu kupców.
+  // Porównanie po retailer_id uznawałoby cudze konto tej samej sieci za własne.
+  if (account.role === "buyer") return same(account.id, currentUser.id);
   return same(account.id, currentUser.id);
 }
 

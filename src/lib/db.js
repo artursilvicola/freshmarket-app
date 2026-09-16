@@ -449,6 +449,15 @@ export async function updateBuyerProfile(id, patch) {
 export async function updateOwnBuyerProfile(id, patch) {
   // [P2-2] Bilingual via legacy.errors.db.*
   if (!id) throw new Error(i18n.t("legacy:errors.db.buyer_profile_id_required"));
+  // Admin ma przez RLS prawo aktualizować wszystkie profile. Dlatego helper
+  // "updateOwn" musi dodatkowo potwierdzić, że wskazany profil jest profilem
+  // bieżącej sesji; samo ukrycie przycisku w UI nie jest granicą bezpieczeństwa.
+  const { data: authData, error: authErr } = await supabase.auth.getUser();
+  const uid = authData?.user?.id;
+  if (authErr || !uid) throw new Error(i18n.t("legacy:errors.db.password_no_session"));
+  if (!isOwnProfileTarget({ argId: id, uid, companyId: null })) {
+    throw new Error(i18n.t("legacy:errors.db.profile_not_own"));
+  }
   const row = {
     name: normalizeText(patch.name),
     phone: normalizeText(patch.phone),

@@ -7846,16 +7846,16 @@ function PageBuyerProfile({ buyer, setBuyer, fl, readOnly = false }) {
       {readOnly && <Alrt type="warning">{t("profile.impersonation.notice")}</Alrt>}
       <Card title={t("buyer.profile.card_data_title")} icon={User}>
         <Row>
-          <Inp label={t("buyer.profile.labels.name")} required value={b.name} onChange={e=>u("name",e.target.value)}/>
-          <Inp label={t("buyer.profile.labels.position")} value={b.position} onChange={e=>u("position",e.target.value)}/>
+          <Inp label={t("buyer.profile.labels.name")} required value={b.name} onChange={e=>u("name",e.target.value)} readOnly={readOnly}/>
+          <Inp label={t("buyer.profile.labels.position")} value={b.position} onChange={e=>u("position",e.target.value)} readOnly={readOnly}/>
         </Row>
         <Row>
           <Inp label={t("buyer.profile.labels.retailer")} value={b.company} readOnly />
           <Inp label={t("buyer.profile.labels.email_admin_change")} type="email" value={b.email} readOnly />
         </Row>
-        <Inp label={t("buyer.profile.labels.phone")} value={b.phone} onChange={e=>u("phone",e.target.value)}/>
+        <Inp label={t("buyer.profile.labels.phone")} value={b.phone} onChange={e=>u("phone",e.target.value)} readOnly={readOnly}/>
       </Card>
-      <Card title={t("buyer.profile.subscription_card_title")} icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:"pointer" }}><input type="checkbox" checked={b.consent} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{t("buyer.profile.subscription_consent_label")}</div><div style={{ fontSize:12,color:"#64748b" }}>{t("buyer.profile.subscription_consent_hint")}</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>{t("buyer.profile.subscription_active_notice", { date: nextMailingDateLabel })}</div>}</Card>
+      <Card title={t("buyer.profile.subscription_card_title")} icon={Mail}><div style={{ padding:12,background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0" }}><label style={{ display:"flex",gap:10,cursor:readOnly?"default":"pointer" }}><input type="checkbox" checked={b.consent} disabled={readOnly} onChange={e=>u("consent",e.target.checked)} style={{ width:16,height:16,marginTop:2 }}/><div><div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{t("buyer.profile.subscription_consent_label")}</div><div style={{ fontSize:12,color:"#64748b" }}>{t("buyer.profile.subscription_consent_hint")}</div></div></label></div>{b.consent&&<div style={{ marginTop:8,padding:"7px 12px",background:"#d1fae5",borderRadius:7,fontSize:12,color:"#047857" }}>{t("buyer.profile.subscription_active_notice", { date: nextMailingDateLabel })}</div>}</Card>
       {!readOnly && <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:24 }}><Btn primary onClick={()=>{ setBuyer(b); fl(t("buyer.profile.saved_flash")); }}>{t("buyer.profile.save_button")}</Btn></div>}
       {!readOnly && <ChangePasswordSection fl={fl}/>}
     </div>

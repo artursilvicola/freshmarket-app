@@ -17,8 +17,9 @@ describe("rozpoznanie podglądu cudzego konta", () => {
   it("dostawca i kupiec na własnym koncie", () => {
     expect(isOwnAccount({ role: "supplier", id: "co-1" }, SUPPLIER_USER)).toBe(true);
     expect(isOwnAccount({ role: "supplier", id: "co-2" }, SUPPLIER_USER)).toBe(false);
-    expect(isOwnAccount({ role: "buyer", retailerId: 100 }, BUYER_USER)).toBe(true);
-    expect(isOwnAccount({ role: "buyer", retailerId: 143 }, BUYER_USER)).toBe(false);
+    expect(isOwnAccount({ role: "buyer", id: "buyer-uid", retailerId: 100 }, BUYER_USER)).toBe(true);
+    expect(isOwnAccount({ role: "buyer", id: "other-buyer", retailerId: 100 }, BUYER_USER)).toBe(false);
+    expect(isOwnAccount({ role: "buyer", id: "buyer-uid", retailerId: 143 }, BUYER_USER)).toBe(true);
   });
 
   it("brak danych sesji nie blokuje (demo/testy); brak konta = nie własne", () => {
