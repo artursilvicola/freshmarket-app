@@ -142,6 +142,37 @@ try {
     ok(err && /fm_inputs_locked/.test(err.message), "(7) zapis rozpoczęty po zmianie fazy → fm_inputs_locked");
     await admin.query("update public.fm_settings set algo_phase = 'preferences_open'");
   }
+  // (8) review 78e9dc9 P1: odpowiedź KUPCA w toku — zamknięcie fazy czeka na jej zatwierdzenie; po zamknięciu nowa odpowiedź odrzucona
+  {
+    const bu = (await admin.query("select gen_random_uuid() as u")).rows[0].u;
+    await admin.query("insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data) values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated',$2,'',now(),now(),now(),'{\"provider\":\"email\"}','{}')", [bu, `conc-targets-buyer-${Date.now()}@test.local`]);
+    await admin.query("update public.profiles set role = 'buyer', retailer_id = 990201, active = true, fm26_active = true where id = $1", [bu]);
+    await admin.query("delete from public.fm_resps where retailer_id = 990201 and supplier_company_id = $1", [ids.co]);
+    const b = await session(bu);
+    await b.query("insert into public.fm_resps (retailer_id, supplier_company_id, zone, status, meta) values (990201, $1, 'green', 'green', '{}'::jsonb)", [ids.co]);  // transakcja otwarta = odpowiedź w toku
+    // osobne połączenie do obserwacji: połączenie admina jest zajęte czekającym UPDATE
+    const obs = new pg.Client({ connectionString: url }); await obs.connect();
+    let phaseDone = false;
+    const pPhase = admin.query("update public.fm_settings set algo_phase = 'matching'").then(() => { phaseDone = true; });
+    await new Promise(r => setTimeout(r, 300));
+    ok(!phaseDone, "(8) zamknięcie fazy czeka na odpowiedź kupca w toku");
+    const visibleBefore = (await obs.query("select count(*)::int as n from public.fm_resps where retailer_id = 990201 and supplier_company_id = $1", [ids.co])).rows[0].n;
+    await b.query("commit"); await b.end();
+    await pPhase;
+    const visibleAfter = (await obs.query("select zone from public.fm_resps where retailer_id = 990201 and supplier_company_id = $1", [ids.co])).rows;
+    await obs.end();
+    ok(phaseDone && visibleBefore === 0 && visibleAfter.length === 1 && visibleAfter[0].zone === "green", "(8) po zamknięciu fazy odpowiedź jest już zatwierdzona i widoczna (nie „spóźniona”)");
+    const b2 = await session(bu);
+    let err = null;
+    try { await b2.query("update public.fm_resps set zone = 'red', status = 'red' where retailer_id = 990201 and supplier_company_id = $1", [ids.co]); } catch (e) { err = e; }
+    await b2.query("rollback"); await b2.end();
+    ok(err && /fm_inputs_locked/.test(err.message), "(8) nowa zmiana odpowiedzi po zamknięciu → fm_inputs_locked");
+    ok((await admin.query("select zone from public.fm_resps where retailer_id = 990201 and supplier_company_id = $1", [ids.co])).rows[0].zone === "green", "(8) decyzja kupca nietknięta");
+    await admin.query("update public.fm_settings set algo_phase = 'preferences_open'");
+    await admin.query("delete from public.fm_resps where retailer_id = 990201 and supplier_company_id = $1", [ids.co]);
+    await admin.query("delete from public.profiles where id = $1", [bu]);
+    await admin.query("delete from auth.users where id = $1", [bu]);
+  }
 } finally {
   await admin.query("delete from public.company_target_retailers where company_id = $1", [ids.co]);
   await admin.query("delete from public.profiles where id in ($1, $2)", [ids.u1, ids.u2]);

@@ -583,14 +583,38 @@ end $$;
 revoke all on function public.fm_inputs_write_check() from public;
 grant execute on function public.fm_inputs_write_check() to authenticated;
 
--- Trigger na company_target_retailers / fm_resps: sesja użytkownika musi mieć
--- prawo udziału (fm_inputs_forbidden), a poza fazą/terminem zapisuje tylko admin
--- (fm_inputs_locked). Stary bundle / bezpośredni zapis przechodzi przez to samo sito.
+-- Blokady współdzielone dla KAŻDEGO zapisu wejść przez sesję użytkownika (RPC dostawcy
+-- i bezpośrednie zapisy odpowiedzi kupca): własny profil, własna sieć (kupiec) i
+-- fm_settings — wszystkie FOR SHARE, trzymane do końca transakcji. Skutek: admin
+-- zmieniający fazę/termin (UPDATE fm_settings) CZEKA na odpowiedzi/wybory w toku,
+-- a zapis rozpoczęty po zmianie widzi już nową fazę (review Codexa 78e9dc9 P1).
+-- SECURITY DEFINER, bo FOR SHARE wymaga prawa UPDATE, którego kupiec/dostawca nie ma.
+-- Kolejność blokad (bez cykli): companies → profiles → retailers → fm_settings.
+create or replace function public.fm_inputs_lock_for_write()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_uid uuid := auth.uid(); v_rid integer;
+begin
+  if v_uid is null then return; end if;
+  perform 1 from public.profiles where id = v_uid for share;
+  select retailer_id into v_rid from public.profiles where id = v_uid;
+  if v_rid is not null then
+    perform 1 from public.retailers where id = v_rid for share;
+  end if;
+  perform 1 from public.fm_settings for share;
+end $$;
+revoke all on function public.fm_inputs_lock_for_write() from public;
+grant execute on function public.fm_inputs_lock_for_write() to authenticated;
+
+-- Trigger na company_target_retailers / fm_resps: sesja użytkownika najpierw bierze
+-- blokady (wyżej), potem musi mieć prawo udziału (fm_inputs_forbidden), a poza
+-- fazą/terminem zapisuje tylko admin (fm_inputs_locked). Stary bundle / bezpośredni
+-- zapis przechodzi przez to samo sito.
 create or replace function public.fm_inputs_phase_lock()
 returns trigger language plpgsql as $$
 declare v_reason text;
 begin
   if public.fm_is_server_session() then return coalesce(new, old); end if;
+  perform public.fm_inputs_lock_for_write();
   v_reason := public.fm_inputs_write_check();
   if v_reason is not null then
     raise exception 'fm_inputs_forbidden' using errcode = '42501', hint = v_reason;
@@ -656,8 +680,7 @@ begin
   if not found then
     raise exception 'fm_set_company_targets: nie ma firmy %', p_company_id;
   end if;
-  perform 1 from public.profiles where id = v_uid for share;
-  perform 1 from public.fm_settings for share;
+  perform public.fm_inputs_lock_for_write();   -- profil, (sieć), fm_settings FOR SHARE
   -- 2) kontrole PO blokadach, na aktualnym stanie: właściciel, udział, faza/termin
   select role::text, company_id into v_role, v_cid from public.profiles where id = v_uid;
   if v_role is distinct from 'admin' and not (v_role = 'supplier' and v_cid is not null and v_cid = p_company_id) then

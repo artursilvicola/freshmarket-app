@@ -13713,6 +13713,9 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
         const saved = await dbSetCompanyTargetRetailers(companyId, rows);
         if (rev < editRevRef.current) return; // są nowsze kliknięcia — ich zapis jest w kolejce
         savedRevRef.current = rev;
+        // ostatnia rewizja zapisana = wcześniejszy błąd nieaktualny (review 78e9dc9 P2);
+        // starsza odpowiedź nie dochodzi tutaj, więc nie skasuje nowszego błędu
+        setTargetsSaveError(null);
         // stan lokalny = lista faktycznie zapisana w bazie (inna karta / drugie konto
         // firmy mogło zapisać później — wygrywa ostatni zapis w całości, nie suma)
         const savedPrefs = {};

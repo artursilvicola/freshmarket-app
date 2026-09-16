@@ -46,7 +46,7 @@ CREATE OR REPLACE FUNCTION pg_temp.contact(rid integer) RETURNS text LANGUAGE pl
 BEGIN RETURN (SELECT coalesce(buyer_name,'-') || '|' || coalesce(buyer_email,'-') || '|' || coalesce(buyer_phone,'-') FROM public.retailer_contacts WHERE retailer_id = rid); END $$;
 
 -- ── T0 obiekty ───────────────────────────────────────────────────────────────
-SELECT pg_temp.ok((SELECT count(*) FROM pg_proc WHERE proname IN ('fm_my_schedule','fm_set_company_targets','fm_inputs_are_locked','fm_backup_inputs','admin_set_retailer_contact','fm_is_privileged_session','fm_inputs_write_check','fm_is_server_session')) = 8, 'T0 funkcje 055 istnieja');
+SELECT pg_temp.ok((SELECT count(*) FROM pg_proc WHERE proname IN ('fm_my_schedule','fm_set_company_targets','fm_inputs_are_locked','fm_backup_inputs','admin_set_retailer_contact','fm_is_privileged_session','fm_inputs_write_check','fm_is_server_session','fm_inputs_lock_for_write')) = 9, 'T0 funkcje 055 istnieja');
 SELECT pg_temp.ok((SELECT count(*) FROM pg_policies WHERE tablename = 'company_target_retailers' AND policyname IN ('ctr_supplier_own', 'ctr_admin_all')) = 0 AND (SELECT count(*) FROM pg_policies WHERE tablename = 'company_target_retailers' AND cmd <> 'SELECT') = 0, 'T0 company_target_retailers: same polityki SELECT (zapis tylko przez RPC, takze admin)');
 SELECT pg_temp.ok((SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_profiles_guard_protected','trg_companies_guard_protected','trg_ctr_phase_lock','trg_fm_resps_phase_lock','trg_retailers_route_buyer_contacts','trg_retailers_clear_buyer_contacts','trg_fm_settings_route_schedule')) = 7, 'T0 triggery 055 istnieja');
 SELECT pg_temp.ok((SELECT count(*) FROM pg_policies WHERE tablename = 'fm_prefs' AND policyname = 'fm_prefs_select_role_based') = 0, 'T0 polityka 002 fm_prefs_select_role_based usunieta');
@@ -359,6 +359,9 @@ SET LOCAL ROLE authenticated;
 SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co1') || ''', ''[]''::jsonb)', 'brak uprawnie');
 INSERT INTO public.fm_resps (retailer_id, supplier_company_id, zone, status, meta) VALUES (990101, pg_temp.id('co1'), 'green', 'green', '{}'::jsonb);
 SELECT pg_temp.ok((SELECT count(*) FROM public.fm_resps WHERE retailer_id = 990101) = 1, 'T6 faza otwarta: kupiec odpowiada');
+-- odpowiedz kupca trzyma blokade FOR SHARE na fm_settings do konca transakcji (zamkniecie fazy czeka na odpowiedzi w toku)
+SELECT pg_temp.ok((SELECT count(*) FROM pg_locks WHERE relation = 'public.fm_settings'::regclass AND mode = 'RowShareLock' AND pid = pg_backend_pid()) >= 1, 'T6 odpowiedz kupca: RowShareLock na fm_settings');
+SELECT pg_temp.ok((SELECT count(*) FROM pg_locks WHERE relation = 'public.retailers'::regclass AND mode = 'RowShareLock' AND pid = pg_backend_pid()) >= 1, 'T6 odpowiedz kupca: RowShareLock na retailers (wlasna siec)');
 RESET ROLE;
 -- prawo udzialu (review P1/3): nieaktywny profil, zawieszona firma, firma poza FM, nieaktywny admin, kupiec bez udzialu
 SELECT pg_temp.login('sup3');

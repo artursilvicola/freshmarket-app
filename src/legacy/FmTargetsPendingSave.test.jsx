@@ -85,15 +85,28 @@ describe("PageSupplierFM — zapisy wyborów a kolejność odpowiedzi serwera", 
     expect(hasError()).toBe(false);
   });
 
-  it("kliknięcie w trakcie nieudanego zapisu nie ginie — idzie do zapisu jako następne", async () => {
+  it("kliknięcia w trakcie nieudanego zapisu nie giną; po udanym zapisie ostatniej rewizji błąd znika i można potwierdzić", async () => {
     mount();
     await click("A");
-    await click("B");               // czeka w kolejce, gdy [A] jeszcze trwa
+    for (const n of ["B", "C", "D", "E"]) await click(n);   // czekają w kolejce, gdy [A] jeszcze trwa
     await act(async () => { requests[0].reject(new Error("boom")); });
+    expect(hasError()).toBe(true);
     expect(requests).toHaveLength(2);
-    expect(ids(requests[1].rows)).toEqual([990301, 990302]);
+    expect(ids(requests[1].rows)).toEqual([990301, 990302, 990303, 990304, 990305]);
     await act(async () => { requests[1].resolve(requests[1].rows); });
-    expect(visible()).toEqual(["rev-A", "rev-B"]);
+    expect(visible()).toEqual(["rev-A", "rev-B", "rev-C", "rev-D", "rev-E"]);
+    expect(hasError()).toBe(false);                       // review 78e9dc9 P2: brak starego bannera
+    expect(confirmButton().props.disabled).toBe(false);   // 5 ⭐ zapisane → można potwierdzić
+  });
+
+  it("starsza odpowiedź nie kasuje nowszego błędu", async () => {
+    mount();
+    await click("A");                                     // rev1 w toku
+    await click("B");                                     // rev2 w kolejce
+    await act(async () => { requests[0].resolve(requests[0].rows); });   // ack rev1 — nowsze kliknięcie istnieje → nic nie czyści
+    await act(async () => { requests[1].reject(new Error("boom")); });   // rev2 (ostatnia) nieudana
+    expect(hasError()).toBe(true);
+    expect(confirmButton().props.disabled).toBe(true);
   });
 
   it("„Potwierdź wybór” czeka na zapis ostatniej rewizji", async () => {

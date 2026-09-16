@@ -1,9 +1,16 @@
-# Hotfix bezpieczeństwa B2B — wersja 4 po trzecim review Codexa (16.09.2026)
+# Hotfix bezpieczeństwa B2B — wersja 5 po czwartym review Codexa (16.09.2026)
 
 **Status: NIE ZASTOSOWANE na produkcji.** Gałąź `fix/security-hotfix-2026-09-16` (z `origin/main` 467cbe4).
-Historia: v1 7d90826 (review: 4×P1) → v2 c8842c8 (3×P1 + 2×P2) → v3 79b4b24 (review `REVIEW_HOTFIX_055_79b4b24.md`: 3×P1) → **v4 = ten commit**.
-Wszystko przetestowane od zera na oddzielnej bazie (embedded Postgres 17.10, `--shim`): migracje 001–055, `--reapply 054,055`, test kolejek 053 (T0–T16), test 055 (T0–T8), test równoległych zapisów (7 scenariuszy); vitest 188/188 (w tym regresja z review Codexa); build OK.
+Historia: v1 7d90826 (4×P1) → v2 c8842c8 (3×P1 + 2×P2) → v3 79b4b24 (3×P1) → v4 78e9dc9 (review `REVIEW_HOTFIX_055_78e9dc9.md`: 1×P1 + 1×P2) → **v5 = ten commit**.
+Wszystko przetestowane od zera na oddzielnej bazie (embedded Postgres 17.10, `--shim`): migracje 001–055, `--reapply 054,055`, test kolejek 053 (T0–T16), test 055 (T0–T8), test równoległych zapisów (8 scenariuszy); vitest 189/189 + regresje Codexa v3 i v4 uruchomione na tej gałęzi (PASS); build OK.
 Nic tu nie wysyła maili, nie publikuje planu, nie zmienia wyborów uczestników, nie zmienia fazy, terminu ani flag uczestników na produkcji.
+
+## 00. Odpowiedź na review 78e9dc9 (v5)
+
+| Ustalenie | Poprawka | Dowód |
+|---|---|---|
+| **P1 zamknięcie fazy nie czekało na odpowiedź kupca w toku** (blokada `FOR SHARE` na `fm_settings` była tylko w RPC dostawcy) | jedna funkcja `fm_inputs_lock_for_write()` (security definer, bo `FOR SHARE` wymaga prawa UPDATE): własny profil, własna sieć (kupiec) i `fm_settings` **FOR SHARE** do końca transakcji — wywoływana w triggerze `fm_inputs_phase_lock` (ścieżka kupca: INSERT/UPDATE/DELETE na `fm_resps`, oraz każdy bezpośredni zapis wejść) **przed** kontrolami udziału i fazy, i w RPC dostawcy po blokadzie firmy. Kolejność blokad bez cykli: `companies → profiles → retailers → fm_settings`. Skutek: `UPDATE fm_settings` admina (faza/termin) czeka na wszystkie odpowiedzi i wybory w toku; zapis rozpoczęty po zmianie widzi nową fazę. Wyjątek admina pozostaje jawny: sesja admina przechodzi kontrolę fazy, ale też bierze blokady | `scripts/fm-targets-concurrency-test.mjs` (8): odpowiedź kupca w otwartej transakcji → zmiana fazy **czeka**; po commicie odpowiedź widoczna, dopiero potem faza zamknięta; nowa zmiana odpowiedzi po zamknięciu → `fm_inputs_locked`, decyzja nietknięta. SQL 055 T6: po INSERT kupca `pg_locks` pokazuje RowShareLock na `fm_settings` i `retailers` |
+| **P2 stary banner błędu blokował „Potwierdź wybór” po udanym ponowieniu** | zapis **ostatniej rewizji** czyści `targetsSaveError` (starsze odpowiedzi nie dochodzą do tego miejsca, więc nie skasują nowszego błędu) | `FmTargetsPendingSave.test.jsx`: A w toku, B–E w kolejce, A pada → banner; zapis [A–E] udany → 0 bannerów, potwierdzenie odblokowane; osobny test: starsza odpowiedź nie kasuje nowszego błędu. Test Codexa `ReviewV4RetryFeedback` uruchomiony na tej gałęzi: **PASS** |
 
 ## 0. Odpowiedź na review 79b4b24 (v4)
 
