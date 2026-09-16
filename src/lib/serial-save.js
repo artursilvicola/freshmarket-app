@@ -17,7 +17,8 @@ export function createSerialSaver(saveFn, { onError, onSettled } = {}) {
         lastError = null;
       } catch (e) {
         lastError = e;
-        pending = null; // po błędzie nie ponawiamy automatycznie starszych stanów
+        // nowszy stan czekający w kolejce (kliknięcia w trakcie nieudanego zapisu) idzie
+        // do zapisu jako następny — nie gubimy go; starsze, pominięte stany nie wracają
         onError?.(e, payload);
       }
     }

@@ -1,9 +1,19 @@
-# Hotfix bezpieczeństwa B2B — wersja 3 po drugim review Codexa (16.09.2026)
+# Hotfix bezpieczeństwa B2B — wersja 4 po trzecim review Codexa (16.09.2026)
 
 **Status: NIE ZASTOSOWANE na produkcji.** Gałąź `fix/security-hotfix-2026-09-16` (z `origin/main` 467cbe4).
-Historia: v1 7d90826 (review: 4×P1) → v2 c8842c8 (review: 3×P1 + 2×P2, `REVIEW_HOTFIX_055_c8842c8.md`) → **v3 = ten commit**.
-Wszystko przetestowane od zera na oddzielnej bazie (embedded Postgres 17.10, `--shim`): migracje 001–055, `--reapply 054,055`, test kolejek 053 (T0–T16), test 055 (T0–T8, rozszerzony), nowy test równoległych zapisów; vitest 183/183; build OK.
-Nic tu nie wysyła maili, nie publikuje planu, nie zmienia wyborów uczestników, nie zmienia fazy ani terminu na produkcji.
+Historia: v1 7d90826 (review: 4×P1) → v2 c8842c8 (3×P1 + 2×P2) → v3 79b4b24 (review `REVIEW_HOTFIX_055_79b4b24.md`: 3×P1) → **v4 = ten commit**.
+Wszystko przetestowane od zera na oddzielnej bazie (embedded Postgres 17.10, `--shim`): migracje 001–055, `--reapply 054,055`, test kolejek 053 (T0–T16), test 055 (T0–T8), test równoległych zapisów (7 scenariuszy); vitest 188/188 (w tym regresja z review Codexa); build OK.
+Nic tu nie wysyła maili, nie publikuje planu, nie zmienia wyborów uczestników, nie zmienia fazy, terminu ani flag uczestników na produkcji.
+
+## 0. Odpowiedź na review 79b4b24 (v4)
+
+| Ustalenie | Poprawka | Dowód |
+|---|---|---|
+| **P1/1 starsza odpowiedź serwera cofała nowsze kliknięcia** (A → B → ack[A] cofa B → C liczone od [A] → B ginie) | rewizje edycji w `PageSupplierFM`: każde kliknięcie = `editRev++`, payload niesie `rev`; odpowiedź na rewizję starszą niż bieżąca **nie dotyka UI** (stan bazy stosowany tylko dla ostatniej rewizji); „Potwierdź wybór” po `flush()` sprawdza `savedRev === editRev`, inaczej błąd; `createSerialSaver` po błędzie **nie gubi** nowszego stanu z kolejki (idzie do zapisu jako następny) | `src/legacy/FmTargetsPendingSave.test.jsx` (harness jak `ReviewV3PendingSave.test.jsx` Codexa): scenariusz Codexa → ostatni payload i UI = A,B,C; dopasowanie UI do bazy tylko dla ostatniej rewizji; błąd → banner + potwierdzenie zablokowane → kolejne kliknięcie zapisuje aktualny stan; kliknięcie w trakcie nieudanego zapisu nie ginie; potwierdzenie czeka na zapis ostatniej rewizji. Test Codexa uruchomiony na tej gałęzi: **PASS** |
+| **P1/2 kontrole fazy/udziału przed blokadą były nieaktualne po oczekiwaniu** | kolejność w RPC: najpierw blokady — wiersz firmy `FOR UPDATE`, własny profil `FOR SHARE`, `fm_settings` `FOR SHARE` — potem kontrole właściciela, udziału i fazy/terminu na aktualnym stanie; `fm_inputs_are_locked()` używa `clock_timestamp()` (czas bieżący, nie początek transakcji). `FOR SHARE` na `fm_settings` daje koordynację zamknięcia: **zmiana fazy przez admina czeka na zapisy w toku**, a zapis rozpoczęty po zmianie widzi nową fazę — algorytm nie startuje na wejściach, które mogą się jeszcze zmienić | `scripts/fm-targets-concurrency-test.mjs` (5) zapis czeka na blokadę firmy, admin zamyka fazę, zwolnienie → `fm_inputs_locked`, lista nietknięta; (6) niezatwierdzone `fm_b2b_enabled=false` w czasie oczekiwania → `fm_inputs_forbidden`; (7) `update fm_settings` admina blokuje się do commitu zapisu w toku, zapis zaliczony w całości, kolejny → `fm_inputs_locked` |
+| **P1/3 stara karta admina (podgląd dostawcy) mogła skasować wybory** (`ctr_admin_all`) | `ctr_admin_all` → `ctr_admin_read` (SELECT): **wszystkie sesje przeglądarkowe, także admin, zapisują wybory tylko przez RPC** (`fm_set_company_targets` pozwala adminowi na każdą firmę); SQL Editor / service role bez zmian | SQL 055 T0 (żadnej polityki zapisu na `company_target_retailers`), T6: admin-JWT bezpośredni DELETE = 0 wierszy, INSERT = RLS, RPC działa |
+
+Decyzja o kupcach: wariant **(a) tylko dla osób z potwierdzonym udziałem** — lista 11 kont do przejrzenia przez Artura, włączenie flagi pojedynczo z wpisem audit (nie masowo); nic z tego nie jest w tej gałęzi.
 
 | Plik | Co | Kiedy |
 |---|---|---|

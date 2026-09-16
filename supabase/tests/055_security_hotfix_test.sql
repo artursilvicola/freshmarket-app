@@ -47,7 +47,7 @@ BEGIN RETURN (SELECT coalesce(buyer_name,'-') || '|' || coalesce(buyer_email,'-'
 
 -- ── T0 obiekty ───────────────────────────────────────────────────────────────
 SELECT pg_temp.ok((SELECT count(*) FROM pg_proc WHERE proname IN ('fm_my_schedule','fm_set_company_targets','fm_inputs_are_locked','fm_backup_inputs','admin_set_retailer_contact','fm_is_privileged_session','fm_inputs_write_check','fm_is_server_session')) = 8, 'T0 funkcje 055 istnieja');
-SELECT pg_temp.ok((SELECT count(*) FROM pg_policies WHERE tablename = 'company_target_retailers' AND policyname = 'ctr_supplier_own') = 0 AND (SELECT cmd FROM pg_policies WHERE tablename = 'company_target_retailers' AND policyname = 'ctr_supplier_read') = 'SELECT', 'T0 dostawca ma na company_target_retailers tylko SELECT (zapis przez RPC)');
+SELECT pg_temp.ok((SELECT count(*) FROM pg_policies WHERE tablename = 'company_target_retailers' AND policyname IN ('ctr_supplier_own', 'ctr_admin_all')) = 0 AND (SELECT count(*) FROM pg_policies WHERE tablename = 'company_target_retailers' AND cmd <> 'SELECT') = 0, 'T0 company_target_retailers: same polityki SELECT (zapis tylko przez RPC, takze admin)');
 SELECT pg_temp.ok((SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_profiles_guard_protected','trg_companies_guard_protected','trg_ctr_phase_lock','trg_fm_resps_phase_lock','trg_retailers_route_buyer_contacts','trg_retailers_clear_buyer_contacts','trg_fm_settings_route_schedule')) = 7, 'T0 triggery 055 istnieja');
 SELECT pg_temp.ok((SELECT count(*) FROM pg_policies WHERE tablename = 'fm_prefs' AND policyname = 'fm_prefs_select_role_based') = 0, 'T0 polityka 002 fm_prefs_select_role_based usunieta');
 SELECT pg_temp.ok((SELECT count(*) FROM information_schema.columns WHERE table_name = 'fm_settings' AND column_name = 'selection_deadline') = 1, 'T0 fm_settings.selection_deadline');
@@ -330,6 +330,18 @@ DELETE FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')
 SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')) = 2, 'T6 stary klient: bezposredni DELETE bez efektu (RLS)');
 SELECT pg_temp.expect_error('INSERT INTO public.company_target_retailers (company_id, retailer_id, priority) VALUES (''' || pg_temp.id('co1') || ''', 990103, 100)', 'row-level security');
 SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')) = 2, 'T6 stary klient: lista nietknieta');
+RESET ROLE;
+-- stary bundle w sesji ADMINA (podglad konta dostawcy, review P1/3): tak samo bez efektu; admin zapisuje tylko przez RPC
+SELECT pg_temp.login('admin');
+SET LOCAL ROLE authenticated;
+SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')) = 2, 'T6 admin czyta wybory firmy');
+DELETE FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1');
+SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co1')) = 2, 'T6 stary klient admina: bezposredni DELETE bez efektu (RLS)');
+SELECT pg_temp.expect_error('INSERT INTO public.company_target_retailers (company_id, retailer_id, priority) VALUES (''' || pg_temp.id('co1') || ''', 990103, 100)', 'row-level security');
+SELECT pg_temp.ok(jsonb_array_length(public.fm_set_company_targets(pg_temp.id('co1'), '[{"retailer_id":990101,"priority":1000,"note":"chain:test-a"},{"retailer_id":990102,"priority":100,"note":"chain:test-b"}]'::jsonb)) = 2, 'T6 admin zapisuje wybory firmy przez RPC');
+RESET ROLE;
+SELECT pg_temp.login('sup1');
+SET LOCAL ROLE authenticated;
 SELECT pg_temp.expect_error('SELECT public.fm_set_company_targets(''' || pg_temp.id('co2') || ''', ''[]''::jsonb)', 'brak uprawnie');
 RESET ROLE;  -- wiersze cudzej firmy sprawdzamy jako postgres (RLS ukrywa je przed sup1)
 SELECT pg_temp.ok((SELECT count(*) FROM public.company_target_retailers WHERE company_id = pg_temp.id('co2')) = 1, 'T6 RPC: cudza firma nietknieta');

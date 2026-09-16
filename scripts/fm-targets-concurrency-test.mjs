@@ -90,6 +90,58 @@ try {
     ok(sameSet(await current(), [990201, 990202]), "(4) poprzednia lista nietknięta");
     await admin.query("update public.fm_settings set algo_phase = 'preferences_open'");
   }
+  // (5) review P1/2: zapis czeka na blokadę firmy, W TYM CZASIE admin zamyka fazę → po zwolnieniu blokady zapis ODRZUCONY
+  {
+    const holder = new pg.Client({ connectionString: url }); await holder.connect();
+    await holder.query("begin"); await holder.query("select id from public.companies where id = $1 for update", [ids.co]);
+    const b = await session(ids.u2);
+    let bErr = null, bDone = false;
+    const pb = b.query("select public.fm_set_company_targets($1, $2::jsonb)", [ids.co, items(990203)]).then(() => { bDone = true; }).catch(e => { bErr = e; bDone = true; });
+    await new Promise(r => setTimeout(r, 300));
+    ok(!bDone, "(5) zapis czeka na blokadę firmy");
+    await admin.query("update public.fm_settings set algo_phase = 'matching'");
+    await holder.query("commit"); await holder.end();
+    await pb;
+    await b.query("rollback"); await b.end();
+    ok(bErr && /fm_inputs_locked/.test(bErr.message), "(5) faza zamknięta w czasie oczekiwania → fm_inputs_locked (kontrola PO blokadzie)");
+    ok(sameSet(await current(), [990201, 990202]), "(5) lista nietknięta");
+    await admin.query("update public.fm_settings set algo_phase = 'preferences_open'");
+  }
+  // (6) review P1/2: niezatwierdzone odebranie udziału (fm_b2b_enabled=false) w czasie oczekiwania → zapis ODRZUCONY
+  {
+    const holder = new pg.Client({ connectionString: url }); await holder.connect();
+    await holder.query("begin"); await holder.query("update public.companies set fm_b2b_enabled = false where id = $1", [ids.co]);
+    const b = await session(ids.u2);
+    let bErr = null, bDone = false;
+    const pb = b.query("select public.fm_set_company_targets($1, $2::jsonb)", [ids.co, items(990203)]).then(() => { bDone = true; }).catch(e => { bErr = e; bDone = true; });
+    await new Promise(r => setTimeout(r, 300));
+    ok(!bDone, "(6) zapis czeka na niezatwierdzoną zmianę firmy");
+    await holder.query("commit"); await holder.end();
+    await pb;
+    await b.query("rollback"); await b.end();
+    ok(bErr && /fm_inputs_forbidden/.test(bErr.message), "(6) udział odebrany w czasie oczekiwania → fm_inputs_forbidden");
+    ok(sameSet(await current(), [990201, 990202]), "(6) lista nietknięta");
+    await admin.query("update public.companies set fm_b2b_enabled = true where id = $1", [ids.co]);
+  }
+  // (7) zmiana fazy przez admina CZEKA na zapisy w toku (FOR SHARE na fm_settings) — algorytm nie startuje na zmiennych wejściach
+  {
+    const a = await session(ids.u1);
+    await a.query("select public.fm_set_company_targets($1, $2::jsonb)", [ids.co, items(990201, 990202, 990203)]);   // transakcja otwarta = zapis w toku
+    let phaseDone = false;
+    const pPhase = admin.query("update public.fm_settings set algo_phase = 'matching'").then(() => { phaseDone = true; });
+    await new Promise(r => setTimeout(r, 300));
+    ok(!phaseDone, "(7) zmiana fazy czeka, dopóki zapis w toku nie jest zatwierdzony");
+    await a.query("commit"); await a.end();
+    await pPhase;
+    ok(phaseDone, "(7) zmiana fazy przeszła po zatwierdzeniu zapisu");
+    ok(sameSet(await current(), [990201, 990202, 990203]), "(7) zapis w toku zaliczony w całości");
+    const b = await session(ids.u2);
+    let err = null;
+    try { await b.query("select public.fm_set_company_targets($1, $2::jsonb)", [ids.co, items(990201)]); } catch (e) { err = e; }
+    await b.query("rollback"); await b.end();
+    ok(err && /fm_inputs_locked/.test(err.message), "(7) zapis rozpoczęty po zmianie fazy → fm_inputs_locked");
+    await admin.query("update public.fm_settings set algo_phase = 'preferences_open'");
+  }
 } finally {
   await admin.query("delete from public.company_target_retailers where company_id = $1", [ids.co]);
   await admin.query("delete from public.profiles where id in ($1, $2)", [ids.u1, ids.u2]);

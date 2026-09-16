@@ -13701,11 +13701,18 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
   const [targetsSaving, setTargetsSaving] = useState(false);
   const retailersRef = useRef(retailers);
   retailersRef.current = retailers;
+  // rewizje: każde kliknięcie = nowa rewizja edycji; odpowiedź serwera na STARSZĄ rewizję
+  // nie może cofnąć nowszych kliknięć (review Codexa 79b4b24 P1/1); potwierdzenie
+  // wymaga, by ostatnia zapisana rewizja == ostatnia rewizja edycji
+  const editRevRef = useRef(0);
+  const savedRevRef = useRef(0);
   const targetsSaverRef = useRef(null);
   if (!targetsSaverRef.current) {
     targetsSaverRef.current = createSerialSaver(
-      async ({ companyId, rows, sid: savedSid }) => {
+      async ({ companyId, rows, sid: savedSid, rev }) => {
         const saved = await dbSetCompanyTargetRetailers(companyId, rows);
+        if (rev < editRevRef.current) return; // są nowsze kliknięcia — ich zapis jest w kolejce
+        savedRevRef.current = rev;
         // stan lokalny = lista faktycznie zapisana w bazie (inna karta / drugie konto
         // firmy mogło zapisać później — wygrywa ostatni zapis w całości, nie suma)
         const savedPrefs = {};
@@ -13766,9 +13773,10 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
     const company = (companies || []).find(c => c.fmId === sid || c.legacy_fm_id === sid || c.id === sid);
     if (company?.id) {
       const rows = buildTargetRetailerRowsFromPrefs(np[sid], retailers);
+      const rev = ++editRevRef.current;
       setTargetsSaveError(null);
       setTargetsSaving(true);
-      targetsSaverRef.current.save({ companyId: company.id, rows, sid }).catch(() => {});
+      targetsSaverRef.current.save({ companyId: company.id, rows, sid, rev }).catch(() => {});
     }
   }
 
@@ -13864,6 +13872,11 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
                   // [fix/security-hotfix] potwierdzenie dopiero po zakończonym zapisie wyborów
                   const err = await targetsSaverRef.current.flush();
                   if (err) { setTargetsSaveError(err); return; }
+                  if (savedRevRef.current !== editRevRef.current) {
+                    // ostatnie kliknięcie nie ma potwierdzenia z bazy — nie potwierdzamy nieznanego stanu
+                    setTargetsSaveError(new Error(t("fm.supplier.targets_save_failed", { message: "rev" })));
+                    return;
+                  }
                   confirmFmSelection();
                 }}
                 disabled={!ready || targetsSaving || !!targetsSaveError || typeof confirmFmSelection !== "function"}

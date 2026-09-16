@@ -518,9 +518,11 @@ alter table public.fm_settings add column if not exists selection_deadline times
 
 create or replace function public.fm_inputs_are_locked()
 returns boolean language sql security definer stable set search_path = public as $$
+  -- clock_timestamp(), nie now(): zapis, który czekał na blokadę, ma być oceniony
+  -- wg CZASU BIEŻĄCEGO, nie początku transakcji (review P1/2)
   select coalesce((
     select lower(coalesce(algo_phase, '')) <> 'preferences_open'
-        or (selection_deadline is not null and now() > selection_deadline)
+        or (selection_deadline is not null and clock_timestamp() > selection_deadline)
       from public.fm_settings order by updated_at desc nulls last limit 1
   ), false)
 $$;
@@ -609,14 +611,20 @@ create trigger trg_fm_resps_phase_lock
   before insert or update or delete on public.fm_resps
   for each row execute function public.fm_inputs_phase_lock();
 
--- Wybory dostawcy zapisuje WYŁĄCZNIE RPC fm_set_company_targets (security definer):
--- dostawca ma na company_target_retailers tylko SELECT. Stary bundle robiący
--- DELETE + INSERT: DELETE nie trafia w żaden wiersz (RLS), INSERT jest odrzucony —
--- nic nie ginie, zapis po prostu nie następuje do odświeżenia strony.
+-- Wybory zapisuje WYŁĄCZNIE RPC fm_set_company_targets (security definer): dostawca
+-- I ADMIN (także podgląd konta dostawcy w starym bundlu — review P1/3) mają na
+-- company_target_retailers tylko SELECT. Stary bundle robiący DELETE + INSERT:
+-- DELETE nie trafia w żaden wiersz (RLS), INSERT jest odrzucony — nic nie ginie,
+-- zapis po prostu nie następuje do odświeżenia strony. Zapisy serwerowe / SQL Editor
+-- (postgres, service_role) nie podlegają RLS.
 drop policy if exists ctr_supplier_own on public.company_target_retailers;
 drop policy if exists ctr_supplier_read on public.company_target_retailers;
 create policy ctr_supplier_read on public.company_target_retailers
   for select using (public.app_role() = 'supplier'::user_role and company_id = public.app_company_id());
+drop policy if exists ctr_admin_all on public.company_target_retailers;
+drop policy if exists ctr_admin_read on public.company_target_retailers;
+create policy ctr_admin_read on public.company_target_retailers
+  for select using (public.is_admin());
 
 -- Atomowy zapis całego zestawu wyborów firmy. Albo zapisuje się cała nowa lista,
 -- albo zostaje cała poprzednia. Równoległe zapisy tej samej firmy (dwie karty,
@@ -636,6 +644,21 @@ begin
   if v_uid is null then
     raise exception 'fm_set_company_targets: brak sesji' using errcode = '42501';
   end if;
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then
+    raise exception 'fm_set_company_targets: p_items musi być tablicą';
+  end if;
+  -- 1) NAJPIERW blokady (review P1/2): wiersz firmy (szereguje zapisy tej firmy;
+  --    czeka też na niezatwierdzoną zmianę firmy, np. fm_b2b_enabled), własny profil
+  --    (FOR SHARE — czeka na niezatwierdzoną zmianę aktywności) i ustawienia FM
+  --    (FOR SHARE — admin zmieniający fazę/termin czeka na zapisy w toku, a zapis
+  --    rozpoczęty po zmianie widzi już nową fazę).
+  perform 1 from public.companies where id = p_company_id for update;
+  if not found then
+    raise exception 'fm_set_company_targets: nie ma firmy %', p_company_id;
+  end if;
+  perform 1 from public.profiles where id = v_uid for share;
+  perform 1 from public.fm_settings for share;
+  -- 2) kontrole PO blokadach, na aktualnym stanie: właściciel, udział, faza/termin
   select role::text, company_id into v_role, v_cid from public.profiles where id = v_uid;
   if v_role is distinct from 'admin' and not (v_role = 'supplier' and v_cid is not null and v_cid = p_company_id) then
     raise exception 'fm_set_company_targets: brak uprawnień do tej firmy' using errcode = '42501';
@@ -648,14 +671,6 @@ begin
     raise exception 'fm_inputs_locked'
       using errcode = 'P0001',
             hint = 'Etap zbierania wyborów jest zamknięty (algo_phase=' || coalesce(public.fm_current_phase(), '') || ').';
-  end if;
-  if p_items is null or jsonb_typeof(p_items) <> 'array' then
-    raise exception 'fm_set_company_targets: p_items musi być tablicą';
-  end if;
-  -- blokada firmy: kolejne zapisy tej samej firmy czekają na zatwierdzenie poprzedniego
-  perform 1 from public.companies where id = p_company_id for update;
-  if not found then
-    raise exception 'fm_set_company_targets: nie ma firmy %', p_company_id;
   end if;
   select string_agg(coalesce(e->>'retailer_id', '?'), ',') into v_bad
     from jsonb_array_elements(p_items) e
