@@ -82,6 +82,7 @@ import {
 import { retailerContact } from "../lib/retailer-contacts.js";
 import { isFmInputsLockedError } from "../lib/fm-input-lock.js";
 import { createSerialSaver } from "../lib/serial-save.js";
+import { registerPendingWork } from "../lib/pending-work.js";
 // [feat/shared-countries] Jedno źródło listy krajów (panel + rejestracja dostawcy).
 import { FLAGS, CNAMES, CNAMES_EN, CNAMES_SORTED, getCountryName, getSortedCountries } from "../lib/countries";
 import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE_GREEN_MAX, FM_ZONE_ORANGE_MAX, getFMZone, isSupplierEligible, isPairExcluded, isAutomaticChance, scoreMatch, buildFMData } from "../lib/fm-algo.js";
@@ -5200,6 +5201,8 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
   const toCompanyDraft = (row = {}) => ({ ...row, contacts: Array.isArray(row.contacts) ? row.contacts : [] });
   const [c,setC]=useState(()=>toCompanyDraft(co)); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
   const [dirty, setDirty] = useState(false);
+  // niezapisany profil firmy = pasek „nowa wersja" pyta przed przeładowaniem
+  useEffect(() => registerPendingWork(() => dirty), [dirty]);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
   const [hiddenRetailerDraft, setHiddenRetailerDraft] = useState([]);
   const u = (k, v) => { setDirty(true); setC(prev => ({ ...prev, [k]: v })); };
@@ -7857,6 +7860,8 @@ export function PageSupplierProfile({ account, co, fl, onSaved, readOnly = false
   const [p, setP] = useState(() => fromAccount(account));
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // niezapisany „Mój profil" = pasek „nowa wersja" pyta przed przeładowaniem
+  useEffect(() => registerPendingWork(() => dirty), [dirty]);
   const u = (k, v) => { setDirty(true); setP((prev) => ({ ...prev, [k]: v })); };
   // profil doczytany po zamontowaniu strony — nie nadpisuje edycji w toku
   useEffect(() => {
@@ -13739,6 +13744,8 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
       }
     );
   }
+  // pasek „nowa wersja — odśwież" nie przeładuje karty, dopóki zapis wyborów trwa / czeka w kolejce
+  useEffect(() => registerPendingWork(() => !!(targetsSaverRef.current && targetsSaverRef.current.busy)), []);
   // [fix/fm-real-companies] bez fallbacku do danych demo
   const _chains    = fmChains    || [];
   const _suppliers = fmSuppliers || [];

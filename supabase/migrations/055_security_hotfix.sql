@@ -635,6 +635,26 @@ create trigger trg_fm_resps_phase_lock
   before insert or update or delete on public.fm_resps
   for each row execute function public.fm_inputs_phase_lock();
 
+-- Ślad zmian odpowiedzi kupców (fm_resps nie ma updated_at): kto, para sieć→dostawca,
+-- decyzja przed/po. Uzupełnia porównanie kopii przed/po (review Codexa c3c1e66).
+-- Bez danych osobowych. Sesje serwerowe (service_role, SQL Editor) też są logowane
+-- z user_id = null.
+create or replace function public.fm_resps_audit()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.audit_log (user_id, action, entity, entity_id, meta)
+  values (auth.uid(), 'fm_resp_' || lower(tg_op), 'fm_resp',
+          coalesce(new.retailer_id, old.retailer_id)::text || ':' || coalesce(new.supplier_company_id, old.supplier_company_id)::text,
+          jsonb_build_object('before', case when old is null then null else jsonb_build_object('zone', old.zone, 'status', old.status, 'position', old.position) end,
+                             'after',  case when new is null then null else jsonb_build_object('zone', new.zone, 'status', new.status, 'position', new.position) end,
+                             'at', clock_timestamp()));
+  return coalesce(new, old);
+end $$;
+drop trigger if exists trg_fm_resps_audit on public.fm_resps;
+create trigger trg_fm_resps_audit
+  after insert or update or delete on public.fm_resps
+  for each row execute function public.fm_resps_audit();
+
 -- Wybory zapisuje WYŁĄCZNIE RPC fm_set_company_targets (security definer): dostawca
 -- I ADMIN (także podgląd konta dostawcy w starym bundlu — review P1/3) mają na
 -- company_target_retailers tylko SELECT. Stary bundle robiący DELETE + INSERT:
@@ -715,9 +735,13 @@ begin
   -- ślad każdego zapisu (kto, która firma, ile sieci): po wdrożeniu pozwala
   -- potwierdzić, że prawdziwe zapisy dostawców przechodzą, bez kont testowych
   -- widocznych dla uczestników; tłumaczy też różnice przed/po w porównaniu kopii
+  -- meta.items = zapisana lista (sieć, priorytet): wpis identyfikuje KTÓRE wybory
+  -- zmieniono, nie tylko ile (review Codexa c3c1e66) — bez danych osobowych
   insert into public.audit_log (user_id, action, entity, entity_id, meta)
   values (v_uid, 'fm_targets_saved', 'company', p_company_id::text,
           jsonb_build_object('count', (select count(*) from public.company_target_retailers where company_id = p_company_id),
+                             'items', (select coalesce(jsonb_agg(jsonb_build_object('r', retailer_id, 'p', priority) order by retailer_id), '[]'::jsonb)
+                                         from public.company_target_retailers where company_id = p_company_id),
                              'role', v_role, 'saved_at', clock_timestamp()));
 
   return (select coalesce(jsonb_agg(to_jsonb(t) order by t.priority desc, t.retailer_id), '[]'::jsonb)

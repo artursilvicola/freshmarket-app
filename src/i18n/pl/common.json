@@ -6,7 +6,9 @@
   },
   "new_version": {
     "text": "Dostępna jest nowa wersja aplikacji. Odśwież stronę, żeby Twoje kolejne zmiany zapisywały się poprawnie.",
-    "button": "Odśwież teraz"
+    "button": "Odśwież teraz",
+    "waiting": "Czekam na zapis…",
+    "confirm_unsaved": "Masz niezapisane zmiany w tej karcie. Odświeżyć mimo to? Niezapisane zmiany przepadną."
   },
   "actions": {
     "add": "Dodaj",

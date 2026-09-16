@@ -6,7 +6,9 @@
   },
   "new_version": {
     "text": "A new version of the app is available. Refresh the page so your next changes are saved correctly.",
-    "button": "Refresh now"
+    "button": "Refresh now",
+    "waiting": "Waiting for save…",
+    "confirm_unsaved": "You have unsaved changes in this tab. Refresh anyway? Unsaved changes will be lost."
   },
   "actions": {
     "add": "Add",
