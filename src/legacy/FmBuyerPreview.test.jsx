@@ -77,6 +77,14 @@ describe("podgląd firmy przez kupca w module FM = pełny profil", () => {
     expect(t).not.toContain("Adam Gabler Ferment Garlic — Czarny czosnek");
   });
 
+  it("pokazuje asortyment z pola „Produkty” profilu (zgłoszenie klienta 16.09: kupiec widział tylko kategorię)", () => {
+    const tree = render(<PageBuyerFM {...props()}/>);
+    act(() => previewButton(tree).props.onClick());
+    const t = text(tree);
+    expect(t).toContain("common.company_preview.offer_products_label");
+    expect(t).toContain("Czarny czosnek");
+  });
+
   it("firma bez rekordu w companies nadal otwiera podgląd (fallback, bez wywrotki)", () => {
     const tree = render(<PageBuyerFM {...props({ companies: [] })}/>);
     act(() => previewButton(tree).props.onClick());

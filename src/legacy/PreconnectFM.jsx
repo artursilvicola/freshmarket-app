@@ -12785,7 +12785,11 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
 
   const hasMarkets = exportCountries.length > 0 || partnershipTypes.length > 0 || trade.main_markets || trade.typical_volumes || co.markets;
   const hasOps = capabilities.length > 0;
-  const hasOffer = offer.products_year_round || offer.products_seasonal || customerTypes.length > 0 || offer.private_label;
+  // [fix/buyer-preview-products] asortyment z pola „Produkty" profilu (companies.products) —
+  // do 16.09 był zbierany, ale nie pokazywany kupcowi (zgłoszenie klienta: „nie wyświetla się
+  // dokładny asortyment, tylko ogólna kategoria")
+  const productsText = (typeof co.products === "string" ? co.products : "").trim();
+  const hasOffer = productsText || offer.products_year_round || offer.products_seasonal || customerTypes.length > 0 || offer.private_label;
   const hasMaterials = materials.length > 0;
   const hasCerts = certs.length > 0;
   const accountOperator = role === "admin" ? pickCompanyAccountOperator(co?.id, accountProfiles) : null;
@@ -12820,6 +12824,7 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
         <div style={{ borderTop:"1px solid #e2e8f0",paddingTop:14 }}>
           {hasOffer && (
             <ProfileSection title={t("common.company_preview.section_offer")} icon={Tag}>
+              {productsText && <div style={{ marginBottom:4 }}><strong style={{ color:"#0d9488" }}>{t("common.company_preview.offer_products_label")}</strong> {productsText}</div>}
               {offer.products_year_round && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.offer_year_round_label")}</strong> {offer.products_year_round}</div>}
               {offer.products_seasonal && <div><strong style={{ color:"#0d9488" }}>{t("common.company_preview.offer_seasonal_label")}</strong> {offer.products_seasonal}</div>}
               {customerTypes.length > 0 && (
