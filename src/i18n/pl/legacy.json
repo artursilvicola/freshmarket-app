@@ -1356,6 +1356,7 @@
         "nip_required": "Podaj NIP firmy. To pole jest wymagane do rejestracji i rozliczeń.",
         "saved": "Profil zapisany.",
         "saved_incomplete": "Profil zapisany. Nie jest jeszcze kompletny — uzupełnij {{missing}}.",
+        "saved_newer_draft": "Zapisano wcześniejszą wersję profilu. W trakcie zapisu dopisałeś(-aś) nowe zmiany — są niezapisanym szkicem, kliknij „Zapisz profil” jeszcze raz.",
         "contacts_error_format": "Nie udało się zapisać kontaktów: {{message}}"
       }
     }

@@ -5205,8 +5205,15 @@ export function normalizeDescriptionText(value) {
 export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers, retailers = [], hiddenRetailers = [], setHiddenRetailers }) {
   const { t } = useTranslation("legacy");
   const toCompanyDraft = (row = {}) => ({ ...row, contacts: Array.isArray(row.contacts) ? row.contacts : [] });
-  const [c,setC]=useState(()=>toCompanyDraft(co)); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
+  const [c,setCRaw]=useState(()=>toCompanyDraft(co)); const [showPreview,setShowPreview]=useState(false); const [saving,setSaving]=useState(false);
   const [dirty, setDirty] = useState(false);
+  // [fix/company-desc-en-fields] Rewizja edycji (review Codexa 17.09, P1): formularz jest
+  // edytowalny w trakcie zapisu (UPDATE → kontakty → certyfikaty). Każda zmiana stanu
+  // formularza podbija rewizję; odpowiedź zapisu wolno zastosować do formularza i wyczyścić
+  // „dirty" tylko, gdy od startu zapisu rewizja się nie zmieniła. Inaczej nowszy tekst
+  // zostaje niezapisanym szkicem. setCRaw omija licznik (tylko dla wyniku zapisu).
+  const editRevRef = useRef(0);
+  const setC = (updater) => { editRevRef.current += 1; setCRaw(updater); };
   // niezapisany profil firmy = pasek „nowa wersja" pyta przed przeładowaniem
   useEffect(() => registerPendingWork(() => dirty), [dirty]);
   const [visibilitySaving, setVisibilitySaving] = useState(false);
@@ -5363,6 +5370,7 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
     const nextCerts = normalizeCompanyCertList(c.certs || []);
     const id = c.id;
     if(!id){fl(t("errors.db.company_id_required"),"error");return;}
+    const revAtStart = editRevRef.current;
     // [fix/company-desc-en-fields] Jedna normalizacja opisów (trim, puste → null) dla patcha,
     // obiektu do setCo (→ setCompanies → bulkUpsertCompanies) i stanu formularza. Review Codexa
     // 17.09: normalizacja tylko w patchu była cofana przez drugi zapis (bulk mapper wysyłał
@@ -5413,9 +5421,16 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
         ? Object.fromEntries(Object.keys(descriptions).map((k) => [k, k in savedRow ? normalizeDescriptionText(savedRow[k]) : next[k]]))
         : descriptions;
       const savedProfile = {...next, ...savedDescriptions, contacts:savedContacts, certs:savedCerts, completeness:calcCompleteness({...next, ...savedDescriptions, contacts:savedContacts, certs:savedCerts})};
-      setDirty(false);
-      setC(prev => ({ ...prev, ...savedDescriptions }));
+      // Stan aplikacji (co) zawsze dostaje to, co faktycznie zapisano. Formularz i „dirty"
+      // tylko, gdy użytkownik nic nie zmienił w trakcie zapisu — nowsze zmiany zostają szkicem.
+      const editedMeanwhile = editRevRef.current !== revAtStart;
       setCo(savedProfile);
+      if (editedMeanwhile) {
+        fl(t("supplier.company.toasts.saved_newer_draft"), "warning");
+        return;
+      }
+      setDirty(false);
+      setCRaw(prev => ({ ...prev, ...savedDescriptions }));
       const gapsAfterSave = companyProfileGaps(savedProfile);
       if (gapsAfterSave.length) fl(t("supplier.company.toasts.saved_incomplete", { missing: gapsText(gapsAfterSave) }), "warning");
       else fl(t("supplier.company.toasts.saved"));
