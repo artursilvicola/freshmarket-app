@@ -5374,6 +5374,9 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
       website: next.website || null,
       description: next.description || null,
       description_short: next.description_short || null,
+      // [fix/company-desc-en-fields] wersje EN z formularza (puste → null → fallback na PL w podglądzie)
+      description_en: (next.description_en || "").trim() || null,
+      description_short_en: (next.description_short_en || "").trim() || null,
       types: next.types || [],
       categories: next.categories || [],
       products: next.products || null,
@@ -5513,6 +5516,27 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
           onChange={e=>{ setDirty(true); setC(prev=>({ ...prev, description:e.target.value, ai_review_status:"edited" })); }}
           hint={t("supplier.company.desc.standard_hint")}
         />
+        {/* [fix/company-desc-en-fields] Wersje EN mają własne pola. Do 17.09 formularz
+            miał tylko pola PL (description/description_short) niezależnie od języka UI,
+            a EN (description_en/description_short_en) wypełniało wyłącznie AI — koordynatorka
+            wpisująca opis EN „po przełączeniu języka" nadpisywała wersję PL (zgłoszenie 17.09). */}
+        <div data-testid="desc-en" style={{ marginTop:14,paddingTop:12,borderTop:"1px dashed #cbd5e1" }}>
+          <div style={{ fontSize:12,color:"#475569",marginBottom:8,lineHeight:1.45 }}>{t("supplier.company.desc.en_intro")}</div>
+          <Inp
+            label={t("supplier.company.desc.short_en_label")}
+            ta
+            value={c.description_short_en || ""}
+            onChange={e=>{ setDirty(true); setC(prev=>({ ...prev, description_short_en:e.target.value })); }}
+            style={{ minHeight: 56 }}
+            hint={t("supplier.company.desc.en_hint")}
+          />
+          <Inp
+            label={t("supplier.company.desc.standard_en_label")}
+            ta
+            value={c.description_en || ""}
+            onChange={e=>{ setDirty(true); setC(prev=>({ ...prev, description_en:e.target.value })); }}
+          />
+        </div>
       </Card>
       <Card title={t("supplier.company.types.card_title")} icon={Leaf}>
         <div style={{ marginBottom:12 }}>
