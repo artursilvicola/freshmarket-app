@@ -1205,14 +1205,14 @@
         "ready_badge": "Gotowy do wyświetlenia",
         "edited_badge": "Edytowany",
         "review_badge": "Czeka na review",
-        "short_label": "Opis krótki (2–3 zdania, ~200–300 znaków)",
+        "short_label": "Opis krótki — wersja polska (PL), 2–3 zdania, ~200–300 znaków",
         "short_hint": "Pokazywany w karcie firmy u kupca i w podglądzie. Nie powtarzaj nazwy firmy — kupiec już ją widzi.",
-        "standard_label": "Opis standardowy (4–6 zdań, ~450–700 znaków)",
+        "standard_label": "Opis standardowy — wersja polska (PL), 4–6 zdań, ~450–700 znaków",
         "standard_hint": "Główny opis profilu. Generowany przez AI z Twoich danych — możesz go ręcznie poprawić.",
-        "en_intro": "Wersja angielska — widzą ją kupcy z zagranicy (aplikacja po angielsku). Pola polskie powyżej pokazujemy kupcom z Polski. Nie wpisuj angielskiego tekstu w pola polskie.",
+        "en_intro": "Wersja angielska — widzi ją kupiec, który używa aplikacji po angielsku. Kupiec z polskim interfejsem widzi pola polskie powyżej. Nie wpisuj angielskiego tekstu w pola polskie.",
         "short_en_label": "Opis krótki — wersja angielska (EN)",
         "standard_en_label": "Opis standardowy — wersja angielska (EN)",
-        "en_hint": "Jeśli zostawisz puste, kupiec zagraniczny zobaczy wersję polską."
+        "en_hint": "Jeśli oba pola angielskie zostaną puste, kupiec z angielskim interfejsem zobaczy wersję polską."
       },
       "types": {
         "card_title": "Typ firmy i kategorie",

@@ -81,12 +81,20 @@ describe("Profil firmy — osobne pola na angielską wersję opisu", () => {
     expect(patch.description_en).toBe("A modern mushroom farm in Kowiesy with 24 growing rooms.");
   });
 
-  it("puste pola EN zapisują się jako null (podgląd wraca do wersji PL), a wpisane spacje nie liczą się jako tekst", async () => {
-    const tree = render(<PageCompany {...props({ ...CO, description_en: "   " })}/>);
+  it("puste pola EN zapisują się jako null, spacje nie liczą się jako tekst — także w obiekcie dla setCo (drugi zapis)", async () => {
+    const p = props({ ...CO, description_en: "   ", description_short: "  Nowoczesna produkcja grzybów  " });
+    const tree = render(<PageCompany {...p}/>);
     await act(async () => { await saveButton(tree).props.onClick(); });
     const patch = updateCompany.mock.calls[0][1];
     expect(patch.description_short_en).toBeNull();
     expect(patch.description_en).toBeNull();
+    expect(patch.description_short).toBe("Nowoczesna produkcja grzybów");
+    // drugi mechanizm zapisu (setCo → setCompanies → bulk upsert) dostaje te same znormalizowane wartości
+    expect(p.setCo).toHaveBeenCalledTimes(1);
+    const saved = p.setCo.mock.calls[0][0];
+    expect(saved.description_en).toBeNull();
+    expect(saved.description_short_en).toBeNull();
+    expect(saved.description_short).toBe("Nowoczesna produkcja grzybów");
   });
 
   it("„Podgląd – widok kupca” z profilu dostawcy pokazuje asortyment z pola „Produkty” (druga część zgłoszenia 17.09)", () => {

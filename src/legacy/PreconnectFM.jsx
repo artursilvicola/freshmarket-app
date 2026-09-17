@@ -5196,6 +5196,12 @@ function parseCompanyCertNames(value) {
     .filter(Boolean);
 }
 
+// [fix/company-desc-en-fields] Tekst opisu firmy do zapisu: trim; puste/same spacje → null.
+export function normalizeDescriptionText(value) {
+  const s = value == null ? "" : String(value).trim();
+  return s || null;
+}
+
 export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiLoad, runAI, offers, retailers = [], hiddenRetailers = [], setHiddenRetailers }) {
   const { t } = useTranslation("legacy");
   const toCompanyDraft = (row = {}) => ({ ...row, contacts: Array.isArray(row.contacts) ? row.contacts : [] });
@@ -5357,13 +5363,24 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
     const nextCerts = normalizeCompanyCertList(c.certs || []);
     const id = c.id;
     if(!id){fl(t("errors.db.company_id_required"),"error");return;}
+    // [fix/company-desc-en-fields] Jedna normalizacja opisów (trim, puste → null) dla patcha,
+    // obiektu do setCo (→ setCompanies → bulkUpsertCompanies) i stanu formularza. Review Codexa
+    // 17.09: normalizacja tylko w patchu była cofana przez drugi zapis (bulk mapper wysyłał
+    // surowe spacje), a spacje w EN blokowały fallback na PL w podglądzie.
+    const descriptions = {
+      description: normalizeDescriptionText(c.description),
+      description_short: normalizeDescriptionText(c.description_short),
+      description_en: normalizeDescriptionText(c.description_en),
+      description_short_en: normalizeDescriptionText(c.description_short_en),
+    };
     const next = {
       ...c,
+      ...descriptions,
       id:id||c.id,
       contacts:nextContacts,
       certs:nextCerts,
       ai_review_status:"approved",
-      completeness:calcCompleteness({...c, contacts:nextContacts, certs:nextCerts}),
+      completeness:calcCompleteness({...c, ...descriptions, contacts:nextContacts, certs:nextCerts}),
     };
     const companyPatch = {
       name: next.name,
@@ -5372,11 +5389,10 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
       city: next.city || null,
       phone: next.phone || null,
       website: next.website || null,
-      description: next.description || null,
-      description_short: next.description_short || null,
-      // [fix/company-desc-en-fields] wersje EN z formularza (puste → null → fallback na PL w podglądzie)
-      description_en: (next.description_en || "").trim() || null,
-      description_short_en: (next.description_short_en || "").trim() || null,
+      description: next.description,
+      description_short: next.description_short,
+      description_en: next.description_en,
+      description_short_en: next.description_short_en,
       types: next.types || [],
       categories: next.categories || [],
       products: next.products || null,
@@ -5389,11 +5405,16 @@ export function PageCompany({ co, companyId, setCo, fl, aiModal, setAiModal, aiL
     };
     setSaving(true);
     try {
-      if (id) await dbUpdateCompany(id, companyPatch);
+      const savedRow = id ? await dbUpdateCompany(id, companyPatch) : null;
       const savedContacts = id ? await dbSaveCompanyContacts(id, nextContacts) : nextContacts;
       const savedCerts = id ? await dbSaveCompanyCerts(id, nextCerts) : nextCerts;
-      const savedProfile = {...next, contacts:savedContacts, certs:savedCerts, completeness:calcCompleteness({...next, contacts:savedContacts, certs:savedCerts})};
+      // Opisy bierzemy z potwierdzonego wyniku UPDATE (to, co jest w bazie), reszta z next.
+      const savedDescriptions = savedRow && typeof savedRow === "object"
+        ? Object.fromEntries(Object.keys(descriptions).map((k) => [k, k in savedRow ? normalizeDescriptionText(savedRow[k]) : next[k]]))
+        : descriptions;
+      const savedProfile = {...next, ...savedDescriptions, contacts:savedContacts, certs:savedCerts, completeness:calcCompleteness({...next, ...savedDescriptions, contacts:savedContacts, certs:savedCerts})};
       setDirty(false);
+      setC(prev => ({ ...prev, ...savedDescriptions }));
       setCo(savedProfile);
       const gapsAfterSave = companyProfileGaps(savedProfile);
       if (gapsAfterSave.length) fl(t("supplier.company.toasts.saved_incomplete", { missing: gapsText(gapsAfterSave) }), "warning");
@@ -12777,6 +12798,17 @@ function ProfileSection({ title, icon: Ic, children }) {
 // widoczności, ten sam buyer privacy guard — tylko ekstrakcja JSX, zero zmian
 // logiki/danych. `onClose` nadal używane wewnątrz (przycisk czatu operatora
 // najpierw zamyka modal). W drawerze `onClose` zamyka drawer.
+// [fix/company-desc-en-fields] Opis firmy w jednym języku: komplet (skrót + pełny) języka
+// interfejsu, a gdy jest pusty — komplet drugiego języka. Puste/same spacje = brak tekstu.
+export function pickDescriptionSet(co, preferEn) {
+  const norm = (s) => (s == null ? "" : String(s).trim());
+  const pl = { short: norm(co?.description_short), long: norm(co?.description), lang: "pl" };
+  const en = { short: norm(co?.description_short_en), long: norm(co?.description_en), lang: "en" };
+  const primary = preferEn ? en : pl;
+  const secondary = preferEn ? pl : en;
+  return (primary.short || primary.long) ? primary : secondary;
+}
+
 function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role, accountProfiles = [], onOpenChat }) {
   const { t } = useTranslation("legacy");
   // [P2-shared] Helpers do labelek z konstant zdefiniowanych poniżej
@@ -12800,8 +12832,13 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
   // [feat/company-desc-i18n] Opis w języku UI: EN → wersja angielska (fallback
   // oryginał), PL → oryginał (fallback EN). Kupiec zagraniczny czyta po angielsku.
   const _descEn = String(i18n.language || "pl").toLowerCase().startsWith("en");
-  const shortDesc = ((_descEn ? (co.description_short_en || co.description_short) : (co.description_short || co.description_short_en)) || "").trim();
-  const longDesc = ((_descEn ? (co.description_en || co.description) : (co.description || co.description_en)) || "").trim();
+  // [fix/company-desc-en-fields] Jeden język na cały opis (review Codexa 17.09): najpierw
+  // normalizacja (same spacje = brak tekstu), potem wybór KOMPLETU pól języka UI; drugi język
+  // tylko gdy w pierwszym nie ma ani skrótu, ani pełnego opisu. Bez tego pusty skrót PL był
+  // uzupełniany skrótem EN nad polskim pełnym opisem.
+  const _descSets = pickDescriptionSet(co, _descEn);
+  const shortDesc = _descSets.short;
+  const longDesc = _descSets.long;
   // Jeśli są oba — krótki na górze (tier 1), pełny niżej (tier 2). Jeśli
   // jest tylko jeden, pokaż go raz w tier 1.
   const tier1Desc = shortDesc || longDesc || "";
