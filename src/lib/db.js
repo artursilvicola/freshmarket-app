@@ -133,6 +133,17 @@ export async function setCompanyHiddenRetailers(companyId, retailerIds = []) {
   return data || [];
 }
 
+export async function setCompanyFmPaymentDate(id, paymentDate, expectedDate) {
+  const { data, error } = await supabase.rpc("admin_set_fm_payment_date", {
+    p_company_id: id, p_payment_date: paymentDate, p_expected_date: expectedDate,
+  });
+  if (error) throw error;
+  if (!data || data.id !== id || data.fm_payment_date !== paymentDate) {
+    throw new Error("fm_payment_date_unconfirmed");
+  }
+  return data;
+}
+
 export async function updateCompany(id, patch) {
   // [B2B Round adaptive-company-profile-ai + supplier-onboarding-access-and-communication]
   // Whitelist kolumn. patch może pochodzić ze stanu komponentu z dodatkowymi

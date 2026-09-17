@@ -1,4 +1,6 @@
 import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Suspense } from "react";
+import AdminFmPaymentDate from "../components/AdminFmPaymentDate";
+import { applyPaymentDate } from "../lib/fm-payment-date";
 import {
   Home, Building2, Store, Send, Tag, Plus, Clock, Edit, CheckCircle, Receipt,
   X, ArrowLeft, Search, Info, AlertTriangle, Bot, Leaf, Award, Users,
@@ -3745,7 +3747,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers} fl={fl}/>;
-    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
+    if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} onPaymentDateSaved={saved => _setCompaniesRaw(prev => applyPaymentDate(prev, saved))} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
     if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity} sends={sends} offers={offers}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
@@ -10937,7 +10939,7 @@ function PageAdminSettlements({ dbCapacity, companies, fl, refreshCapacity, send
   );
 }
 
-function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, dbCapacity, refreshCapacity, onOpenAdminChat, profiles = [] }) {
+export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retailers, companies, setCompanies, onPaymentDateSaved, dbCapacity, refreshCapacity, onOpenAdminChat, profiles = [] }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -11477,7 +11479,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                 )}
               </div>
               {/* Dwie niezależne flagi dostępu — admin ustawia osobno */}
-              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
+              <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,320px),1fr))",gap:10 }}>
                 <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.preconnect_enabled?"rgba(13,148,136,0.06)":"white",border:`1px solid ${firmCo.preconnect_enabled?"#0d9488":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
                   <input type="checkbox" checked={!!firmCo.preconnect_enabled} onChange={(e) => toggleAccessFlag(firmCo, "preconnect_enabled", e.target.checked)} />
                   <div>
@@ -11485,18 +11487,19 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                     <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_preconnect_desc")}</div>
                   </div>
                 </label>
-                <label style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:firmCo.fm_b2b_enabled?"rgba(124,58,237,0.06)":"white",border:`1px solid ${firmCo.fm_b2b_enabled?"#7c3aed":"#e2e8f0"}`,borderRadius:7,cursor:"pointer",fontSize:12 }}>
+                <div style={{ display:"flex",alignItems:"center",flexWrap:"wrap",gap:10,padding:"8px 10px",background:firmCo.fm_b2b_enabled?"rgba(124,58,237,0.06)":"white",border:`1px solid ${firmCo.fm_b2b_enabled?"#7c3aed":"#e2e8f0"}`,borderRadius:7,fontSize:12,minWidth:0 }}>
+                  <label style={{ display:"flex",alignItems:"center",gap:8,cursor:"pointer" }}>
                   <input type="checkbox" checked={!!firmCo.fm_b2b_enabled} onChange={(e) => toggleAccessFlag(firmCo, "fm_b2b_enabled", e.target.checked)} />
                   <div>
                     <div style={{ fontWeight:600,color:"#0f172a" }}>{t("admin.firmy.access_fm_b2b_title")}</div>
                     <div style={{ color:"#64748b",fontSize:10 }}>{t("admin.firmy.access_fm_b2b_desc")}</div>
                   </div>
-                  {/* [feat/fm-b2b-packages] Selektor liczby pakietów (1-5) → pula
-                      spotkań = 5×N. stopPropagation, żeby nie przełączać checkboxa. */}
+                  </label>
                   {firmCo.fm_b2b_enabled && (() => {
                     const pk = Math.max(1, Math.min(5, Number(firmCo.fm_b2b_packages) || 1));
                     return (
-                      <span onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); }} style={{ marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:5,whiteSpace:"nowrap" }}>
+                      <div style={{ display:"flex",alignItems:"center",flexWrap:"wrap",gap:10,minWidth:0 }}>
+                        <span style={{ display:"inline-flex",alignItems:"center",flexWrap:"wrap",gap:5 }}>
                         <span style={{ fontSize:10,color:"#7c3aed",fontWeight:700 }}>{t("admin.firmy.fm_b2b_packages_label")}</span>
                         <select value={pk} onChange={(e)=>setFmPackagesFor(firmCo, e.target.value)}
                           style={{ padding:"3px 6px",border:"1px solid #ddd6fe",borderRadius:6,fontSize:11,fontFamily:"inherit",background:"white" }}>
@@ -11510,10 +11513,12 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                           <option value="premium">Premium</option>
                         </select>
                         <span style={{ fontSize:10,color:"#64748b" }}>{t("admin.firmy.fm_b2b_packages_hint_format", { count: pk * 5 })}</span>
-                      </span>
+                        </span>
+                        <AdminFmPaymentDate key={firmCo.id} company={firmCo} onSaved={onPaymentDateSaved}/>
+                      </div>
                     );
                   })()}
-                </label>
+                </div>
               </div>
             </div>
           );
@@ -12217,6 +12222,7 @@ function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl, retail
                           </div>
                         </label>
                       </div>
+                      {liveCo.fm_b2b_enabled && <div style={{ marginTop:10 }}><AdminFmPaymentDate key={liveCo.id} company={liveCo} onSaved={onPaymentDateSaved}/></div>}
                     </>
                   )}
                   {liveCo?.name && setCompanies && drawerCard(
