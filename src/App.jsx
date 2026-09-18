@@ -12,6 +12,7 @@ import AdminPanel from "./panels/AdminPanel";
 import SupplierPanel from "./panels/SupplierPanel";
 import BuyerPanel from "./panels/BuyerPanel";
 import { isSupabaseConfigured } from "./lib/supabase";
+import NewVersionBanner from "./components/NewVersionBanner";
 
 // [feat/fm-queue] Moduł kolejek dnia eventu — ładowany leniwie, nie obciąża
 // głównego bundla paneli. /obsluga sam obsługuje logowanie (kod + PIN),
@@ -30,9 +31,9 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        {/* [fix/security-hotfix] NewVersionBanner (src/components) celowo NIE jest tu zamontowany:
-            pilne wdrożenie 055 idzie bez opcjonalnego paska (review Codexa f504f09); montaż po
-            osobnym review. Egzekwowaniem bezpiecznej ścieżki zapisu jest baza, nie pasek. */}
+        {/* Otwarte przed wdrożeniem karty nadal wykonują stary bundle. Pasek ostrzega
+            o nowej wersji i przed przeładowaniem czeka na zakończenie zapisów. */}
+        <NewVersionBanner />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           {/* [B2B Round auth-forgot-password] Strona resetu hasla.
