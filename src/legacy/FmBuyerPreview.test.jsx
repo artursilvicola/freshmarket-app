@@ -136,6 +136,7 @@ describe("review: actual retailer mapping and offer privacy", () => {
     const otherOffer = { ...ownOffer, id: 802, title: otherTitle };
     const input = props({
       chainId, fmChains, fmPrefs, fmAlgo,
+      companies: [{ ...COMPANY, description_en: "FULL_EN_DESCRIPTION" }],
       fmSettings: { currentPhase: phase, schedulingOpen: true, planPublished: false },
       retailers: [{ id: retailerId, fm26ChainId: chainId }],
       offers: [ownOffer, otherOffer],
@@ -154,5 +155,13 @@ describe("review: actual retailer mapping and offer privacy", () => {
     expect(input.setFmResps).not.toHaveBeenCalled();
     expect(output.includes(ownTitle), "The buyer's own offer must be visible, as in the catalog").toBe(true);
     expect(output).not.toContain("common.company_preview.no_retailer_assigned");
+    const enButton = tree.root.findAllByType("button").find(b => b.children.includes("EN"));
+    act(() => enButton.props.onClick());
+    expect(text(tree)).toContain("FULL_EN_DESCRIPTION");
+    expect(text(tree)).toContain(ownTitle);
+    expect(text(tree)).not.toContain(otherTitle);
+    expect(text(tree)).not.toContain("common.company_preview.account_operator_title");
+    expect(input.setFmResps).not.toHaveBeenCalled();
+    expect(input.setFmSchedule).not.toHaveBeenCalled();
   });
 });

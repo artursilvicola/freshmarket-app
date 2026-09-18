@@ -12819,14 +12819,22 @@ function ProfileSection({ title, icon: Ic, children }) {
 // widoczności, ten sam buyer privacy guard — tylko ekstrakcja JSX, zero zmian
 // logiki/danych. `onClose` nadal używane wewnątrz (przycisk czatu operatora
 // najpierw zamyka modal). W drawerze `onClose` zamyka drawer.
-// [fix/company-desc-en-fields] Opis firmy w jednym języku: komplet (skrót + pełny) języka
-// interfejsu, a gdy jest pusty — komplet drugiego języka. Puste/same spacje = brak tekstu.
-export function pickDescriptionSet(co, preferEn) {
+function getDescriptionSets(co) {
   const norm = (s) => (s == null ? "" : String(s).trim());
   const pl = { short: norm(co?.description_short), long: norm(co?.description), lang: "pl" };
   const en = { short: norm(co?.description_short_en), long: norm(co?.description_en), lang: "en" };
+  return { pl, en };
+}
+
+export function pickDescriptionSet(co, preferEn, selectedLanguage) {
+  const { pl, en } = getDescriptionSets(co);
+  const selected = selectedLanguage === "pl" ? pl : selectedLanguage === "en" ? en : null;
+  if (selected && (selected.short || selected.long)) return selected;
+  // A full description outranks a summary; text length is not a completeness measure.
+  const rank = (set) => set.long ? 2 : set.short ? 1 : 0;
   const primary = preferEn ? en : pl;
   const secondary = preferEn ? pl : en;
+  if (rank(secondary) > rank(primary)) return secondary;
   return (primary.short || primary.long) ? primary : secondary;
 }
 
@@ -12850,14 +12858,13 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
   const customerTypes = Array.isArray(offer.customer_types) ? offer.customer_types.filter(Boolean) : [];
   const certs = Array.isArray(co.certs) ? co.certs.filter(Boolean) : [];
 
-  // [feat/company-desc-i18n] Opis w języku UI: EN → wersja angielska (fallback
-  // oryginał), PL → oryginał (fallback EN). Kupiec zagraniczny czyta po angielsku.
+  const companyKey = co.id ?? co.fmId ?? co.name;
+  const [descriptionChoice, setDescriptionChoice] = useState(null);
+  useEffect(() => { setDescriptionChoice(null); }, [companyKey]);
+  const descriptionSets = getDescriptionSets(co);
   const _descEn = String(i18n.language || "pl").toLowerCase().startsWith("en");
-  // [fix/company-desc-en-fields] Jeden język na cały opis (review Codexa 17.09): najpierw
-  // normalizacja (same spacje = brak tekstu), potem wybór KOMPLETU pól języka UI; drugi język
-  // tylko gdy w pierwszym nie ma ani skrótu, ani pełnego opisu. Bez tego pusty skrót PL był
-  // uzupełniany skrótem EN nad polskim pełnym opisem.
-  const _descSets = pickDescriptionSet(co, _descEn);
+  const selectedLanguage = descriptionChoice?.companyKey === companyKey ? descriptionChoice.lang : null;
+  const _descSets = pickDescriptionSet(co, _descEn, selectedLanguage);
   const shortDesc = _descSets.short;
   const longDesc = _descSets.long;
   // Jeśli są oba — krótki na górze (tier 1), pełny niżej (tier 2). Jeśli
@@ -12897,8 +12904,32 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
           </div>
         </div>
       </div>
+      {tier1Desc && (
+        <div style={{ display:"flex",alignItems:"center",gap:"8px 12px",flexWrap:"wrap",marginBottom:12 }}>
+          <span style={{ fontSize:12,fontWeight:600,color:"#475569" }}>{t("common.company_preview.description_language")}</span>
+          <div role="group" aria-label={t("common.company_preview.description_language")} style={{ display:"inline-flex",gap:2,padding:3,border:"1px solid #cbd5e1",borderRadius:6 }}>
+            {["pl", "en"].map(lang => {
+              const available = Boolean(descriptionSets[lang].short || descriptionSets[lang].long);
+              const active = _descSets.lang === lang;
+              const label = t(`common.company_preview.description_${available ? "language" : "unavailable"}_${lang}`);
+              return (
+                <span key={lang} title={label}>
+                  <button type="button" disabled={!available} aria-label={label} aria-pressed={active}
+                    onClick={() => setDescriptionChoice({ companyKey, lang })}
+                    style={{ width:44,minHeight:32,border:0,borderRadius:4,fontFamily:"inherit",fontSize:12,fontWeight:700,letterSpacing:0,background:active?"#0d9488":"transparent",color:active?"#fff":available?"#334155":"#94a3b8",cursor:available?"pointer":"not-allowed" }}>
+                    {lang.toUpperCase()}
+                  </button>
+                </span>
+              );
+            })}
+          </div>
+          {["pl", "en"].filter(lang => !descriptionSets[lang].short && !descriptionSets[lang].long).map(lang => (
+            <span key={lang} style={{ fontSize:12,color:"#64748b" }}>{t(`common.company_preview.description_unavailable_${lang}`)}</span>
+          ))}
+        </div>
+      )}
       {tier1Desc
-        ? <p style={{ color:"#1e293b",lineHeight:1.65,marginBottom:14,fontSize:13.5,fontWeight:500 }}>{tier1Desc}</p>
+        ? <p lang={_descSets.lang} style={{ color:"#1e293b",lineHeight:1.65,marginBottom:14,fontSize:13.5,fontWeight:500,overflowWrap:"anywhere" }}>{tier1Desc}</p>
         : <div style={{ fontSize:12,color:"#94a3b8",fontStyle:"italic",marginBottom:14 }}>{t("common.company_preview.no_description")}</div>
       }
       {/* ── TIER 2 ── widoczne tylko, jeśli supplier coś podał ─────────────── */}
@@ -12976,7 +13007,7 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
           )}
           {tier2Desc && (
             <ProfileSection title={t("common.company_preview.section_long_desc")} icon={Building2}>
-              <p style={{ color:"#475569",lineHeight:1.7,margin:0 }}>{tier2Desc}</p>
+              <p lang={_descSets.lang} style={{ color:"#475569",lineHeight:1.7,margin:0,overflowWrap:"anywhere" }}>{tier2Desc}</p>
             </ProfileSection>
           )}
           {supplierPitch && (
@@ -13079,7 +13110,7 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
 // publiczne API (te same propsy co wcześniej) i shell modala (header/close/
 // wide). Body współdzielone z drawerem przez CompanyPreviewBody. Callerzy
 // (PageBuyerOffers, PageAdminPipeline, legacy PageAdminFirmy) bez zmian.
-function CompanyPreviewModal(props) {
+export function CompanyPreviewModal(props) {
   const { t } = useTranslation("legacy");
   return (
     <Modal title={t("common.company_preview.modal_title")} onClose={props.onClose} wide>
