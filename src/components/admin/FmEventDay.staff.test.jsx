@@ -6,6 +6,8 @@
 // w API to niedostępność, nie „Brak kont”. Po review 1e201ac: generacja obejmuje CAŁY przebieg
 // odświeżania (spóźnione grupy/ustawienia poprzedniego dnia nie restartują odczytu kont ani nie
 // nadpisują konfiguracji), ręczne ponowienia odporne na odpowiedzi w odwrotnej kolejności.
+// Po review 1643c4f: „Ponów odczyt” ponawia też konfigurację (grupy/ustawienia), a zmiana dnia jest
+// zablokowana na czas zapisu (atrybut disabled + guard w handlerze).
 import React from "react";
 import { create, act } from "react-test-renderer";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -197,6 +199,78 @@ describe("Dzień wydarzenia → Obsługa: konta obsługi", () => {
     expect(t).not.toContain("Brak kont obsługi");
     expect(button(tree, /^nowy PIN$/).props.disabled).toBe(false);
     expect(M.listFmStaff).toHaveBeenCalledTimes(3);
+  });
+
+  it("review: retry staff must not discard in-flight queue configuration", async () => {
+    let resolveGroups;
+    M.listFmQueueGroups.mockImplementation(() => new Promise(resolve => { resolveGroups = resolve; }));
+    M.listFmStaff.mockRejectedValueOnce(PGRST200).mockResolvedValue([ALEX]);
+    const tree = render(RETAILERS); await tick();
+    await openStaffTab(tree);
+    // reload() czeka też na konfigurację (zawieszona w teście) — klik bez await, konta wracają od razu
+    act(() => { button(tree, /Ponów odczyt/).props.onClick(); }); await tick();
+    expect(text(tree)).toContain("KOORDYNATOR-ALEKSANDRA");
+    await act(async () => { resolveGroups(GROUPS); }); await tick();
+    expect(checkboxes(tree).length).toBe(1);
+  });
+
+  it("„Ponów odczyt” ponawia konfigurację: stara odpowiedź grup odrzucona, nowa przyjęta (w dowolnej kolejności)", async () => {
+    const resolvers = [];
+    M.listFmQueueGroups.mockImplementation(() => new Promise(resolve => { resolvers.push(resolve); }));
+    M.listFmStaff.mockRejectedValueOnce(PGRST200).mockResolvedValue([ALEX]);
+    const tree = render(RETAILERS); await tick();
+    await openStaffTab(tree);
+    expect(resolvers.length).toBe(1);
+    act(() => { button(tree, /Ponów odczyt/).props.onClick(); }); await tick();
+    expect(resolvers.length).toBe(2);                      // ponowienie wysłało NOWE zapytanie o grupy
+    expect(text(tree)).toContain("KOORDYNATOR-ALEKSANDRA");
+    await act(async () => { resolvers[1](GROUPS); await new Promise(r => setTimeout(r, 10)); });
+    expect(checkboxes(tree).length).toBe(1);
+    await act(async () => { resolvers[0]([]); await new Promise(r => setTimeout(r, 10)); }); // stara (pusta) odpowiedź — ignorowana
+    expect(checkboxes(tree).length).toBe(1);
+    expect(button(tree, /^nowy PIN$/).props.disabled).toBe(false);
+  });
+
+  it("review: completion of old-day mutation must not replace current-day staff view", async () => {
+    let finishRename;
+    M.updateFmStaff.mockImplementationOnce(() => new Promise(resolve => { finishRename = resolve; }));
+    M.listFmStaff.mockImplementation(async date => date === "2026-09-24" ? [ALEX] : [NEXT]);
+    const tree = render(); await tick(); await openStaffTab(tree);
+    let pending;
+    act(() => { pending = nameInputs(tree)[0].props.onBlur({ target: { value: "Aleksandra S." } }); });
+    const dateInput = tree.root.findAllByType("input").find(i => i.props.type === "date");
+    // A locked date field is also a valid solution: no cross-day transition is possible.
+    if (!dateInput.props.disabled) {
+      await setDate(tree, "2026-09-25");
+      expect(text(tree)).toContain("OBSLUGA-25");
+    }
+    await act(async () => { finishRename({}); await pending; }); await tick();
+    const finalDate = tree.root.findAllByType("input").find(i => i.props.type === "date").props.value;
+    expect(text(tree)).toContain(finalDate === "2026-09-25" ? "OBSLUGA-25" : "KOORDYNATOR-ALEKSANDRA");
+    expect(text(tree)).not.toContain("Wczytywanie kont");
+  });
+
+  it("zmiana dnia w trakcie zapisu jest zablokowana (atrybut i handler), po zapisie znów możliwa", async () => {
+    let finishRename;
+    M.updateFmStaff.mockImplementationOnce(() => new Promise(resolve => { finishRename = resolve; }));
+    M.listFmStaff.mockImplementation(async date => date === "2026-09-24" ? [ALEX] : [NEXT]);
+    const tree = render(); await tick(); await openStaffTab(tree);
+    let pending;
+    act(() => { pending = nameInputs(tree)[0].props.onBlur({ target: { value: "Aleksandra S." } }); });
+    const dateInput = () => tree.root.findAllByType("input").find(i => i.props.type === "date");
+    expect(dateInput().props.disabled).toBe(true);
+    await setDate(tree, "2026-09-25");                     // obejście atrybutu: handler też nie zmienia dnia
+    expect(dateInput().props.value).toBe("2026-09-24");
+    expect(M.listFmStaff).not.toHaveBeenCalledWith("2026-09-25");
+    await act(async () => { finishRename({}); await pending; }); await tick();
+    expect(M.updateFmStaff).toHaveBeenCalledWith(ALEX.id, { display_name: "Aleksandra S." });
+    expect(dateInput().props.disabled).toBe(false);
+    expect(text(tree)).toContain("KOORDYNATOR-ALEKSANDRA");
+    await setDate(tree, "2026-09-25");
+    expect(dateInput().props.value).toBe("2026-09-25");
+    expect(text(tree)).toContain("OBSLUGA-25");
+    expect(text(tree)).not.toContain("KOORDYNATOR-ALEKSANDRA");
+    expect(text(tree)).not.toContain("Wczytywanie kont");
   });
 
   it("błąd ponowienia tego samego dnia: stan sprzed błędu tylko do odczytu, akcje zablokowane", async () => {

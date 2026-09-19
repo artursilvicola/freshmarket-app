@@ -91,11 +91,11 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
       onQueueConfigChanged?.();
     } catch (e) { if (isCurrent(t)) say(humanFmError(e), "error"); }
   }, [onQueueConfigChanged]);
-  // ręczne „Ponów odczyt” = nowy przebieg (starsze odpowiedzi, także z poprzednich ponowień, są ignorowane)
-  const reloadStaff = useCallback(() => loadStaff({ gen: ++loadGen.current, date: eventDate }), [eventDate, loadStaff]);
   // wiersze TYLKO dla bieżącego dnia; akcje TYLKO po udanym odczycie tego dnia, bez błędu i nie w trakcie odczytu
   const staff = staffView?.date === eventDate ? staffView.rows : [];
   const staffReady = staffView?.date === eventDate && !staffError && !staffPending;
+  // Jedyne wejście odświeżania (start, zmiana dnia, po zapisie, ręczne „Ponów odczyt”): nowy przebieg
+  // ponawia OBIE części — unieważnienie trwającej konfiguracji zawsze idzie w parze z jej nowym odczytem.
   const reload = useCallback(async () => {
     const t = { gen: ++loadGen.current, date: eventDate }; // przed pierwszym await
     // konta niezależnie od konfiguracji (błąd grup/ustawień nie blokuje listy kont i odwrotnie)
@@ -218,7 +218,8 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
         </div>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        <label>Data eventu <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} style={inp} /></label>
+        {/* zmiana dnia zablokowana na czas zapisu (run): odświeżenie po zapisie ma dotyczyć tego samego dnia */}
+        <label>Data eventu <input type="date" value={eventDate} disabled={busy} onChange={e => { if (busy) return; setEventDate(e.target.value); }} style={inp} /></label>
         <div style={{ display: "flex", gap: 0, background: "#f1f5f9", borderRadius: 8, padding: 3 }}>
           {[["stanowiska", "Stanowiska"], ["spotkania", "Spotkania"], ["obsluga", "Obsługa"], ["live", "Na żywo"], ["ustawienia", "Tablica i dzień"], ["log", "Log"]].map(([k, l]) => (
             <button key={k} onClick={() => setSub(k)} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: sub === k ? "white" : "transparent", fontWeight: sub === k ? 700 : 500, cursor: "pointer", fontFamily: "inherit", fontSize: 12, color: sub === k ? "#1e293b" : "#64748b" }}>{l}</button>
@@ -338,7 +339,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
           {staffError && (
             <div data-testid="staff-error" style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginBottom: 10, color: "#991b1b", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <span><b>Nie udało się odczytać kont obsługi.</b> {staffError}{staff.length ? " Poniżej stan sprzed błędu — tylko do odczytu." : ""}</span>
-              <Btn sm ghost onClick={reloadStaff} disabled={busy || staffPending}>Ponów odczyt</Btn>
+              <Btn sm ghost onClick={() => reload()} disabled={busy || staffPending}>Ponów odczyt</Btn>
             </div>
           )}
           <table style={tbl}>
