@@ -115,12 +115,13 @@ export async function saveFmQueueSettings(row) {
 // nie ma między nimi klucza obcego, więc embed `fm_queue_assignments(queue_group_id)` kończył
 // się PGRST200. Dwa odczyty pod tą samą sesją/RLS, złączenie w JS po operator_id === staff.id.
 // Kontrakt bez zmian: row.fm_queue_assignments = [{ queue_group_id }] (pusta lista dla konta
-// bez przypisań — takie konto NIE znika). Błąd któregokolwiek odczytu = błąd, nie pusty sukces.
+// bez przypisań — takie konto NIE znika). Błąd któregokolwiek odczytu = błąd, nie pusty sukces —
+// także brak tabeli w API (PGRST205/42P01): panel pokazuje niedostępność, nie „Brak kont”.
 export async function listFmStaff(eventDate) {
   let q = supabase.from("fm_staff").select("*").order("code");
   if (eventDate) q = q.eq("event_date", eventDate);
   const { data, error } = await q;
-  if (error) return softFail(error, []);
+  if (error) throw error;
   const rows = data || [];
   if (!rows.length) return [];
   const ids = rows.map(r => r.id);

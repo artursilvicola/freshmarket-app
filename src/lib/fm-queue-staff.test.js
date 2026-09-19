@@ -59,11 +59,12 @@ describe("listFmStaff — konta i przypisania osobno", () => {
     await expect(listFmStaff("2026-09-24")).rejects.toMatchObject({ code: "42501" });
   });
 
-  it("zgodność ze stanem przed migracją 053: brak TABELI nadal daje pustą listę", async () => {
+  it("brak TABELI fm_staff (PGRST205 / 42P01) też jest błędem, nie pustą listą", async () => {
     state.responses.fm_staff = { data: null, error: { code: "PGRST205", message: "Could not find the table 'public.fm_staff' in the schema cache" } };
-    expect(await listFmStaff("2026-09-24")).toEqual([]);
+    await expect(listFmStaff("2026-09-24")).rejects.toMatchObject({ code: "PGRST205" });
     state.responses.fm_staff = { data: null, error: { code: "42P01", message: 'relation "public.fm_staff" does not exist' } };
-    expect(await listFmStaff("2026-09-24")).toEqual([]);
+    await expect(listFmStaff("2026-09-24")).rejects.toMatchObject({ code: "42P01" });
+    expect(state.calls.some(c => c.table === "fm_queue_assignments")).toBe(false);
   });
 });
 

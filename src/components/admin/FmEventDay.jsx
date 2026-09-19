@@ -1,7 +1,7 @@
 // [feat/fm-queue] Admin → Spotkania B2B → „Dzień wydarzenia”.
 // Konfiguracja grup/stanowisk (pojemność algorytmu), konta obsługi (kod + PIN),
 // przypisania, Otwórz dzień (import planu), podgląd na żywo, ustawienia tablicy, log.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../auth/AuthProvider";
 import {
@@ -33,11 +33,15 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   const [eventDate, setEventDate] = useState(eventDateProp || "2026-09-24");
   const [sub, setSub] = useState("stanowiska");
   const [groups, setGroups] = useState([]);
-  const [staff, setStaff] = useState([]);
-  // [fix/fm-staff-list-relation] błąd odczytu kont to stan trwały z ponowieniem — nie pusta lista
-  const [staffError, setStaffError] = useState(null);
-  const [staffLoaded, setStaffLoaded] = useState(false);
+  // [fix/fm-staff-list-relation] konta obsługi są powiązane z dniem, dla którego je odczytano:
+  // staffView = { date, rows } z ostatniego UDANEGO odczytu. Po zmianie dnia stare wiersze znikają,
+  // po błędzie zostają tylko do odczytu (żadna akcja na starym wierszu), w trakcie odczytu akcje są
+  // zablokowane, a starsza odpowiedź nie nadpisuje nowszej (licznik żądań).
+  const [staffView, setStaffView] = useState(null);   // { date, rows } | null
+  const [staffError, setStaffError] = useState(null); // tekst błędu ostatniego odczytu — stan trwały z ponowieniem
+  const [staffPending, setStaffPending] = useState(false);
   const [createdNotice, setCreatedNotice] = useState(null); // {code} — konto utworzone, lista mogła się nie odświeżyć
+  const staffReq = useRef(0);
   const [settings, setSettings] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [log, setLog] = useState([]);
@@ -54,14 +58,25 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   const fmRetailers = useMemo(() => (retailers || []).filter(r => r.fm26Active && r.fm26ChainId).sort((a, b) => a.name.localeCompare(b.name, "pl")), [retailers]);
 
   const reloadStaff = useCallback(async () => {
+    const date = eventDate;
+    const req = ++staffReq.current;
+    setStaffPending(true); setStaffError(null);
     try {
-      const s = await listFmStaff(eventDate);
-      setStaff(s); setStaffError(null); setStaffLoaded(true);
+      const rows = await listFmStaff(date);
+      if (req !== staffReq.current) return; // starsza odpowiedź — trwa/zakończył się nowszy odczyt (inny dzień lub ponowienie)
+      setStaffView({ date, rows });
     } catch (e) {
-      // poprzednich danych nie pokazujemy jako aktualnych; „Brak kont” tylko po UDANYM odczycie
-      setStaffError(humanFmError(e) || String(e?.message || e)); setStaffLoaded(false);
+      if (req !== staffReq.current) return;
+      // błąd = stan trwały z ponowieniem; brak tabeli w API to niedostępność modułu, nie pusta lista
+      const base = humanFmError(e) || String(e?.message || e);
+      setStaffError(isMissingObjectError(e) ? `Tabela kont obsługi (fm_staff) nie jest dostępna w API — moduł niewdrożony lub API nie widzi tabeli. ${base}` : base);
+    } finally {
+      if (req === staffReq.current) setStaffPending(false);
     }
   }, [eventDate]);
+  // wiersze TYLKO dla bieżącego dnia; akcje TYLKO po udanym odczycie tego dnia, bez błędu i nie w trakcie odczytu
+  const staff = staffView?.date === eventDate ? staffView.rows : [];
+  const staffReady = staffView?.date === eventDate && !staffError && !staffPending;
   const reload = useCallback(async () => {
     try {
       const [g, st] = await Promise.all([listFmQueueGroups(eventDate), getFmQueueSettings(eventDate)]);
@@ -133,6 +148,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   async function createStaff() {
     const code = newStaff.code.trim().toUpperCase();
     if (code.length < 3) { say("Kod: min. 3 znaki.", "error"); return; }
+    if (!staffGuard()) return; // bez aktualnej listy nie tworzymy kont (ryzyko duplikatu istniejącego konta)
     await run(async () => {
       const j = await adminStaffCall({ action: "create", code, display_name: newStaff.display_name.trim() || null, event_date: eventDate });
       // konto istnieje od tej chwili — modal z PIN-em zostaje nawet, gdy odświeżenie listy się nie uda
@@ -141,11 +157,28 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
       setNewStaff({ code: "", display_name: "" });
     });
   }
-  const staffAction = (row, action) => run(async () => {
-    if (action === "delete" && !window.confirm(`Usunąć konto ${row.code}? Operacja nieodwracalna.`)) return;
-    const j = await adminStaffCall({ action, id: row.id });
-    if (j.pin) setPinModal({ code: j.code, pin: j.pin });
-  }, action === "reset_pin" ? null : "Zapisano.");
+  // każda akcja na koncie: tylko na aktualnej liście i tylko na wierszu z bieżącego dnia
+  const staffGuard = (row) => {
+    if (staffReady && (!row?.event_date || row.event_date === eventDate)) return true;
+    say("Lista kont nie jest aktualna dla tego dnia — użyj „Ponów odczyt”.", "error");
+    return false;
+  };
+  const staffAction = (row, action) => {
+    if (!staffGuard(row)) return;
+    return run(async () => {
+      if (action === "delete" && !window.confirm(`Usunąć konto ${row.code}? Operacja nieodwracalna.`)) return;
+      const j = await adminStaffCall({ action, id: row.id });
+      if (j.pin) setPinModal({ code: j.code, pin: j.pin });
+    }, action === "reset_pin" ? null : "Zapisano.");
+  };
+  const renameStaff = (row, value) => {
+    if (value === (row.display_name || "") || !staffGuard(row)) return;
+    return run(() => updateFmStaff(row.id, { display_name: value || null }));
+  };
+  const toggleAssign = (row, retailerId, checked) => {
+    if (!staffGuard(row)) return;
+    return run(() => fmQueueRpc.assignRetailer(row.id, retailerId, eventDate, checked));
+  };
   const assignedRetailers = (row) => {
     const gids = new Set((row.fm_queue_assignments || []).map(a => a.queue_group_id));
     return new Set(groups.filter(g => gids.has(g.id)).map(g => g.retailer_id));
@@ -275,13 +308,13 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
           <div style={{ display: "flex", gap: 8, alignItems: "end", flexWrap: "wrap", marginBottom: 12, padding: 10, background: "#f8fafc", borderRadius: 10 }}>
             <label>Kod<br /><input value={newStaff.code} onChange={e => setNewStaff(s => ({ ...s, code: e.target.value.toUpperCase() }))} placeholder="OBSLUGA-1" style={inp} /></label>
             <label>Imię (opcjonalnie)<br /><input value={newStaff.display_name} onChange={e => setNewStaff(s => ({ ...s, display_name: e.target.value }))} style={inp} /></label>
-            <Btn onClick={createStaff} disabled={busy || dbMissing}>Utwórz konto → pokaż PIN</Btn>
+            <Btn onClick={createStaff} disabled={busy || dbMissing || !staffReady}>Utwórz konto → pokaż PIN</Btn>
           </div>
           )}
           {staffError && (
             <div data-testid="staff-error" style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginBottom: 10, color: "#991b1b", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <span><b>Nie udało się odczytać kont obsługi.</b> {staffError}{staff.length ? " Poniższa lista może być nieaktualna." : ""}</span>
-              <Btn sm ghost onClick={reloadStaff} disabled={busy}>Ponów odczyt</Btn>
+              <span><b>Nie udało się odczytać kont obsługi.</b> {staffError}{staff.length ? " Poniżej stan sprzed błędu — tylko do odczytu." : ""}</span>
+              <Btn sm ghost onClick={reloadStaff} disabled={busy || staffPending}>Ponów odczyt</Btn>
             </div>
           )}
           <table style={tbl}>
@@ -291,9 +324,9 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                 const asg = assignedRetailers(row);
                 const locked = row.locked_until && new Date(row.locked_until) > new Date();
                 return (
-                  <tr key={row.id}>
+                  <tr key={row.id} style={staffReady ? undefined : { opacity: 0.6 }}>
                     <td style={td}><b>{row.code}</b></td>
-                    <td style={td}><input defaultValue={row.display_name || ""} onBlur={e => e.target.value !== (row.display_name || "") && run(() => updateFmStaff(row.id, { display_name: e.target.value || null }))} style={{ ...inp, width: 110 }} /></td>
+                    <td style={td}><input defaultValue={row.display_name || ""} disabled={busy || !staffReady} onBlur={e => renameStaff(row, e.target.value)} style={{ ...inp, width: 110 }} /></td>
                     <td style={td}>{row.event_date}</td>
                     <td style={td}>{row.blocked ? <b style={{ color: "#dc2626" }}>zablokowane</b> : locked ? <span style={{ color: "#b45309" }}>lockout do {new Date(row.locked_until).toLocaleTimeString("pl-PL")}</span> : <span style={{ color: "#059669" }}>aktywne</span>}</td>
                     <td style={td}>{row.last_login_at ? new Date(row.last_login_at).toLocaleString("pl-PL") : "—"}{row.device_id ? <div style={{ fontSize: 10, color: "#64748b" }}>tablet przypięty</div> : null}</td>
@@ -302,7 +335,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxWidth: 360 }}>
                           {fmRetailers.filter(r => groupsByRetailer[r.id]?.length).map(r => (
                             <label key={r.id} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 7px", borderRadius: 999, border: `1px solid ${asg.has(r.id) ? "#99f6e4" : "#e2e8f0"}`, background: asg.has(r.id) ? "#f0fdfa" : "white", fontSize: 11, cursor: "pointer" }}>
-                              <input type="checkbox" checked={asg.has(r.id)} disabled={busy} onChange={e => run(() => fmQueueRpc.assignRetailer(row.id, r.id, eventDate, e.target.checked))} style={{ margin: 0 }} />{r.name}
+                              <input type="checkbox" checked={asg.has(r.id)} disabled={busy || !staffReady} onChange={e => toggleAssign(row, r.id, e.target.checked)} style={{ margin: 0 }} />{r.name}
                             </label>
                           ))}
                         </div>
@@ -310,16 +343,16 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                     </td>
                     <td style={{ ...td, whiteSpace: "nowrap" }}>
                       {isSuper && <>
-                        <Btn sm ghost disabled={busy} onClick={() => staffAction(row, "reset_pin")}>nowy PIN</Btn>{" "}
-                        <Btn sm ghost disabled={busy} onClick={() => staffAction(row, row.blocked ? "unblock" : "block")}>{row.blocked ? "odblokuj" : "zablokuj"}</Btn>{" "}
-                        <Btn sm ghost disabled={busy} onClick={() => staffAction(row, "delete")}>usuń</Btn>
+                        <Btn sm ghost disabled={busy || !staffReady} onClick={() => staffAction(row, "reset_pin")}>nowy PIN</Btn>{" "}
+                        <Btn sm ghost disabled={busy || !staffReady} onClick={() => staffAction(row, row.blocked ? "unblock" : "block")}>{row.blocked ? "odblokuj" : "zablokuj"}</Btn>{" "}
+                        <Btn sm ghost disabled={busy || !staffReady} onClick={() => staffAction(row, "delete")}>usuń</Btn>
                       </>}
                     </td>
                   </tr>
                 );
               })}
-              {staffLoaded && !staffError && staff.length === 0 && <tr><td style={td} colSpan={7}><span style={{ color: "#94a3b8" }}>Brak kont obsługi na {eventDate}.</span></td></tr>}
-              {!staffLoaded && !staffError && staff.length === 0 && <tr><td style={td} colSpan={7}><span style={{ color: "#94a3b8" }}>Wczytywanie kont…</span></td></tr>}
+              {staffReady && staff.length === 0 && <tr><td style={td} colSpan={7}><span style={{ color: "#94a3b8" }}>Brak kont obsługi na {eventDate}.</span></td></tr>}
+              {!staffReady && !staffError && staff.length === 0 && <tr><td style={td} colSpan={7}><span style={{ color: "#94a3b8" }}>Wczytywanie kont…</span></td></tr>}
             </tbody>
           </table>
         </div>
