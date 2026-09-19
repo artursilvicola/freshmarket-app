@@ -3,7 +3,9 @@
 // odświeżenia modal z PIN-em zostaje z informacją, żeby konta nie tworzyć ponownie.
 // Po review Codexa (4589ebb): wiersze są powiązane z dniem odczytu — po zmianie dnia stare konta
 // znikają, po błędzie zostają tylko do odczytu, starsza odpowiedź nie nadpisuje nowszej, brak tabeli
-// w API to niedostępność, nie „Brak kont”.
+// w API to niedostępność, nie „Brak kont”. Po review 1e201ac: generacja obejmuje CAŁY przebieg
+// odświeżania (spóźnione grupy/ustawienia poprzedniego dnia nie restartują odczytu kont ani nie
+// nadpisują konfiguracji), ręczne ponowienia odporne na odpowiedzi w odwrotnej kolejności.
 import React from "react";
 import { create, act } from "react-test-renderer";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -136,6 +138,65 @@ describe("Dzień wydarzenia → Obsługa: konta obsługi", () => {
     expect(t).not.toContain("KOORDYNATOR-ALEKSANDRA");
     expect(t).not.toContain("Nie udało się odczytać kont obsługi");
     expect(button(tree, /^nowy PIN$/).props.disabled).toBe(false);
+  });
+
+  it("review: late old-day groups must not restart staff load for the old day", async () => {
+    let resolveOldGroups;
+    M.listFmQueueGroups.mockImplementation(d => d === "2026-09-24"
+      ? new Promise(resolve => { resolveOldGroups = resolve; })
+      : Promise.resolve([]));
+    M.listFmStaff.mockImplementation(async d => d === "2026-09-24" ? [ALEX] : [NEXT]);
+    const tree = render(); await tick();
+    await openStaffTab(tree);
+    await setDate(tree, "2026-09-25");
+    expect(text(tree)).toContain("OBSLUGA-25");
+    await act(async () => { resolveOldGroups([]); });
+    await tick();
+    expect(tree.root.findAllByType("input").find(i => i.props.type === "date").props.value).toBe("2026-09-25");
+    expect(text(tree)).toContain("OBSLUGA-25");
+    expect(text(tree)).not.toContain("Wczytywanie kont");
+  });
+
+  it("spóźnione grupy i ustawienia poprzedniego dnia nie nadpisują konfiguracji nowego dnia", async () => {
+    let resolveOldGroups, resolveOldSettings;
+    M.listFmQueueGroups.mockImplementation(d => d === "2026-09-24" ? new Promise(r => { resolveOldGroups = r; }) : Promise.resolve([]));
+    M.getFmQueueSettings.mockImplementation(d => d === "2026-09-24" ? new Promise(r => { resolveOldSettings = r; }) : Promise.resolve(null));
+    M.listFmStaff.mockImplementation(async d => d === "2026-09-24" ? [ALEX] : [NEXT]);
+    const tree = render(RETAILERS); await tick();
+    await openStaffTab(tree);
+    await setDate(tree, "2026-09-25");
+    expect(text(tree)).toContain("OBSLUGA-25");
+    await act(async () => { resolveOldGroups(GROUPS); resolveOldSettings({ test_mode: true }); await new Promise(r => setTimeout(r, 10)); });
+    await tick();
+    const t = text(tree);
+    expect(t).toContain("OBSLUGA-25");
+    expect(t).not.toContain("KOORDYNATOR-ALEKSANDRA");
+    expect(t).not.toContain("TRYB TESTOWY");      // ustawienia 24.09 nie trafiły do widoku 25.09
+    expect(checkboxes(tree).length).toBe(0);      // grupy 24.09 (Biedronka) nie trafiły do widoku 25.09
+    expect(button(tree, /^nowy PIN$/).props.disabled).toBe(false);
+    M.getFmQueueSettings.mockReset(); M.getFmQueueSettings.mockResolvedValue(null);
+  });
+
+  it("ręczne ponowienia: odpowiedź starszego ponowienia nie nadpisuje nowszego", async () => {
+    let resolveFirstRetry;
+    M.listFmStaff
+      .mockRejectedValueOnce(PGRST200)
+      .mockImplementationOnce(() => new Promise(r => { resolveFirstRetry = r; }))
+      .mockResolvedValueOnce([ALEX]);
+    const tree = render(); await tick();
+    await openStaffTab(tree);
+    expect(text(tree)).toContain("Nie udało się odczytać kont obsługi");
+    // po 1. kliknięciu ramka błędu (i przycisk) znika na czas odczytu — 2. ponowienie tym samym handlerem
+    const retry = button(tree, /Ponów odczyt/).props.onClick;
+    act(() => { retry(); });                                  // ponowienie 1 — wisi
+    await act(async () => { await retry(); }); await tick();  // ponowienie 2 — kończy się od razu
+    expect(text(tree)).toContain("KOORDYNATOR-ALEKSANDRA");
+    await act(async () => { resolveFirstRetry([]); await new Promise(r => setTimeout(r, 10)); });
+    const t = text(tree);
+    expect(t).toContain("KOORDYNATOR-ALEKSANDRA");
+    expect(t).not.toContain("Brak kont obsługi");
+    expect(button(tree, /^nowy PIN$/).props.disabled).toBe(false);
+    expect(M.listFmStaff).toHaveBeenCalledTimes(3);
   });
 
   it("błąd ponowienia tego samego dnia: stan sprzed błędu tylko do odczytu, akcje zablokowane", async () => {

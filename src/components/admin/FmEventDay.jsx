@@ -41,7 +41,12 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   const [staffError, setStaffError] = useState(null); // tekst błędu ostatniego odczytu — stan trwały z ponowieniem
   const [staffPending, setStaffPending] = useState(false);
   const [createdNotice, setCreatedNotice] = useState(null); // {code} — konto utworzone, lista mogła się nie odświeżyć
-  const staffReq = useRef(0);
+  // Generacja odświeżania: nadawana na STARCIE całego przebiegu (przed pierwszym await), wspólna dla
+  // grup, ustawień, sondy i kont. Przebieg, który przestał być bieżący (zmiana dnia, kolejne
+  // odświeżenie, ręczne ponowienie), nie ustawia już żadnego stanu — także gdy jego wcześniejsze
+  // oczekiwanie (np. grupy) skończy się później niż nowszy przebieg.
+  const loadGen = useRef(0);
+  const liveGen = useRef(0);
   const [settings, setSettings] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [log, setLog] = useState([]);
@@ -57,39 +62,48 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   const say = (text, tone = "ok") => { setMsg({ text, tone }); setTimeout(() => setMsg(m => (m?.text === text ? null : m)), 6000); };
   const fmRetailers = useMemo(() => (retailers || []).filter(r => r.fm26Active && r.fm26ChainId).sort((a, b) => a.name.localeCompare(b.name, "pl")), [retailers]);
 
-  const reloadStaff = useCallback(async () => {
-    const date = eventDate;
-    const req = ++staffReq.current;
+  // t = { gen, date } bieżącego przebiegu; każda odpowiedź sprawdza, czy przebieg nadal jest bieżący
+  const isCurrent = (t) => t.gen === loadGen.current;
+  const loadStaff = useCallback(async (t) => {
     setStaffPending(true); setStaffError(null);
     try {
-      const rows = await listFmStaff(date);
-      if (req !== staffReq.current) return; // starsza odpowiedź — trwa/zakończył się nowszy odczyt (inny dzień lub ponowienie)
-      setStaffView({ date, rows });
+      const rows = await listFmStaff(t.date);
+      if (!isCurrent(t)) return; // starsza odpowiedź — trwa/zakończył się nowszy przebieg (inny dzień lub ponowienie)
+      setStaffView({ date: t.date, rows });
     } catch (e) {
-      if (req !== staffReq.current) return;
+      if (!isCurrent(t)) return;
       // błąd = stan trwały z ponowieniem; brak tabeli w API to niedostępność modułu, nie pusta lista
       const base = humanFmError(e) || String(e?.message || e);
       setStaffError(isMissingObjectError(e) ? `Tabela kont obsługi (fm_staff) nie jest dostępna w API — moduł niewdrożony lub API nie widzi tabeli. ${base}` : base);
     } finally {
-      if (req === staffReq.current) setStaffPending(false);
+      if (isCurrent(t)) setStaffPending(false);
     }
-  }, [eventDate]);
+  }, []);
+  const loadConfig = useCallback(async (t) => {
+    try {
+      const [g, st] = await Promise.all([listFmQueueGroups(t.date), getFmQueueSettings(t.date)]);
+      if (!isCurrent(t)) return;
+      setGroups(g); setSettings(st);
+      // brak tabel = migracja 053 nie zaaplikowana (tylko brak obiektu, nie błąd relacji/uprawnień)
+      const probe = await supabase.from("fm_queue_groups").select("id").limit(1);
+      if (!isCurrent(t)) return;
+      setDbMissing(Boolean(probe.error && isMissingObjectError(probe.error)));
+      onQueueConfigChanged?.();
+    } catch (e) { if (isCurrent(t)) say(humanFmError(e), "error"); }
+  }, [onQueueConfigChanged]);
+  // ręczne „Ponów odczyt” = nowy przebieg (starsze odpowiedzi, także z poprzednich ponowień, są ignorowane)
+  const reloadStaff = useCallback(() => loadStaff({ gen: ++loadGen.current, date: eventDate }), [eventDate, loadStaff]);
   // wiersze TYLKO dla bieżącego dnia; akcje TYLKO po udanym odczycie tego dnia, bez błędu i nie w trakcie odczytu
   const staff = staffView?.date === eventDate ? staffView.rows : [];
   const staffReady = staffView?.date === eventDate && !staffError && !staffPending;
   const reload = useCallback(async () => {
-    try {
-      const [g, st] = await Promise.all([listFmQueueGroups(eventDate), getFmQueueSettings(eventDate)]);
-      setGroups(g); setSettings(st);
-      // brak tabel = migracja 053 nie zaaplikowana (tylko brak obiektu, nie błąd relacji/uprawnień)
-      const probe = await supabase.from("fm_queue_groups").select("id").limit(1);
-      setDbMissing(Boolean(probe.error && isMissingObjectError(probe.error)));
-      onQueueConfigChanged?.();
-    } catch (e) { say(humanFmError(e), "error"); }
-    await reloadStaff();
-  }, [eventDate, onQueueConfigChanged, reloadStaff]);
+    const t = { gen: ++loadGen.current, date: eventDate }; // przed pierwszym await
+    // konta niezależnie od konfiguracji (błąd grup/ustawień nie blokuje listy kont i odwrotnie)
+    await Promise.all([loadConfig(t), loadStaff(t)]);
+  }, [eventDate, loadConfig, loadStaff]);
   const reloadLive = useCallback(async () => {
-    try { setSnapshot(await fmQueueRpc.publicSnapshot(eventDate)); } catch { /* przed migracją */ }
+    const gen = ++liveGen.current; // osobna generacja: odpytywanie co 5 s nie unieważnia trwającego reload()
+    try { const s = await fmQueueRpc.publicSnapshot(eventDate); if (gen === liveGen.current) setSnapshot(s); } catch { /* przed migracją */ }
   }, [eventDate]);
 
   useEffect(() => { reload(); reloadLive(); }, [reload, reloadLive]);
@@ -99,8 +113,18 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
     const t = setInterval(reloadLive, 5000);
     return () => { unsub(); clearInterval(t); };
   }, [sub, reloadLive]);
-  useEffect(() => { if (sub === "log") listFmQueueLog(eventDate, 300).then(setLog).catch(() => {}); }, [sub, eventDate]);
-  useEffect(() => { if (sub === "spotkania" && meetGroupId) listFmQueueMeetings(meetGroupId).then(setMeetings).catch(() => setMeetings([])); else setMeetings([]); }, [sub, meetGroupId, groups]);
+  useEffect(() => {
+    if (sub !== "log") return;
+    let alive = true; // spóźniona odpowiedź dla poprzedniego dnia nie nadpisuje logu
+    listFmQueueLog(eventDate, 300).then(l => alive && setLog(l)).catch(() => {});
+    return () => { alive = false; };
+  }, [sub, eventDate]);
+  useEffect(() => {
+    if (!(sub === "spotkania" && meetGroupId)) { setMeetings([]); return; }
+    let alive = true;
+    listFmQueueMeetings(meetGroupId).then(m => alive && setMeetings(m)).catch(() => alive && setMeetings([]));
+    return () => { alive = false; };
+  }, [sub, meetGroupId, groups]);
 
   const run = async (fn, okText) => {
     if (busy) return;
