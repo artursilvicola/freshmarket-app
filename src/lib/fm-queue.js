@@ -5,9 +5,23 @@
 // puste dane zamiast wywalać aplikację.
 import { supabase } from "./supabase";
 
-const MISSING_RE = /relation .* does not exist|Could not find the (table|function)|schema cache/i;
+// [fix/fm-staff-list-relation] „Brak wdrożonego modułu” = TYLKO brak tabeli/funkcji:
+// PostgREST PGRST205 (tabela spoza schema cache), PGRST202 (funkcja), Postgres 42P01 / 42883.
+// Błąd relacji między tabelami (PGRST200/PGRST201), brak uprawnień i błędy transportu NIE są
+// „brakiem modułu” — muszą przejść jako błąd, inaczej panel pokazuje fałszywą pustą listę
+// (19.09: listFmStaff z embedem fm_queue_assignments dostawał PGRST200 „Could not find a
+// relationship … in the schema cache” i softFail zwracał [] → „Brak kont obsługi”).
+const MISSING_CODES = new Set(["PGRST205", "PGRST202", "42P01", "42883"]);
+const MISSING_RE = /relation .* does not exist|Could not find the (table|function) /i;
+export function isMissingObjectError(error) {
+  if (!error) return false;
+  if (MISSING_CODES.has(String(error.code || ""))) return true;
+  const msg = String(error.message || "");
+  if (/relationship/i.test(msg)) return false;
+  return MISSING_RE.test(msg);
+}
 function softFail(error, fallback) {
-  if (error && MISSING_RE.test(error.message || "")) return fallback;
+  if (error && isMissingObjectError(error)) return fallback;
   if (error) throw error;
   return fallback;
 }
@@ -97,12 +111,25 @@ export async function saveFmQueueSettings(row) {
 }
 
 // ── obsługa (admin) ──────────────────────────────────────────────────────────
+// [fix/fm-staff-list-relation] fm_staff i fm_queue_assignments wskazują obie na profiles —
+// nie ma między nimi klucza obcego, więc embed `fm_queue_assignments(queue_group_id)` kończył
+// się PGRST200. Dwa odczyty pod tą samą sesją/RLS, złączenie w JS po operator_id === staff.id.
+// Kontrakt bez zmian: row.fm_queue_assignments = [{ queue_group_id }] (pusta lista dla konta
+// bez przypisań — takie konto NIE znika). Błąd któregokolwiek odczytu = błąd, nie pusty sukces.
 export async function listFmStaff(eventDate) {
-  let q = supabase.from("fm_staff").select("*, fm_queue_assignments(queue_group_id)").order("code");
+  let q = supabase.from("fm_staff").select("*").order("code");
   if (eventDate) q = q.eq("event_date", eventDate);
   const { data, error } = await q;
   if (error) return softFail(error, []);
-  return data || [];
+  const rows = data || [];
+  if (!rows.length) return [];
+  const ids = rows.map(r => r.id);
+  const { data: asg, error: aErr } = await supabase.from("fm_queue_assignments")
+    .select("operator_id, queue_group_id").in("operator_id", ids);
+  if (aErr) throw aErr;
+  const byOperator = {};
+  for (const a of asg || []) (byOperator[a.operator_id] ||= []).push({ queue_group_id: a.queue_group_id });
+  return rows.map(r => ({ ...r, fm_queue_assignments: byOperator[r.id] || [] }));
 }
 
 export async function updateFmStaff(id, patch) {

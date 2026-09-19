@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../auth/AuthProvider";
 import {
-  deleteFmQueueGroup, deleteFmStation, fmQueueRpc, getFmQueueSettings, listFmQueueGroups, listFmQueueLog, listFmQueueMeetings, listFmStaff,
+  deleteFmQueueGroup, deleteFmStation, fmQueueRpc, getFmQueueSettings, isMissingObjectError, listFmQueueGroups, listFmQueueLog, listFmQueueMeetings, listFmStaff,
   saveFmQueueSettings, subscribeFmQueue, updateFmStaff, upsertFmQueueGroup, upsertFmStation,
 } from "../../lib/fm-queue";
 import { FM_MEETINGS_PER_STATION } from "../../lib/fm-algo";
@@ -34,6 +34,10 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   const [sub, setSub] = useState("stanowiska");
   const [groups, setGroups] = useState([]);
   const [staff, setStaff] = useState([]);
+  // [fix/fm-staff-list-relation] błąd odczytu kont to stan trwały z ponowieniem — nie pusta lista
+  const [staffError, setStaffError] = useState(null);
+  const [staffLoaded, setStaffLoaded] = useState(false);
+  const [createdNotice, setCreatedNotice] = useState(null); // {code} — konto utworzone, lista mogła się nie odświeżyć
   const [settings, setSettings] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [log, setLog] = useState([]);
@@ -49,16 +53,26 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
   const say = (text, tone = "ok") => { setMsg({ text, tone }); setTimeout(() => setMsg(m => (m?.text === text ? null : m)), 6000); };
   const fmRetailers = useMemo(() => (retailers || []).filter(r => r.fm26Active && r.fm26ChainId).sort((a, b) => a.name.localeCompare(b.name, "pl")), [retailers]);
 
+  const reloadStaff = useCallback(async () => {
+    try {
+      const s = await listFmStaff(eventDate);
+      setStaff(s); setStaffError(null); setStaffLoaded(true);
+    } catch (e) {
+      // poprzednich danych nie pokazujemy jako aktualnych; „Brak kont” tylko po UDANYM odczycie
+      setStaffError(humanFmError(e) || String(e?.message || e)); setStaffLoaded(false);
+    }
+  }, [eventDate]);
   const reload = useCallback(async () => {
     try {
-      const [g, s, st] = await Promise.all([listFmQueueGroups(eventDate), listFmStaff(eventDate), getFmQueueSettings(eventDate)]);
-      setGroups(g); setStaff(s); setSettings(st);
-      // brak tabel = migracja 053 nie zaaplikowana
+      const [g, st] = await Promise.all([listFmQueueGroups(eventDate), getFmQueueSettings(eventDate)]);
+      setGroups(g); setSettings(st);
+      // brak tabel = migracja 053 nie zaaplikowana (tylko brak obiektu, nie błąd relacji/uprawnień)
       const probe = await supabase.from("fm_queue_groups").select("id").limit(1);
-      setDbMissing(Boolean(probe.error && /does not exist|schema cache/i.test(probe.error.message || "")));
+      setDbMissing(Boolean(probe.error && isMissingObjectError(probe.error)));
       onQueueConfigChanged?.();
     } catch (e) { say(humanFmError(e), "error"); }
-  }, [eventDate, onQueueConfigChanged]);
+    await reloadStaff();
+  }, [eventDate, onQueueConfigChanged, reloadStaff]);
   const reloadLive = useCallback(async () => {
     try { setSnapshot(await fmQueueRpc.publicSnapshot(eventDate)); } catch { /* przed migracją */ }
   }, [eventDate]);
@@ -121,7 +135,9 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
     if (code.length < 3) { say("Kod: min. 3 znaki.", "error"); return; }
     await run(async () => {
       const j = await adminStaffCall({ action: "create", code, display_name: newStaff.display_name.trim() || null, event_date: eventDate });
+      // konto istnieje od tej chwili — modal z PIN-em zostaje nawet, gdy odświeżenie listy się nie uda
       setPinModal({ code: j.code, pin: j.pin });
+      setCreatedNotice({ code: j.code });
       setNewStaff({ code: "", display_name: "" });
     });
   }
@@ -262,6 +278,12 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
             <Btn onClick={createStaff} disabled={busy || dbMissing}>Utwórz konto → pokaż PIN</Btn>
           </div>
           )}
+          {staffError && (
+            <div data-testid="staff-error" style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 14px", marginBottom: 10, color: "#991b1b", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <span><b>Nie udało się odczytać kont obsługi.</b> {staffError}{staff.length ? " Poniższa lista może być nieaktualna." : ""}</span>
+              <Btn sm ghost onClick={reloadStaff} disabled={busy}>Ponów odczyt</Btn>
+            </div>
+          )}
           <table style={tbl}>
             <thead><tr>{["Kod", "Imię", "Dzień", "Status", "Ostatnie logowanie / tablet", "Przypisane sieci", ""].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
             <tbody>
@@ -296,7 +318,8 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                   </tr>
                 );
               })}
-              {staff.length === 0 && <tr><td style={td} colSpan={7}><span style={{ color: "#94a3b8" }}>Brak kont obsługi na {eventDate}.</span></td></tr>}
+              {staffLoaded && !staffError && staff.length === 0 && <tr><td style={td} colSpan={7}><span style={{ color: "#94a3b8" }}>Brak kont obsługi na {eventDate}.</span></td></tr>}
+              {!staffLoaded && !staffError && staff.length === 0 && <tr><td style={td} colSpan={7}><span style={{ color: "#94a3b8" }}>Wczytywanie kont…</span></td></tr>}
             </tbody>
           </table>
         </div>
@@ -419,9 +442,14 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
             <div style={{ fontSize: 12, letterSpacing: "0.1em", color: "#64748b", fontWeight: 700 }}>PIN</div>
             <div style={{ fontSize: 44, fontWeight: 900, letterSpacing: "0.25em", fontVariantNumeric: "tabular-nums", margin: "4px 0 10px" }}>{pinModal.pin}</div>
             <div style={{ color: "#991b1b", fontSize: 12, lineHeight: 1.5, marginBottom: 14 }}>PIN jest pokazywany <b>tylko teraz</b> — nie jest zapisany w bazie ani w logach. Przekaż go osobie z obsługi (np. na kartce z kodem). Zgubiony PIN = „nowy PIN”.</div>
+            {staffError && createdNotice?.code === pinModal.code && (
+              <div data-testid="created-notice" style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 10px", marginBottom: 12, color: "#92400e", fontSize: 12, lineHeight: 1.5 }}>
+                Konto <b>{pinModal.code}</b> zostało utworzone, ale nie udało się odświeżyć listy. <b>Nie twórz go ponownie</b> — użyj „Ponów odczyt”.
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
               <Btn ghost onClick={() => navigator.clipboard?.writeText(`${pinModal.code} PIN ${pinModal.pin}`)}>Kopiuj</Btn>
-              <Btn onClick={() => setPinModal(null)}>Zamknij</Btn>
+              <Btn onClick={() => { setPinModal(null); setCreatedNotice(null); }}>Zamknij</Btn>
             </div>
           </div>
         </div>
