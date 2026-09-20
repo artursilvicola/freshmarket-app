@@ -2570,6 +2570,14 @@
       "inputs_loading": "Wczytujemy komplet wyborów dostawców i odpowiedzi sieci. Przeliczanie i zatwierdzanie planu jest chwilowo zablokowane.",
       "inputs_error": "Nie udało się pobrać kompletu wyborów lub odpowiedzi sieci. Błąd odczytu NIE oznacza „Daj szansę”. Przeliczanie i zatwierdzanie planu jest zablokowane. Odśwież stronę i spróbuj ponownie."
     },
+    "decision_source": {
+      "admin_badge": "Wybrane przez administratora",
+      "admin_tooltip": "Ten wybór ustawił administrator w Twoim imieniu. Możesz go zmienić — wtedy oznaczenie zniknie.",
+      "admin_meta": "Ustawił administrator {{who}} · {{when}}",
+      "unknown_author": "(sesja serwerowa, bez identyfikatora)",
+      "admin_badge_target": "Wybór sieci: ustawił administrator",
+      "admin_badge_resp": "Decyzja kupca: ustawił administrator"
+    },
     "event_date": "24 września 2026",
     "phases": {
       "1": {

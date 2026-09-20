@@ -2570,6 +2570,14 @@
       "inputs_loading": "Loading the complete supplier choices and retailer responses. Plan calculation and approval are temporarily blocked.",
       "inputs_error": "Could not load all supplier choices or retailer responses. A read error does NOT mean “Give a chance”. Plan calculation and approval are blocked. Refresh the page and try again."
     },
+    "decision_source": {
+      "admin_badge": "Selected by the administrator",
+      "admin_tooltip": "This choice was set by the administrator on your behalf. You can change it — the marker will then disappear.",
+      "admin_meta": "Set by administrator {{who}} · {{when}}",
+      "unknown_author": "(server session, no identifier)",
+      "admin_badge_target": "Retailer choice: set by the administrator",
+      "admin_badge_resp": "Buyer decision: set by the administrator"
+    },
     "event_date": "24 September 2026",
     "phases": {
       "1": {

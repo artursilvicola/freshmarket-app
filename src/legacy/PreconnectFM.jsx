@@ -22,6 +22,7 @@ import {
   setOwnPassword as dbSetOwnPassword,
   getFmSettings as dbGetFmSettings, saveFmSettings as dbSaveFmSettings,
   getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
+  getFmDecisionSources as dbGetFmDecisionSources,
   getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
   getAllCompanyTargetRetailers as dbGetAllCompanyTargetRetailers,
   setCompanyTargetRetailers as dbSetCompanyTargetRetailers,
@@ -91,6 +92,9 @@ import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE
 import { FM_STARS_MIN, fmPackagesOf, fmStarsMax, fmStarsState, findSupplierCompany } from "../lib/fm-stars.js";
 import { companyProfileGaps } from "../lib/company-profile.js";
 import { isOwnAccount } from "../lib/profile-guard.js";
+// [feat/fm-decision-source] kto ustawił wybór sieci / decyzję kupca (oznaczenie „Wybrane przez administratora”)
+import { groupDecisionSources, targetSource, respSource, sourcesVisibleTo } from "../lib/fm-decision-sources.js";
+import DecisionSourceBadge from "../components/fm/DecisionSourceBadge.jsx";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
@@ -2605,6 +2609,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // structure: { [chainId]: { [supplierId]: "want"|"chance"|"remove" } }
   // These do NOT feed the algorithm — admin-only reference for manual corrections
   const [fmLateResps, setFmLateResps] = useState({});
+  // [feat/fm-decision-source] źródła decyzji (tabela fm_decision_sources; RLS: admin wszystko,
+  // dostawca własne wybory, kupiec własne decyzje). Odświeżane po wczytaniu wejść FM i po
+  // każdym zapisie z paneli; starsza odpowiedź nie nadpisuje nowszej; brak tabeli = brak oznaczeń.
+  const [fmDecisionSources, setFmDecisionSources] = useState({ target: {}, resp: {} });
+  const fmDecisionSourcesReqRef = useRef(0);
+  const reloadFmDecisionSources = useCallback(async () => {
+    const req = ++fmDecisionSourcesReqRef.current;
+    try {
+      const rows = await dbGetFmDecisionSources();
+      if (req === fmDecisionSourcesReqRef.current) setFmDecisionSources(groupDecisionSources(rows));
+    } catch (e) { console.warn("[load fmDecisionSources]", e); }
+  }, []);
   // previewFor: set of supplier/chain IDs for which admin has enabled preview
   // structure: { suppliers: Set→Array, chains: Set→Array }
   const [previewFor, setPreviewFor] = useState(() => {
@@ -2706,6 +2722,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         setFmResps(grouped);
         setFmRespsLoaded(true);
         setFmInputsError(false);
+        reloadFmDecisionSources();
         try { localStorage.removeItem("fm_fmResps"); } catch(e){}
         try { localStorage.removeItem("fm_fmPrefs"); } catch(e){}
       } catch (e) {
@@ -2714,7 +2731,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       }
     })();
     return () => { canceled = true; };
-  }, [companiesLoaded, retailersLoaded, loadFmInputs]);
+  }, [companiesLoaded, retailersLoaded, loadFmInputs, reloadFmDecisionSources]);
   // Admin: auto-odświeżanie co 60 s + natychmiast po powrocie do karty (visibilitychange).
   const [fmInputsRefreshedAt, setFmInputsRefreshedAt] = useState(null);
   useEffect(() => {
@@ -2732,6 +2749,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         setFmRespsLoaded(true);
         setFmInputsError(false);
         setFmInputsRefreshedAt(new Date());
+        reloadFmDecisionSources();
       } catch (e) {
         console.warn("[refresh fm inputs]", e);
         if (!canceled && requestId === fmInputsRequestRef.current) setFmInputsError(true);
@@ -3754,9 +3772,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if (["fm-sched","fm-algo","fm-wyniki"].includes(pg) && (!fmRespsLoaded || fmInputsError) && !fmSettings.planPublished)
       return <Alrt type="warning">{t(fmInputsError ? "fm.default_chance.inputs_error" : "fm.default_chance.inputs_loading")}</Alrt>;
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
-      ? <PageSupplierFM fmId={account.fmId||account.id} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
-      : <PageBuyerFM chainId={(retailers.find(r=>r.id===account.retailerId)?.fm26ChainId)||account.chainId} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
-    if(pg==="a-fm")         return <PageAdminFM fmInputsReady={fmRespsLoaded && !fmInputsError} fmInputsError={fmInputsError} onQueueConfigChanged={reloadFmStationCaps} fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
+      ? <PageSupplierFM fmId={account.fmId||account.id} decisionSources={fmDecisionSources} viewerIsAdmin={initialRole === "admin"} onDecisionSourcesChanged={reloadFmDecisionSources} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
+      : <PageBuyerFM chainId={(retailers.find(r=>r.id===account.retailerId)?.fm26ChainId)||account.chainId} decisionSources={fmDecisionSources} viewerIsAdmin={initialRole === "admin"} onDecisionSourcesChanged={reloadFmDecisionSources} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
+    if(pg==="a-fm")         return <PageAdminFM decisionSources={fmDecisionSources} fmInputsReady={fmRespsLoaded && !fmInputsError} fmInputsError={fmInputsError} onQueueConfigChanged={reloadFmStationCaps} fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
     // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
     // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.
     if(pg==="a-branding") {
@@ -13470,7 +13488,7 @@ function NumBadge({ num, size="md" }) {
 /* ═══════════════════════════════════════════════════════════════
    ADMIN PREFERENCES VIEW (Faza 2 podgląd dla admina)
 ═══════════════════════════════════════════════════════════════ */
-export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppliers, companies }) {
+export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, fmSuppliers, companies, decisionSources = null }) {
   const { t, i18n } = useTranslation("legacy");
   const pluralSuffix = pluralSuffixPL;
   const _localeForDate = i18n.language?.startsWith("en") ? "en-GB" : "pl-PL";
@@ -13676,6 +13694,8 @@ export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, 
                           <span style={{ fontSize:10,color:"#64748b" }}>{s.country}</span>
                           <Badge color={s.pkg==="Premium"?"#d97706":"#2563eb"} bg={s.pkg==="Premium"?"#fef3c7":"#eff6ff"}>{s.pkg}</Badge>
                           <span style={{ fontSize:10,color:"#94a3b8" }}>{fmPrefs[s.id]?.[ch.id]==="star"?"⭐":"👍"}</span>
+                          <DecisionSourceBadge variant="target" source={targetSource(decisionSources, s.companyId, resolveRetailerIdFromChain(ch.id, retailers))} viewerIsAdmin />
+                          <DecisionSourceBadge variant="resp" source={respSource(decisionSources, resolveRetailerIdFromChain(ch.id, retailers), s.companyId)} viewerIsAdmin />
                         </div>
                       ))}
                     </div>
@@ -13816,7 +13836,7 @@ function RetailerPreviewModal({ retailer, onClose }) {
 /* ═══════════════════════════════════════════════════════════════
    FM PAGE — SUPPLIER
 ═══════════════════════════════════════════════════════════════ */
-export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers, accountId, confirmFmSelection }) {
+export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps, fmAlgo, fmSchedule, setFmSchedule, subPage, fmChains, fmSuppliers, companies, offers, previewFor, retailers, accountId, confirmFmSelection, decisionSources = null, viewerIsAdmin = false, onDecisionSourcesChanged = null }) {
   const { t, i18n } = useTranslation("legacy");
   // [fix/security-hotfix] zapisy wyborów szeregowane (ostatni stan wygrywa, bez
   // równoległych żądań), błąd widoczny na stronie, „Potwierdź wybór" czeka na zapis
@@ -13824,6 +13844,9 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
   const [targetsSaving, setTargetsSaving] = useState(false);
   const retailersRef = useRef(retailers);
   retailersRef.current = retailers;
+  // [feat/fm-decision-source] po udanym zapisie odświeżamy źródła (saver powstaje raz — ref)
+  const onSourcesChangedRef = useRef(onDecisionSourcesChanged);
+  onSourcesChangedRef.current = onDecisionSourcesChanged;
   // rewizje: każde kliknięcie = nowa rewizja edycji; odpowiedź serwera na STARSZĄ rewizję
   // nie może cofnąć nowszych kliknięć (review Codexa 79b4b24 P1/1); potwierdzenie
   // wymaga, by ostatnia zapisana rewizja == ostatnia rewizja edycji
@@ -13851,6 +13874,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
           const same = Object.keys(cur).length === Object.keys(savedPrefs).length && Object.keys(cur).every(k => cur[k] === savedPrefs[k]);
           return same ? prev : { ...prev, [savedSid]: savedPrefs };
         });
+        onSourcesChangedRef.current?.();
       },
       {
         onError: (e) => {
@@ -13890,6 +13914,8 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
   // (FM_STARS_MIN = 5) i limit ⭐ z pakietów Business (5 × N, fm-stars.js).
   // Firma po dokładnym company_id konta, dopiero potem po kluczach legacy.
   const myFmCo = findSupplierCompany(companies, { accountId, fmId });
+  // [feat/fm-decision-source] tylko źródła WŁASNYCH wyborów tej firmy (nigdy decyzji kupców)
+  const mySources = sourcesVisibleTo("supplier", decisionSources, { companyId: myFmCo?.id });
   const fmPackages = fmPackagesOf(myFmCo);
   const starsMax = fmStarsMax(myFmCo);
   const meetings = currentPlan?.res?.[sid]?.m || [];
@@ -14050,6 +14076,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
                   </div>
                   {p==="star"&&<span style={{ fontSize:9,color:"#d97706",fontWeight:700,flexShrink:0 }}>{t("fm.supplier.chain_badge_main")}</span>}
                   {p==="thumb"&&<span style={{ fontSize:9,color:"#0d9488",fontWeight:700,flexShrink:0 }}>{t("fm.supplier.chain_badge_backup")}</span>}
+                  {p && <DecisionSourceBadge source={targetSource(mySources, myFmCo?.id, resolveRetailerIdFromChain(c.id, retailers))} viewerIsAdmin={viewerIsAdmin} style={{ flexShrink:0 }} />}
                 </div>
               );
             })}
@@ -14188,7 +14215,11 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
 /* ═══════════════════════════════════════════════════════════════
    FM PAGE — BUYER
 ═══════════════════════════════════════════════════════════════ */
-export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, fmChains, fmSuppliers, companies, offers, sends, fmWishlists, setFmWishlists, fmLateResps, setFmLateResps, previewFor, retailers }) {
+export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, fmChains, fmSuppliers, companies, offers, sends, fmWishlists, setFmWishlists, fmLateResps, setFmLateResps, previewFor, retailers, decisionSources = null, viewerIsAdmin = false, onDecisionSourcesChanged = null }) {
+  // [feat/fm-decision-source] tylko źródła WŁASNYCH decyzji tej sieci (nigdy wyborów dostawców)
+  const myRetailerId = resolveRetailerIdFromChain(chainId, retailers);
+  const mySources = sourcesVisibleTo("buyer", decisionSources, { retailerId: myRetailerId });
+  const companyIdOf = (s) => ((companies || []).find(c => c.id === s?.companyId || c.fmId === s?.id || c.legacy_fm_id === s?.id) || {}).id;
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
@@ -14236,7 +14267,7 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
         zone: val,
         status: val,
         meta: { supplier_legacy_id: sid, chain_id: chainId }
-      }).catch(e => {
+      }).then(() => { onDecisionSourcesChanged?.(); }).catch(e => {
         // [fix/security-hotfix] baza odrzuca zapis po zamknięciu fazy (054) → cofnij lokalną zmianę
         if (isFmInputsLockedError(e)) {
           setFmResps(fmResps);
@@ -14410,6 +14441,7 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
                       </div>
                       <div style={{ fontSize:11,color:"#64748b" }}>{s.country} · {s.products}</div>
                       {automatic && <div style={{ fontSize:11,color:"#b45309",fontWeight:600,marginTop:4 }}>{t("fm.default_chance.badge")}</div>}
+                      {resp && <DecisionSourceBadge source={respSource(mySources, myRetailerId, companyIdOf(s))} viewerIsAdmin={viewerIsAdmin} style={{ marginTop:4 }} />}
                     </div>
                     <Btn sm outline onClick={()=>openFirmPreview(s)} style={{ fontSize:10 }}><Eye size={10}/> {t("fm.buyer.preview_btn")}</Btn>
                     <div style={{ display:"flex",gap:5 }}>
@@ -15126,7 +15158,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   );
 }
 
-export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies, fl, onQueueConfigChanged, fmInputsReady = false, fmInputsError = false }) {
+export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies, fl, onQueueConfigChanged, fmInputsReady = false, fmInputsError = false, decisionSources = null }) {
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
@@ -15311,7 +15343,7 @@ export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFm
                 )}
               </div>
             )}
-            <FMAdminPreferencesView fmPrefs={fmPrefs} fmResps={fmResps} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} companies={companies}/>
+            <FMAdminPreferencesView fmPrefs={fmPrefs} fmResps={fmResps} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} companies={companies} decisionSources={decisionSources}/>
           </div>
         );
       })()}

@@ -1840,6 +1840,28 @@ export async function setCompanyTargetRetailers(companyId, items) {
 }
 
 // ===================================================================
+// FM 2026 — ŹRÓDŁA DECYZJI (kto ustawił wybór sieci / decyzję kupca)
+// ===================================================================
+// [feat/fm-decision-source] Tabela fm_decision_sources (migracja 20260920130000):
+// RLS zwraca adminowi wszystko, dostawcy tylko własne "target", kupcowi tylko
+// własne "resp". Komplet wierszy (stronicowanie jak dla wejść FM). Autor
+// (profil) osadzony przez klucz obcy — dla ról bez dostępu do profilu = null.
+// Brak tabeli (front przed migracją) → pusta lista, bez oznaczeń.
+export async function getFmDecisionSources() {
+  try {
+    return await readAllFmInputRows(() => supabase
+      .from("fm_decision_sources")
+      .select("entity, company_id, retailer_id, decision, source, source_user_id, source_at, author:profiles!fm_decision_sources_source_user_fkey(name, email)", { count: "exact" })
+      .order("entity", { ascending: true })
+      .order("company_id", { ascending: true })
+      .order("retailer_id", { ascending: true }));
+  } catch (e) {
+    if (e?.code === "PGRST205" || /Could not find the table/i.test(e?.message || "")) return [];
+    throw e;
+  }
+}
+
+// ===================================================================
 // FM 2026 — WISHLISTS (kupiec stawia priorytet na dostawce)
 // ===================================================================
 
