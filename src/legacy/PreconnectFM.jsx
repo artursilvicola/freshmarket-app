@@ -13858,7 +13858,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
   // [feat/fm-decision-source] po udanym zapisie odświeżamy źródła (saver powstaje raz — ref)
   const onSourcesChangedRef = useRef(onDecisionSourcesChanged);
   onSourcesChangedRef.current = onDecisionSourcesChanged;
-  const sourceTokensRef = useRef([]);   // edycje par (tokeny) nierozliczone do czasu odpowiedzi bazy
+  const sourceTokensRef = useRef([]);   // [{ token, editRev }] — edycje par nierozliczone; rozlicza je zapis niosący rewizję ≥ editRev
   // rewizje: każde kliknięcie = nowa rewizja edycji; odpowiedź serwera na STARSZĄ rewizję
   // nie może cofnąć nowszych kliknięć (review Codexa 79b4b24 P1/1); potwierdzenie
   // wymaga, by ostatnia zapisana rewizja == ostatnia rewizja edycji
@@ -13869,6 +13869,13 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
     targetsSaverRef.current = createSerialSaver(
       async ({ companyId, rows, sid: savedSid, rev }) => {
         const saved = await dbSetCompanyTargetRetailers(companyId, rows);
+        // [decision-source] zapis przyjęty: rozliczamy edycje, które TEN zapis niósł (rewizje ≤ rev; każdy zapis
+        // wysyła całą listę) — także gdy formularz ma już nowsze kliknięcia: przyjęty zapis nie nadpisuje
+        // nowszej edycji, ale zmienia podstawę ewentualnego przywrócenia (review Codexa a75ca3f)
+        const carried = sourceTokensRef.current.filter(x => x.editRev <= rev);
+        sourceTokensRef.current = sourceTokensRef.current.filter(x => x.editRev > rev);
+        for (const x of carried) onSourcesChangedRef.current?.({ settle: x.token, refetch: false });
+        if (carried.length) onSourcesChangedRef.current?.();
         if (rev < editRevRef.current) return; // są nowsze kliknięcia — ich zapis jest w kolejce
         savedRevRef.current = rev;
         // ostatnia rewizja zapisana = wcześniejszy błąd nieaktualny (review 78e9dc9 P2);
@@ -13886,15 +13893,19 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
           const same = Object.keys(cur).length === Object.keys(savedPrefs).length && Object.keys(cur).every(k => cur[k] === savedPrefs[k]);
           return same ? prev : { ...prev, [savedSid]: savedPrefs };
         });
-        // zapis przyjęty: rozliczamy edycje par (settle) i czytamy źródła z bazy
-        for (const tk of sourceTokensRef.current.splice(0)) onSourcesChangedRef.current?.({ settle: tk, refetch: false });
-        onSourcesChangedRef.current?.();
       },
       {
-        onError: (e) => {
-          // zapis odrzucony: w bazie zostają poprzednie wybory i ich źródła → oznaczenia wracają od razu, odczyt potwierdza
-          for (const tk of sourceTokensRef.current.splice(0)) onSourcesChangedRef.current?.({ restore: tk, refetch: false });
-          onSourcesChangedRef.current?.();
+        onError: (e, payload) => {
+          // [decision-source] zapis odrzucony: rozliczamy TYLKO edycje, które ten zapis niósł, i tylko gdy nie czeka
+          // nowszy zapis (on poniesie je ponownie — cała lista); w bazie zostają poprzednie wybory i ich źródła,
+          // więc oznaczenia tych edycji wracają od razu, a odczyt potwierdza
+          const failedRev = Number(payload?.rev) || 0;
+          if (failedRev >= editRevRef.current) {
+            const failed = sourceTokensRef.current.filter(x => x.editRev <= failedRev);
+            sourceTokensRef.current = sourceTokensRef.current.filter(x => x.editRev > failedRev);
+            for (const x of failed) onSourcesChangedRef.current?.({ restore: x.token, refetch: false });
+            if (failed.length) onSourcesChangedRef.current?.();
+          }
           setTargetsSaveError(e);
           console.warn("[save target retailers]", e);
           if (isFmInputsLockedError(e) && typeof window !== "undefined") window.alert(t("errors.db.fm_inputs_locked"));
@@ -13947,11 +13958,12 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
     setFmPrefs(np);
     const company = (companies || []).find(c => c.fmId === sid || c.legacy_fm_id === sid || c.id === sid);
     if (company?.id) {
-      // [decision-source] własna zmiana → oznaczenie admina przy tej sieci znika od razu; odczyt po zapisie potwierdza
-      const sourceToken = onSourcesChangedRef.current?.({ invalidate: { entity: "target", companyId: company.id, retailerId: resolveRetailerIdFromChain(cid, retailers) }, refetch: false });
-      if (sourceToken) sourceTokensRef.current.push(sourceToken);
       const rows = buildTargetRetailerRowsFromPrefs(np[sid], retailers);
       const rev = ++editRevRef.current;
+      // [decision-source] własna zmiana → oznaczenie admina przy tej sieci znika od razu; token przypięty do rewizji
+      // edycji — rozlicza go zapis, który tę rewizję niesie (sukces → settle, odrzucenie bez nowszego zapisu → restore)
+      const sourceToken = onSourcesChangedRef.current?.({ invalidate: { entity: "target", companyId: company.id, retailerId: resolveRetailerIdFromChain(cid, retailers) }, refetch: false });
+      if (sourceToken) sourceTokensRef.current.push({ token: sourceToken, editRev: rev });
       setTargetsSaveError(null);
       setTargetsSaving(true);
       targetsSaverRef.current.save({ companyId: company.id, rows, sid, rev }).catch(() => {});
@@ -14275,13 +14287,22 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
   // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej fazy.
   const ph = FM_PHASES[phase-1] || FM_PHASES[FM_PHASES.length-1];
 
+  // [decision-source] decyzje per firma: rewizja ostatniego kliknięcia, liczba zapisów w toku i ostatnia wartość
+  // POTWIERDZONA przez bazę (przyjęty zapis; przed pierwszym zapisem — stan z panelu). Odrzucony zapis cofa panel do
+  // wartości potwierdzonej TYLKO, gdy nie ma nowszego kliknięcia tej firmy (starszy błąd nie nadpisuje nowszej edycji);
+  // starszy przyjęty zapis zmienia podstawę cofnięcia (review Codexa a75ca3f).
+  const respEditRef = useRef({});
   function setResp(sid, val) {
+    const before = (fmResps[chainId] || {})[sid];
     setFmResps(r => ({ ...r, [chainId]: { ...(r[chainId]||{}), [sid]: val } }));
     const retailer_id = resolveRetailerIdFromChain(chainId, retailers);
     const supplier = _suppliers.find(s => s.id === sid);
     const company = (companies || []).find(c => c.id === supplier?.companyId || c.fmId === sid || c.legacy_fm_id === sid);
     if (retailer_id && company?.id) {
-      // [decision-source] własna decyzja → oznaczenie admina przy tej firmie znika od razu; odczyt po zapisie potwierdza
+      const edit = respEditRef.current[sid] || (respEditRef.current[sid] = { rev: 0, inflight: 0, confirmed: before });
+      if (edit.inflight === 0) edit.confirmed = before;   // bez zapisów w toku panel odzwierciedla bazę
+      const rev = ++edit.rev; edit.inflight += 1;
+      // własna decyzja → oznaczenie admina przy tej firmie znika od razu; token rozlicza TEN zapis
       const sourceToken = onDecisionSourcesChanged?.({ invalidate: { entity: "resp", companyId: company.id, retailerId: retailer_id }, refetch: false }) || null;
       dbSaveFmResp({
         retailer_id,
@@ -14289,12 +14310,17 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
         zone: val,
         status: val,
         meta: { supplier_legacy_id: sid, chain_id: chainId }
-      }).then(() => { onDecisionSourcesChanged?.({ settle: sourceToken }); }).catch(e => {
-        // zapis odrzucony: w bazie zostaje poprzednia decyzja i jej źródło → oznaczenie wraca od razu, odczyt potwierdza
+      }).then(() => {
+        edit.inflight -= 1; edit.confirmed = val;          // przyjęty zapis = nowa podstawa, także gdy trwa nowsza edycja
+        onDecisionSourcesChanged?.({ settle: sourceToken });
+      }).catch(e => {
+        edit.inflight -= 1;
+        // zapis odrzucony: oznaczenie TEJ edycji wraca do stanu potwierdzonego (od razu, bez sieci), odczyt potwierdza;
+        // panel wraca do wartości potwierdzonej tylko, gdy to ostatnie kliknięcie tej firmy
         onDecisionSourcesChanged?.({ restore: sourceToken });
-        // [fix/security-hotfix] baza odrzuca zapis po zamknięciu fazy (054) → cofnij lokalną zmianę
+        if (edit.rev === rev) setFmResps(r => { const ch = { ...(r[chainId] || {}) }; if (edit.confirmed == null) delete ch[sid]; else ch[sid] = edit.confirmed; return { ...r, [chainId]: ch }; });
+        // [fix/security-hotfix] baza odrzuca zapis po zamknięciu fazy (054)
         if (isFmInputsLockedError(e)) {
-          setFmResps(fmResps);
           if (typeof window !== "undefined") window.alert(t("errors.db.fm_inputs_locked"));
           return;
         }

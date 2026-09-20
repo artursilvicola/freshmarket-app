@@ -4,7 +4,7 @@
 // ustawionej przez admina (nigdy przy wyborach dostawców), admin widzi obie strony z autorem.
 import React from "react";
 import { create, act } from "react-test-renderer";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { groupDecisionSources } from "../lib/fm-decision-sources.js";
 
 vi.mock("../lib/supabase", () => ({ supabase: {} }));
@@ -41,6 +41,7 @@ function render(node) { let tree; act(() => { tree = create(node); }); trees.pus
 const text = (tree) => JSON.stringify(tree.toJSON());
 const count = (tree, s) => (text(tree).match(new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g")) || []).length;
 afterEach(() => { act(() => trees.splice(0).forEach(tree => tree.unmount())); });
+beforeEach(() => { db.setCompanyTargetRetailers.mockClear(); db.saveFmResp.mockClear(); });
 
 const CHAINS = [{ id: "ch1", name: "Sieć 1", country: "PL", cat: "owoce", stations: 1 }, { id: "ch2", name: "Sieć 2", country: "PL", cat: "owoce", stations: 1 }, { id: "ch3", name: "Sieć 3", country: "PL", cat: "owoce", stations: 1 }];
 const RETAILERS = [{ id: 100, name: "Sieć 1", fm26ChainId: "ch1", fm26Active: true }, { id: 101, name: "Sieć 2", fm26ChainId: "ch2", fm26Active: true }, { id: 102, name: "Sieć 3", fm26ChainId: "ch3", fm26Active: true }];
@@ -206,8 +207,62 @@ describe("oznaczenie „Wybrane przez administratora”", () => {
     expect(text(tree)).toContain("errors.db.fm_inputs_locked");    // baner błędu zapisu (etap zamknięty)
   });
 
+  // ── review a75ca3f: nakładające się edycje z mieszanym wynikiem zapisów ────────────────────────
+  const deferred = () => { let resolve, reject; const p = new Promise((res, rej) => { resolve = res; reject = rej; }); return { p, resolve, reject }; };
+  const LOCKED = () => Object.assign(new Error("fm_inputs_locked"), { code: "P0001" });
+  const tick = (ms = 20) => act(async () => { await new Promise(r => setTimeout(r, ms)); });
+  const cardHasBadge = (tree, chainName) => { let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(chainName))[0]; while (node && !node.findAll(b => b.type === "button" && (b.children.includes("⭐") || b.children.includes("👍") || b.children.includes("○"))).length) node = node.parent; return node.findAll(n => n.props?.["data-testid"] === "decision-source-admin").length; };
+  const starOf = (tree, chainName) => { let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(chainName))[0]; while (node && !node.findAll(b => b.type === "button" && b.children.includes("⭐")).length) node = node.parent; return node.findAll(b => b.type === "button" && b.children.includes("⭐"))[0]; };
+
+  it.each([
+    ["ok", "ok", [false, false]],
+    ["fail", "fail", [true, true]],
+    ["fail", "ok", [false, false]],
+    ["ok", "fail", [false, true]],
+  ])("[review a75ca3f/1] dostawca zmienia dwie sieci admina; zapis 1: %s, zapis 2: %s → oznaczenia wg przyjętych zapisów", async (first, second, expected) => {
+    const ADMIN_ROWS = [{ entity: "target", company_id: "co-new", retailer_id: 100, decision: "star", source: "admin" }, { entity: "target", company_id: "co-new", retailer_id: 101, decision: "star", source: "admin" }];
+    let reads = 0;
+    let store; const tree = render(<SupplierHarness {...supplierProps({ fmPrefs: { "co-new": { ch1: "star", ch2: "star" } }, decisionSources: undefined })} fetchRows={() => (++reads === 1 ? Promise.resolve(ADMIN_ROWS) : Promise.reject(new Error("read down")))} onStore={(s) => { store = s; }} />);
+    await act(async () => { await store.refetch(); });
+    expect([cardHasBadge(tree, "Sieć 1"), cardHasBadge(tree, "Sieć 2")]).toEqual([1, 1]);
+    const d1 = deferred(), d2 = deferred();
+    db.setCompanyTargetRetailers.mockImplementationOnce((cid, rows) => d1.p.then(() => rows)).mockImplementationOnce((cid, rows) => d2.p.then(() => rows));
+    await act(async () => { starOf(tree, "Sieć 1").props.onClick(); });   // zapis 1 w toku (Sieć 1 → rezerwowa)
+    await act(async () => { starOf(tree, "Sieć 2").props.onClick(); });   // zapis 2 czeka w kolejce (cała lista: Sieć 1 i 2 rezerwowe)
+    expect([cardHasBadge(tree, "Sieć 1"), cardHasBadge(tree, "Sieć 2")]).toEqual([0, 0]);
+    await act(async () => { first === "ok" ? d1.resolve() : d1.reject(LOCKED()); }); await tick();
+    await act(async () => { second === "ok" ? d2.resolve() : d2.reject(LOCKED()); }); await tick();
+    expect([cardHasBadge(tree, "Sieć 1") === 1, cardHasBadge(tree, "Sieć 2") === 1]).toEqual(expected);
+    expect(store.pendingCount()).toBe(0);
+    expect(db.setCompanyTargetRetailers).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["ok", "fail", "fm.buyer.btn_want"],     // „Chcę” przyjęte, „Daj szansę” odrzucone → panel: Chcę, BEZ oznaczenia admina
+    ["fail", "ok", "fm.buyer.btn_chance"],   // „Chcę” odrzucone, „Daj szansę” przyjęte → panel: Daj szansę, bez oznaczenia
+    ["fail", "fail", "fm.buyer.btn_remove"], // oba odrzucone → panel: Nie chcę (admin) Z oznaczeniem
+    ["ok", "ok", "fm.buyer.btn_chance"],
+  ])("[review a75ca3f/2] kupiec klika „Chcę” potem „Daj szansę”; zapis 1: %s, zapis 2: %s → decyzja %s", async (first, second, selectedKey) => {
+    const ADMIN_ROWS = [{ entity: "resp", company_id: "co-new", retailer_id: 100, decision: "remove", source: "admin" }];
+    let reads = 0;
+    let store; const tree = render(<BuyerHarness {...buyerProps({ decisionSources: undefined })} fetchRows={() => (++reads === 1 ? Promise.resolve(ADMIN_ROWS) : Promise.reject(new Error("read down")))} onStore={(s) => { store = s; }} />);
+    await act(async () => { await store.refetch(); });
+    expect(count(tree, BADGE)).toBe(1);
+    const rowButton = (name, key) => { let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(name))[0]; while (node && !node.findAll(b => b.type === "button" && b.children.includes(key)).length) node = node.parent; return node.findAll(b => b.type === "button" && b.children.includes(key))[0]; };
+    const d1 = deferred(), d2 = deferred();
+    db.saveFmResp.mockImplementationOnce(() => d1.p).mockImplementationOnce(() => d2.p);
+    await act(async () => { rowButton("Moja Firma", "fm.buyer.btn_want").props.onClick(); });
+    await act(async () => { rowButton("Moja Firma", "fm.buyer.btn_chance").props.onClick(); });
+    expect(count(tree, BADGE)).toBe(0);
+    await act(async () => { first === "ok" ? d1.resolve({}) : d1.reject(LOCKED()); }); await tick();
+    await act(async () => { second === "ok" ? d2.resolve({}) : d2.reject(LOCKED()); }); await tick();
+    expect(count(tree, BADGE)).toBe(first === "fail" && second === "fail" ? 1 : 0);
+    for (const key of ["fm.buyer.btn_want", "fm.buyer.btn_chance", "fm.buyer.btn_remove"]) expect(String(rowButton("Moja Firma", key).props.style.border)).toMatch(key === selectedKey ? /^2px/ : /^1px/);
+    expect(store.pendingCount()).toBe(0);
+  });
+
   it("własna zmiana w panelach unieważnia oznaczenie tej pary natychmiast (bez czekania na odczyt)", async () => {
-    const onDecisionSourcesChanged = vi.fn();
+    const onDecisionSourcesChanged = vi.fn((o) => (o?.invalidate ? { key: "target|co-new|102", rev: 1, pair: o.invalidate } : null));   // jak magazyn: invalidate → token
     const sup = render(<PageSupplierFM {...supplierProps({ onDecisionSourcesChanged })} />);
     const unselected = sup.root.findAllByType("button").find(b => b.children.includes("○"));
     await act(async () => { unselected.props.onClick(); await new Promise(r => setTimeout(r, 30)); });
