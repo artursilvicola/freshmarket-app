@@ -213,6 +213,12 @@ describe("oznaczenie „Wybrane przez administratora”", () => {
   const tick = (ms = 20) => act(async () => { await new Promise(r => setTimeout(r, ms)); });
   const cardHasBadge = (tree, chainName) => { let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(chainName))[0]; while (node && !node.findAll(b => b.type === "button" && (b.children.includes("⭐") || b.children.includes("👍") || b.children.includes("○"))).length) node = node.parent; return node.findAll(n => n.props?.["data-testid"] === "decision-source-admin").length; };
   const starOf = (tree, chainName) => { let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(chainName))[0]; while (node && !node.findAll(b => b.type === "button" && b.children.includes("⭐")).length) node = node.parent; return node.findAll(b => b.type === "button" && b.children.includes("⭐"))[0]; };
+  const buyerButton = (tree, name, key) => {
+    let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(name))[0];
+    const matches = b => b.type === "button" && b.children.includes(key);
+    while (node && !node.findAll(matches).length) node = node.parent;
+    return node.findAll(matches)[0];
+  };
 
   it.each([
     ["ok", "ok", [false, false]],
@@ -242,23 +248,78 @@ describe("oznaczenie „Wybrane przez administratora”", () => {
     ["fail", "ok", "fm.buyer.btn_chance"],   // „Chcę” odrzucone, „Daj szansę” przyjęte → panel: Daj szansę, bez oznaczenia
     ["fail", "fail", "fm.buyer.btn_remove"], // oba odrzucone → panel: Nie chcę (admin) Z oznaczeniem
     ["ok", "ok", "fm.buyer.btn_chance"],
-  ])("[review a75ca3f/2] kupiec klika „Chcę” potem „Daj szansę”; zapis 1: %s, zapis 2: %s → decyzja %s", async (first, second, selectedKey) => {
+  ].flatMap(row => ["locked", "network"].map(errorKind => [...row, errorKind])))("[review e0d216c] kolejka kupca; zapis 1: %s, zapis 2: %s → decyzja %s; błąd: %s", async (first, second, selectedKey, errorKind) => {
     const ADMIN_ROWS = [{ entity: "resp", company_id: "co-new", retailer_id: 100, decision: "remove", source: "admin" }];
     let reads = 0;
     let store; const tree = render(<BuyerHarness {...buyerProps({ decisionSources: undefined })} fetchRows={() => (++reads === 1 ? Promise.resolve(ADMIN_ROWS) : Promise.reject(new Error("read down")))} onStore={(s) => { store = s; }} />);
     await act(async () => { await store.refetch(); });
     expect(count(tree, BADGE)).toBe(1);
-    const rowButton = (name, key) => { let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(name))[0]; while (node && !node.findAll(b => b.type === "button" && b.children.includes(key)).length) node = node.parent; return node.findAll(b => b.type === "button" && b.children.includes(key))[0]; };
+    const rowButton = (name, key) => buyerButton(tree, name, key);
+    const writeError = () => errorKind === "locked" ? LOCKED() : new Error("write unavailable");
     const d1 = deferred(), d2 = deferred();
     db.saveFmResp.mockImplementationOnce(() => d1.p).mockImplementationOnce(() => d2.p);
     await act(async () => { rowButton("Moja Firma", "fm.buyer.btn_want").props.onClick(); });
     await act(async () => { rowButton("Moja Firma", "fm.buyer.btn_chance").props.onClick(); });
     expect(count(tree, BADGE)).toBe(0);
-    await act(async () => { first === "ok" ? d1.resolve({}) : d1.reject(LOCKED()); }); await tick();
-    await act(async () => { second === "ok" ? d2.resolve({}) : d2.reject(LOCKED()); }); await tick();
+    // Drugie żądanie jeszcze nie istnieje: nie może odpowiedzieć przed pierwszym.
+    expect(db.saveFmResp.mock.calls.map(([payload]) => payload.zone)).toEqual(["want"]);
+    expect(String(rowButton("Moja Firma", "fm.buyer.btn_chance").props.style.border)).toMatch(/^2px/);
+    await act(async () => { first === "ok" ? d1.resolve({}) : d1.reject(writeError()); }); await tick();
+    expect(db.saveFmResp.mock.calls.map(([payload]) => payload.zone)).toEqual(["want", "chance"]);
+    expect(String(rowButton("Moja Firma", "fm.buyer.btn_chance").props.style.border)).toMatch(/^2px/);
+    expect(count(tree, BADGE)).toBe(0);
+    expect(store.pendingCount()).toBe(1);
+    await act(async () => { second === "ok" ? d2.resolve({}) : d2.reject(writeError()); }); await tick();
     expect(count(tree, BADGE)).toBe(first === "fail" && second === "fail" ? 1 : 0);
     for (const key of ["fm.buyer.btn_want", "fm.buyer.btn_chance", "fm.buyer.btn_remove"]) expect(String(rowButton("Moja Firma", key).props.style.border)).toMatch(key === selectedKey ? /^2px/ : /^1px/);
     expect(store.pendingCount()).toBe(0);
+  });
+
+  it("[review e0d216c] trzecie kliknięcie kupca czeka na drugi zapis; błąd nie zatrzymuje kolejki", async () => {
+    let reads = 0, store;
+    const admin = { entity: "resp", company_id: "co-new", retailer_id: 100, decision: "remove", source: "admin" };
+    const tree = render(<BuyerHarness {...buyerProps({ decisionSources: undefined })} fetchRows={() => ++reads === 1 ? Promise.resolve([admin]) : Promise.reject(new Error("read down"))} onStore={s => { store = s; }} />);
+    await act(async () => { await store.refetch(); });
+    const requests = [];
+    db.saveFmResp.mockImplementation(payload => { const d = deferred(); requests.push({ payload, ...d }); return d.p; });
+    try {
+      await act(async () => { buyerButton(tree, "Moja Firma", "fm.buyer.btn_want").props.onClick(); });
+      await act(async () => { buyerButton(tree, "Moja Firma", "fm.buyer.btn_chance").props.onClick(); });
+      expect(requests).toHaveLength(1);
+      await act(async () => { requests[0].resolve({}); });
+      expect(requests).toHaveLength(2);
+      await act(async () => { buyerButton(tree, "Moja Firma", "fm.buyer.btn_want").props.onClick(); });
+      expect(requests).toHaveLength(2);
+      await act(async () => { requests[1].reject(LOCKED()); });
+      expect(requests.map(r => r.payload.zone)).toEqual(["want", "chance", "want"]);
+      expect(String(buyerButton(tree, "Moja Firma", "fm.buyer.btn_want").props.style.border)).toMatch(/^2px/);
+      expect(store.pendingCount()).toBe(1);
+      await act(async () => { requests[2].resolve({}); });
+      expect(store.pendingCount()).toBe(0);
+      expect(count(tree, BADGE)).toBe(0);
+    } finally { db.saveFmResp.mockReset().mockResolvedValue({}); }
+  });
+
+  it("[review e0d216c] kolejki różnych firm kupca są niezależne", async () => {
+    const requests = [];
+    db.saveFmResp.mockImplementation(payload => { const d = deferred(); requests.push({ payload, ...d }); return d.p; });
+    let store;
+    const tree = render(<BuyerHarness {...buyerProps({ decisionSources: undefined })} fetchRows={async () => []} onStore={s => { store = s; }} />);
+    try {
+      await act(async () => { buyerButton(tree, "Moja Firma", "fm.buyer.btn_want").props.onClick(); });
+      await act(async () => { buyerButton(tree, "Moja Firma", "fm.buyer.btn_chance").props.onClick(); });
+      await act(async () => { buyerButton(tree, "Cudza Firma", "fm.buyer.btn_chance").props.onClick(); });
+      expect(requests.map(r => [r.payload.supplier_company_id, r.payload.zone])).toEqual([["co-new", "want"], ["co-other", "chance"]]);
+      await act(async () => { requests[1].resolve({}); });
+      expect(String(buyerButton(tree, "Cudza Firma", "fm.buyer.btn_chance").props.style.border)).toMatch(/^2px/);
+      expect(requests).toHaveLength(2);
+      await act(async () => { requests[0].resolve({}); });
+      expect(requests[2].payload).toMatchObject({ supplier_company_id: "co-new", zone: "chance" });
+      await act(async () => { requests[2].reject(LOCKED()); });
+      expect(String(buyerButton(tree, "Moja Firma", "fm.buyer.btn_want").props.style.border)).toMatch(/^2px/);
+      expect(String(buyerButton(tree, "Cudza Firma", "fm.buyer.btn_chance").props.style.border)).toMatch(/^2px/);
+      expect(store.pendingCount()).toBe(0);
+    } finally { db.saveFmResp.mockReset().mockResolvedValue({}); }
   });
 
   it("własna zmiana w panelach unieważnia oznaczenie tej pary natychmiast (bez czekania na odczyt)", async () => {

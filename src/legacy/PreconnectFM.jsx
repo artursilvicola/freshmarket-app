@@ -14287,10 +14287,12 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
   // [P2-fm C1b] Clamp out-of-bounds phase do ostatniej zdefiniowanej fazy.
   const ph = FM_PHASES[phase-1] || FM_PHASES[FM_PHASES.length-1];
 
-  // [decision-source] decyzje per firma: rewizja ostatniego kliknięcia, liczba zapisów w toku i ostatnia wartość
+  // [decision-source] decyzje per para sieć–firma: rewizja ostatniego kliknięcia, liczba zapisów w toku/kolejce i ostatnia wartość
   // POTWIERDZONA przez bazę (przyjęty zapis; przed pierwszym zapisem — stan z panelu). Odrzucony zapis cofa panel do
   // wartości potwierdzonej TYLKO, gdy nie ma nowszego kliknięcia tej firmy (starszy błąd nie nadpisuje nowszej edycji);
   // starszy przyjęty zapis zmienia podstawę cofnięcia (review Codexa a75ca3f).
+  // Zapisy jednej pary wykonujemy po kolei: błąd nowszego zapisu nie może wrócić przed sukcesem starszego
+  // (review e0d216c). Każde kliknięcie zachowuje własny zapis i token; różne pary nie blokują się wzajemnie.
   const respEditRef = useRef({});
   function setResp(sid, val) {
     const before = (fmResps[chainId] || {})[sid];
@@ -14299,12 +14301,13 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
     const supplier = _suppliers.find(s => s.id === sid);
     const company = (companies || []).find(c => c.id === supplier?.companyId || c.fmId === sid || c.legacy_fm_id === sid);
     if (retailer_id && company?.id) {
-      const edit = respEditRef.current[sid] || (respEditRef.current[sid] = { rev: 0, inflight: 0, confirmed: before });
+      const pairKey = `${retailer_id}|${company.id}`;
+      const edit = respEditRef.current[pairKey] || (respEditRef.current[pairKey] = { rev: 0, inflight: 0, confirmed: before, tail: Promise.resolve() });
       if (edit.inflight === 0) edit.confirmed = before;   // bez zapisów w toku panel odzwierciedla bazę
       const rev = ++edit.rev; edit.inflight += 1;
       // własna decyzja → oznaczenie admina przy tej firmie znika od razu; token rozlicza TEN zapis
       const sourceToken = onDecisionSourcesChanged?.({ invalidate: { entity: "resp", companyId: company.id, retailerId: retailer_id }, refetch: false }) || null;
-      dbSaveFmResp({
+      edit.tail = edit.tail.then(() => dbSaveFmResp({
         retailer_id,
         supplier_company_id: company.id,
         zone: val,
@@ -14325,7 +14328,7 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
           return;
         }
         console.warn("[save buyer fm resp]", e);
-      });
+      }));
     }
   }
   function toggleWish(sid) {
