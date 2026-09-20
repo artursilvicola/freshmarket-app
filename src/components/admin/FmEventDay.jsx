@@ -300,13 +300,26 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                     <td style={td}><input type="number" min={1} max={200} defaultValue={g.meetings_per_station} onBlur={e => Number(e.target.value) !== g.meetings_per_station && patchGroup(g, { meetings_per_station: Math.max(1, Math.min(200, Number(e.target.value) || 1)) })} style={{ ...inp, width: 60 }} /></td>
                     <td style={td}>
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
-                        {g.fm_stations.map(s => (
-                          <span key={s.id} title="kliknij: aktywne/nieaktywne · podwójnie: etykieta" onClick={() => run(() => upsertFmStation({ id: s.id, active: !s.active }), "Zapisano stanowisko.")}
-                            onDoubleClick={() => { const l = window.prompt("Etykieta stanowiska (np. „lewe”):", s.label || ""); if (l !== null) run(() => upsertFmStation({ id: s.id, label: l || null }), "Zapisano stanowisko."); }}
-                            style={{ padding: "3px 8px", borderRadius: 999, border: `1px solid ${s.active ? "#99f6e4" : "#e2e8f0"}`, background: s.active ? "#f0fdfa" : "#f1f5f9", color: s.active ? "#0f766e" : "#94a3b8", cursor: "pointer", fontWeight: 700, userSelect: "none" }}>
-                            {s.label || `#${s.idx}`}{g.fm_stations.length > 1 && <span onClick={(e) => { e.stopPropagation(); if (window.confirm("Usunąć stanowisko?")) run(() => deleteFmStation(s.id)); }} style={{ marginLeft: 6, color: "#94a3b8" }}>×</span>}
-                          </span>
-                        ))}
+                        {g.fm_stations.map(s => {
+                          // [fix/fm-queue-capacity-save] osobne kontrolki (review Codexa b53f406): przełącznik aktywności,
+                          // przycisk zmiany etykiety i usunięcie — klik/dwuklik na jednym elemencie wyłączał stanowisko
+                          // przy próbie zmiany nazwy. Wszystkie zablokowane na czas zapisu.
+                          const name = s.label || `#${s.idx}`;
+                          return (
+                            <span key={s.id} data-testid={`station-${s.id}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px 2px 5px", borderRadius: 999, border: `1px solid ${s.active ? "#99f6e4" : "#e2e8f0"}`, background: s.active ? "#f0fdfa" : "#f1f5f9", color: s.active ? "#0f766e" : "#94a3b8", fontWeight: 700, userSelect: "none" }}>
+                              <label title={s.active ? "stanowisko aktywne — odznacz, aby wyłączyć" : "stanowisko nieaktywne — zaznacz, aby włączyć"} style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: busy ? "default" : "pointer" }}>
+                                <input type="checkbox" checked={!!s.active} disabled={busy} aria-label={`Stanowisko ${name} aktywne`} onChange={() => run(() => upsertFmStation({ id: s.id, active: !s.active }), "Zapisano stanowisko.")} style={{ margin: 0 }} />
+                                {name}
+                              </label>
+                              <button type="button" title="Zmień etykietę stanowiska" aria-label={`Zmień etykietę stanowiska ${name}`} disabled={busy}
+                                onClick={() => { const l = window.prompt("Etykieta stanowiska (np. „lewe”):", s.label || ""); if (l !== null && (l || null) !== (s.label || null)) run(() => upsertFmStation({ id: s.id, label: l || null }), "Zapisano stanowisko."); }}
+                                style={{ border: "none", background: "none", padding: 0, color: "#64748b", cursor: busy ? "not-allowed" : "pointer", fontSize: 12, lineHeight: 1 }}>✎</button>
+                              {g.fm_stations.length > 1 && <button type="button" title="Usuń stanowisko" aria-label={`Usuń stanowisko ${name}`} disabled={busy}
+                                onClick={() => { if (window.confirm("Usunąć stanowisko?")) run(() => deleteFmStation(s.id)); }}
+                                style={{ border: "none", background: "none", padding: 0, color: "#94a3b8", cursor: busy ? "not-allowed" : "pointer", fontSize: 12, lineHeight: 1 }}>×</button>}
+                            </span>
+                          );
+                        })}
                         <Btn sm ghost disabled={busy} onClick={() => addStation(g)}>+</Btn>
                       </div>
                     </td>
