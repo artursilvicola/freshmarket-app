@@ -40,6 +40,24 @@ function props() {
 afterEach(() => { act(() => trees.splice(0).forEach(tree => tree.unmount())); });
 
 describe("panel domyślnej szansy", () => {
+  it.each([false, true])("faza 3 pokazuje wszystkie cztery statusy, także w podglądzie admina=%s", (viewerIsAdmin) => {
+    const input = props();
+    input.fmSuppliers.push({ id: "unrelated", name: "Bez wyboru tej sieci", pkg: "Business" });
+    input.fmPrefs.unrelated = { b: "star" };
+    input.fmPrefs.silent = { a: "thumb" };
+    const before = JSON.stringify({ prefs: input.fmPrefs, resps: input.fmResps, plan: input.fmAlgo });
+    const tree = render(<PageBuyerFM {...input} viewerIsAdmin={viewerIsAdmin} fmSettings={{ ...input.fmSettings, currentPhase: 3 }}/>);
+    for (const id of ["yes", "chance", "silent", "no"]) expect(text(tree)).toContain(`Firma ${id}`);
+    for (const key of ["resp_want_full", "resp_chance_full", "resp_remove_full"]) expect(text(tree)).toContain(`fm.buyer.${key}`);
+    expect(text(tree)).toContain("fm.default_chance.badge");
+    expect(text(tree)).toContain("fm.default_chance.notice");
+    expect(text(tree)).not.toContain("Bez wyboru tej sieci");
+    expect(text(tree)).not.toContain("fm.buyer.phase3_responses_empty_no_marks");
+    expect(input.setFmResps).not.toHaveBeenCalled();
+    expect(input.setFmSchedule).not.toHaveBeenCalled();
+    expect(JSON.stringify({ prefs: input.fmPrefs, resps: input.fmResps, plan: input.fmAlgo })).toBe(before);
+  });
+
   it("pokazuje automatyczną szansę bez udawania kliknięcia i bez zapisu odpowiedzi", () => {
     const input = props();
     const tree = render(<PageBuyerFM {...input}/>);

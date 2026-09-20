@@ -28,8 +28,6 @@ import {
   setCompanyTargetRetailers as dbSetCompanyTargetRetailers,
   getFmWishlists as dbGetFmWishlists, saveFmWishlist as dbSaveFmWishlist,
   deleteFmWishlist as dbDeleteFmWishlist,
-  getFmLateResps as dbGetFmLateResps, saveFmLateResp as dbSaveFmLateResp,
-  deleteFmLateResp as dbDeleteFmLateResp,
   getFmMessages as dbGetFmMessages, saveFmMessage as dbSaveFmMessage,
   markFmMessageRead as dbMarkFmMessageRead,
   generateCompanyDescriptionAI as dbGenerateCompanyDescriptionAI,
@@ -95,6 +93,7 @@ import { isOwnAccount } from "../lib/profile-guard.js";
 // [feat/fm-decision-source] kto ustawił wybór sieci / decyzję kupca (oznaczenie „Wybrane przez administratora”)
 import { groupDecisionSources, targetSource, respSource, sourcesVisibleTo } from "../lib/fm-decision-sources.js";
 import DecisionSourceBadge from "../components/fm/DecisionSourceBadge.jsx";
+import { BuyerLateSelections, AdminLateSelections } from "../components/fm/LateSelections.jsx";
 import { createDecisionSourceStore } from "../lib/fm-decision-sources-store.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
@@ -1083,16 +1082,6 @@ function groupFmWishlists(rows = [], retailers = []) {
     if (!chainKey || !row.supplier_legacy_id) continue;
     if (!grouped[chainKey]) grouped[chainKey] = [];
     if (!grouped[chainKey].includes(row.supplier_legacy_id)) grouped[chainKey].push(row.supplier_legacy_id);
-  }
-  return grouped;
-}
-function groupFmLateResps(rows = [], retailers = []) {
-  const grouped = {};
-  for (const row of rows || []) {
-    const chainKey = resolveChainIdFromRetailer(row.retailer_id, retailers, row.data || {});
-    if (!chainKey || !row.supplier_legacy_id || !row.zone) continue;
-    if (!grouped[chainKey]) grouped[chainKey] = {};
-    grouped[chainKey][row.supplier_legacy_id] = row.zone;
   }
   return grouped;
 }
@@ -2606,10 +2595,6 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     try { const s=localStorage.getItem("fm_refundNotifs"); return s?JSON.parse(s):[]; } catch(e){ return []; }
   });
   const [fmWishlists, setFmWishlists] = useState({});
-  // fmLateResps: late selections for a chain unlocked by admin after Sept 16
-  // structure: { [chainId]: { [supplierId]: "want"|"chance"|"remove" } }
-  // These do NOT feed the algorithm — admin-only reference for manual corrections
-  const [fmLateResps, setFmLateResps] = useState({});
   // [feat/fm-decision-source] źródła decyzji (tabela fm_decision_sources; RLS: admin wszystko,
   // dostawca własne wybory, kupiec własne decyzje). Odświeżane po wczytaniu wejść FM i po
   // każdym zapisie z paneli; starsza odpowiedź nie nadpisuje nowszej; brak tabeli = brak oznaczeń.
@@ -2818,56 +2803,6 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     return () => { canceled = true; };
   }, [retailersLoaded, retailers, account.role, account.retailerId, account.chainId]);
   useEffect(() => {
-    if (!retailersLoaded) return;
-    if (!["admin", "buyer"].includes(account.role)) {
-      setFmLateResps({});
-      return;
-    }
-    let canceled = false;
-    (async () => {
-      try {
-        const retailerId = account.role === "buyer" ? account.retailerId : null;
-        let rows = await dbGetFmLateResps(retailerId);
-        if (canceled) return;
-        const legacy = (() => {
-          try { return JSON.parse(localStorage.getItem("fm_fmLateResps")) || {}; } catch (e) { return {}; }
-        })();
-        const allowedChainId = account.role === "buyer"
-          ? (retailers.find(r => r.id === account.retailerId)?.fm26ChainId || account.chainId || null)
-          : null;
-        const legacyRows = [];
-        Object.entries(legacy || {}).forEach(([chainId, supplierMap]) => {
-          if (allowedChainId && chainId !== allowedChainId) return;
-          const mappedRetailerId = resolveRetailerIdFromChain(chainId, retailers);
-          if (!mappedRetailerId) return;
-          Object.entries(supplierMap || {}).forEach(([supplierLegacyId, zone]) => {
-            if (!supplierLegacyId || !zone) return;
-            legacyRows.push({
-              retailer_id: mappedRetailerId,
-              supplier_legacy_id: supplierLegacyId,
-              zone,
-              data: { chain_id: chainId, migrated_from_local_storage: true },
-            });
-          });
-        });
-        if (legacyRows.length) {
-          const existing = new Set((rows || []).map(r => `${r.retailer_id}::${r.supplier_legacy_id}`));
-          const missing = legacyRows.filter(r => !existing.has(`${r.retailer_id}::${r.supplier_legacy_id}`));
-          if (missing.length) {
-            await Promise.all(missing.map(row => dbSaveFmLateResp(row).catch(e => console.warn("[migrate fmLateResps]", e))));
-            rows = [...(rows || []), ...missing];
-          }
-          try { localStorage.removeItem("fm_fmLateResps"); } catch (e) {}
-        }
-        if (!canceled) setFmLateResps(groupFmLateResps(rows, retailers));
-      } catch (e) {
-        console.warn("[load fmLateResps]", e);
-        if (!canceled) setFmLateResps({});
-      }
-    })();
-    return () => { canceled = true; };
-  }, [retailersLoaded, retailers, account.role, account.retailerId, account.chainId]);
-  useEffect(() => {
     if (!account?.id) {
       setMessages([]);
       return;
@@ -3067,7 +3002,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   //   - offers / sends:        synced through setOffers / setSends wrappers
   //   - fmSchedule:            debounced save to fm_settings.schedule
   //   - fmResps:               saved per-action by handlers (Accept/Reject); also debounced fallback below
-  //   - fmWishlists/fmLateResps/messages: hydrated from Supabase
+  //   - fmWishlists/messages: hydrated from Supabase; late requests load in their separate panel
   //   - UI-only state (previewFor, refundNotifs): localStorage OK
   // Debounced save of fmSchedule:
   useEffect(() => {
@@ -3780,8 +3715,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return <Alrt type="warning">{t(fmInputsError ? "fm.default_chance.inputs_error" : "fm.default_chance.inputs_loading")}</Alrt>;
     if(["fm-sched","fm-algo","fm-wyniki"].includes(pg)) return role==="supplier"
       ? <PageSupplierFM fmId={account.fmId||account.id} decisionSources={fmDecisionSources} viewerIsAdmin={initialRole === "admin"} onDecisionSourcesChanged={reloadFmDecisionSources} fmSettings={fmSettings} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} fmResps={fmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} subPage={pg} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offers} previewFor={previewFor} retailers={retailers} accountId={account.id} confirmFmSelection={confirmFmSelection}/>
-      : <PageBuyerFM chainId={(retailers.find(r=>r.id===account.retailerId)?.fm26ChainId)||account.chainId} decisionSources={fmDecisionSources} viewerIsAdmin={initialRole === "admin"} onDecisionSourcesChanged={reloadFmDecisionSources} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} fmLateResps={fmLateResps} setFmLateResps={setFmLateResps} previewFor={previewFor} retailers={retailers}/>;
-    if(pg==="a-fm")         return <PageAdminFM decisionSources={fmDecisionSources} fmInputsReady={fmRespsLoaded && !fmInputsError} fmInputsError={fmInputsError} onQueueConfigChanged={reloadFmStationCaps} fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} fmLateResps={fmLateResps} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
+      : <PageBuyerFM chainId={(retailers.find(r=>r.id===account.retailerId)?.fm26ChainId)||account.chainId} decisionSources={fmDecisionSources} viewerIsAdmin={initialRole === "admin"} onDecisionSourcesChanged={reloadFmDecisionSources} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} fmChains={fmChains} fmSuppliers={fmSuppliers} companies={companies} offers={offersForBuyer} sends={sends} fmWishlists={fmWishlists} setFmWishlists={setFmWishlists} previewFor={previewFor} retailers={retailers}/>;
+    if(pg==="a-fm")         return <PageAdminFM decisionSources={fmDecisionSources} fmInputsReady={fmRespsLoaded && !fmInputsError} fmInputsError={fmInputsError} onQueueConfigChanged={reloadFmStationCaps} fmSettings={fmSettings} setFmSettings={setFmSettings} fmPrefs={fmPrefs} fmResps={fmResps} setFmResps={setFmResps} fmAlgo={fmAlgo} fmSchedule={fmSchedule} setFmSchedule={setFmSchedule} retailers={retailers} setRetailers={setRetailers} fmChains={fmChains} fmSuppliers={fmSuppliers} fmWishlists={fmWishlists} previewFor={previewFor} setPreviewFor={setPreviewFor} runtimeAccounts={runtimeAccounts} companies={companies} fl={fl}/>;
     // [feat/admin-access-polish] Best-effort route guard (UI-only, NIE backend/RLS):
     // zwykły admin wchodzący na a-branding → przekierowanie na Dashboard.
     if(pg==="a-branding") {
@@ -14247,7 +14182,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
 /* ═══════════════════════════════════════════════════════════════
    FM PAGE — BUYER
 ═══════════════════════════════════════════════════════════════ */
-export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, fmChains, fmSuppliers, companies, offers, sends, fmWishlists, setFmWishlists, fmLateResps, setFmLateResps, previewFor, retailers, decisionSources = null, viewerIsAdmin = false, onDecisionSourcesChanged = null }) {
+export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, fmChains, fmSuppliers, companies, offers, sends, fmWishlists, setFmWishlists, previewFor, retailers, decisionSources = null, viewerIsAdmin = false, onDecisionSourcesChanged = null }) {
   // [feat/fm-decision-source] tylko źródła WŁASNYCH decyzji tej sieci (nigdy wyborów dostawców)
   const myRetailerId = resolveRetailerIdFromChain(chainId, retailers);
   const mySources = sourcesVisibleTo("buyer", decisionSources, { retailerId: myRetailerId });
@@ -14353,32 +14288,6 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
       });
     });
   }
-  function setLateResp(sid, nextVal) {
-    if (!setFmLateResps) return;
-    const retailer_id = resolveRetailerIdFromChain(chainId, retailers);
-    if (!retailer_id) return;
-    const currentVal = (fmLateResps?.[chainId] || {})[sid];
-    const finalVal = currentVal === nextVal ? null : nextVal;
-    setFmLateResps(prev => {
-      const nextChain = { ...((prev && prev[chainId]) || {}) };
-      if (finalVal) nextChain[sid] = finalVal;
-      else delete nextChain[sid];
-      return { ...(prev || {}), [chainId]: nextChain };
-    });
-    const op = finalVal
-      ? dbSaveFmLateResp({ retailer_id, supplier_legacy_id: sid, zone: finalVal, data: { chain_id: chainId } })
-      : dbDeleteFmLateResp({ retailer_id, supplier_legacy_id: sid });
-    op.catch(e => {
-      console.warn("[save buyer fm late resp]", e);
-      setFmLateResps(prev => {
-        const nextChain = { ...((prev && prev[chainId]) || {}) };
-        if (currentVal) nextChain[sid] = currentVal;
-        else delete nextChain[sid];
-        return { ...(prev || {}), [chainId]: nextChain };
-      });
-    });
-  }
-
   // [fix/fm-buyer-preview-full] Kupiec w module FM ma widzieć ten sam profil
   // firmy co w zakładce „Dostawcy" (ten sam CompanyPreviewModal, role="buyer").
   // Wcześniej szukaliśmy firmy tylko po legacy `fmId` i `"sup-<id>"`, czego
@@ -14526,8 +14435,6 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
   // FAZA 3: zamknięcie wyborów — inline rendering (no inner components to avoid React reconciliation issues)
   if (phase === 3 && !pub) {
     const hasPreview  = !!(previewFor?.chains || []).includes(chainId);
-    const lateEnabled = !!((retailers||[]).find(r=>r.fm26ChainId===chainId)?.lateSelectionEnabled);
-    const myLateResps = (fmLateResps||{})[chainId] || {};
     const planData3   = pickFMPlan(fmSchedule, fmAlgo);
     const previewMatches = _suppliers.filter(s => planData3?.res?.[s.id]?.m?.includes(chainId));
 
@@ -14583,59 +14490,28 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
             ? <div style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>{t("fm.buyer.phase3_responses_empty_no_data")}</div>
             : allParticipants.map(s => {
                 const resp = myResps[s.id];
-                if (!resp) return null; // show only suppliers with a response
-                const col = resp==="want"?"#059669":resp==="chance"?"#d97706":"#dc2626";
-                const lbl = resp==="want"?t("fm.buyer.resp_want_full"):resp==="chance"?t("fm.buyer.resp_chance_full"):t("fm.buyer.resp_remove_full");
+                const automatic = isAutomaticChance(fmPrefs[s.id]?.[chainId], resp);
+                if (!hasBuyerResponse(resp) && !automatic) return null;
+                const col = automatic?"#b45309":resp==="want"?"#059669":resp==="chance"?"#d97706":"#dc2626";
+                const lbl = automatic?t("fm.default_chance.badge"):resp==="want"?t("fm.buyer.resp_want_full"):resp==="chance"?t("fm.buyer.resp_chance_full"):t("fm.buyer.resp_remove_full");
                 return (
                   <div key={s.id} style={{ display:"flex",alignItems:"center",gap:10,padding:"8px 6px",borderBottom:"1px solid #f1f5f9" }}>
-                    <div style={{ flex:1 }}><div style={{ fontWeight:600,fontSize:13,color:"#1e293b" }}>{s.name}</div><div style={{ fontSize:11,color:"#94a3b8" }}>{s.country} · {s.products}</div></div>
-                    <span style={{ fontSize:11,fontWeight:600,color:col,background:col+"10",padding:"3px 10px",borderRadius:20,border:`1px solid ${col}44`,whiteSpace:"nowrap" }}>{lbl}</span>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontWeight:600,fontSize:13,color:"#1e293b" }}>{s.name}</div>
+                      <div style={{ fontSize:11,color:"#94a3b8" }}>{s.country} · {s.products}</div>
+                      {resp && <DecisionSourceBadge source={respSource(mySources, myRetailerId, companyIdOf(s))} viewerIsAdmin={viewerIsAdmin} style={{ marginTop:4 }} />}
+                    </div>
+                    <span title={automatic?t("fm.default_chance.notice"):undefined} style={{ fontSize:11,fontWeight:600,color:col,background:col+"10",padding:"3px 10px",borderRadius:20,border:`1px solid ${col}44`,whiteSpace:"nowrap" }}>{lbl}</span>
                   </div>
                 );
               }).filter(Boolean)
           }
-          {allParticipants.every(s=>!myResps[s.id])&&(
+          {allParticipants.length > 0 && allParticipants.every(s=>!hasBuyerResponse(myResps[s.id])&&!isAutomaticChance(fmPrefs[s.id]?.[chainId], myResps[s.id]))&&(
             <div style={{ padding:24,textAlign:"center",color:"#94a3b8",fontSize:12 }}>{t("fm.buyer.phase3_responses_empty_no_marks")}</div>
           )}
         </Card>
 
-        {/* ── Wybory po terminie (jeśli admin odblokował dla tej sieci) ── */}
-        {lateEnabled && (
-          <div style={{ marginTop:16 }}>
-            <div style={{ padding:"10px 14px",background:"#fef3c7",border:"2px solid #f59e0b",borderRadius:10,marginBottom:12,display:"flex",gap:8,alignItems:"flex-start" }}>
-              <span style={{ fontSize:16,flexShrink:0 }}>⏰</span>
-              <div>
-                <div style={{ fontWeight:700,fontSize:12,color:"#92400e" }}>{t("fm.buyer.phase3_late_warning_title")}</div>
-                <div style={{ fontSize:11,color:"#92400e",marginTop:1 }}>
-                  <Trans i18nKey="fm.buyer.phase3_late_warning_desc_html" ns="legacy" components={{ strong: <strong /> }}/>
-                </div>
-              </div>
-            </div>
-            <Card title={t("fm.buyer.phase3_late_card_title")} icon={Users}>
-              <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>{t("fm.buyer.phase3_late_card_desc")}</div>
-              {_suppliers.map(s => {
-                const resp = myLateResps[s.id];
-                return (
-                  <div key={s.id} style={{ padding:"10px 6px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",gap:10 }}>
-                    <div style={{ flex:1 }}><div style={{ fontWeight:700,fontSize:13 }}>{s.name}</div><div style={{ fontSize:11,color:"#64748b" }}>{s.country} · {s.products}</div></div>
-                    <div style={{ display:"flex",gap:5 }}>
-                      {[
-                        ["want", t("fm.buyer.btn_want"), "#059669"],
-                        ["chance", t("fm.buyer.btn_chance"), "#d97706"],
-                      ].map(([val,lbl,col])=>(
-                        <button key={val}
-                          onClick={()=>setLateResp(s.id, val)}
-                          style={{ padding:"5px 11px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",border:`${resp===val?"2":"1"}px solid ${resp===val?col:"#e2e8f0"}`,background:resp===val?col+"15":"white",color:resp===val?col:"#64748b" }}>
-                          {lbl}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </Card>
-          </div>
-        )}
+        <BuyerLateSelections key={myRetailerId} retailerId={myRetailerId} suppliers={_suppliers}/>
 
       </div>
     );
@@ -15211,7 +15087,7 @@ function AlgorithmTriggerCard({ fmSettings, setFmSettings, fmPrefs, fmResps, fmA
   );
 }
 
-export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, fmLateResps, previewFor, setPreviewFor, runtimeAccounts, companies, fl, onQueueConfigChanged, fmInputsReady = false, fmInputsError = false, decisionSources = null }) {
+export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFmResps, fmAlgo, fmSchedule, setFmSchedule, retailers, setRetailers, fmChains, fmSuppliers, fmWishlists, previewFor, setPreviewFor, runtimeAccounts, companies, fl, onQueueConfigChanged, fmInputsReady = false, fmInputsError = false, decisionSources = null }) {
   const { t } = useTranslation("legacy");
   // [P2-fm C5] Plural suffix → moduł-level pluralSuffixPL (Intl.PluralRules).
   const pluralSuffix = pluralSuffixPL;
@@ -15575,16 +15451,11 @@ export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFm
                 <div style={{maxHeight:160,overflowY:"auto",display:"flex",flexDirection:"column",gap:2}}>
                   {_chains.map(ch=>{
                     const enabled=(previewFor?.chains||[]).includes(ch.id);
-                    const lateEnabled=(retailers||[]).find(r=>r.fm26ChainId===ch.id)?.lateSelectionEnabled;
                     return(
                       <div key={ch.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 6px",borderRadius:6,background:enabled?"rgba(37,99,235,0.06)":"transparent"}}>
                         <label style={{display:"flex",alignItems:"center",gap:7,cursor:"pointer",fontSize:12,flex:1}}>
                           <input type="checkbox" checked={enabled} onChange={()=>setPreviewFor&&setPreviewFor(p=>({...p,chains:enabled?p.chains.filter(x=>x!==ch.id):[...(p.chains||[]),ch.id]}))} style={{width:13,height:13,accentColor:"#2563eb"}}/>
                           {ch.name}
-                        </label>
-                        <label title={t("fm.admin.preview_late_toggle_title")} style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:10,color:lateEnabled?"#d97706":"#94a3b8",whiteSpace:"nowrap"}}>
-                          <input type="checkbox" checked={!!lateEnabled} onChange={()=>setRetailers&&setRetailers(prev=>prev.map(r=>r.fm26ChainId!==ch.id?r:{...r,lateSelectionEnabled:!lateEnabled}))} style={{width:12,height:12,accentColor:"#d97706"}}/>
-                          {t("fm.admin.preview_late_toggle_label")}
                         </label>
                       </div>
                     );
@@ -15594,31 +15465,7 @@ export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFm
             </div>
           </div>
 
-          {/* Late resps section */}
-          {(()=>{
-            const lateEntries=_chains.filter(ch=>Object.keys((fmLateResps||{})[ch.id]||{}).length>0);
-            if(!lateEntries.length) return null;
-            return(
-              <div style={{marginBottom:16,padding:"14px 16px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
-                <div style={{fontWeight:700,fontSize:13,color:"#92400e",marginBottom:8}}>{t("fm.admin.late_card_title")}</div>
-                <div style={{fontSize:11,color:"#92400e",marginBottom:10}}>{t("fm.admin.late_card_desc")}</div>
-                {lateEntries.map(ch=>{
-                  const resps=(fmLateResps||{})[ch.id]||{};
-                  const wantIds=Object.entries(resps).filter(([,v])=>v==="want").map(([k])=>k);
-                  const chanceIds=Object.entries(resps).filter(([,v])=>v==="chance").map(([k])=>k);
-                  const removeIds=Object.entries(resps).filter(([,v])=>v==="remove").map(([k])=>k);
-                  return(
-                    <div key={ch.id} style={{padding:"8px 12px",background:"white",borderRadius:8,border:"1px solid #fde68a",marginBottom:6}}>
-                      <div style={{fontWeight:700,fontSize:12,color:"#92400e",marginBottom:4}}>{ch.name}</div>
-                      {wantIds.length>0&&<div style={{fontSize:11,color:"#059669"}}>{t("fm.admin.late_row_want_label")}{wantIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
-                      {chanceIds.length>0&&<div style={{fontSize:11,color:"#d97706",marginTop:2}}>{t("fm.admin.late_row_chance_label")}{chanceIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
-                      {removeIds.length>0&&<div style={{fontSize:11,color:"#dc2626",marginTop:2}}>{t("fm.admin.late_row_remove_label")}{removeIds.map(sid=>(_suppliers.find(s=>s.id===sid)||{}).name||sid).join(", ")}</div>}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
+          <AdminLateSelections retailers={retailers} suppliers={_suppliers} canOpen={phase === 3 && !fmSettings.planPublished}/>
         </div>
       )}
     </div>
