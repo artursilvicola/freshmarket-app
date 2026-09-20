@@ -1,27 +1,33 @@
 -- ============================================================================
 -- 20260920130000_fm_decision_sources — źródło decyzji w module FM 2026
 -- Kto ustawił wybór sieci dostawcy (company_target_retailers) i decyzję kupca
--- (fm_resps): 'supplier' | 'buyer' | 'admin' | 'automatic'. Oznaczenie
+-- (fm_resps): 'supplier' | 'buyer' | 'admin' | 'automatic' | 'system'. Oznaczenie
 -- „Wybrane przez administratora” widzi WYŁĄCZNIE osoba, w imieniu której admin
 -- działał: dostawca — źródła własnych wyborów; kupiec — źródła własnych decyzji;
--- druga strona pary nigdy. Administrator widzi źródło, autora i czas.
+-- druga strona pary nigdy. Autora i czas widzi TYLKO administrator — także przez
+-- API: zwykły użytkownik czyta wyłącznie RPC fm_my_decision_sources() bez tych
+-- kolumn, a tabela ma jedyną politykę SELECT dla admina (RLS filtruje wiersze,
+-- nie kolumny — review Codexa 689934c P2/2).
 --
 -- Model: OSOBNA tabela fm_decision_sources (nie kolumny w tabelach wejściowych),
 -- bo dostawca czyta fm_resps o sobie (fmr_supplier_about_self) i kupiec czyta
--- company_target_retailers o swojej sieci (ctr_buyer_read) przez `select *`;
--- kolumna w tych tabelach ujawniłaby źródło drugiej stronie albo wymagałaby
--- uprawnień kolumnowych, które psują istniejące odczyty `*`. Tabela ma tylko
--- polityki SELECT; zapisują ją wyłącznie RPC fm_set_company_targets (różnica
--- starej i nowej listy: oznaczane są tylko sieci nowe lub ze zmienioną klasą)
--- oraz trigger na fm_resps (tylko przy zmianie decyzji). Samodzielna zmiana
--- przez użytkownika nadpisuje źródło na 'supplier'/'buyer' — oznaczenie znika.
--- Punktacja algorytmu bez zmian (źródło nie wchodzi do fm-algo).
--- Bez zmian istniejących wyborów: wiersze sprzed migracji nie mają źródła
--- (= brak oznaczenia). Idempotentna. Sesje serwerowe (service_role, SQL Editor,
--- brak auth.uid()) liczą się jako 'admin' z pustym autorem.
--- ROLLBACK (fail-closed, bez kasowania danych): drop trigger
--- trg_fm_resps_decision_source; przywrócić fm_set_company_targets z 055
--- (sekcja „Atomowy zapis całego zestawu wyborów firmy”); tabela może zostać.
+-- company_target_retailers o swojej sieci (ctr_buyer_read) przez `select *`.
+-- Zapis: (a) RPC fm_set_company_targets — różnica starej i nowej listy: oznaczane
+-- tylko sieci nowe lub ze zmienioną klasą główna/rezerwowa, usunięte tracą wpis,
+-- niezmienione zachowują źródło; na czas replace-set RPC wyłącza trigger flagą
+-- transakcyjną fm.targets_rpc; (b) trigger na company_target_retailers dla
+-- zapisów POZA RPC (SQL Editor, service_role, skrypty — review Codexa P2/1):
+-- INSERT → źródło; UPDATE tylko przy zmianie klasy; DELETE czyści; (c) trigger na
+-- fm_resps: tylko przy zmianie decyzji (zone/status). Samodzielna zmiana przez
+-- użytkownika nadpisuje źródło na 'supplier'/'buyer' — oznaczenie znika. Sesja bez
+-- auth.uid() (service_role, SQL Editor, pg_cron) = 'admin' bez autora (działanie
+-- organizatora); 'system' zarezerwowane dla autonomicznych zadań. Punktacja
+-- algorytmu bez zmian. Bez zmian istniejących wyborów: wiersze sprzed migracji
+-- nie mają źródła (= brak oznaczenia). Idempotentna.
+-- ROLLBACK (fail-closed, bez kasowania danych): (1) front — publikacja poprzedniego
+-- deployu (stary front nie czyta źródeł); (2) drop trigger trg_fm_resps_decision_source
+-- i trg_ctr_decision_source; (3) przywrócić fm_set_company_targets z 055 (sekcja
+-- „Atomowy zapis całego zestawu wyborów firmy”); tabela i RPC odczytu mogą zostać.
 -- ============================================================================
 begin;
 
@@ -30,29 +36,43 @@ create table if not exists public.fm_decision_sources (
   company_id     uuid        not null references public.companies(id) on delete cascade,
   retailer_id    integer     not null references public.retailers(id) on delete cascade,
   decision       text,                      -- 'star' / 'thumb' (target) albo strefa odpowiedzi kupca (resp)
-  source         text        not null check (source in ('supplier', 'buyer', 'admin', 'automatic')),
+  source         text        not null,
   source_user_id uuid,                      -- autor (profil); null = sesja serwerowa / SQL
   source_at      timestamptz not null default now(),
   primary key (entity, company_id, retailer_id),
   constraint fm_decision_sources_source_user_fkey foreign key (source_user_id) references public.profiles(id) on delete set null
 );
+alter table public.fm_decision_sources drop constraint if exists fm_decision_sources_source_check;
+alter table public.fm_decision_sources add constraint fm_decision_sources_source_check
+  check (source in ('supplier', 'buyer', 'admin', 'automatic', 'system'));
 comment on table public.fm_decision_sources is
-  'FM 2026: kto ustawił wybór sieci dostawcy (entity=target) / decyzję kupca (entity=resp). Zapis tylko przez RPC/trigger; odczyt: admin wszystko, dostawca własne target, kupiec własne resp.';
+  'FM 2026: kto ustawił wybór sieci dostawcy (entity=target) / decyzję kupca (entity=resp). Zapis tylko przez RPC/triggery; odczyt: admin (tabela, z autorem), dostawca/kupiec własne wpisy przez fm_my_decision_sources() bez autora i czasu.';
 create index if not exists idx_fm_decision_sources_retailer on public.fm_decision_sources(entity, retailer_id);
 
 alter table public.fm_decision_sources enable row level security;
 revoke all on public.fm_decision_sources from public, anon, authenticated;
 grant select on public.fm_decision_sources to authenticated;
 
+-- Tabela: TYLKO admin (autor + czas). Użytkownicy — wyłącznie RPC poniżej.
 drop policy if exists fds_admin_read   on public.fm_decision_sources;
 drop policy if exists fds_supplier_own on public.fm_decision_sources;
 drop policy if exists fds_buyer_own    on public.fm_decision_sources;
 create policy fds_admin_read on public.fm_decision_sources
   for select using (public.is_admin());
-create policy fds_supplier_own on public.fm_decision_sources
-  for select using (entity = 'target' and public.app_role() = 'supplier'::user_role and company_id = public.app_company_id());
-create policy fds_buyer_own on public.fm_decision_sources
-  for select using (entity = 'resp' and public.app_role() = 'buyer'::user_role and retailer_id = public.app_retailer_id());
+
+-- Odczyt użytkownika: własne wpisy, bez autora i czasu (kolumny nie istnieją w wyniku).
+-- Dostawca: entity='target' własnej firmy; kupiec: entity='resp' własnej sieci; inne role: nic.
+create or replace function public.fm_my_decision_sources()
+returns table (entity text, company_id uuid, retailer_id integer, decision text, source text)
+language sql stable security definer set search_path = public as $$
+  select s.entity, s.company_id, s.retailer_id, s.decision, s.source
+    from public.fm_decision_sources s
+   where (public.app_role() = 'supplier'::user_role and s.entity = 'target' and s.company_id = public.app_company_id())
+      or (public.app_role() = 'buyer'::user_role    and s.entity = 'resp'   and s.retailer_id = public.app_retailer_id())
+   order by s.entity, s.company_id, s.retailer_id;
+$$;
+revoke all on function public.fm_my_decision_sources() from public, anon;
+grant execute on function public.fm_my_decision_sources() to authenticated;
 
 -- Źródło = rola sesji, która wykonuje zapis. Brak auth.uid() (service_role, SQL
 -- Editor, pg_cron) = działanie organizatora → 'admin' bez autora.
@@ -102,6 +122,42 @@ drop trigger if exists trg_fm_resps_decision_source on public.fm_resps;
 create trigger trg_fm_resps_decision_source
   after insert or update or delete on public.fm_resps
   for each row execute function public.fm_resps_decision_source();
+
+-- company_target_retailers: zapisy POZA RPC (SQL Editor, service_role, skrypty).
+-- Wewnątrz RPC (flaga transakcyjna fm.targets_rpc = 'on') trigger nic nie robi —
+-- replace-set (DELETE całej listy + INSERT) zrobiłby z każdego wyboru wybór admina;
+-- RPC liczy różnicę list sam. Poza RPC: INSERT → źródło; UPDATE tylko przy zmianie
+-- klasy główna/rezerwowa (zmiana note/priorytetu w tej samej klasie nie); DELETE czyści.
+create or replace function public.ctr_decision_source()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(current_setting('fm.targets_rpc', true), '') = 'on' then return coalesce(new, old); end if;
+  if tg_op = 'DELETE' then
+    delete from public.fm_decision_sources
+     where entity = 'target' and company_id = old.company_id and retailer_id = old.retailer_id;
+    return old;
+  end if;
+  if tg_op = 'UPDATE'
+     and new.company_id = old.company_id and new.retailer_id = old.retailer_id
+     and (coalesce(new.priority, 0) >= 1000) = (coalesce(old.priority, 0) >= 1000) then
+    return new;
+  end if;
+  if tg_op = 'UPDATE' and (new.company_id <> old.company_id or new.retailer_id <> old.retailer_id) then
+    delete from public.fm_decision_sources
+     where entity = 'target' and company_id = old.company_id and retailer_id = old.retailer_id;
+  end if;
+  insert into public.fm_decision_sources (entity, company_id, retailer_id, decision, source, source_user_id, source_at)
+  values ('target', new.company_id, new.retailer_id, case when coalesce(new.priority, 0) >= 1000 then 'star' else 'thumb' end,
+          public.fm_decision_source_of_caller(), auth.uid(), clock_timestamp())
+  on conflict (entity, company_id, retailer_id) do update
+    set decision = excluded.decision, source = excluded.source,
+        source_user_id = excluded.source_user_id, source_at = excluded.source_at;
+  return new;
+end $$;
+drop trigger if exists trg_ctr_decision_source on public.company_target_retailers;
+create trigger trg_ctr_decision_source
+  after insert or update or delete on public.company_target_retailers
+  for each row execute function public.ctr_decision_source();
 
 -- fm_set_company_targets (055) + różnica list: źródło tylko dla sieci nowych lub ze
 -- zmienioną klasą (główna/rezerwowa); sieci usunięte tracą wpis źródła; sieci bez
@@ -155,10 +211,12 @@ begin
     raise exception 'fm_set_company_targets: nieznana sieć: %', v_bad;
   end if;
 
-  -- [decision-source] klasa każdej sieci PRZED zapisem (do wykrycia realnych zmian)
-  select coalesce(jsonb_object_agg(retailer_id::text, case when priority >= 1000 then 'star' else 'thumb' end), '{}'::jsonb)
+  -- [decision-source] klasa każdej sieci PRZED zapisem (do wykrycia realnych zmian);
+  -- na czas replace-set trigger wierszowy jest wyłączony (flaga transakcyjna)
+  select coalesce(jsonb_object_agg(retailer_id::text, case when coalesce(priority, 0) >= 1000 then 'star' else 'thumb' end), '{}'::jsonb)
     into v_before
     from public.company_target_retailers where company_id = p_company_id;
+  perform set_config('fm.targets_rpc', 'on', true);
 
   delete from public.company_target_retailers where company_id = p_company_id;
   insert into public.company_target_retailers (company_id, retailer_id, priority, note)
@@ -169,6 +227,8 @@ begin
             from jsonb_array_elements(p_items) e) x
    group by rid;
 
+  perform set_config('fm.targets_rpc', '', true);
+
   -- [decision-source] sieci usunięte → bez wpisu; nowe lub ze zmienioną klasą →
   -- źródło = wywołujący (dostawca sam / admin w jego imieniu); bez zmian → bez zmian
   v_source := public.fm_decision_source_of_caller();
@@ -178,10 +238,10 @@ begin
                       where t.company_id = p_company_id and t.retailer_id = s.retailer_id);
   insert into public.fm_decision_sources (entity, company_id, retailer_id, decision, source, source_user_id, source_at)
   select 'target', p_company_id, t.retailer_id,
-         case when t.priority >= 1000 then 'star' else 'thumb' end, v_source, v_uid, clock_timestamp()
+         case when coalesce(t.priority, 0) >= 1000 then 'star' else 'thumb' end, v_source, v_uid, clock_timestamp()
     from public.company_target_retailers t
    where t.company_id = p_company_id
-     and (v_before ->> t.retailer_id::text) is distinct from (case when t.priority >= 1000 then 'star' else 'thumb' end)
+     and (v_before ->> t.retailer_id::text) is distinct from (case when coalesce(t.priority, 0) >= 1000 then 'star' else 'thumb' end)
   on conflict (entity, company_id, retailer_id) do update
     set decision = excluded.decision, source = excluded.source,
         source_user_id = excluded.source_user_id, source_at = excluded.source_at;

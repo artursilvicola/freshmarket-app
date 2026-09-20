@@ -112,7 +112,26 @@ describe("oznaczenie „Wybrane przez administratora”", () => {
     expect(count(tree, "decision-source-meta")).toBe(1);
   });
 
-  it("widok admina „Dane wejściowe”: obie strony pary z nazwą strony (wybór sieci / decyzja kupca)", () => {
+  it("widok admina „Dane wejściowe”, domyślna zakładka „Dostawcy”: oznaczenia przy sieciach głównych i rezerwowych wybranej firmy", () => {
+    const fmSuppliers = buyerProps().fmSuppliers;
+    const tree = render(<FMAdminPreferencesView fmPrefs={{ s1: { ch1: "star", ch2: "thumb" }, s2: { ch1: "star" } }} fmResps={{ ch1: { s1: "remove", s2: "want" } }} retailers={RETAILERS} fmChains={CHAINS} fmSuppliers={fmSuppliers} companies={[]} decisionSources={SOURCES} />);
+    // klik w wiersz listy dostawców: pierwszy węzeł z tym tekstem (lista renderuje się przed szczegółami) → najbliższy przodek z onClick
+    const clickRow = (name) => { let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(name))[0]; while (node && !node.props.onClick) node = node.parent; act(() => node.props.onClick()); };
+    // domyślnie „Dostawcy”; wybór Mojej Firmy (wybór Sieci 1 przez admina + decyzja kupca Sieci 1 przez admina; Sieć 2 własny wybór)
+    clickRow("Moja Firma");
+    let t = text(tree);
+    expect(t).toContain("fm.decision_source.admin_badge_target");
+    expect(t).toContain("fm.decision_source.admin_badge_resp");
+    expect(count(tree, "decision-source-meta")).toBe(2);           // Sieć 1: target + resp; Sieć 2: nic
+    // Cudza Firma: tylko wybór admina (decyzja kupca własna)
+    clickRow("Cudza Firma");
+    t = text(tree);
+    expect(t).toContain("fm.decision_source.admin_badge_target");
+    expect(t).not.toContain("fm.decision_source.admin_badge_resp");
+    expect(count(tree, "decision-source-meta")).toBe(1);
+  });
+
+  it("widok admina „Dane wejściowe”, zakładka „Sieci”: obie strony pary z nazwą strony", () => {
     const fmSuppliers = buyerProps().fmSuppliers;
     const tree = render(<FMAdminPreferencesView fmPrefs={{ s1: { ch1: "star" }, s2: { ch1: "star" } }} fmResps={{ ch1: { s1: "remove", s2: "want" } }} retailers={RETAILERS} fmChains={[CHAINS[0]]} fmSuppliers={fmSuppliers} companies={[]} decisionSources={SOURCES} />);
     act(() => tree.root.findAllByType("button").find(b => b.children.includes("fm.admin.prefs_view.subview_chains")).props.onClick());
@@ -120,5 +139,14 @@ describe("oznaczenie „Wybrane przez administratora”", () => {
     expect(t).toContain("fm.decision_source.admin_badge_target");   // wybór Cudzej Firmy ustawiony przez admina
     expect(t).toContain("fm.decision_source.admin_badge_resp");     // decyzja kupca o Mojej Firmie ustawiona przez admina
     expect(count(tree, "decision-source-meta")).toBe(3);           // Moja: target+resp, Cudza: target
+  });
+
+  it("własna zmiana w panelach unieważnia oznaczenie tej pary natychmiast (bez czekania na odczyt)", async () => {
+    const onDecisionSourcesChanged = vi.fn();
+    const sup = render(<PageSupplierFM {...supplierProps({ onDecisionSourcesChanged })} />);
+    const unselected = sup.root.findAllByType("button").find(b => b.children.includes("○"));
+    await act(async () => { unselected.props.onClick(); await new Promise(r => setTimeout(r, 30)); });
+    expect(onDecisionSourcesChanged.mock.calls[0][0]).toEqual({ invalidate: { entity: "target", companyId: "co-new", retailerId: 102 }, refetch: false });
+    expect(onDecisionSourcesChanged.mock.calls.some(c => c.length === 0)).toBe(true);   // po zapisie pełny odczyt
   });
 });

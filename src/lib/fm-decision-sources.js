@@ -3,7 +3,7 @@
 // Wiersze pochodzą z tabeli fm_decision_sources (RLS: admin wszystko, dostawca
 // tylko własne "target", kupiec tylko własne "resp"). Ten moduł dodatkowo pilnuje
 // po stronie klienta, żeby oznaczenie nigdy nie trafiło do drugiej strony pary.
-export const DECISION_SOURCES = ["supplier", "buyer", "admin", "automatic"];
+export const DECISION_SOURCES = ["supplier", "buyer", "admin", "automatic", "system"];
 
 // { target: { [companyId]: { [retailerId]: row } }, resp: { [retailerId]: { [companyId]: row } } }
 export function groupDecisionSources(rows) {

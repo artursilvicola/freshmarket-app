@@ -2614,13 +2614,33 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // każdym zapisie z paneli; starsza odpowiedź nie nadpisuje nowszej; brak tabeli = brak oznaczeń.
   const [fmDecisionSources, setFmDecisionSources] = useState({ target: {}, resp: {} });
   const fmDecisionSourcesReqRef = useRef(0);
-  const reloadFmDecisionSources = useCallback(async () => {
+  // opts.invalidate = { entity, companyId, retailerId }: własna zmiana użytkownika zdejmuje
+  // oznaczenie tej pary od razu (nie czeka na odczyt); opts.refetch=false = tylko unieważnienie.
+  // Błąd odczytu: stan zostaje bez unieważnionej pary, jedno ponowienie po 3 s.
+  const reloadFmDecisionSources = useCallback(async (opts = {}) => {
+    const { invalidate = null, refetch = true } = opts || {};
+    if (invalidate?.entity && invalidate.companyId != null && invalidate.retailerId != null) {
+      setFmDecisionSources(prev => {
+        const cid = String(invalidate.companyId), rid = String(invalidate.retailerId);
+        const next = { target: { ...(prev?.target || {}) }, resp: { ...(prev?.resp || {}) } };
+        if (invalidate.entity === "target" && next.target[cid]) { next.target[cid] = { ...next.target[cid] }; delete next.target[cid][rid]; }
+        if (invalidate.entity === "resp" && next.resp[rid]) { next.resp[rid] = { ...next.resp[rid] }; delete next.resp[rid][cid]; }
+        return next;
+      });
+    }
+    if (!refetch) return;
     const req = ++fmDecisionSourcesReqRef.current;
-    try {
-      const rows = await dbGetFmDecisionSources();
-      if (req === fmDecisionSourcesReqRef.current) setFmDecisionSources(groupDecisionSources(rows));
-    } catch (e) { console.warn("[load fmDecisionSources]", e); }
-  }, []);
+    const attempt = async (retry) => {
+      try {
+        const rows = await dbGetFmDecisionSources({ admin: initialRole === "admin" });
+        if (req === fmDecisionSourcesReqRef.current) setFmDecisionSources(groupDecisionSources(rows));
+      } catch (e) {
+        console.warn("[load fmDecisionSources]", e);
+        if (retry && req === fmDecisionSourcesReqRef.current) setTimeout(() => { if (req === fmDecisionSourcesReqRef.current) attempt(false); }, 3000);
+      }
+    };
+    await attempt(true);
+  }, [initialRole]);
   // previewFor: set of supplier/chain IDs for which admin has enabled preview
   // structure: { suppliers: Set→Array, chains: Set→Array }
   const [previewFor, setPreviewFor] = useState(() => {
@@ -13607,6 +13627,8 @@ export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, 
                         <div key={c.id} title={rTitle} style={{ padding:"8px 10px",borderRadius:8,background:"#fffbeb",border:"1px solid #fde68a",display:"flex",alignItems:"center",gap:6 }}>
                           <span style={{ fontSize:11,fontWeight:700,color:"#1e293b",flex:1 }}>{c.name}</span>
                           <span title={automatic ? t("fm.default_chance.notice") : rTitle} style={{ fontSize:10,fontWeight:700,color:rc }}>{automatic ? t("fm.default_chance.badge") : rl}</span>
+                          <DecisionSourceBadge variant="target" source={targetSource(decisionSources, s.companyId, resolveRetailerIdFromChain(c.id, retailers))} viewerIsAdmin />
+                          <DecisionSourceBadge variant="resp" source={respSource(decisionSources, resolveRetailerIdFromChain(c.id, retailers), s.companyId)} viewerIsAdmin />
                         </div>
                       );
                     })}
@@ -13625,6 +13647,8 @@ export function FMAdminPreferencesView({ fmPrefs, fmResps, retailers, fmChains, 
                         <div key={c.id} title={rTitle} style={{ padding:"7px 10px",borderRadius:8,background:"#f0fdfa",border:"1px solid #a7f3d0",display:"flex",alignItems:"center",gap:6 }}>
                           <span style={{ fontSize:11,color:"#1e293b",flex:1 }}>{c.name}</span>
                           <span title={automatic ? t("fm.default_chance.notice") : rTitle} style={{ fontSize:10,fontWeight:700,color:rc }}>{automatic ? t("fm.default_chance.badge") : rl}</span>
+                          <DecisionSourceBadge variant="target" source={targetSource(decisionSources, s.companyId, resolveRetailerIdFromChain(c.id, retailers))} viewerIsAdmin />
+                          <DecisionSourceBadge variant="resp" source={respSource(decisionSources, resolveRetailerIdFromChain(c.id, retailers), s.companyId)} viewerIsAdmin />
                         </div>
                       );
                     })}
@@ -13930,6 +13954,8 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
     setFmPrefs(np);
     const company = (companies || []).find(c => c.fmId === sid || c.legacy_fm_id === sid || c.id === sid);
     if (company?.id) {
+      // [decision-source] własna zmiana → oznaczenie admina przy tej sieci znika od razu; odczyt po zapisie potwierdza
+      onDecisionSourcesChanged?.({ invalidate: { entity: "target", companyId: company.id, retailerId: resolveRetailerIdFromChain(cid, retailers) }, refetch: false });
       const rows = buildTargetRetailerRowsFromPrefs(np[sid], retailers);
       const rev = ++editRevRef.current;
       setTargetsSaveError(null);
@@ -14261,6 +14287,8 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
     const supplier = _suppliers.find(s => s.id === sid);
     const company = (companies || []).find(c => c.id === supplier?.companyId || c.fmId === sid || c.legacy_fm_id === sid);
     if (retailer_id && company?.id) {
+      // [decision-source] własna decyzja → oznaczenie admina przy tej firmie znika od razu; odczyt po zapisie potwierdza
+      onDecisionSourcesChanged?.({ invalidate: { entity: "resp", companyId: company.id, retailerId: retailer_id }, refetch: false });
       dbSaveFmResp({
         retailer_id,
         supplier_company_id: company.id,

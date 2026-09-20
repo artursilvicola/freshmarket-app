@@ -34,11 +34,12 @@ describe("fm-decision-sources", () => {
     expect(targetSource(null, CO1, 100)).toBeNull();
   });
 
-  it("isAdminSet tylko dla źródła admin", () => {
+  it("isAdminSet tylko dla źródła admin (nie system / automatic)", () => {
     expect(isAdminSet({ source: "admin" })).toBe(true);
     expect(isAdminSet({ source: "supplier" })).toBe(false);
     expect(isAdminSet({ source: "buyer" })).toBe(false);
     expect(isAdminSet({ source: "automatic" })).toBe(false);
+    expect(isAdminSet({ source: "system" })).toBe(false);
     expect(isAdminSet(null)).toBe(false);
   });
 

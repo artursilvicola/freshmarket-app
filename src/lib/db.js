@@ -1842,21 +1842,27 @@ export async function setCompanyTargetRetailers(companyId, items) {
 // ===================================================================
 // FM 2026 — ŹRÓDŁA DECYZJI (kto ustawił wybór sieci / decyzję kupca)
 // ===================================================================
-// [feat/fm-decision-source] Tabela fm_decision_sources (migracja 20260920130000):
-// RLS zwraca adminowi wszystko, dostawcy tylko własne "target", kupcowi tylko
-// własne "resp". Komplet wierszy (stronicowanie jak dla wejść FM). Autor
-// (profil) osadzony przez klucz obcy — dla ról bez dostępu do profilu = null.
-// Brak tabeli (front przed migracją) → pusta lista, bez oznaczeń.
-export async function getFmDecisionSources() {
+// [feat/fm-decision-source] Migracja 20260920130000. Dwie ścieżki odczytu:
+//  - administrator: tabela fm_decision_sources (jedyna polityka SELECT = admin) z autorem
+//    (profil przez klucz obcy) i czasem; komplet wierszy (stronicowanie jak dla wejść FM);
+//  - dostawca / kupiec: RPC fm_my_decision_sources() — własne wpisy BEZ autora i czasu
+//    (kolumn nie ma w wyniku; tabela zwraca im 0 wierszy — review Codexa 689934c P2/2).
+// Brak tabeli / funkcji (front przed migracją) → pusta lista, bez oznaczeń.
+export async function getFmDecisionSources({ admin = false } = {}) {
   try {
-    return await readAllFmInputRows(() => supabase
-      .from("fm_decision_sources")
-      .select("entity, company_id, retailer_id, decision, source, source_user_id, source_at, author:profiles!fm_decision_sources_source_user_fkey(name, email)", { count: "exact" })
-      .order("entity", { ascending: true })
-      .order("company_id", { ascending: true })
-      .order("retailer_id", { ascending: true }));
+    if (admin) {
+      return await readAllFmInputRows(() => supabase
+        .from("fm_decision_sources")
+        .select("entity, company_id, retailer_id, decision, source, source_user_id, source_at, author:profiles!fm_decision_sources_source_user_fkey(name, email)", { count: "exact" })
+        .order("entity", { ascending: true })
+        .order("company_id", { ascending: true })
+        .order("retailer_id", { ascending: true }));
+    }
+    const { data, error } = await supabase.rpc("fm_my_decision_sources");
+    if (error) throw error;
+    return Array.isArray(data) ? data : [];
   } catch (e) {
-    if (e?.code === "PGRST205" || /Could not find the table/i.test(e?.message || "")) return [];
+    if (e?.code === "PGRST205" || e?.code === "PGRST202" || /Could not find the (table|function)/i.test(e?.message || "")) return [];
     throw e;
   }
 }
