@@ -155,7 +155,7 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
       return n;
     }, (n) => `Utworzono ${n} grup (po 1 stanowisku).`);
   }
-  const patchGroup = (g, patch) => run(() => upsertFmQueueGroup({ id: g.id, ...patch }));
+  const patchGroup = (g, patch) => run(() => upsertFmQueueGroup({ id: g.id, ...patch }), "Zapisano ustawienia grupy.");
   const addStation = (g) => run(() => upsertFmStation({ queue_group_id: g.id, idx: Math.max(0, ...g.fm_stations.map(s => s.idx)) + 1 }));
   const addSplit = (r) => {
     const label = window.prompt(`Nowa grupa (osobna kolejka) dla ${r.name} — etykieta, np. "Kwiaty":`);
