@@ -95,6 +95,7 @@ import { isOwnAccount } from "../lib/profile-guard.js";
 // [feat/fm-decision-source] kto ustawił wybór sieci / decyzję kupca (oznaczenie „Wybrane przez administratora”)
 import { groupDecisionSources, targetSource, respSource, sourcesVisibleTo } from "../lib/fm-decision-sources.js";
 import DecisionSourceBadge from "../components/fm/DecisionSourceBadge.jsx";
+import { createDecisionSourceStore } from "../lib/fm-decision-sources-store.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
 import SimplePhotoUploader from "../components/SimplePhotoUploader";
 // [feat/fm-plan-export] eksport planu spotkan (karty PDF, Excel, wysylka) — lazy: xlsx/pdfmake/czcionki
@@ -2613,34 +2614,20 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // dostawca własne wybory, kupiec własne decyzje). Odświeżane po wczytaniu wejść FM i po
   // każdym zapisie z paneli; starsza odpowiedź nie nadpisuje nowszej; brak tabeli = brak oznaczeń.
   const [fmDecisionSources, setFmDecisionSources] = useState({ target: {}, resp: {} });
-  const fmDecisionSourcesReqRef = useRef(0);
-  // opts.invalidate = { entity, companyId, retailerId }: własna zmiana użytkownika zdejmuje
-  // oznaczenie tej pary od razu (nie czeka na odczyt); opts.refetch=false = tylko unieważnienie.
-  // Błąd odczytu: stan zostaje bez unieważnionej pary, jedno ponowienie po 3 s.
-  const reloadFmDecisionSources = useCallback(async (opts = {}) => {
-    const { invalidate = null, refetch = true } = opts || {};
-    if (invalidate?.entity && invalidate.companyId != null && invalidate.retailerId != null) {
-      setFmDecisionSources(prev => {
-        const cid = String(invalidate.companyId), rid = String(invalidate.retailerId);
-        const next = { target: { ...(prev?.target || {}) }, resp: { ...(prev?.resp || {}) } };
-        if (invalidate.entity === "target" && next.target[cid]) { next.target[cid] = { ...next.target[cid] }; delete next.target[cid][rid]; }
-        if (invalidate.entity === "resp" && next.resp[rid]) { next.resp[rid] = { ...next.resp[rid] }; delete next.resp[rid][cid]; }
-        return next;
-      });
-    }
-    if (!refetch) return;
-    const req = ++fmDecisionSourcesReqRef.current;
-    const attempt = async (retry) => {
-      try {
-        const rows = await dbGetFmDecisionSources({ admin: initialRole === "admin" });
-        if (req === fmDecisionSourcesReqRef.current) setFmDecisionSources(groupDecisionSources(rows));
-      } catch (e) {
-        console.warn("[load fmDecisionSources]", e);
-        if (retry && req === fmDecisionSourcesReqRef.current) setTimeout(() => { if (req === fmDecisionSourcesReqRef.current) attempt(false); }, 3000);
-      }
-    };
-    await attempt(true);
-  }, [initialRole]);
+  // Magazyn źródeł (src/lib/fm-decision-sources-store.js): { invalidate } → token (własna edycja
+  // zdejmuje oznaczenie pary od razu i odrzuca odczyty w toku; para zostaje bez oznaczenia do
+  // rozliczenia), { settle: token } → zapis przyjęty + odczyt, { restore: token } → zapis odrzucony:
+  // oznaczenie wraca lokalnie + odczyt; {} → odczyt (starsza odpowiedź nie nadpisuje nowszej,
+  // błąd = jedno ponowienie po 3 s). Review Codexa 7f3343e.
+  const initialRoleRef = useRef(initialRole); initialRoleRef.current = initialRole;
+  const fmDecisionSourceStoreRef = useRef(null);
+  if (!fmDecisionSourceStoreRef.current) {
+    fmDecisionSourceStoreRef.current = createDecisionSourceStore({
+      fetchRows: () => dbGetFmDecisionSources({ admin: initialRoleRef.current === "admin" }),
+      onChange: setFmDecisionSources,
+    });
+  }
+  const reloadFmDecisionSources = useCallback((opts) => fmDecisionSourceStoreRef.current.handle(opts), []);
   // previewFor: set of supplier/chain IDs for which admin has enabled preview
   // structure: { suppliers: Set→Array, chains: Set→Array }
   const [previewFor, setPreviewFor] = useState(() => {
@@ -13871,6 +13858,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
   // [feat/fm-decision-source] po udanym zapisie odświeżamy źródła (saver powstaje raz — ref)
   const onSourcesChangedRef = useRef(onDecisionSourcesChanged);
   onSourcesChangedRef.current = onDecisionSourcesChanged;
+  const sourceTokensRef = useRef([]);   // edycje par (tokeny) nierozliczone do czasu odpowiedzi bazy
   // rewizje: każde kliknięcie = nowa rewizja edycji; odpowiedź serwera na STARSZĄ rewizję
   // nie może cofnąć nowszych kliknięć (review Codexa 79b4b24 P1/1); potwierdzenie
   // wymaga, by ostatnia zapisana rewizja == ostatnia rewizja edycji
@@ -13898,10 +13886,15 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
           const same = Object.keys(cur).length === Object.keys(savedPrefs).length && Object.keys(cur).every(k => cur[k] === savedPrefs[k]);
           return same ? prev : { ...prev, [savedSid]: savedPrefs };
         });
+        // zapis przyjęty: rozliczamy edycje par (settle) i czytamy źródła z bazy
+        for (const tk of sourceTokensRef.current.splice(0)) onSourcesChangedRef.current?.({ settle: tk, refetch: false });
         onSourcesChangedRef.current?.();
       },
       {
         onError: (e) => {
+          // zapis odrzucony: w bazie zostają poprzednie wybory i ich źródła → oznaczenia wracają od razu, odczyt potwierdza
+          for (const tk of sourceTokensRef.current.splice(0)) onSourcesChangedRef.current?.({ restore: tk, refetch: false });
+          onSourcesChangedRef.current?.();
           setTargetsSaveError(e);
           console.warn("[save target retailers]", e);
           if (isFmInputsLockedError(e) && typeof window !== "undefined") window.alert(t("errors.db.fm_inputs_locked"));
@@ -13955,7 +13948,8 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
     const company = (companies || []).find(c => c.fmId === sid || c.legacy_fm_id === sid || c.id === sid);
     if (company?.id) {
       // [decision-source] własna zmiana → oznaczenie admina przy tej sieci znika od razu; odczyt po zapisie potwierdza
-      onDecisionSourcesChanged?.({ invalidate: { entity: "target", companyId: company.id, retailerId: resolveRetailerIdFromChain(cid, retailers) }, refetch: false });
+      const sourceToken = onSourcesChangedRef.current?.({ invalidate: { entity: "target", companyId: company.id, retailerId: resolveRetailerIdFromChain(cid, retailers) }, refetch: false });
+      if (sourceToken) sourceTokensRef.current.push(sourceToken);
       const rows = buildTargetRetailerRowsFromPrefs(np[sid], retailers);
       const rev = ++editRevRef.current;
       setTargetsSaveError(null);
@@ -14288,14 +14282,16 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
     const company = (companies || []).find(c => c.id === supplier?.companyId || c.fmId === sid || c.legacy_fm_id === sid);
     if (retailer_id && company?.id) {
       // [decision-source] własna decyzja → oznaczenie admina przy tej firmie znika od razu; odczyt po zapisie potwierdza
-      onDecisionSourcesChanged?.({ invalidate: { entity: "resp", companyId: company.id, retailerId: retailer_id }, refetch: false });
+      const sourceToken = onDecisionSourcesChanged?.({ invalidate: { entity: "resp", companyId: company.id, retailerId: retailer_id }, refetch: false }) || null;
       dbSaveFmResp({
         retailer_id,
         supplier_company_id: company.id,
         zone: val,
         status: val,
         meta: { supplier_legacy_id: sid, chain_id: chainId }
-      }).then(() => { onDecisionSourcesChanged?.(); }).catch(e => {
+      }).then(() => { onDecisionSourcesChanged?.({ settle: sourceToken }); }).catch(e => {
+        // zapis odrzucony: w bazie zostaje poprzednia decyzja i jej źródło → oznaczenie wraca od razu, odczyt potwierdza
+        onDecisionSourcesChanged?.({ restore: sourceToken });
         // [fix/security-hotfix] baza odrzuca zapis po zamknięciu fazy (054) → cofnij lokalną zmianę
         if (isFmInputsLockedError(e)) {
           setFmResps(fmResps);

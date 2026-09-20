@@ -16,8 +16,25 @@ vi.mock("react-i18next", () => ({
 vi.mock("../lib/db", async (importOriginal) => ({
   ...(await importOriginal()),
   setCompanyTargetRetailers: vi.fn(async () => [{ retailer_id: 100, priority: 1000, note: "chain:ch1" }, { retailer_id: 101, priority: 100, note: "chain:ch2" }, { retailer_id: 102, priority: 100, note: "chain:ch3" }]),
+  saveFmResp: vi.fn(async () => ({})),
 }));
+import * as db from "../lib/db";
+import { createDecisionSourceStore } from "../lib/fm-decision-sources-store.js";
 import { PageSupplierFM, PageBuyerFM, FMAdminPreferencesView } from "./PreconnectFM.jsx";
+
+// Panel + PRAWDZIWY magazyn źródeł (jak w App): stan źródeł i decyzji trzymane w harnessie.
+function BuyerHarness({ fetchRows, onStore, ...props }) {
+  const [src, setSrc] = React.useState({ target: {}, resp: {} });
+  const [fmResps, setFmResps] = React.useState(props.fmResps);
+  const store = React.useMemo(() => { const s = createDecisionSourceStore({ fetchRows, onChange: setSrc, setTimer: () => {} }); onStore?.(s); return s; }, []);
+  return <PageBuyerFM {...props} fmResps={fmResps} setFmResps={setFmResps} decisionSources={src} onDecisionSourcesChanged={store.handle} />;
+}
+function SupplierHarness({ fetchRows, onStore, ...props }) {
+  const [src, setSrc] = React.useState({ target: {}, resp: {} });
+  const [fmPrefs, setFmPrefs] = React.useState(props.fmPrefs);
+  const store = React.useMemo(() => { const s = createDecisionSourceStore({ fetchRows, onChange: setSrc, setTimer: () => {} }); onStore?.(s); return s; }, []);
+  return <PageSupplierFM {...props} fmPrefs={fmPrefs} setFmPrefs={setFmPrefs} decisionSources={src} onDecisionSourcesChanged={store.handle} />;
+}
 
 const trees = [];
 function render(node) { let tree; act(() => { tree = create(node); }); trees.push(tree); return tree; }
@@ -139,6 +156,54 @@ describe("oznaczenie „Wybrane przez administratora”", () => {
     expect(t).toContain("fm.decision_source.admin_badge_target");   // wybór Cudzej Firmy ustawiony przez admina
     expect(t).toContain("fm.decision_source.admin_badge_resp");     // decyzja kupca o Mojej Firmie ustawiona przez admina
     expect(count(tree, "decision-source-meta")).toBe(3);           // Moja: target+resp, Cudza: target
+  });
+
+  it("[review 7f3343e/1] kupiec: zapis odrzucony (fm_inputs_locked) → decyzja admina wraca RAZEM z oznaczeniem", async () => {
+    const ADMIN_ROWS = [{ entity: "resp", company_id: "co-new", retailer_id: 100, decision: "remove", source: "admin" }];
+    let store; const tree = render(<BuyerHarness {...buyerProps({ decisionSources: undefined })} fetchRows={async () => ADMIN_ROWS} onStore={(s) => { store = s; }} />);
+    await act(async () => { await store.refetch(); });
+    expect(count(tree, BADGE)).toBe(1);
+    db.saveFmResp.mockRejectedValueOnce(Object.assign(new Error("fm_inputs_locked"), { code: "P0001", hint: "Etap zbierania wyborów jest zamknięty" }));
+    // przycisk w WIERSZU „Moja Firma” (nie polegamy na kolejności listy)
+    const rowButton = (name, key) => { let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes(name))[0]; while (node && !node.findAll(b => b.type === "button" && b.children.includes(key)).length) node = node.parent; return node.findAll(b => b.type === "button" && b.children.includes(key))[0]; };
+    expect(String(rowButton("Moja Firma", "fm.buyer.btn_remove").props.style.border)).toMatch(/^2px/);   // stan wyjściowy: „Nie chcę” (admin)
+    await act(async () => { rowButton("Moja Firma", "fm.buyer.btn_want").props.onClick(); await new Promise(r => setTimeout(r, 30)); });
+    expect(count(tree, BADGE)).toBe(1);                       // oznaczenie przywrócone
+    expect(store.pendingCount()).toBe(0);
+    expect(db.saveFmResp).toHaveBeenCalledTimes(1);
+    expect(db.saveFmResp.mock.calls[0][0]).toMatchObject({ retailer_id: 100, supplier_company_id: "co-new", zone: "want" });
+    // decyzja cofnięta do „remove”: „Chcę” niezaznaczone (1px), „Nie chcę” zaznaczone (2px)
+    expect(String(rowButton("Moja Firma", "fm.buyer.btn_want").props.style.border)).toMatch(/^1px/);
+    expect(String(rowButton("Moja Firma", "fm.buyer.btn_remove").props.style.border)).toMatch(/^2px/);
+  });
+
+  it("[review 7f3343e/2] kupiec: odczyt sprzed edycji, który wraca po zmianie, nie przywraca oznaczenia — także gdy odczyt po zapisie zawodzi", async () => {
+    const ADMIN_ROWS = [{ entity: "resp", company_id: "co-new", retailer_id: 100, decision: "remove", source: "admin" }];
+    let resolveEarly; let calls = 0;
+    const fetchRows = () => { calls += 1; return calls === 1 ? new Promise(r => { resolveEarly = r; }) : Promise.reject(new Error("network")); };
+    let store; const tree = render(<BuyerHarness {...buyerProps({ decisionSources: undefined })} fetchRows={fetchRows} onStore={(s) => { store = s; }} />);
+    const early = store.refetch();                                   // odczyt w toku (sprzed edycji)
+    let node = tree.root.findAll(n => typeof n.type === "string" && n.children.includes("Moja Firma"))[0];
+    while (node && !node.findAll(b => b.type === "button" && b.children.includes("fm.buyer.btn_chance")).length) node = node.parent;
+    const chanceBtn = node.findAll(b => b.type === "button" && b.children.includes("fm.buyer.btn_chance"))[0];   // wiersz „Moja Firma”
+    await act(async () => { chanceBtn.props.onClick(); await new Promise(r => setTimeout(r, 30)); });   // zapis OK → settle + odczyt (błąd)
+    expect(db.saveFmResp.mock.calls.at(-1)[0]).toMatchObject({ supplier_company_id: "co-new", zone: "chance" });
+    await act(async () => { resolveEarly(ADMIN_ROWS); await early; });                                   // spóźniony stary odczyt
+    expect(count(tree, BADGE)).toBe(0);                              // admin NIE wrócił
+    expect(store.pendingCount()).toBe(0);
+  });
+
+  it("[review 7f3343e/1] dostawca: zapis odrzucony → oznaczenie przy sieci ustawionej przez admina wraca", async () => {
+    const ADMIN_ROWS = [{ entity: "target", company_id: "co-new", retailer_id: 100, decision: "star", source: "admin" }];
+    let store; const tree = render(<SupplierHarness {...supplierProps({ decisionSources: undefined })} fetchRows={async () => ADMIN_ROWS} onStore={(s) => { store = s; }} />);
+    await act(async () => { await store.refetch(); });
+    expect(count(tree, BADGE)).toBe(1);
+    db.setCompanyTargetRetailers.mockRejectedValueOnce(Object.assign(new Error("fm_inputs_locked"), { code: "P0001" }));
+    const starBtn = tree.root.findAllByType("button").find(b => b.children.includes("⭐"));   // Sieć 1 (wybór admina) → rezerwowa
+    await act(async () => { starBtn.props.onClick(); await new Promise(r => setTimeout(r, 30)); });
+    expect(count(tree, BADGE)).toBe(1);                              // przywrócone po odrzuceniu
+    expect(store.pendingCount()).toBe(0);
+    expect(text(tree)).toContain("errors.db.fm_inputs_locked");    // baner błędu zapisu (etap zamknięty)
   });
 
   it("własna zmiana w panelach unieważnia oznaczenie tej pary natychmiast (bez czekania na odczyt)", async () => {
