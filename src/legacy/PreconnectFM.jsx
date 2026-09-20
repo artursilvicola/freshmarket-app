@@ -23,7 +23,7 @@ import {
   getFmSettings as dbGetFmSettings, saveFmSettings as dbSaveFmSettings,
   getFmResps as dbGetFmResps, saveFmResp as dbSaveFmResp,
   getFmDecisionSources as dbGetFmDecisionSources,
-  getFmSchedule as dbGetFmSchedule, saveFmSchedule as dbSaveFmSchedule,
+  getFmSchedule as dbGetFmSchedule,
   getAllCompanyTargetRetailers as dbGetAllCompanyTargetRetailers,
   setCompanyTargetRetailers as dbSetCompanyTargetRetailers,
   getFmWishlists as dbGetFmWishlists, saveFmWishlist as dbSaveFmWishlist,
@@ -93,6 +93,7 @@ import { isOwnAccount } from "../lib/profile-guard.js";
 // [feat/fm-decision-source] kto ustawił wybór sieci / decyzję kupca (oznaczenie „Wybrane przez administratora”)
 import { groupDecisionSources, targetSource, respSource, sourcesVisibleTo } from "../lib/fm-decision-sources.js";
 import DecisionSourceBadge from "../components/fm/DecisionSourceBadge.jsx";
+import FMAdminCorrectionPanel from "../components/fm/CorrectionBoard.jsx";
 import { BuyerLateSelections, AdminLateSelections } from "../components/fm/LateSelections.jsx";
 import { createDecisionSourceStore } from "../lib/fm-decision-sources-store.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
@@ -3000,18 +3001,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // [B2B Round 2.1] Persistence:
   //   - companies / retailers: synced through setCompanies / setRetailers wrappers (above)
   //   - offers / sends:        synced through setOffers / setSends wrappers
-  //   - fmSchedule:            debounced save to fm_settings.schedule
+  //   - fmSchedule:            adopted after atomic correction approval
   //   - fmResps:               saved per-action by handlers (Accept/Reject); also debounced fallback below
   //   - fmWishlists/messages: hydrated from Supabase; late requests load in their separate panel
   //   - UI-only state (previewFor, refundNotifs): localStorage OK
-  // Debounced save of fmSchedule:
-  useEffect(() => {
-    if (!fmSchedule) return;
-    const t = setTimeout(() => {
-      dbSaveFmSchedule(fmSchedule).catch(e => console.warn("[saveFmSchedule]", e));
-    }, 800);
-    return () => clearTimeout(t);
-  }, [fmSchedule]);
+  // Approval is persisted atomically by fm_commit_correction; state adoption must not write again.
   // [fix/security-hotfix] Usunięty zbiorczy „fallback save" fmResps: dla sieci
   // z kilkoma kupcami zapisywał CAŁY stan jednego kupca (łącznie z odpowiedziami
   // kolegi sprzed odświeżenia) i nadpisywał nowsze decyzje. Odpowiedzi zapisuje
@@ -14618,353 +14612,6 @@ function fmNZ(n) {
 /* ═══════════════════════════════════════════════════════════════
    FM ADMIN CORRECTION PANEL — interaktywny grid
 ═══════════════════════════════════════════════════════════════ */
-function FMAdminCorrectionPanel({ data, setData, onApprove, retailers, fmChains, fmSuppliers, fmWishlists, fmResps, inputsReady = false }) {
-  const { t } = useTranslation("legacy");
-  // [fix/fm-real-companies] bez fallbacku do danych demo
-  const _chains    = fmChains    || [];
-  const _suppliers = fmSuppliers || [];
-  const _resps     = fmResps || {};
-  const [selA, setSelA] = useState(null);
-  const [swapLog, setSwapLog] = useState([]);
-  const [filterChain, setFilterChain] = useState("all");
-  const [approved, setApproved] = useState(false);
-  // [B2B Round FM-buyer-rejection-logic] Pending placement awaiting admin
-  // confirmation when target chain's buyer rejected the supplier.
-  // Shape: { rejections: [{sid, cid, supplierName, chainName}], commit: () => void }
-  const [pendingOverride, setPendingOverride] = useState(null);
-
-  if (!data || !data.cq) return (
-    <div style={{ padding:40,textAlign:"center",color:"#94a3b8" }}>
-      <RefreshCw size={28} style={{ marginBottom:10,display:"block",margin:"0 auto 10px",opacity:0.3 }}/>
-      {t("fm.corrections.empty_data")}
-    </div>
-  );
-
-  const visibleChains = filterChain === "all"
-    ? _chains
-    : _chains.filter(c => c.id === filterChain);
-  // Numeracja może mieć luki, zwłaszcza między akceptacjami a szansami.
-  // Liczba spotkań nie jest ostatnim numerem — nie ukrywaj końca kolejki.
-  const maxRows = Math.max(..._chains.map(c => (data.cq[c.id] || []).reduce((last, sid, i) => sid ? i + 1 : last, 0)), 20);
-
-  // [B2B Round FM-buyer-rejection-logic] Lookup for "did this buyer/chain reject
-  // this supplier?". Buyer-side reject is stored as fm_resps.zone === "remove"
-  // (see PageBuyerFM modal "Nie chcę spotkania z tą firmą" → setResp(sid,"remove")).
-  const isBuyerRejected = (cid, sid) => _resps?.[cid]?.[sid] === "remove";
-  const isManualOverride = (sid, cid) => Boolean(data?.overrides?.[sid]?.[cid]);
-
-  const handleClick = (cid, pos) => {
-    if (approved) return;
-    const sid = (data.cq[cid] || [])[pos] || null;
-    if (!selA) {
-      if (!sid) return;
-      setSelA({ cid, pos, sid });
-      return;
-    }
-    if (selA.cid === cid && selA.pos === pos) { setSelA(null); return; }
-
-    const newCq = {};
-    _chains.forEach(c => { newCq[c.id] = [...(data.cq[c.id] || [])]; });
-    const a = selA;
-    let logMsg = "";
-
-    if (sid) {
-      newCq[a.cid][a.pos] = sid;
-      newCq[cid][pos] = a.sid;
-      const nA = (_suppliers.find(x => x.id === a.sid) || {}).name || "?";
-      const nB = (_suppliers.find(x => x.id === sid) || {}).name || "?";
-      const chA = (_chains.find(x => x.id === a.cid) || {}).name;
-      const chB = (_chains.find(x => x.id === cid) || {}).name;
-      logMsg = t("fm.corrections.log_swap_format", { nameA: nA, chainA: chA, posA: a.pos+1, nameB: nB, chainB: chB, posB: pos+1 });
-    } else {
-      newCq[a.cid][a.pos] = null;
-      newCq[cid][pos] = a.sid;
-      const nA = (_suppliers.find(x => x.id === a.sid) || {}).name || "?";
-      const chName = (_chains.find(x => x.id === cid) || {}).name || "?";
-      logMsg = t("fm.corrections.log_move_format", { name: nA, chain: chName, pos: pos+1 });
-    }
-
-    // [B2B Round FM-buyer-rejection-logic] Detect rejected pairings created by
-    // this swap. A pair is "newly rejected" if (1) supplier ends up in a chain
-    // they weren't already in, AND (2) that chain's buyer flagged them as
-    // remove. Pre-existing rejections (e.g. previous override) aren't re-flagged.
-    const wasInChain = (s, c) => (data.cq[c] || []).includes(s);
-    const rejections = [];
-    if (a.sid !== sid) {
-      // a.sid moves into cid
-      if (!wasInChain(a.sid, cid) && isBuyerRejected(cid, a.sid) && !isManualOverride(a.sid, cid)) {
-        rejections.push({
-          sid: a.sid, cid,
-          supplierName: (_suppliers.find(x => x.id === a.sid) || {}).name || a.sid,
-          chainName: (_chains.find(x => x.id === cid) || {}).name || cid,
-        });
-      }
-      // sid moves into a.cid (if swap)
-      if (sid && !wasInChain(sid, a.cid) && isBuyerRejected(a.cid, sid) && !isManualOverride(sid, a.cid)) {
-        rejections.push({
-          sid, cid: a.cid,
-          supplierName: (_suppliers.find(x => x.id === sid) || {}).name || sid,
-          chainName: (_chains.find(x => x.id === a.cid) || {}).name || a.cid,
-        });
-      }
-    }
-
-    // Function that actually applies the move. Reused from confirm-callback path.
-    const commit = () => {
-      const newNums = {};
-      _suppliers.forEach(s => { newNums[s.id] = {}; });
-      _chains.forEach(c => {
-        (newCq[c.id] || []).forEach((sid2, p) => {
-          if (sid2 && newNums[sid2]) newNums[sid2][c.id] = p + 1;
-        });
-      });
-      const newRes = {};
-      _suppliers.forEach(s => {
-        newRes[s.id] = { m: [], r: (data?.res?.[s.id]?.r || {}) };
-      });
-      _chains.forEach(ch => {
-        (newCq[ch.id] || []).forEach(sid2 => {
-          if (sid2 && newRes[sid2]) newRes[sid2].m.push(ch.id);
-        });
-      });
-      // [B2B Round FM-buyer-rejection-logic] Persist override flag in
-      // data.overrides[sid][cid] = "manually_added_despite_buyer_rejection"
-      // so all downstream views (plan, admin pipeline) can mark this pair.
-      const newOverrides = JSON.parse(JSON.stringify(data?.overrides || {}));
-      rejections.forEach(({ sid: rSid, cid: rCid }) => {
-        if (!newOverrides[rSid]) newOverrides[rSid] = {};
-        newOverrides[rSid][rCid] = "manually_added_despite_buyer_rejection";
-      });
-      setData(prev => ({ ...prev, cq: newCq, nums: newNums, res: newRes, overrides: newOverrides }));
-      setSwapLog(prev => [
-        ...rejections.map(r => t("fm.corrections.log_override_format", { supplier: r.supplierName, chain: r.chainName })),
-        logMsg,
-        ...prev,
-      ].slice(0, 20));
-      setSelA(null);
-    };
-
-    if (rejections.length > 0) {
-      setPendingOverride({ rejections, commit });
-    } else {
-      commit();
-    }
-  };
-
-  const totalMeetings = _suppliers.reduce((a, s) => a + (data?.res?.[s.id]?.m?.length || 0), 0);
-
-  return (
-    <div>
-      {/* [B2B Round FM-buyer-rejection-logic] Manual override confirmation modal.
-          Shown when admin tries to place a supplier into a chain whose buyer
-          flagged that supplier as "remove" (Nie chcę spotkania). Admin must
-          consciously confirm and the resulting meeting gets the
-          "manually_added_despite_buyer_rejection" override flag. */}
-      {pendingOverride && (
-        <div style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20 }}>
-          <div style={{ background:"white",borderRadius:14,padding:24,maxWidth:520,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
-            <div style={{ fontWeight:800,fontSize:16,marginBottom:10,color:"#dc2626",display:"flex",alignItems:"center",gap:8 }}>
-              <AlertTriangle size={18}/> {t("fm.corrections.modal_title")}
-            </div>
-            <div style={{ fontSize:13,color:"#334155",marginBottom:14,lineHeight:1.65 }}>
-              {pendingOverride.rejections.length === 1 ? (
-                <Trans i18nKey="fm.corrections.modal_text_single_html" ns="legacy" components={{ strong: <strong /> }} values={{ chain: pendingOverride.rejections[0].chainName, supplier: pendingOverride.rejections[0].supplierName }}/>
-              ) : (
-                <>
-                  <Trans i18nKey="fm.corrections.modal_text_multi_intro_html" ns="legacy" components={{ strong: <strong /> }}/>
-                  <ul style={{ margin:"8px 0 0 18px",padding:0 }}>
-                    {pendingOverride.rejections.map((r,i)=>(
-                      <li key={i} style={{ marginTop:4 }}><Trans i18nKey="fm.corrections.modal_text_multi_pair_html" ns="legacy" components={{ strong: <strong /> }} values={{ supplier: r.supplierName, chain: r.chainName }}/></li>
-                    ))}
-                  </ul>
-                  {t("fm.corrections.modal_text_multi_close")}
-                </>
-              )}
-            </div>
-            <div style={{ fontSize:11,color:"#64748b",marginBottom:18,padding:"8px 12px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8 }}>
-              <Trans i18nKey="fm.corrections.modal_info_html" ns="legacy" components={{ strong: <strong /> }}/>
-            </div>
-            <div style={{ display:"flex",gap:8,justifyContent:"flex-end" }}>
-              <button onClick={()=>setPendingOverride(null)}
-                style={{ padding:"10px 18px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit" }}>
-                {t("fm.corrections.modal_btn_cancel")}
-              </button>
-              <button onClick={()=>{ pendingOverride.commit(); setPendingOverride(null); }}
-                style={{ padding:"10px 18px",borderRadius:8,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit" }}>
-                {t("fm.corrections.modal_btn_confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Status bar */}
-      {!approved ? (
-        <div style={{ background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10 }}>
-          <div>
-            <div style={{ fontSize:13,fontWeight:700,color:"#92400e" }}>{t("fm.corrections.status_unapproved_title")}</div>
-            <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>{t("fm.corrections.status_unapproved_desc")}</div>
-          </div>
-          <button disabled={!inputsReady} onClick={()=>{ if (!inputsReady) return; setApproved(true); if(typeof onApprove==="function") onApprove(data); }}
-            style={{ padding:"10px 24px",borderRadius:8,border:"none",background:"linear-gradient(135deg,#059669,#047857)",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap" }}>
-            {t("fm.corrections.status_btn_approve")}
-          </button>
-        </div>
-      ) : (
-        <div style={{ background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",justifyContent:"space-between" }}>
-          <div style={{ fontSize:13,fontWeight:700,color:"#059669" }}>{t("fm.corrections.status_approved_title")}</div>
-          <Btn outline sm onClick={()=>setApproved(false)} style={{ color:"#dc2626",borderColor:"#fca5a5",fontSize:11 }}>{t("fm.corrections.status_btn_unlock")}</Btn>
-        </div>
-      )}
-
-      {/* KPIs */}
-      <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:14 }}>
-        {[
-          [_suppliers.length,t("fm.corrections.kpi_suppliers"),"#0d9488"],
-          [_chains.length,t("fm.corrections.kpi_chains"),"#2563eb"],
-          [totalMeetings,t("fm.corrections.kpi_meetings"),"#059669"],
-          [swapLog.length,t("fm.corrections.kpi_admin_changes"),"#d97706"],
-        ].map(([v,l,c])=>(
-          <div key={l} style={{ padding:"10px 14px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,textAlign:"center" }}>
-            <div style={{ fontSize:20,fontWeight:800,color:c }}>{v}</div>
-            <div style={{ fontSize:10,color:"#64748b",marginTop:1 }}>{l}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Wishlista sieci — zgłoszenia dodatkowych firm */}
-      {(() => {
-        const wEntries = _chains.filter(ch => (fmWishlists[ch.id] || []).length > 0);
-        if (!wEntries.length) return null;
-        return (
-          <div style={{ marginBottom:16,padding:"14px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10 }}>
-            <div style={{ fontWeight:700,fontSize:13,color:"#1e40af",marginBottom:10,display:"flex",alignItems:"center",gap:6 }}>
-              {t("fm.corrections.wishlist_header")}
-            </div>
-            <div style={{ fontSize:12,color:"#1e40af",marginBottom:10 }}>
-              {t("fm.corrections.wishlist_desc")}
-            </div>
-            <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-              {wEntries.map(ch => {
-                const sids = fmWishlists[ch.id] || [];
-                const names = sids.map(sid => (_suppliers.find(s=>s.id===sid)||{}).name || sid).filter(Boolean);
-                return (
-                  <div key={ch.id} style={{ padding:"8px 12px",background:"white",borderRadius:8,border:"1px solid #bfdbfe" }}>
-                    <span style={{ fontWeight:700,fontSize:12,color:"#1e40af" }}>{ch.name}</span>
-                    <span style={{ fontSize:12,color:"#334155" }}>{t("fm.corrections.wishlist_requests_label")}</span>
-                    {names.map((n, i) => (
-                      <span key={i} style={{ fontSize:12,fontWeight:600,color:"#059669",background:"#f0fdf4",padding:"1px 7px",borderRadius:10,margin:"0 2px",border:"1px solid #bbf7d0" }}>{n}</span>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Controls */}
-      <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap" }}>
-        <div style={{ fontWeight:700,fontSize:13,color:"#1e293b",display:"flex",alignItems:"center",gap:6 }}>
-          <Sliders size={14} color="#0d9488"/> {t("fm.corrections.panel_title")}
-        </div>
-        <select value={filterChain} onChange={e=>setFilterChain(e.target.value)}
-          style={{ padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",background:"white" }}>
-          <option value="all">{t("fm.corrections.filter_all_format", { count: _chains.length })}</option>
-          {_chains.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-        {selA && !approved && (
-          <div style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 12px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8 }}>
-            <span style={{ fontSize:12,color:"#92400e",fontWeight:600 }}>
-              <Trans i18nKey="fm.corrections.selected_hint_prefix_html" ns="legacy" components={{ strong: <strong /> }} values={{ name: (_suppliers.find(x=>x.id===selA.sid)||{}).name }}/>
-            </span>
-            <span style={{ fontSize:11,color:"#64748b" }}>{t("fm.corrections.selected_hint_suffix")}</span>
-            <button onClick={()=>setSelA(null)} style={{ background:"none",border:"none",cursor:"pointer",color:"#dc2626",padding:"0 4px" }}><X size={12}/></button>
-          </div>
-        )}
-      </div>
-
-      {/* GRID */}
-      <div style={{ overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:12,marginBottom:12 }}>
-        <table style={{ borderCollapse:"collapse",fontSize:11,whiteSpace:"nowrap",minWidth:"100%" }}>
-          <thead>
-            <tr style={{ background:"#f8fafc" }}>
-              <th style={{ padding:"8px 10px",textAlign:"center",color:"#64748b",position:"sticky",left:0,background:"#f8fafc",zIndex:2,borderRight:"2px solid #e2e8f0",minWidth:36,fontSize:10,textTransform:"uppercase" }}>#</th>
-              {visibleChains.map(c=>(
-                <th key={c.id} style={{ padding:"8px 7px",textAlign:"center",color:"#475569",fontWeight:700,minWidth:90,borderRight:"1px solid #e2e8f0",fontSize:10 }}>{c.name}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: maxRows + 5 }, (_, row) => {
-              const zone = fmNZ(row + 1);
-              const zc = FM_NZS[zone];
-              return (
-                <tr key={row} style={{ background: row % 2 ? "#fafafa" : "white" }}>
-                  <td style={{ padding:"5px 8px",textAlign:"center",fontFamily:FM_MO,fontWeight:700,color:zc.c,position:"sticky",left:0,background:row%2?"#fafafa":"white",zIndex:1,borderRight:"2px solid #e2e8f0",fontSize:12 }}>{row+1}</td>
-                  {visibleChains.map(c=>{
-                    const queue = data.cq[c.id] || [];
-                    const sid = queue[row] || null;
-                    const sup = sid ? _suppliers.find(x=>x.id===sid) : null;
-                    const isSel = selA && selA.cid===c.id && selA.pos===row;
-                    const isTarget = !isSel && selA && !approved;
-                    // Highlight same supplier across all chains
-                    const isSameSup = !isSel && selA && sid === selA.sid;
-                    // [B2B Round FM-buyer-rejection-logic] Mark cells where the
-                    // pair was added despite buyer rejection (via the manual
-                    // override flow above).
-                    const isOverride = sid && isManualOverride(sid, c.id);
-                    return (
-                      <td key={c.id}
-                        onClick={()=>!approved && handleClick(c.id, row)}
-                        title={isOverride ? t("fm.corrections.cell_override_tooltip") : undefined}
-                        style={{ padding:"4px 6px",cursor:approved?"default":(sid||selA)?"pointer":"default",background:isSel?"#fef9c3":isSameSup?"#fef3c7":isOverride?"#fee2e2":isTarget&&!sid?"#f0fdfa":"transparent",outline:isSel?"2px solid #fbbf24":isSameSup?"2px solid #f59e0b":isOverride?"1px dashed #dc2626":"none",borderRight:"1px solid #f1f5f9",transition:"background 0.1s" }}>
-                        {sup ? (
-                          <div style={{ display:"flex",alignItems:"center",gap:3 }}>
-                            {isOverride && <span style={{ fontSize:11,color:"#dc2626" }}>⚠️</span>}
-                            <span style={{ width:6,height:6,borderRadius:3,background:sup.pkg==="Premium"?"#d97706":"#3b82f6",flexShrink:0 }}/>
-                            <span style={{ color:"#1e293b",fontWeight:sup.pkg==="Premium"?700:500,overflow:"hidden",textOverflow:"ellipsis",maxWidth:80,display:"inline-block" }}>{sup.name}</span>
-                          </div>
-                        ) : (
-                          isTarget
-                            ? <span style={{ color:"#bbf7d0",fontSize:10 }}>↓</span>
-                            : <span style={{ color:"#f1f5f9" }}>·</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Legend + instructions */}
-      <div style={{ display:"flex",gap:8,marginBottom:12,flexWrap:"wrap" }}>
-        {Object.entries(FM_NZS).map(([k,v])=>(
-          <span key={k} style={{ padding:"3px 10px",borderRadius:6,background:v.bg,border:`1px solid ${v.b}`,fontSize:11,fontWeight:600,color:v.c }}>
-            {k==="green"?t("fm.corrections.legend_green"):k==="orange"?t("fm.corrections.legend_orange"):t("fm.corrections.legend_red")}
-          </span>
-        ))}
-        <span style={{ fontSize:11,color:"#94a3b8",marginLeft:4 }}>{t("fm.corrections.legend_pkg")}</span>
-      </div>
-      <div style={{ padding:"10px 14px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:8,fontSize:12,color:"#64748b",marginBottom:14 }}>
-        <Trans i18nKey="fm.corrections.instructions_html" ns="legacy" components={{ strong: <strong style={{ color:"#1e293b" }} /> }}/>
-      </div>
-
-      {/* Swap log */}
-      {swapLog.length > 0 && (
-        <Card title={t("fm.corrections.log_card_title")} icon={FileText}>
-          {swapLog.map((l,i)=>(
-            <div key={i} style={{ fontSize:12,color:"#64748b",padding:"4px 0",borderBottom:"1px solid #f1f5f9" }}>{l}</div>
-          ))}
-        </Card>
-      )}
-    </div>
-  );
-}
-
 /* ═══════════════════════════════════════════════════════════════
    ALGORITHM TRIGGER CARD — admin button to run matching + schedule
 ═══════════════════════════════════════════════════════════════ */
@@ -15102,9 +14749,7 @@ export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFm
     if (fmInputsReady && !fmFullData) setFmFullData(pickFMPlan(fmSchedule, fmAlgo));
   }, [fmInputsReady, fmFullData, fmSchedule, fmAlgo]);
   // Rebuild when prefs/resps change.
-  const rebuildFull = () => { if (fmInputsReady) setFmFullData(buildFMData(fmPrefs, fmResps, _chains, _suppliers)); };
   const approveAndPublish = (data) => { if (!fmInputsReady) return; setFmSchedule(data); setFmFullData(data); };
-  const syncFromSchedule = () => { if(fmSchedule) setFmFullData(fmSchedule); };
 
   return (
     <div style={{ maxWidth:980 }}>
@@ -15422,13 +15067,10 @@ export function PageAdminFM({ fmSettings, setFmSettings, fmPrefs, fmResps, setFm
               <div style={{fontWeight:700,fontSize:14,marginBottom:2}}>{t("fm.admin.corr_header_title")}</div>
               <div style={{fontSize:12,color:"#64748b"}}>{t("fm.admin.corr_header_desc")}</div>
             </div>
-            <div style={{display:"flex",gap:6}}>
-              {fmSchedule&&<Btn outline sm onClick={syncFromSchedule} style={{color:"#059669",borderColor:"#bbf7d0"}}><CheckCircle size={12}/> {t("fm.admin.corr_btn_load_approved")}</Btn>}
-              <Btn outline sm disabled={!fmInputsReady} onClick={rebuildFull}><RefreshCw size={12}/> {t("fm.admin.corr_btn_rebuild")}</Btn>
-            </div>
+
           </div>
           <div style={{opacity:phase>=3?1:0.4,pointerEvents:phase>=3?"auto":"none",transition:"opacity 0.2s"}}>
-            <FMAdminCorrectionPanel inputsReady={fmInputsReady} data={fmFullData} setData={setFmFullData} onApprove={(d)=>{ approveAndPublish(d); setTab("plan"); }} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} fmWishlists={fmWishlists||{}} fmResps={fmResps}/>
+            <FMAdminCorrectionPanel inputsReady={fmInputsReady} canEdit={phase === 3 && !fmSettings.planPublished} data={fmFullData} onDraftChange={setFmFullData} buildCandidate={()=>buildFMData(fmPrefs, fmResps, _chains, _suppliers)} onApprove={approveAndPublish} retailers={retailers} fmChains={_chains} fmSuppliers={_suppliers} fmWishlists={fmWishlists||{}} fmResps={fmResps}/>
           </div>
           {/* Preview For + Late Selection controls — UNDER correction panel */}
           <div style={{marginBottom:16,padding:"14px 16px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10}}>

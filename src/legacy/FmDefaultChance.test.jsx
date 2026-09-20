@@ -89,7 +89,7 @@ describe("panel domyślnej szansy", () => {
     act(() => publish.props.onClick());
     expect(input.setFmSettings).not.toHaveBeenCalled();
     act(() => button(tree, "fm.admin.tab_corrections").props.onClick());
-    expect(button(tree, "fm.admin.corr_btn_rebuild").props.disabled).toBe(true);
+    expect(button(tree, "fm.board.initialize").props.disabled).toBe(true);
   });
 
   it("przejście loading → ready tworzy draft, ale nigdy nie zapisuje istniejącego planu", () => {
@@ -122,7 +122,7 @@ describe("panel domyślnej szansy", () => {
     plan.nums = { yes: { a: 1 }, silent: { a: 81 } };
     const tree = render(<PageAdminFM {...input} fmInputsReady fmSchedule={plan} fmSettings={{ ...input.fmSettings, currentPhase: 3 }}/>);
     act(() => button(tree, "fm.admin.tab_corrections").props.onClick());
-    expect(tree.root.findAllByType("td").some(cell => cell.children.includes("81"))).toBe(true);
+    expect(tree.root.findByProps({ "data-cell": "a:80" }).props.title).toContain("Firma silent");
     expect(text(tree)).toContain("Firma silent");
   });
 });
