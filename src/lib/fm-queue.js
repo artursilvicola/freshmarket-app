@@ -90,7 +90,14 @@ export async function upsertFmStation(row) {
   const allowed = ["id", "queue_group_id", "idx", "label", "active"];
   const clean = {};
   for (const k of allowed) if (row[k] !== undefined) clean[k] = row[k];
-  const { data, error } = await supabase.from("fm_stations").upsert(clean).select().single();
+  const { id, ...patch } = clean;
+  // Ten sam wzorzec co upsertFmQueueGroup (c78b885): częściowa edycja (aktywne/etykieta) nie może iść
+  // przez INSERT ... ON CONFLICT — queue_group_id NOT NULL bez wartości domyślnej odrzuca wiersz, zanim
+  // dojdzie do konfliktu id. Istniejące id → UPDATE tylko przekazanych pól; bez id → INSERT.
+  const query = id
+    ? supabase.from("fm_stations").update(patch).eq("id", id)
+    : supabase.from("fm_stations").insert(patch);
+  const { data, error } = await query.select().single();
   if (error) throw error;
   return data;
 }

@@ -301,8 +301,8 @@ export default function FmEventDay({ retailers, eventDate: eventDateProp, onQueu
                     <td style={td}>
                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
                         {g.fm_stations.map(s => (
-                          <span key={s.id} title="kliknij: aktywne/nieaktywne · podwójnie: etykieta" onClick={() => run(() => upsertFmStation({ id: s.id, active: !s.active }))}
-                            onDoubleClick={() => { const l = window.prompt("Etykieta stanowiska (np. „lewe”):", s.label || ""); if (l !== null) run(() => upsertFmStation({ id: s.id, label: l || null })); }}
+                          <span key={s.id} title="kliknij: aktywne/nieaktywne · podwójnie: etykieta" onClick={() => run(() => upsertFmStation({ id: s.id, active: !s.active }), "Zapisano stanowisko.")}
+                            onDoubleClick={() => { const l = window.prompt("Etykieta stanowiska (np. „lewe”):", s.label || ""); if (l !== null) run(() => upsertFmStation({ id: s.id, label: l || null }), "Zapisano stanowisko."); }}
                             style={{ padding: "3px 8px", borderRadius: 999, border: `1px solid ${s.active ? "#99f6e4" : "#e2e8f0"}`, background: s.active ? "#f0fdfa" : "#f1f5f9", color: s.active ? "#0f766e" : "#94a3b8", cursor: "pointer", fontWeight: 700, userSelect: "none" }}>
                             {s.label || `#${s.idx}`}{g.fm_stations.length > 1 && <span onClick={(e) => { e.stopPropagation(); if (window.confirm("Usunąć stanowisko?")) run(() => deleteFmStation(s.id)); }} style={{ marginLeft: 6, color: "#94a3b8" }}>×</span>}
                           </span>
