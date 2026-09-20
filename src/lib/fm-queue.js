@@ -71,7 +71,12 @@ export async function upsertFmQueueGroup(row) {
   const clean = {};
   for (const k of allowed) if (row[k] !== undefined) clean[k] = row[k];
   if (clean.label === "") clean.label = null;
-  const { data, error } = await supabase.from("fm_queue_groups").upsert(clean).select().single();
+  const { id, ...patch } = clean;
+  // Partial edits cannot use INSERT ... ON CONFLICT: required creation fields are absent.
+  const query = id
+    ? supabase.from("fm_queue_groups").update(patch).eq("id", id)
+    : supabase.from("fm_queue_groups").insert(patch);
+  const { data, error } = await query.select().single();
   if (error) throw error;
   return data;
 }
