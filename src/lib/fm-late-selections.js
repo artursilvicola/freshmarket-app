@@ -31,7 +31,7 @@ export async function setLateAccess(retailerId, enabled) {
 }
 
 export async function saveLateSelection(retailerId, supplierId, zone) {
-  if (!retailerId || !supplierId || !["want", "chance", null].includes(zone)) throw new Error("invalid_late_selection");
+  if (!retailerId || !supplierId || !["want", "chance", "remove", null].includes(zone)) throw new Error("invalid_late_selection");
   let query;
   if (zone === null) {
     query = supabase.from("fm_late_resps").delete()

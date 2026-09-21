@@ -51,7 +51,7 @@ describe("separate late requests data layer", () => {
   });
 
   it("rejects an unsupported response without sending any request", async () => {
-    await expect(saveLateSelection(100, "supplier", "remove")).rejects.toThrow("invalid_late_selection");
+    await expect(saveLateSelection(100, "supplier", "maybe")).rejects.toThrow("invalid_late_selection");
     expect(mock.calls).toHaveLength(0);
   });
 });

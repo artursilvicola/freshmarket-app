@@ -93,4 +93,15 @@ describe("oddzielne zgłoszenia do ręcznych korekt",()=>{
   await act(async()=>{pending.resolve({access:[{retailer_id:100,enabled:true}],rows:[row()]})});
   expect(tree.toJSON()).toBe(null);
  });
+ it("kupiec może zgłosić „Nie chcę”; zapis idzie jako remove i wyłącza inne zaznaczenie",async()=>{
+  loadLateSelections.mockResolvedValue({access:[{retailer_id:100,enabled:true}],rows:[row("want")]});
+  const tree=await render(<BuyerLateSelections retailerId={100} suppliers={suppliers}/>);
+  expect(choice(tree,"co1","remove")).toBeTruthy();
+  saveLateSelection.mockResolvedValue(row("remove"));
+  await act(async()=>{await choice(tree,"co1","remove").props.onClick()});
+  expect(saveLateSelection).toHaveBeenCalledWith(100,"co1","remove");
+  expect(choice(tree,"co1","remove").props["aria-pressed"]).toBe(true);
+  expect(choice(tree,"co1","want").props["aria-pressed"]).toBe(false);
+  expect(text(tree)).toContain("fm.late.saved");
+ });
 });

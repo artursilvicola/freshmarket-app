@@ -13,6 +13,7 @@ try{
  const files=readdirSync(new URL("../supabase/migrations",import.meta.url)).filter(f=>f.endsWith(".sql")).sort();
  for(const f of files)await db.query("begin;"+read("supabase/migrations/"+f)+";commit;");
  await db.query(read("supabase/migrations/20260920171936_fm_late_selections_access.sql"));
+ await db.query(read("supabase/migrations/20260921052500_fm_late_remove.sql"));
  const res=await db.query(read("supabase/tests/fm_late_selections_test.sql"));
  console.log(res.map(r=>r.rows?.[0]?.result).filter(Boolean).join("\n"));
  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK");

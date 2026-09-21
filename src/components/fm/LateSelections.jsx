@@ -84,7 +84,7 @@ export function BuyerLateSelections({ retailerId, suppliers = [], style = null }
       );
       return <div key={s.id} style={line} data-supplier={s.id}>
         <div style={{ flex: 1, minWidth: 180 }}><strong>{s.name}</strong><div style={{ fontSize: 12, color: "#64748b" }}>{s.country} · {s.products}</div></div>
-        {["want", "chance"].map(zone => <button type="button" key={zone} disabled={!enabled || state.blocked} aria-pressed={current === zone} onClick={() => choose(zone)} style={{ ...button, background: current === zone ? "#d1fae5" : "white", fontWeight: current === zone ? 700 : 400 }}>{t("fm.buyer.btn_" + zone)}</button>)}
+        {["want", "chance", "remove"].map(zone => <button type="button" key={zone} disabled={!enabled || state.blocked} aria-pressed={current === zone} onClick={() => choose(zone)} style={{ ...button, background: current === zone ? (zone === "remove" ? "#fee2e2" : "#d1fae5") : "white", fontWeight: current === zone ? 700 : 400 }}>{t("fm.buyer.btn_" + zone)}</button>)}
       </div>;
     })}
     {state.data.ready && !visible.length && <p>{t("fm.late.no_results")}</p>}
