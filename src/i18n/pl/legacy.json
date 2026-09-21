@@ -1907,8 +1907,12 @@
       "expand_field_next_send_label": "NASTĘPNA WYSYŁKA",
       "expand_field_next_send_hint": "(domyślnie pierwszy wtorek miesiąca)",
       "expand_field_desc_label": "OPIS / NOTATKA ADMINA",
-      "supplier_req_label": "Uwagi dla dostawcy / wymagania sieci",
-      "supplier_req_help": "Widoczne dla dostawcy przed wysłaniem oferty do tej sieci. Mogą to być wymagania zakupowe, ograniczenia, preferowane kategorie, informacje o imporcie lub wolumenach.",
+      "supplier_req_label": "PreConnect — wymagania handlowe sieci",
+      "supplier_req_help": "Wyświetlane przed wysłaniem oferty PreConnect i wymagające potwierdzenia. Wpisz wymagania zakupowe, ograniczenia importu lub wolumeny. Tryb online i godziny spotkań wpisz poniżej, w informacjach FM.",
+      "fm_note_label": "FM — informacje organizacyjne o spotkaniach",
+      "fm_note_help": "Tryb online, godziny dostępności i wskazówki na wydarzenie. Widoczne przy sieci w części FM, bez potwierdzenia i bez wpływu na wysyłkę ofert PreConnect.",
+      "fm_note_pl": "Informacja po polsku",
+      "fm_note_en": "Informacja po angielsku",
       "supplier_req_placeholder": "Np. Ta sieć nie importuje bezpośrednio z zagranicy. Preferuje dostawców działających przez lokalnych dystrybutorów w Polsce. Oferty dużych wolumenów eksportowych mogą być niedopasowane.",
       "buyers_section_title_format": "Kupcy ({{count}})",
       "buyers_add_btn": "Dodaj kupca",
@@ -2562,6 +2566,7 @@
     }
   },
   "fm": {
+    "meeting_note_label": "Organizacja spotkania FM",
     "default_chance": {
       "badge": "🤝 Daj szansę — automatycznie",
       "notice": "Dla firmy, która wybrała sieć, brak odpowiedzi oznacza automatycznie „Daj szansę”. Akceptacje mają pierwszeństwo w przydziale i numeracji; jawne i automatyczne szanse są równorzędne i trafiają po akceptacjach. Odmowy są wykluczone. Nadal obowiązują limity pakietów i pojemności stanowisk.",

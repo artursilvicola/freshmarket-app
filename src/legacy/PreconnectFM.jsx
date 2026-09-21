@@ -94,6 +94,7 @@ import { isOwnAccount } from "../lib/profile-guard.js";
 import { groupDecisionSources, targetSource, respSource, sourcesVisibleTo } from "../lib/fm-decision-sources.js";
 import DecisionSourceBadge from "../components/fm/DecisionSourceBadge.jsx";
 import FMAdminCorrectionPanel from "../components/fm/CorrectionBoard.jsx";
+import MeetingNote from "../components/fm/MeetingNote.jsx";
 import { BuyerLateSelections, AdminLateSelections } from "../components/fm/LateSelections.jsx";
 import { createDecisionSourceStore } from "../lib/fm-decision-sources-store.js";
 import { getFmQueueCapacityByRetailer as dbGetFmQueueCapacityByRetailer } from "../lib/fm-queue.js";
@@ -2508,6 +2509,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               active: r.active !== false,
               // [retailer-requirements] alias camelCase (kolumna z migracji 039)
               supplierRequirements: r.supplier_requirements ?? r.supplierRequirements ?? "",
+              fmMeetingNote: r.fm_meeting_note ?? r.fmMeetingNote ?? "",
+              fmMeetingNoteEn: r.fm_meeting_note_en ?? r.fmMeetingNoteEn ?? "",
               buyers: fallbackBuyers,
             };
           });
@@ -2846,6 +2849,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       .filter(r => r.fm26Active && r.active !== false && r.fm26ChainId)
       .map(r => ({
         id: r.fm26ChainId,
+        fmMeetingNote: r.fmMeetingNote,
+        fmMeetingNoteEn: r.fmMeetingNoteEn,
         name: r.name,
         country: r.country,
         cat: (r.buyers||[]).flatMap(b=>b.cats||[]).filter((v,i,a)=>a.indexOf(v)===i).join(", ") || "owoce, warzywa",
@@ -4724,7 +4729,7 @@ function HelpStripDashboard() {
 
 
 /* ── Wysyłki: unified hub (replaces Retail Chains + Preconnect + Send) ──── */
-function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies }) {
+export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -10535,6 +10540,12 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
                     <textarea value={r.supplierRequirements||""} onChange={e=>updateRetailer(r.id,{supplierRequirements:e.target.value})} rows={4} placeholder={t("admin.retailers.supplier_req_placeholder")} style={{width:"100%",padding:"8px 10px",border:"1px solid #fde68a",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical",background:"white"}}/>
                   </div>
                 )}
+                <div style={{marginTop:10,padding:"10px 12px",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8}}>
+                  <div style={{fontWeight:700,fontSize:12,color:"#0369a1"}}>{t("admin.retailers.fm_note_label")}</div>
+                  <p style={{fontSize:11,color:"#0369a1",margin:"6px 0"}}>{t("admin.retailers.fm_note_help")}</p>
+                  <label style={{fontSize:12,display:"block"}}>{t("admin.retailers.fm_note_pl")}<textarea value={r.fmMeetingNote||""} onChange={e=>updateRetailer(r.id,{fmMeetingNote:e.target.value})} rows={2} style={{width:"100%",boxSizing:"border-box",padding:8,display:"block",marginBottom:8}}/></label>
+                  <label style={{fontSize:12,display:"block"}}>{t("admin.retailers.fm_note_en")}<textarea value={r.fmMeetingNoteEn||""} onChange={e=>updateRetailer(r.id,{fmMeetingNoteEn:e.target.value})} rows={2} style={{width:"100%",boxSizing:"border-box",padding:8,display:"block"}}/></label>
+                </div>
                 <div style={{marginTop:8}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                     <span style={{fontWeight:600,fontSize:13}}>{t("admin.retailers.buyers_section_title_format", { count: (r.buyers||[]).length })}</span>
@@ -14034,6 +14045,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
                     <div style={{ fontSize:12,fontWeight:p?"700":"600",color:"#1e293b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.name}</div>
                     <div style={{ fontSize:10,color:"#64748b" }}>{FLAGS[c.country]||"🌐"} {getCountryName(c.country)}</div>
                     <div style={{ fontSize:10,color:"#94a3b8",marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{c.cat}</div>
+                    <MeetingNote retailer={c}/>
                   </div>
                   {p==="star"&&<span style={{ fontSize:9,color:"#d97706",fontWeight:700,flexShrink:0 }}>{t("fm.supplier.chain_badge_main")}</span>}
                   {p==="thumb"&&<span style={{ fontSize:9,color:"#0d9488",fontWeight:700,flexShrink:0 }}>{t("fm.supplier.chain_badge_backup")}</span>}
@@ -14080,7 +14092,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
                     <div style={{ width:34,height:34,borderRadius:"50%",background:zc?zc.c+"20":"#f1f5f9",border:`1.5px solid ${zc?zc.c:"#e2e8f0"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                       {slotNum ? <span style={{ fontWeight:800,fontSize:13,color:zc?.c }}>{slotNum}</span> : <span style={{ fontSize:12 }}>?</span>}
                     </div>
-                    <div style={{ flex:1 }}><div style={{ fontWeight:700,fontSize:13 }}>{ch?.name||cid}</div><div style={{ fontSize:11,color:"#64748b" }}>{ch?.country} · {ch?.cat}</div></div>
+                    <div style={{ flex:1 }}><div style={{ fontWeight:700,fontSize:13 }}>{ch?.name||cid}</div><div style={{ fontSize:11,color:"#64748b" }}>{ch?.country} · {ch?.cat}</div><MeetingNote retailer={ch}/></div>
                     {zc&&<span style={{ fontSize:11,fontWeight:600,color:zc.c }}>{zoneKey==="green"?t("fm.supplier.zone_green"):zoneKey==="orange"?t("fm.supplier.zone_orange"):t("fm.supplier.zone_red")}</span>}
                   </div>
                 );
@@ -14140,6 +14152,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:14,fontWeight:700,color:"#1e293b" }}>{c?.name}</div>
                       <div style={{ fontSize:11,color:"#64748b" }}>{t("fm.supplier.wyniki_meeting_sub_format", { country: c?.country, num })}</div>
+                      <MeetingNote retailer={c}/>
                     </div>
                     <Btn sm outline onClick={()=>{const r=(retailers||[]).find(x=>x.fm26ChainId===cid||(x.fm26Active&&x.id===cid));setPreviewRetailer(r||{name:c?.name||cid,country:c?.country,buyers:[]});}} style={{fontSize:10}}><Eye size={10}/> {t("fm.supplier.wyniki_preview_btn")}</Btn>
                     <Badge color="#059669" bg="#f0fdf4">{t("fm.supplier.wyniki_check_badge")}</Badge>

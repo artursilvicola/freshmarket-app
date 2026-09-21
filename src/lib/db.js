@@ -306,6 +306,10 @@ function toRetailerDbRow(r = {}) {
     // oferty). Osobne od `description` (wewnetrzna notatka admina). Wymaga
     // migracji 039. camelCase ze state'u UI ma priorytet nad snake_case z DB.
     supplier_requirements: r.supplierRequirements ?? r.supplier_requirements ?? null,
+    // Omit missing fields so a caller with an older/partial retailer object
+    // cannot erase event logistics while saving an unrelated field.
+    ...(("fmMeetingNote" in r || "fm_meeting_note" in r) ? { fm_meeting_note: r.fmMeetingNote ?? r.fm_meeting_note ?? null } : {}),
+    ...(("fmMeetingNoteEn" in r || "fm_meeting_note_en" in r) ? { fm_meeting_note_en: r.fmMeetingNoteEn ?? r.fm_meeting_note_en ?? null } : {}),
     // [feat/fm-plan-export] wejscie do strefy spotkan (1/2) — migracja 051; null = nie ustawione
     fm_gate: (r.fmGate ?? r.fm_gate) == null ? null : Number(r.fmGate ?? r.fm_gate),
   };
