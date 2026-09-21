@@ -57,5 +57,5 @@ export function describeChange(plan, from, to, suppliers, chains, responses = {}
 
 export function undoCandidate(history) {
   const undone = new Set(history.filter(x => x.action === "undo").map(x => x.details.undo_of));
-  return history.find(x => ["swap", "move", "rebuild", "load_approved"].includes(x.action) && !undone.has(x.id)) || null;
+  return history.find(x => ["swap", "move", "remove", "rebuild", "load_approved"].includes(x.action) && !undone.has(x.id)) || null;
 }

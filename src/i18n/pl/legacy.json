@@ -2950,7 +2950,7 @@
       "preview_empty": "Kliknij raz dowolną firmę, aby zobaczyć liczbę oraz listę wszystkich jej spotkań i podświetlić je w tabeli. Sam podgląd niczego nie zmienia.",
       "approved": "Plan zatwierdzony. Aby poprawić roboczą tablicę, odblokuj korekty.",
       "saved_revision": "Robocza tablica zapisana w bazie — wersja {{revision}}. Zmiany wymagają osobnego zatwierdzenia planu.",
-      "not_started": "Najpierw zapisz punkt wyjścia. Dotychczasowa historia sprzed tej poprawki nie jest dostępna.",
+      "not_started": "Korekty nie zostały jeszcze rozpoczęte. Dwuklik lub „Przestaw to spotkanie” poprosi o zapis punktu wyjścia, a potem włączy przestawianie.",
       "initialize": "Rozpocznij korekty — zapisz punkt wyjścia",
       "loading": "Wczytywanie tablicy i historii…",
       "saving": "Zapisywanie tablicy i historii…",
@@ -3014,7 +3014,15 @@
         "fm_correction_approved_locked": "Plan jest zatwierdzony. Odśwież i odblokuj korekty.",
         "fm_correction_no_change": "Operacja nie zmienia tablicy. Nie zapisano nowej zmiany. Odśwież, aby kontynuować.",
         "fm_correction_no_approved_plan": "Nie ma jeszcze zatwierdzonego planu w bazie. Odśwież, aby wrócić do tablicy."
-      }
+      },
+      "remove_meeting": "Usuń to spotkanie",
+      "selected_meeting": "Wybrane spotkanie",
+      "confirm_remove": "Usunąć to spotkanie z planu?",
+      "explain_remove": "Usuniemy tylko poniższe spotkanie tej firmy z tą siecią. Pozostałe spotkania i ich numery pozostaną na swoich miejscach. Usunięcie zapisze się w historii i można je cofnąć. Przebudowa z preferencji może ponownie dodać to spotkanie.",
+      "action_remove": "Usunięcie spotkania",
+      "restored_meeting": "— przywrócono spotkanie",
+      "continue_move": "Po potwierdzeniu wybierz drugą firmę lub puste miejsce. Samo zapisanie punktu wyjścia albo odblokowanie nie przestawia żadnego spotkania.",
+      "continue_remove": "Następnie pokażemy osobne potwierdzenie usunięcia z nazwą firmy i sieci. Ten krok jeszcze nie usuwa spotkania."
     }
   },
   "chat": {

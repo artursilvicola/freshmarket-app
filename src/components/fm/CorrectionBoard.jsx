@@ -41,6 +41,8 @@ function ConfirmDialog({ pending, t, busy, cancel, confirm }) {
           <label><input type="checkbox" checked={acceptGap} disabled={busy} onChange={e => setAcceptGap(e.target.checked)}/> {t("fm.board.accept_gap")}</label>
         </div>}
       </> : <p>{t(`fm.board.explain_${pending.action}`)}</p>}
+      {pending.removal && <p><strong>{pending.removal.company}</strong><br/>{place(pending.removal)}</p>}
+      {pending.continueEdit && <p>{t(`fm.board.continue_${pending.continueEdit.action}`)}</p>}
       {pending.target && <HistorySummary entry={pending.target} t={t}/>}
       <p style={{ color: "#64748b", fontSize: 13 }}>{t("fm.board.confirm_hint")}</p>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -56,8 +58,8 @@ function HistorySummary({ entry, t }) {
   const cell = x => `${x.company || x.sid || t("fm.board.empty_cell")} — ${x.chain || x.cid} #${x.pos + 1}`;
   return <div>
     <strong>{t(`fm.board.action_${entry.action}`)}</strong>
-    {details.from && <div>{cell(details.from)} {entry.action === "move" ? "→" : "↔"} {cell(details.to)}</div>}
-    {details.original?.from && <div>{cell(details.original.from)} ↔ {cell(details.original.to)}</div>}
+    {details.from && <div>{cell(details.from)} {details.to && <>{entry.action === "move" ? "→" : "↔"} {cell(details.to)}</>}</div>}
+    {details.original?.from && <div>{cell(details.original.from)} {details.original.to ? <>↔ {cell(details.original.to)}</> : t("fm.board.restored_meeting")}</div>}
     {entry.action === "undo" && <div>{t("fm.board.undo_revision", { revision: details.undo_revision })}</div>}
     {!!details.rejections?.length && <div style={{ color: "#b91c1c" }}>{t("fm.board.override_recorded")}</div>}
     <small style={{ color: "#64748b" }}>{entry.actor_name} · {new Date(entry.created_at).toLocaleString()} · #{entry.revision}</small>
@@ -98,6 +100,9 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const blocked = !loaded || busy || !!error || !inputsReady || !canEdit;
   const viewBlocked = !loaded || busy || !!error || !inputsReady || !!pending;
   const moveBlocked = blocked || !draft || draft.approved || !!pending;
+  const actionBlocked = blocked || !!pending || !!selected;
+  const labelCell = cell => ({ ...cell, company: fmSuppliers.find(s => s.id === cell.sid)?.name || cell.sid,
+    chain: fmChains.find(c => c.id === cell.cid)?.name || cell.cid });
   const prepare = (action, extra = {}) => {
     if (blocked) return;
     setPending({ action, id: crypto.randomUUID(), revision: draft?.revision || 0, ...extra });
@@ -106,7 +111,7 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const confirm = async accept => {
     if (!pending || writing.current || blocked) return;
     writing.current = true; ++generation.current; setBusy(true);
-    const request = { ...pending, details: pending.change ? { from: pending.change.a, to: pending.change.b, accept_rejections: accept } : pending.details };
+    const request = { ...pending, details: pending.change ? { from: pending.change.a, to: pending.change.b, accept_rejections: accept } : pending.removal ? { from: pending.removal } : pending.details };
     try {
       const next = await commitCorrection(request);
       if (!alive.current) return;
@@ -125,18 +130,33 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
       if (request.action === "approve") onApprove?.(next.schedule);
       // Read failure after a successful commit never rolls back the confirmed board.
       const rows = await loadCorrectionHistory(next.revision);
-      if (alive.current) setHistory(rows);
+      if (alive.current) {
+        setHistory(rows);
+        // Initialization/unlocking is a separate confirmed write. Resume the intended action
+        // only after both the saved board and its history have been obtained successfully.
+        const continuation = request.continueEdit;
+        if (continuation && !next.approved && next.schedule.cq[continuation.cell.cid]?.[continuation.cell.pos] === continuation.cell.sid) {
+          setInspected(continuation.cell);
+          if (continuation.action === "move") setSelected(continuation.cell);
+          else setPending({ action: "remove", id: crypto.randomUUID(), revision: next.revision, removal: labelCell(continuation.cell) });
+        }
+      }
     } catch (e) {
       if (alive.current) { setError(codeOf(e)); setPending(null); setSelected(null); setLoaded(false); }
     } finally { writing.current = false; if (alive.current) setBusy(false); }
   };
-  const armMove = (cid, pos) => {
-    if (moveBlocked || selected) return;
+  const requestEdit = (action, cid, pos) => {
+    if (actionBlocked) return;
     const sid = plan.cq[cid]?.[pos] || null;
     if (!sid) return;
-    setInspected({ cid, pos, sid });
-    setSelected({ cid, pos, sid });
+    const cell = { cid, pos, sid };
+    setInspected(cell);
+    if (!draft) prepare("initialize", { schedule: plan, continueEdit: { action, cell } });
+    else if (draft.approved) prepare("unlock", { continueEdit: { action, cell } });
+    else if (action === "move") setSelected(cell);
+    else prepare("remove", { removal: labelCell(cell) });
   };
+  const armMove = (cid, pos) => requestEdit("move", cid, pos);
   const clickCell = (cid, pos, event) => {
     // Native double-click emits click(1), click(2), dblclick. Only dblclick arms editing.
     if (viewBlocked || event?.detail > 1) return;
@@ -179,7 +199,7 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
     </div>
     <div style={{ ...card, display: "flex", justifyContent: "space-around", gap: 10, flexWrap: "wrap" }}>
       <span>{fmSuppliers.length} {t("fm.corrections.kpi_suppliers")}</span><span>{fmChains.length} {t("fm.corrections.kpi_chains")}</span>
-      <strong>{meetings} {t("fm.corrections.kpi_meetings")}</strong><span>{history.filter(x => ["swap", "move", "undo", "rebuild", "load_approved"].includes(x.action)).length} {t("fm.corrections.kpi_admin_changes")}</span>
+      <strong>{meetings} {t("fm.corrections.kpi_meetings")}</strong><span>{history.filter(x => ["swap", "move", "remove", "undo", "rebuild", "load_approved"].includes(x.action)).length} {t("fm.corrections.kpi_admin_changes")}</span>
     </div>
     {fmChains.some(c => fmWishlists[c.id]?.length) && <div style={card}>
       <strong>{t("fm.corrections.wishlist_header")}</strong><p>{t("fm.corrections.wishlist_desc")}</p>
@@ -197,9 +217,11 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
           <strong>{names.get(inspected.sid) || inspected.sid}</strong>
           <span>{t("fm.board.meeting_count", { count: inspectedMeetings.length })}</span>
-          <button type="button" style={btn} disabled={moveBlocked || !!selected} onClick={() => armMove(inspected.cid, inspected.pos)}>{t("fm.board.start_move")}</button>
+          <button type="button" style={btn} disabled={actionBlocked} onClick={() => armMove(inspected.cid, inspected.pos)}>{t("fm.board.start_move")}</button>
+          <button type="button" style={{ ...btn, color: "#b91c1c", borderColor: "#fca5a5" }} disabled={actionBlocked} onClick={() => requestEdit("remove", inspected.cid, inspected.pos)}>{t("fm.board.remove_meeting")}</button>
           <button type="button" style={btn} disabled={busy || !!pending} onClick={() => { setSelected(null); setInspected(null); }}>{t("fm.board.close_preview")}</button>
         </div>
+        <p style={{ margin: "8px 0", fontSize: 13 }}><strong>{t("fm.board.selected_meeting")}:</strong> {fmChains.find(c => c.id === inspected.cid)?.name || inspected.cid} · #{inspected.pos + 1}</p>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
           {inspectedMeetings.map(x => <span key={`${x.cid}:${x.pos}`} style={{ border: "1px solid #93c5fd", borderRadius: 6, padding: "4px 8px", background: "white" }}>{x.chain} · #{x.pos + 1}</span>)}
         </div>

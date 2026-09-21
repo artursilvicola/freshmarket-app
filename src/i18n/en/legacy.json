@@ -2950,7 +2950,7 @@
       "preview_empty": "Click any company once to see the count and list of all its meetings and highlight them in the board. Preview makes no changes.",
       "approved": "Plan approved. Unlock corrections to edit the working board.",
       "saved_revision": "Working board saved to the database — revision {{revision}}. Changes require separate plan approval.",
-      "not_started": "Save a starting snapshot first. History from before this update is unavailable.",
+      "not_started": "Corrections have not started yet. Double-click or use “Move this meeting” to save a starting snapshot and then choose a destination.",
       "initialize": "Start corrections — save snapshot",
       "loading": "Loading board and history…",
       "saving": "Saving board and history…",
@@ -3014,7 +3014,15 @@
         "fm_correction_approved_locked": "The plan is approved. Refresh and unlock corrections.",
         "fm_correction_no_change": "This operation does not change the board. No new change was saved. Refresh to continue.",
         "fm_correction_no_approved_plan": "There is no approved plan in the database yet. Refresh to return to the board."
-      }
+      },
+      "remove_meeting": "Remove this meeting",
+      "selected_meeting": "Selected meeting",
+      "confirm_remove": "Remove this meeting from the plan?",
+      "explain_remove": "Only the meeting below between this company and this retailer will be removed. All other meetings and queue numbers stay in place. The removal is recorded in history and can be undone. Rebuilding from preferences may add this meeting again.",
+      "action_remove": "Meeting removed",
+      "restored_meeting": "— meeting restored",
+      "continue_move": "After confirming, choose another company or an empty destination. Saving the starting snapshot or unlocking does not move any meeting.",
+      "continue_remove": "A separate removal confirmation will follow, showing the company and retailer. This step does not remove a meeting."
     }
   },
   "chat": {

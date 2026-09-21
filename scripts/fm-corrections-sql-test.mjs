@@ -14,7 +14,7 @@ try{
  await db.query(read("supabase/tests/000_supabase_shim.sql"));
  const files=readdirSync(new URL("../supabase/migrations",import.meta.url)).filter(f=>f.endsWith(".sql")).sort();
  for(const f of files)await db.query("begin;"+read("supabase/migrations/"+f)+";commit;");
- await db.query(read("supabase/migrations/20260920175440_fm_corrections_history.sql"));
+ await db.query(read("supabase/migrations/20260921061359_fm_correction_remove.sql"));
  const res=await db.query(read("supabase/tests/fm_corrections_test.sql"));
  console.log(res.map(r=>r.rows?.[0]?.result).filter(Boolean).join("\n"));
  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK");
@@ -29,12 +29,12 @@ try{
    const base={cq:{one:['a','b',null]},res:{a:{m:['one'],r:{}},b:{m:['one'],r:{}}},cs:{one:{cap:2}}};
    await clients[0].query("select public.fm_commit_correction(0,$1,'initialize',$2::jsonb)",[randomUUID(),JSON.stringify(base)]);
    const change={from:{cid:'one',pos:0,sid:'a'},to:{cid:'one',pos:1,sid:'b'}};
-   const race=await Promise.allSettled(clients.map(c=>c.query("select public.fm_commit_correction(1,$1,'swap',null,$2::jsonb)",[randomUUID(),JSON.stringify(change)])));
+   const race=await Promise.allSettled(clients.map((c,i)=>c.query("select public.fm_commit_correction(1,$1,$2,null,$3::jsonb)",[randomUUID(),i === 0 ? "swap" : "remove",JSON.stringify(i === 0 ? change : {from:change.from})])));
    assert.equal(race.filter(r=>r.status==='fulfilled').length,1);
    assert.match(race.find(r=>r.status==='rejected').reason.message,/fm_correction_conflict/);
    const count=await db.query("select (select count(*)::int from public.fm_correction_history) n,revision,schedule from public.fm_correction_drafts");
-   assert.equal(count.rows[0].n,2);assert.equal(count.rows[0].revision,'2');assert.deepEqual(count.rows[0].schedule.cq.one,['b','a',null]);
-   console.log('PASS two simultaneous admin sessions: one commit, one conflict, no lost update');
+   assert.equal(count.rows[0].n,2);assert.equal(count.rows[0].revision,'2');assert.deepEqual(count.rows[0].schedule.cq.one,race[0].status === 'fulfilled' ? ['b','a',null] : [null,'b',null]);
+   console.log('PASS simultaneous swap/removal from two admins: one commit, one conflict, no lost update');
  } finally { await Promise.all(clients.map(c=>c.end())); }
  if(process.argv.includes("--advisors")) {
    // Local test database only; the normal test does not need a CLI or network.
