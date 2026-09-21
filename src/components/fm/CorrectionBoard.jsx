@@ -69,6 +69,7 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const [draft, setDraft] = useState(null), [history, setHistory] = useState([]);
   const [loaded, setLoaded] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [selected, setSelected] = useState(null), [pending, setPending] = useState(null), [filter, setFilter] = useState("all");
+  const [inspected, setInspected] = useState(null);
   const [historyLimit, setHistoryLimit] = useState(20);
   const historyRef = useRef(null);
   const writing = useRef(false), generation = useRef(0), alive = useRef(false);
@@ -76,7 +77,7 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const onApproveRef = useRef(onApprove); onApproveRef.current = onApprove;
   const reload = useCallback(async () => {
     if (writing.current) return;
-    const rev = ++generation.current; setLoaded(false); setError(""); setPending(null); setSelected(null);
+    const rev = ++generation.current; setLoaded(false); setError(""); setPending(null); setSelected(null); setInspected(null);
     try {
       const next = await loadCorrections();
       const rows = next ? await loadCorrectionHistory(next.revision) : [];
@@ -95,6 +96,8 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const plan = draft?.schedule || data;
   const undo = undoCandidate(history);
   const blocked = !loaded || busy || !!error || !inputsReady || !canEdit;
+  const viewBlocked = !loaded || busy || !!error || !inputsReady || !!pending;
+  const moveBlocked = blocked || !draft || draft.approved || !!pending;
   const prepare = (action, extra = {}) => {
     if (blocked) return;
     setPending({ action, id: crypto.randomUUID(), revision: draft?.revision || 0, ...extra });
@@ -108,6 +111,17 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
       const next = await commitCorrection(request);
       if (!alive.current) return;
       setDraft(next); setPending(null); setSelected(null); onDraftRef.current?.(next.schedule);
+      // Keep the preview attached to the company after its meeting changes position.
+      setInspected(previous => {
+        if (!previous) return null;
+        const destination = request.change?.a.sid === previous.sid ? request.change.b : previous;
+        if (next.schedule.cq[destination.cid]?.[destination.pos] === previous.sid) return { ...destination, sid: previous.sid };
+        for (const [cid, queue] of Object.entries(next.schedule.cq)) {
+          const pos = queue.indexOf(previous.sid);
+          if (pos !== -1) return { cid, pos, sid: previous.sid };
+        }
+        return null;
+      });
       if (request.action === "approve") onApprove?.(next.schedule);
       // Read failure after a successful commit never rolls back the confirmed board.
       const rows = await loadCorrectionHistory(next.revision);
@@ -116,11 +130,19 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
       if (alive.current) { setError(codeOf(e)); setPending(null); setSelected(null); setLoaded(false); }
     } finally { writing.current = false; if (alive.current) setBusy(false); }
   };
-  const clickCell = (cid, pos) => {
-    if (blocked || !draft || draft.approved || pending) return;
+  const armMove = (cid, pos) => {
+    if (moveBlocked || selected) return;
     const sid = plan.cq[cid]?.[pos] || null;
-    if (!selected) { if (sid) setSelected({ cid, pos, sid }); return; }
-    if (selected.cid === cid && selected.pos === pos) { setSelected(null); return; }
+    if (!sid) return;
+    setInspected({ cid, pos, sid });
+    setSelected({ cid, pos, sid });
+  };
+  const clickCell = (cid, pos, event) => {
+    // Native double-click emits click(1), click(2), dblclick. Only dblclick arms editing.
+    if (viewBlocked || event?.detail > 1) return;
+    const sid = plan.cq[cid]?.[pos] || null;
+    if (!selected) { if (sid) setInspected({ cid, pos, sid }); return; }
+    if (moveBlocked || (selected.cid === cid && selected.pos === pos)) return;
     try {
       const change = describeChange(plan, selected, { cid, pos }, fmSuppliers, fmChains, fmResps);
       if (change) prepare(change.action, { change }); else setSelected(null);
@@ -130,7 +152,11 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const chains = filter === "all" ? fmChains : fmChains.filter(c => c.id === filter);
   const last = plan?.cq ? Math.max(20, ...Object.values(plan.cq).map(q => q.reduce((n, s, i) => s ? i + 1 : n, 0))) : 20;
   const meetings = plan?.cq ? Object.values(plan.cq).reduce((n, q) => n + q.filter(Boolean).length, 0) : 0;
-  return <section aria-label={t("fm.board.title")}>
+  const inspectedMeetings = inspected ? Object.entries(plan?.cq || {}).flatMap(([cid, queue]) =>
+    queue.flatMap((sid, pos) => sid === inspected.sid ? [{ cid, pos, chain: fmChains.find(c => c.id === cid)?.name || cid }] : [])) : [];
+  return <section aria-label={t("fm.board.title")} onKeyDown={e => {
+    if (e.key === "Escape" && !pending && !busy) { e.preventDefault(); if (selected) setSelected(null); else setInspected(null); }
+  }}>
     {pending && <ConfirmDialog key={pending.id} pending={pending} t={t} busy={busy} cancel={cancel} confirm={confirm}/>}
     <div style={card}>
       <h3 style={{ marginTop: 0 }}>{t("fm.board.title")}</h3>
@@ -163,7 +189,22 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
       <select aria-label={t("fm.board.filter")} value={filter} onChange={e => { setFilter(e.target.value); setSelected(null); }} style={btn}>
         <option value="all">{t("fm.board.all_chains")}</option>{fmChains.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
-      {selected && <><strong>{names.get(selected.sid)} — {fmChains.find(c => c.id === selected.cid)?.name} #{selected.pos + 1}</strong><button type="button" style={btn} onClick={cancel}>{t("fm.board.cancel_selection")}</button></>}
+      {selected && <><strong style={{ color: "#92400e" }}>{t("fm.board.move_mode")}: {names.get(selected.sid)} — {fmChains.find(c => c.id === selected.cid)?.name} #{selected.pos + 1}</strong><button type="button" style={btn} onClick={cancel}>{t("fm.board.cancel_move")}</button></>}
+    </div>
+    {/* Fixed height keeps cells stationary between the two clicks of a native double-click. */}
+    <div aria-label={t("fm.board.company_preview")} style={{ ...card, height: 156, boxSizing: "border-box", overflowY: "auto", background: "#eff6ff", borderColor: "#bfdbfe" }}>
+      {inspected ? <>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <strong>{names.get(inspected.sid) || inspected.sid}</strong>
+          <span>{t("fm.board.meeting_count", { count: inspectedMeetings.length })}</span>
+          <button type="button" style={btn} disabled={moveBlocked || !!selected} onClick={() => armMove(inspected.cid, inspected.pos)}>{t("fm.board.start_move")}</button>
+          <button type="button" style={btn} disabled={busy || !!pending} onClick={() => { setSelected(null); setInspected(null); }}>{t("fm.board.close_preview")}</button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          {inspectedMeetings.map(x => <span key={`${x.cid}:${x.pos}`} style={{ border: "1px solid #93c5fd", borderRadius: 6, padding: "4px 8px", background: "white" }}>{x.chain} · #{x.pos + 1}</span>)}
+        </div>
+        <p style={{ fontSize: 12, color: "#475569", marginBottom: 0 }}>{t(selected ? "fm.board.choose_destination" : "fm.board.preview_hint")}</p>
+      </> : <p>{t("fm.board.preview_empty")}</p>}
     </div>
     <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 16 }}>
       <table style={{ borderCollapse: "collapse", minWidth: "100%", fontSize: 12 }}>
@@ -174,8 +215,9 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
             const sid = plan?.cq?.[c.id]?.[pos] || null;
             const name = names.get(sid) || sid || t("fm.board.empty_cell");
             const active = selected?.cid === c.id && selected?.pos === pos;
+            const highlighted = !!sid && inspected?.sid === sid;
             const override = sid && plan?.overrides?.[sid]?.[c.id];
-            return <td key={c.id} style={{ padding: 0, borderRight: "1px solid #e2e8f0" }}><button type="button" data-cell={`${c.id}:${pos}`} aria-pressed={active} aria-label={`${c.name} #${pos + 1}: ${name}`} title={`${name}${override ? " — " + t("fm.board.override_recorded") : ""}`} disabled={blocked || !draft || draft.approved || !!pending || (!sid && !selected)} onClick={() => clickCell(c.id, pos)} style={{ width: "100%", height: 32, border: active ? "2px solid #d97706" : "1px solid transparent", textAlign: "left", padding: "3px 7px", background: active ? "#fef3c7" : override ? "#fee2e2" : "transparent", color: sid ? "#334155" : "#cbd5e1", cursor: "pointer", opacity: 1 }}>
+            return <td key={c.id} style={{ padding: 0, borderRight: "1px solid #e2e8f0" }}><button type="button" data-cell={`${c.id}:${pos}`} data-move-source={active} aria-pressed={highlighted} aria-label={`${c.name} #${pos + 1}: ${name}`} title={`${name}${override ? " — " + t("fm.board.override_recorded") : ""}`} disabled={viewBlocked || (!sid && (!selected || moveBlocked))} onClick={event => clickCell(c.id, pos, event)} onDoubleClick={() => armMove(c.id, pos)} style={{ width: "100%", height: 32, border: active ? "2px solid #d97706" : highlighted ? "2px solid #2563eb" : "1px solid transparent", textAlign: "left", padding: "3px 7px", background: active ? "#fef3c7" : highlighted ? "#dbeafe" : override ? "#fee2e2" : "transparent", color: sid ? "#334155" : "#cbd5e1", cursor: "pointer", opacity: 1 }}>
               <span style={{ display: "block", maxWidth: 165, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sid && <span style={{ color: fmSuppliers.find(s => s.id === sid)?.pkg === "Premium" ? "#d97706" : "#3b82f6" }}>● </span>}{override ? "⚠ " : ""}{sid ? name : "·"}</span>
             </button></td>;
           })}

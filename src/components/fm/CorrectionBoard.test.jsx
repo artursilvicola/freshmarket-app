@@ -6,7 +6,7 @@ vi.mock("../../lib/fm-corrections", async importOriginal => {
   return { ...actual, loadCorrections: vi.fn(), loadCorrectionHistory: vi.fn(), commitCorrection: vi.fn() };
 });
 vi.mock("../../lib/supabase", () => ({ supabase: {} }));
-vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k, options) => options?.revision ? `${k} ${options.revision}` : k }) }));
+vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (k, options) => options?.revision ? `${k} ${options.revision}` : options?.count != null ? `${k} ${options.count}` : k }) }));
 import { commitCorrection, loadCorrections, loadCorrectionHistory } from "../../lib/fm-corrections";
 import CorrectionBoard from "./CorrectionBoard";
 const plan = { cq: { one: ["a", "b", null], two: ["c", null, null] }, res: { a: { m: ["one"] }, b: { m: ["one"] }, c: { m: ["two"] } }, overrides: {} };
@@ -18,9 +18,14 @@ const text = tree => JSON.stringify(tree.toJSON());
 const button = (tree, key) => tree.root.findAllByType("button").find(x => x.children.includes("fm.board." + key));
 const cell = (tree, id) => tree.root.findByProps({ "data-cell": id });
 const click = async node => { await act(async () => { await node.props.onClick(); }); };
+const doubleClick = async node => {
+  await act(async () => node.props.onClick({ detail: 1 }));
+  await act(async () => node.props.onClick({ detail: 2 }));
+  await act(async () => node.props.onDoubleClick());
+};
 const deferred = () => { let resolve, reject; const promise = new Promise((r, j) => { resolve = r; reject = j; }); return { promise, resolve, reject }; };
 async function render(p = props()) { let tree; await act(async () => { tree = create(<CorrectionBoard {...p}/>); }); trees.push(tree); return tree; }
-async function proposeSwap(tree) { await click(cell(tree, "one:0")); await click(cell(tree, "one:1")); }
+async function proposeSwap(tree) { await doubleClick(cell(tree, "one:0")); await click(cell(tree, "one:1")); }
 beforeEach(() => {
   vi.resetAllMocks(); loadCorrections.mockResolvedValue(draft()); loadCorrectionHistory.mockResolvedValue([]);
   vi.stubGlobal("window", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
@@ -28,7 +33,7 @@ beforeEach(() => {
 afterEach(() => { act(() => trees.splice(0).forEach(t => t.unmount())); vi.unstubAllGlobals(); });
 
 describe("confirmed, persistent correction board", () => {
-  it("two clicks open a dialog with full names and positions; cancel leaves both table and history unchanged", async () => {
+  it("double-click followed by a destination opens a dialog; cancel leaves table and history unchanged", async () => {
     const tree = await render(); await proposeSwap(tree);
     expect(tree.root.findByProps({ role: "dialog" })).toBeTruthy();
     expect(text(tree)).toContain("Company Alpha Full Name"); expect(text(tree)).toContain("Retailer One · #1"); expect(text(tree)).toContain("Retailer One · #2");
@@ -37,9 +42,56 @@ describe("confirmed, persistent correction board", () => {
     expect(tree.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
     expect(cell(tree, "one:0").props.title).toContain("Company Alpha"); expect(commitCorrection).not.toHaveBeenCalled();
   });
-  it("second click on the same cell clears selection without requesting a save", async () => {
+  it("repeated single clicks only inspect a company and never arm a move", async () => {
     const tree = await render(); await click(cell(tree, "one:0")); await click(cell(tree, "one:0"));
-    expect(cell(tree, "one:0").props["aria-pressed"]).toBe(false); expect(commitCorrection).not.toHaveBeenCalled();
+    expect(cell(tree, "one:0").props["aria-pressed"]).toBe(true);
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
+    await click(cell(tree, "one:1"));
+    expect(cell(tree, "one:0").props["aria-pressed"]).toBe(false);
+    expect(cell(tree, "one:1").props["aria-pressed"]).toBe(true);
+    expect(cell(tree, "one:1").props["data-move-source"]).toBe(false);
+    expect(tree.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+    expect(commitCorrection).not.toHaveBeenCalled();
+  });
+  it("inspection highlights every occurrence and counts meetings even outside the retailer filter", async () => {
+    loadCorrections.mockResolvedValue(draft(1, { ...plan, cq: { one: ["a", "b"], two: ["c", null, "a"] } }));
+    const tree = await render();
+    const preview = () => tree.root.findByProps({ "aria-label": "fm.board.company_preview" });
+    const height = preview().props.style.height;
+    await click(cell(tree, "one:0"));
+    expect(preview().props.style.height).toBe(height);
+    expect(cell(tree, "one:0").props["aria-pressed"]).toBe(true);
+    expect(cell(tree, "two:2").props["aria-pressed"]).toBe(true);
+    expect(text(tree)).toContain("fm.board.meeting_count 2");
+    act(() => tree.root.findByType("select").props.onChange({ target: { value: "one" } }));
+    expect(preview().findAllByType("span").some(x => x.children.join("") === "Retailer Two · #3")).toBe(true);
+    expect(text(tree)).toContain("fm.board.meeting_count 2");
+    expect(tree.root.findAllByProps({ "data-cell": "two:2" })).toHaveLength(0);
+    expect(commitCorrection).not.toHaveBeenCalled();
+  });
+  it("native double-click arms only; a destination double-click opens just one confirmation without saving", async () => {
+    const tree = await render(); await doubleClick(cell(tree, "one:0"));
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(true);
+    expect(tree.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+    await doubleClick(cell(tree, "one:0"));
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(true);
+    await doubleClick(cell(tree, "one:1"));
+    expect(tree.root.findAllByProps({ role: "dialog" })).toHaveLength(1);
+    expect(commitCorrection).not.toHaveBeenCalled();
+    await click(button(tree, "cancel"));
+    expect(cell(tree, "one:0").props["aria-pressed"]).toBe(true);
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
+  });
+  it("explicit move button and Escape support the same safe flow without a mouse double-click", async () => {
+    const tree = await render(); await click(cell(tree, "one:0"));
+    await click(button(tree, "start_move"));
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(true);
+    act(() => tree.root.findByType("section").props.onKeyDown({ key: "Escape", preventDefault: vi.fn() }));
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
+    expect(cell(tree, "one:0").props["aria-pressed"]).toBe(true);
+    await click(button(tree, "start_move")); await click(button(tree, "cancel_move"));
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
+    expect(commitCorrection).not.toHaveBeenCalled();
   });
   it("confirmation waits for a successful atomic save; repeated click sends one request", async () => {
     const p = props(), tree = await render(p); await proposeSwap(tree);
@@ -52,8 +104,13 @@ describe("confirmed, persistent correction board", () => {
     loadCorrectionHistory.mockResolvedValue(history);
     await act(async () => { request.resolve(next); await result; });
     expect(cell(tree, "one:0").props.title).toContain("Company Beta");
+    expect(cell(tree, "one:1").props["aria-pressed"]).toBe(true);
+    expect(tree.root.findByProps({ "aria-label": "fm.board.company_preview" }).findAllByType("span").some(x => x.children.join("") === "Retailer One · #2")).toBe(true);
     expect(text(tree)).toContain("Administrator"); expect(p.onApprove).not.toHaveBeenCalled();
     expect(commitCorrection.mock.calls[0][0]).toMatchObject({ action: "swap", revision: 1, details: { from: { cid: "one", pos: 0, sid: "a" }, to: { cid: "one", pos: 1, sid: "b" } } });
+    await click(button(tree, "start_move"));
+    expect(cell(tree, "one:1").props["data-move-source"]).toBe(true);
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
   });
   it("a failed save or revision conflict retains the confirmed board and requires refresh", async () => {
     const tree = await render(); await proposeSwap(tree);
@@ -79,7 +136,7 @@ describe("confirmed, persistent correction board", () => {
   });
   it("moving to an empty cell is explicit, includes both retailers, and requires refusal acknowledgment", async () => {
     const p = props(); p.fmResps = { two: { a: "remove" } };
-    const tree = await render(p); await click(cell(tree, "one:0")); await click(cell(tree, "two:5"));
+    const tree = await render(p); await doubleClick(cell(tree, "one:0")); await click(cell(tree, "two:5"));
     expect(text(tree)).toContain("fm.board.confirm_move"); expect(text(tree)).toContain("fm.board.cross_chain"); expect(text(tree)).toContain("Retailer Two · #6");
     expect(button(tree, "confirm").props.disabled).toBe(true);
     act(() => tree.root.findByType("input").props.onChange({ target: { checked: true } }));
@@ -100,11 +157,18 @@ describe("confirmed, persistent correction board", () => {
     commitCorrection.mockRejectedValue(new Error("network")); await click(button(tree, "confirm")); expect(p.onApprove).not.toHaveBeenCalled();
     await click(button(tree, "reload")); await click(button(tree, "approve"));
     commitCorrection.mockResolvedValue({ ...draft(2), approved: true }); await click(button(tree, "confirm"));
-    expect(p.onApprove).toHaveBeenCalledWith(plan); expect(cell(tree, "one:0").props.disabled).toBe(true);
+    expect(p.onApprove).toHaveBeenCalledWith(plan); expect(cell(tree, "one:0").props.disabled).toBe(false);
+    await doubleClick(cell(tree, "one:0"));
+    expect(cell(tree, "one:0").props["aria-pressed"]).toBe(true);
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
+    expect(button(tree, "start_move").props.disabled).toBe(true);
   });
   it("phase gate and load errors never permit editing", async () => {
     const p = props(); p.canEdit = false; const tree = await render(p);
-    expect(cell(tree, "one:0").props.disabled).toBe(true); expect(button(tree, "approve").props.disabled).toBe(true);
+    expect(cell(tree, "one:0").props.disabled).toBe(false); expect(button(tree, "approve").props.disabled).toBe(true);
+    await doubleClick(cell(tree, "one:0"));
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
+    expect(button(tree, "start_move").props.disabled).toBe(true);
     loadCorrections.mockRejectedValue(new Error("missing migration")); await click(button(tree, "reload"));
     expect(text(tree)).toContain("fm.board.errors.network"); expect(commitCorrection).not.toHaveBeenCalled();
   });
