@@ -14475,6 +14475,10 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
           </div>
         )}
 
+        {/* ── Zgłoszenia do ręcznych korekt — po terminie (NAD listą wyborów: sieć ma je zauważyć
+            zaraz po wejściu; panel sam się ukrywa, gdy dostęp zamknięty i brak historii) ── */}
+        <BuyerLateSelections key={myRetailerId} retailerId={myRetailerId} suppliers={_suppliers} style={{ marginTop:0,marginBottom:16 }}/>
+
         {/* ── Twoje wybory z Fazy 2 (read-only, zawsze widoczne) ── */}
         <Card title={t("fm.buyer.phase3_responses_card_title")} icon={CheckCircle}>
           <div style={{ fontSize:12,color:"#64748b",marginBottom:10 }}>
@@ -14504,8 +14508,6 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
             <div style={{ padding:24,textAlign:"center",color:"#94a3b8",fontSize:12 }}>{t("fm.buyer.phase3_responses_empty_no_marks")}</div>
           )}
         </Card>
-
-        <BuyerLateSelections key={myRetailerId} retailerId={myRetailerId} suppliers={_suppliers}/>
 
       </div>
     );

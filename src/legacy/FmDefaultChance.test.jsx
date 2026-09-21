@@ -126,3 +126,28 @@ describe("panel domyślnej szansy", () => {
     expect(text(tree)).toContain("Firma silent");
   });
 });
+
+// [fix/fm-late-panel-order] panel zgłoszeń po terminie NAD listą wyborów, żeby sieć go zauważyła.
+vi.mock("../lib/fm-late-selections", () => ({
+  loadLateSelections: vi.fn(async () => ({ access: [{ retailer_id: 100, enabled: true }], rows: [] })),
+  saveLateSelection: vi.fn(),
+  setLateAccess: vi.fn(),
+}));
+
+describe("kolejność bloków kupca w fazie 3", () => {
+  it.each([false, true])("zgłoszenia po terminie są nad listą wyborów i pod banerem statusu (podgląd admina=%s)", async (viewerIsAdmin) => {
+    const input = props();
+    input.retailers = [{ id: 100, name: "Testowa sieć", fm26ChainId: "a", fm26Active: true, active: true }];
+    const tree = render(<PageBuyerFM {...input} viewerIsAdmin={viewerIsAdmin} fmSettings={{ ...input.fmSettings, currentPhase: 3 }}/>);
+    await act(async () => {});
+    const s = text(tree);
+    const status = s.indexOf("fm.buyer.phase3_status_title");
+    const late = s.indexOf("fm.late.buyer_title");
+    const responses = s.indexOf("fm.buyer.phase3_responses_card_title");
+    expect(status).toBeGreaterThan(-1);
+    expect(late).toBeGreaterThan(status);
+    expect(responses).toBeGreaterThan(late);
+    for (const id of ["yes", "chance", "silent", "no"]) expect(s).toContain(`Firma ${id}`);
+    expect(input.setFmResps).not.toHaveBeenCalled();
+  });
+});

@@ -60,7 +60,7 @@ function Status({ state, t }) {
   </div>;
 }
 
-export function BuyerLateSelections({ retailerId, suppliers = [] }) {
+export function BuyerLateSelections({ retailerId, suppliers = [], style = null }) {
   const { t } = useTranslation("legacy");
   const state = useLateSelections(retailerId, !!retailerId);
   const [search, setSearch] = useState("");
@@ -70,7 +70,7 @@ export function BuyerLateSelections({ retailerId, suppliers = [] }) {
   if (state.data.ready && !enabled && !ownRows.length) return null;
   const choices = new Map(ownRows.map(r => [r.supplier_legacy_id, r]));
   const visible = suppliers.filter(s => (enabled || choices.has(s.id)) && s.name.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
-  return <section style={box} aria-label={t("fm.late.buyer_title")}>
+  return <section style={style ? { ...box, ...style } : box} aria-label={t("fm.late.buyer_title")}>
     <h3 style={{ marginTop: 0 }}>{t("fm.late.buyer_title")}</h3>
     <p>{t("fm.late.description")}</p>
     <Status state={state} t={t}/>
