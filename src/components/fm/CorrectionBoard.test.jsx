@@ -170,6 +170,9 @@ describe("confirmed, persistent correction board", () => {
     await doubleClick(cell(tree, "one:0"));
     expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
     expect(button(tree, "start_move").props.disabled).toBe(true);
+    expect(button(tree, "remove_meeting").props.disabled).toBe(true);
+    await click(button(tree, "remove_meeting"));
+    expect(tree.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
     loadCorrections.mockRejectedValue(new Error("missing migration")); await click(button(tree, "reload"));
     expect(text(tree)).toContain("fm.board.errors.network"); expect(commitCorrection).not.toHaveBeenCalled();
   });
@@ -251,6 +254,29 @@ describe("confirmed, persistent correction board", () => {
     commitCorrection.mockResolvedValue(draft(3, twoMeetings)); await click(button(tree, "confirm"));
     expect(cell(tree, "one:0").props.title).toContain("Company Alpha");
     expect(text(tree)).toContain("fm.board.restored_meeting");
+  });
+  it.each(["double-click", "button"])("removal after entering move mode via %s switches to a cancellable removal confirmation", async method => {
+    const tree = await render();
+    await click(cell(tree, "one:0"));
+    if (method === "double-click") await doubleClick(cell(tree, "one:0"));
+    else await click(button(tree, "start_move"));
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(true);
+    expect(button(tree, "remove_meeting").props.disabled).toBe(false);
+    await click(button(tree, "remove_meeting"));
+    expect(text(tree)).toContain("fm.board.confirm_remove");
+    expect(cell(tree, "one:0").props["data-move-source"]).toBe(false);
+    expect(commitCorrection).not.toHaveBeenCalled();
+    await click(button(tree, "cancel"));
+    await click(cell(tree, "one:1"));
+    expect(tree.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+    expect(cell(tree, "one:1").props["aria-pressed"]).toBe(true);
+    expect(commitCorrection).not.toHaveBeenCalled();
+    await click(button(tree, "remove_meeting"));
+    commitCorrection.mockResolvedValue(draft(2, { ...plan, cq: { ...plan.cq, one: ["a", null, null] } }));
+    await click(button(tree, "confirm"));
+    expect(commitCorrection).toHaveBeenCalledTimes(1);
+    expect(commitCorrection).toHaveBeenCalledWith(expect.objectContaining({ action: "remove", details: { from: expect.objectContaining({ cid: "one", pos: 1, sid: "b" }) } }));
+    expect(cell(tree, "one:0").props.title).toContain("Company Alpha");
   });
   it("first removal requires a separate confirmation after initializing the snapshot", async () => {
     loadCorrections.mockResolvedValue(null); const tree = await render();

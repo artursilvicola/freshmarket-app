@@ -107,7 +107,8 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const blocked = !loaded || busy || !!error || !inputsReady || !canEdit;
   const viewBlocked = !loaded || busy || !!error || !inputsReady || !!pending || !!addTarget;
   const moveBlocked = blocked || !draft || draft.approved || !!pending;
-  const actionBlocked = blocked || !!pending || !!selected || !!addTarget;
+  const editBlocked = blocked || !!pending || !!addTarget;
+  const actionBlocked = editBlocked || !!selected;
   const labelCell = cell => ({ ...cell, company: fmSuppliers.find(s => s.id === cell.sid)?.name || cell.sid,
     chain: fmChains.find(c => c.id === cell.cid)?.name || cell.cid });
   const prepare = (action, extra = {}) => {
@@ -154,11 +155,13 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
     } finally { writing.current = false; if (alive.current) setBusy(false); }
   };
   const requestEdit = (action, cid, pos) => {
-    if (actionBlocked) return;
+    if (editBlocked || (selected && action !== "remove")) return;
     const sid = plan.cq[cid]?.[pos] || null;
     if (!sid) return;
     const cell = { cid, pos, sid };
     setInspected(cell);
+    // Removing the inspected meeting replaces an armed move, but still needs confirmation.
+    if (action === "remove") setSelected(null);
     if (!draft) prepare("initialize", { schedule: plan, continueEdit: { action, cell } });
     else if (draft.approved) prepare("unlock", { continueEdit: { action, cell } });
     else if (action === "move") setSelected(cell);
@@ -237,7 +240,7 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
           <strong>{names.get(inspected.sid) || inspected.sid}</strong>
           <span>{t("fm.board.meeting_count", { count: inspectedMeetings.length })}</span>
           <button type="button" style={btn} disabled={actionBlocked} onClick={() => armMove(inspected.cid, inspected.pos)}>{t("fm.board.start_move")}</button>
-          <button type="button" style={{ ...btn, color: "#b91c1c", borderColor: "#fca5a5" }} disabled={actionBlocked} onClick={() => requestEdit("remove", inspected.cid, inspected.pos)}>{t("fm.board.remove_meeting")}</button>
+          <button type="button" style={{ ...btn, color: "#b91c1c", borderColor: "#fca5a5", opacity: editBlocked ? 0.5 : 1, cursor: editBlocked ? "not-allowed" : "pointer" }} disabled={editBlocked} onClick={() => requestEdit("remove", inspected.cid, inspected.pos)}>{t("fm.board.remove_meeting")}</button>
           <button type="button" style={btn} disabled={busy || !!pending} onClick={() => { setSelected(null); setInspected(null); }}>{t("fm.board.close_preview")}</button>
         </div>
         <p style={{ margin: "8px 0", fontSize: 13 }}><strong>{t("fm.board.selected_meeting")}:</strong> {fmChains.find(c => c.id === inspected.cid)?.name || inspected.cid} · #{inspected.pos + 1}</p>
