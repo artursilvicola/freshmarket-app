@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { chainCapacity, FM_MIN_GAP, isPairExcluded, isSupplierEligible, supplierCapacity } from "./fm-algo";
 
 export async function loadCorrections() {
   const { data, error } = await supabase.from("fm_correction_drafts").select("*").eq("id", 1).maybeSingle();
@@ -57,5 +58,35 @@ export function describeChange(plan, from, to, suppliers, chains, responses = {}
 
 export function undoCandidate(history) {
   const undone = new Set(history.filter(x => x.action === "undo").map(x => x.details.undo_of));
-  return history.find(x => ["swap", "move", "remove", "rebuild", "load_approved"].includes(x.action) && !undone.has(x.id)) || null;
+  return history.find(x => ["swap", "move", "remove", "add", "rebuild", "load_approved"].includes(x.action) && !undone.has(x.id)) || null;
+}
+
+// Plan-specific lower limits (e.g. an agreed nine-meeting plan) never increase
+// the company's purchased allowance. The server independently enforces both.
+export function correctionMeetingLimit(plan, supplier) {
+  const cap = supplierCapacity(supplier), override = plan?.meeting_limits?.[supplier.id];
+  if (!Object.hasOwn(plan?.meeting_limits || {}, supplier.id)) return cap;
+  return Number.isInteger(override) && override > 0 && override <= 25 ? Math.min(cap, override) : null;
+}
+
+export function describeAddition(plan, target, supplier, chains, responses = {}) {
+  const chain = chains.find(c => c.id === target.cid);
+  const meetings = Object.entries(plan?.cq || {}).flatMap(([cid, q]) =>
+    q.flatMap((sid, pos) => sid === supplier.id ? [{ cid, pos }] : []));
+  const limit = correctionMeetingLimit(plan, supplier);
+  const issues = [];
+  if (!isSupplierEligible(supplier)) issues.push("fm_correction_supplier_ineligible");
+  if (!chain || !Array.isArray(plan?.cq?.[target.cid]) || !Number.isInteger(target.pos) || target.pos < 0 || target.pos > 10000) issues.push("fm_correction_invalid_cell");
+  if (plan?.cq?.[target.cid]?.[target.pos]) issues.push("fm_correction_occupied");
+  if (meetings.some(m => m.cid === target.cid)) issues.push("fm_correction_duplicate");
+  if (limit == null) issues.push("fm_correction_limit_invalid");
+  else if (meetings.length >= limit) issues.push("fm_correction_supplier_limit");
+  const cap = chain?.capacity > 0 ? chain.capacity : plan?.cs?.[target.cid]?.cap ?? chainCapacity(chain).cap;
+  if ((plan?.cq?.[target.cid] || []).filter(Boolean).length >= cap) issues.push("fm_correction_capacity");
+  if (isPairExcluded(null, responses[target.cid]?.[supplier.id])) issues.push("fm_correction_buyer_rejected");
+  const nearby = meetings.filter(m => Math.abs(m.pos - target.pos) < FM_MIN_GAP)
+    .map(m => ({ ...m, chain: chains.find(c => c.id === m.cid)?.name || m.cid }));
+  if (nearby.length) issues.push("fm_correction_gap");
+  return { to: { cid: target.cid, pos: target.pos, sid: supplier.id, company: supplier.name, chain: chain?.name || target.cid },
+    beforeCount: meetings.length, afterCount: meetings.length + 1, limit, issues, nearby };
 }

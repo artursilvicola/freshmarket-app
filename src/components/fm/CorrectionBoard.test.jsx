@@ -239,7 +239,7 @@ describe("confirmed, persistent correction board", () => {
     loadCorrectionHistory.mockResolvedValue([removal]);
     await act(async () => { request.resolve(next); await result; });
     expect(commitCorrection.mock.calls[0][0]).toMatchObject({ action: "remove", revision: 1, details: { from: { cid: "one", pos: 0, sid: "a" } } });
-    expect(cell(tree, "one:0").props.title).toBe("fm.board.empty_cell");
+    expect(cell(tree, "one:0").props.title).toBe("fm.board.add_meeting");
     expect(cell(tree, "one:1").props.title).toContain("Company Beta");
     expect(cell(tree, "two:2").props.title).toContain("Company Alpha");
     expect(text(tree)).toContain("fm.board.action_remove");

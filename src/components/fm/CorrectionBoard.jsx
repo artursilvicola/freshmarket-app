@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { commitCorrection, describeChange, loadCorrectionHistory, loadCorrections, undoCandidate } from "../../lib/fm-corrections";
+import AddMeetingDialog from "./AddMeetingDialog";
 
 const btn = { padding: "9px 13px", border: "1px solid #cbd5e1", borderRadius: 8, background: "white", cursor: "pointer", font: "inherit", fontSize: 13 };
 const card = { background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginBottom: 14 };
@@ -42,6 +43,9 @@ function ConfirmDialog({ pending, t, busy, cancel, confirm }) {
         </div>}
       </> : <p>{t(`fm.board.explain_${pending.action}`)}</p>}
       {pending.removal && <p><strong>{pending.removal.company}</strong><br/>{place(pending.removal)}</p>}
+      {pending.addition && <><p><strong>{pending.addition.to.company}</strong><br/>{place(pending.addition.to)}</p>
+        <p>{t("fm.board.add_count", { before: pending.addition.beforeCount, after: pending.addition.afterCount, limit: pending.addition.limit })}</p>
+        <p>{t("fm.board.add_no_move")}</p></>}
       {pending.continueEdit && <p>{t(`fm.board.continue_${pending.continueEdit.action}`)}</p>}
       {pending.target && <HistorySummary entry={pending.target} t={t}/>}
       <p style={{ color: "#64748b", fontSize: 13 }}>{t("fm.board.confirm_hint")}</p>
@@ -59,7 +63,9 @@ function HistorySummary({ entry, t }) {
   return <div>
     <strong>{t(`fm.board.action_${entry.action}`)}</strong>
     {details.from && <div>{cell(details.from)} {details.to && <>{entry.action === "move" ? "→" : "↔"} {cell(details.to)}</>}</div>}
+    {entry.action === "add" && details.to && <div>{cell(details.to)}</div>}
     {details.original?.from && <div>{cell(details.original.from)} {details.original.to ? <>↔ {cell(details.original.to)}</> : t("fm.board.restored_meeting")}</div>}
+    {details.original?.to && !details.original.from && <div>{t("fm.board.removed_added_meeting")} {cell(details.original.to)}</div>}
     {entry.action === "undo" && <div>{t("fm.board.undo_revision", { revision: details.undo_revision })}</div>}
     {!!details.rejections?.length && <div style={{ color: "#b91c1c" }}>{t("fm.board.override_recorded")}</div>}
     <small style={{ color: "#64748b" }}>{entry.actor_name} · {new Date(entry.created_at).toLocaleString()} · #{entry.revision}</small>
@@ -72,6 +78,7 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const [loaded, setLoaded] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [selected, setSelected] = useState(null), [pending, setPending] = useState(null), [filter, setFilter] = useState("all");
   const [inspected, setInspected] = useState(null);
+  const [addTarget, setAddTarget] = useState(null);
   const [historyLimit, setHistoryLimit] = useState(20);
   const historyRef = useRef(null);
   const writing = useRef(false), generation = useRef(0), alive = useRef(false);
@@ -79,7 +86,7 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const onApproveRef = useRef(onApprove); onApproveRef.current = onApprove;
   const reload = useCallback(async () => {
     if (writing.current) return;
-    const rev = ++generation.current; setLoaded(false); setError(""); setPending(null); setSelected(null); setInspected(null);
+    const rev = ++generation.current; setLoaded(false); setError(""); setPending(null); setSelected(null); setInspected(null); setAddTarget(null);
     try {
       const next = await loadCorrections();
       const rows = next ? await loadCorrectionHistory(next.revision) : [];
@@ -98,16 +105,16 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const plan = draft?.schedule || data;
   const undo = undoCandidate(history);
   const blocked = !loaded || busy || !!error || !inputsReady || !canEdit;
-  const viewBlocked = !loaded || busy || !!error || !inputsReady || !!pending;
+  const viewBlocked = !loaded || busy || !!error || !inputsReady || !!pending || !!addTarget;
   const moveBlocked = blocked || !draft || draft.approved || !!pending;
-  const actionBlocked = blocked || !!pending || !!selected;
+  const actionBlocked = blocked || !!pending || !!selected || !!addTarget;
   const labelCell = cell => ({ ...cell, company: fmSuppliers.find(s => s.id === cell.sid)?.name || cell.sid,
     chain: fmChains.find(c => c.id === cell.cid)?.name || cell.cid });
   const prepare = (action, extra = {}) => {
     if (blocked) return;
     setPending({ action, id: crypto.randomUUID(), revision: draft?.revision || 0, ...extra });
   };
-  const cancel = () => { if (!writing.current) { setPending(null); setSelected(null); } };
+  const cancel = () => { if (!writing.current) { setPending(null); setSelected(null); setAddTarget(null); } };
   const confirm = async accept => {
     if (!pending || writing.current || blocked) return;
     writing.current = true; ++generation.current; setBusy(true);
@@ -118,6 +125,7 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
       setDraft(next); setPending(null); setSelected(null); onDraftRef.current?.(next.schedule);
       // Keep the preview attached to the company after its meeting changes position.
       setInspected(previous => {
+        if (request.addition) return request.addition.to;
         if (!previous) return null;
         const destination = request.change?.a.sid === previous.sid ? request.change.b : previous;
         if (next.schedule.cq[destination.cid]?.[destination.pos] === previous.sid) return { ...destination, sid: previous.sid };
@@ -135,14 +143,14 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
         // Initialization/unlocking is a separate confirmed write. Resume the intended action
         // only after both the saved board and its history have been obtained successfully.
         const continuation = request.continueEdit;
-        if (continuation && !next.approved && next.schedule.cq[continuation.cell.cid]?.[continuation.cell.pos] === continuation.cell.sid) {
-          setInspected(continuation.cell);
-          if (continuation.action === "move") setSelected(continuation.cell);
+        if (continuation && !next.approved && (next.schedule.cq[continuation.cell.cid]?.[continuation.cell.pos] || null) === continuation.cell.sid) {
+          if (continuation.action === "add") setAddTarget(continuation.cell);
+          else if (continuation.action === "move") { setInspected(continuation.cell); setSelected(continuation.cell); }
           else setPending({ action: "remove", id: crypto.randomUUID(), revision: next.revision, removal: labelCell(continuation.cell) });
         }
       }
     } catch (e) {
-      if (alive.current) { setError(codeOf(e)); setPending(null); setSelected(null); setLoaded(false); }
+      if (alive.current) { setError(codeOf(e)); setPending(null); setSelected(null); setAddTarget(null); setLoaded(false); }
     } finally { writing.current = false; if (alive.current) setBusy(false); }
   };
   const requestEdit = (action, cid, pos) => {
@@ -157,11 +165,18 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
     else prepare("remove", { removal: labelCell(cell) });
   };
   const armMove = (cid, pos) => requestEdit("move", cid, pos);
+  const requestAdd = (cid, pos) => {
+    if (actionBlocked || plan?.cq?.[cid]?.[pos]) return;
+    const cell = { cid, pos, sid: null };
+    if (!draft) prepare("initialize", { schedule: plan, continueEdit: { action: "add", cell } });
+    else if (draft.approved) prepare("unlock", { continueEdit: { action: "add", cell } });
+    else setAddTarget(cell);
+  };
   const clickCell = (cid, pos, event) => {
     // Native double-click emits click(1), click(2), dblclick. Only dblclick arms editing.
     if (viewBlocked || event?.detail > 1) return;
     const sid = plan.cq[cid]?.[pos] || null;
-    if (!selected) { if (sid) setInspected({ cid, pos, sid }); return; }
+    if (!selected) { if (sid) setInspected({ cid, pos, sid }); else requestAdd(cid, pos); return; }
     if (moveBlocked || (selected.cid === cid && selected.pos === pos)) return;
     try {
       const change = describeChange(plan, selected, { cid, pos }, fmSuppliers, fmChains, fmResps);
@@ -175,9 +190,13 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
   const inspectedMeetings = inspected ? Object.entries(plan?.cq || {}).flatMap(([cid, queue]) =>
     queue.flatMap((sid, pos) => sid === inspected.sid ? [{ cid, pos, chain: fmChains.find(c => c.id === cid)?.name || cid }] : [])) : [];
   return <section aria-label={t("fm.board.title")} onKeyDown={e => {
-    if (e.key === "Escape" && !pending && !busy) { e.preventDefault(); if (selected) setSelected(null); else setInspected(null); }
+    if (e.key === "Escape" && !pending && !busy && !addTarget) { e.preventDefault(); if (selected) setSelected(null); else setInspected(null); }
   }}>
     {pending && <ConfirmDialog key={pending.id} pending={pending} t={t} busy={busy} cancel={cancel} confirm={confirm}/>}
+    {addTarget && <AddMeetingDialog target={addTarget} plan={plan} suppliers={fmSuppliers} chains={fmChains} responses={fmResps} initialSupplier={inspected?.sid} t={t} cancel={cancel} choose={addition => {
+      if (blocked || addition.issues.length) return;
+      setAddTarget(null); prepare("add", { addition, details: { to: addition.to } });
+    }}/>}
     <div style={card}>
       <h3 style={{ marginTop: 0 }}>{t("fm.board.title")}</h3>
       <p>{t("fm.board.instructions")}</p>
@@ -199,14 +218,14 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
     </div>
     <div style={{ ...card, display: "flex", justifyContent: "space-around", gap: 10, flexWrap: "wrap" }}>
       <span>{fmSuppliers.length} {t("fm.corrections.kpi_suppliers")}</span><span>{fmChains.length} {t("fm.corrections.kpi_chains")}</span>
-      <strong>{meetings} {t("fm.corrections.kpi_meetings")}</strong><span>{history.filter(x => ["swap", "move", "remove", "undo", "rebuild", "load_approved"].includes(x.action)).length} {t("fm.corrections.kpi_admin_changes")}</span>
+      <strong>{meetings} {t("fm.corrections.kpi_meetings")}</strong><span>{history.filter(x => ["swap", "move", "remove", "add", "undo", "rebuild", "load_approved"].includes(x.action)).length} {t("fm.corrections.kpi_admin_changes")}</span>
     </div>
     {fmChains.some(c => fmWishlists[c.id]?.length) && <div style={card}>
       <strong>{t("fm.corrections.wishlist_header")}</strong><p>{t("fm.corrections.wishlist_desc")}</p>
       {fmChains.filter(c => fmWishlists[c.id]?.length).map(c => <p key={c.id}><strong>{c.name}: </strong>{fmWishlists[c.id].map(id => names.get(id) || id).join(", ")}</p>)}
     </div>}
     <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
-      <select aria-label={t("fm.board.filter")} value={filter} onChange={e => { setFilter(e.target.value); setSelected(null); }} style={btn}>
+      <select aria-label={t("fm.board.filter")} disabled={busy || !!pending || !!addTarget} value={filter} onChange={e => { setFilter(e.target.value); setSelected(null); }} style={btn}>
         <option value="all">{t("fm.board.all_chains")}</option>{fmChains.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
       </select>
       {selected && <><strong style={{ color: "#92400e" }}>{t("fm.board.move_mode")}: {names.get(selected.sid)} — {fmChains.find(c => c.id === selected.cid)?.name} #{selected.pos + 1}</strong><button type="button" style={btn} onClick={cancel}>{t("fm.board.cancel_move")}</button></>}
@@ -239,8 +258,8 @@ export default function CorrectionBoard({ data, onApprove, fmChains = [], fmSupp
             const active = selected?.cid === c.id && selected?.pos === pos;
             const highlighted = !!sid && inspected?.sid === sid;
             const override = sid && plan?.overrides?.[sid]?.[c.id];
-            return <td key={c.id} style={{ padding: 0, borderRight: "1px solid #e2e8f0" }}><button type="button" data-cell={`${c.id}:${pos}`} data-move-source={active} aria-pressed={highlighted} aria-label={`${c.name} #${pos + 1}: ${name}`} title={`${name}${override ? " — " + t("fm.board.override_recorded") : ""}`} disabled={viewBlocked || (!sid && (!selected || moveBlocked))} onClick={event => clickCell(c.id, pos, event)} onDoubleClick={() => armMove(c.id, pos)} style={{ width: "100%", height: 32, border: active ? "2px solid #d97706" : highlighted ? "2px solid #2563eb" : "1px solid transparent", textAlign: "left", padding: "3px 7px", background: active ? "#fef3c7" : highlighted ? "#dbeafe" : override ? "#fee2e2" : "transparent", color: sid ? "#334155" : "#cbd5e1", cursor: "pointer", opacity: 1 }}>
-              <span style={{ display: "block", maxWidth: 165, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sid && <span style={{ color: fmSuppliers.find(s => s.id === sid)?.pkg === "Premium" ? "#d97706" : "#3b82f6" }}>● </span>}{override ? "⚠ " : ""}{sid ? name : "·"}</span>
+            return <td key={c.id} style={{ padding: 0, borderRight: "1px solid #e2e8f0" }}><button type="button" data-cell={`${c.id}:${pos}`} data-move-source={active} aria-pressed={highlighted} aria-label={`${c.name} #${pos + 1}: ${sid ? name : t("fm.board.add_meeting")}`} title={`${sid ? name : t("fm.board.add_meeting")}${override ? " — " + t("fm.board.override_recorded") : ""}`} disabled={viewBlocked || (!sid && (blocked || (selected && moveBlocked)))} onClick={event => clickCell(c.id, pos, event)} onDoubleClick={() => armMove(c.id, pos)} style={{ width: "100%", height: 32, border: active ? "2px solid #d97706" : highlighted ? "2px solid #2563eb" : "1px solid transparent", textAlign: "left", padding: "3px 7px", background: active ? "#fef3c7" : highlighted ? "#dbeafe" : override ? "#fee2e2" : "transparent", color: sid ? "#334155" : "#64748b", cursor: "pointer", opacity: 1 }}>
+              <span style={{ display: "block", maxWidth: 165, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sid && <span style={{ color: fmSuppliers.find(s => s.id === sid)?.pkg === "Premium" ? "#d97706" : "#3b82f6" }}>● </span>}{override ? "⚠ " : ""}{sid ? name : "+"}</span>
             </button></td>;
           })}
         </tr>)}</tbody>
