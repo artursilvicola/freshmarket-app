@@ -23,6 +23,10 @@ create table if not exists public.fm_plan_deliveries (
   pdf_path text,
   pdf_sha256 text,
   attempts integer not null default 0,
+  -- generacja próby: każda NOWA próba (np. wymuszona po oknie idempotencji) = attempt+1 przez CAS,
+  -- własny klucz i własny czas startu; potwierdzenie wyniku jest warunkowane tą samą generacją
+  attempt integer not null default 1,
+  attempt_started_at timestamptz not null default now(),
   last_error text,
   sent_by uuid,
   created_at timestamptz not null default now(),

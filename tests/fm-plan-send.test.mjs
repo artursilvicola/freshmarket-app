@@ -203,7 +203,10 @@ describe("PDF zawiera wyłącznie kartę odbiorcy, a obrazy pochodzą tylko z na
 describe("artefakt, idempotencja i niepewne wyniki", () => {
   it("artefakt renderowany raz per (odbiorca, wersja planu); ponowienie używa tych samych bajtów i tego samego Idempotency-Key", async () => {
     const j1 = JSON.parse((await send(ev())).body);
-    expect(j1.artefact).toMatchObject({ path: artefactPath("supplier", "A", PLAN_AT), reused: false }); expect(uploads).toHaveLength(1);
+    expect(j1.artefact).toMatchObject({ path: artefactPath("supplier", "A", PLAN_AT), reused: false }); expect(uploads).toHaveLength(1); expect(j1.artefact.path).toMatch(/\.json$/);
+    const manifest = JSON.parse(objects.get("fm-plan-cards/" + j1.artefact.path).toString("utf8"));
+    expect(manifest).toMatchObject({ v: 1, filename: expect.stringMatching(/^\d{3}-Alfa-Fruits-pl\.pdf$/), subject: expect.stringContaining("Fresh Market 2026"), html: expect.stringContaining("Alfa Fruits"), tag: "plan-card-supplier" });
+    expect(manifest.pdf_sha256).toBe(j1.artefact.sha256);
     expect(mails[0].key).toBe(idempotencyKey("supplier", "A", PLAN_AT, "a1@example.invalid")); expect(mails[0].key).toMatch(/^[A-Za-z0-9-]{20,200}$/);
     expect(mails[0].key).not.toBe(mails[1].key);
     // rejestr „zgubiony” (np. awaria zapisu) → ponowienie próbuje wysłać, ale dostawca odtwarza wynik po kluczu: brak nowych wiadomości
@@ -253,17 +256,65 @@ describe("artefakt, idempotencja i niepewne wyniki", () => {
     expect(tables.fm_plan_deliveries).toHaveLength(2);
   });
   it("równoległa rezerwacja → in_progress; niepewna próba starsza niż 24 h nie jest ponawiana bez force", async () => {
-    tables.fm_plan_deliveries.push({ id: "x1", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: PLAN_AT, status: "sending", created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempts: 1, idempotency_key: "old-key" });
+    tables.fm_plan_deliveries.push({ id: "x1", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: PLAN_AT, status: "sending", created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempts: 1, attempt: 1, idempotency_key: "old-key" });
     const j = JSON.parse((await send(ev())).body);
     expect(j.stale_unconfirmed).toEqual(["a1@example.invalid"]); expect(j.sent).toEqual(["a2@example.invalid"]); expect(j.ok).toBe(false); expect(j.marked).toBe(false);
     expect(mails.map((m) => m.body.to[0])).toEqual(["a2@example.invalid"]);
     const jf = JSON.parse((await send(ev({ force: true }))).body);
     expect(jf.sent).toEqual(["a1@example.invalid"]); expect(jf.ok).toBe(true);
-    const forced = mails.find((m) => m.body.to[0] === "a1@example.invalid"); expect(forced.key).toMatch(/-f\d+$/);
+    const forced = mails.find((m) => m.body.to[0] === "a1@example.invalid"); expect(forced.key).toMatch(/-a2$/);
     const race = await Promise.all([send(ev({ kind: "chain", id: 1 })), send(ev({ kind: "chain", id: 1 }))]);
     const sentBoth = race.map((r) => JSON.parse(r.body)).flatMap((r) => r.sent);
     expect(mails.filter((m) => m.body.to[0].startsWith("buyer")).map((m) => m.body.to[0]).sort()).toEqual(["buyer1@example.invalid", "buyer2@example.invalid"]);
     expect(sentBoth.sort()).toEqual(["buyer1@example.invalid", "buyer2@example.invalid"]);
+  });
+  it("P2/1: zmiana nazwy firmy / języka / numeru karty między próbami NIE zmienia żądania — ponowienie odtwarza manifest, brak konfliktu i duplikatu", async () => {
+    ledgerUpdateFail = (row) => row?.email === "a1@example.invalid";
+    const j1 = JSON.parse((await send(ev())).body); expect(j1.unconfirmed).toEqual(["a1@example.invalid"]);
+    const first = mails.find((m) => m.body.to[0] === "a1@example.invalid");
+    // zmiany w bazie bez zmiany wersji planu: nazwa, kraj (→ język EN), kolejność firm (→ numer karty)
+    tables.companies[0].name = "Alfa Fruits Updated"; tables.companies[0].country = "DE";
+    tables.companies.unshift({ id: "0", name: "0 Nowa Firma", country: "PL", fm_b2b_enabled: true, account_status: "active", fm_b2b_packages: 1, company_contacts: [] });
+    ledgerUpdateFail = () => false; mock.cards = [];
+    const j2 = JSON.parse((await send(ev())).body);
+    expect(j2.ok).toBe(true); expect(j2.sent).toEqual(["a1@example.invalid"]); expect(j2.failed).toEqual([]); expect(j2.marked).toBe(true);
+    expect(j2.artefact.reused).toBe(true); expect(mock.cards).toHaveLength(0); // bez ponownego renderu
+    expect(mails.filter((m) => m.body.to[0] === "a1@example.invalid")).toHaveLength(1); // replay, nie drugi mail
+    expect(j2.filename).toBe(first.body.attachments[0].filename); expect(j2.filename).toMatch(/^001-Alfa-Fruits-pl\.pdf$/);
+  });
+  it("P2/1: zmiana szablonu maila po rozpoczęciu próby nie zmienia żądania (manifest trzyma temat i HTML)", async () => {
+    ledgerUpdateFail = (row) => row?.email === "a1@example.invalid";
+    await send(ev()); const first = mails.find((m) => m.body.to[0] === "a1@example.invalid");
+    const manifestKey = "fm-plan-cards/" + artefactPath("supplier", "A", PLAN_AT); const stored = JSON.parse(objects.get(manifestKey).toString("utf8"));
+    expect(stored.html).toBe(first.body.html); expect(stored.subject).toBe(first.body.subject);
+    ledgerUpdateFail = () => false;
+    const j2 = JSON.parse((await send(ev())).body); expect(j2.ok).toBe(true); expect(mails.filter((m) => m.body.to[0] === "a1@example.invalid")).toHaveLength(1);
+  });
+  it("P2/2: wymuszona próba ma własną generację i czas startu; awaria potwierdzenia nowej próby → zwykłe ponowienie = replay tym samym kluczem, jeden mail", async () => {
+    tables.fm_plan_deliveries.push({ id: "x1", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: PLAN_AT, status: "sending", created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt_started_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt: 1, attempts: 1, idempotency_key: "old-key" });
+    ledgerUpdateFail = (row) => row?.email === "a1@example.invalid";
+    const jf = JSON.parse((await send(ev({ force: true }))).body);
+    expect(jf.unconfirmed).toEqual(["a1@example.invalid"]); expect(jf.stale_unconfirmed).toEqual([]);
+    const row = tables.fm_plan_deliveries.find((d) => d.id === "x1"); expect(row.attempt).toBe(2); expect(row.idempotency_key).toMatch(/-a2$/); expect(Date.now() - Date.parse(row.attempt_started_at)).toBeLessThan(60_000);
+    ledgerUpdateFail = () => false;
+    const j2 = JSON.parse((await send(ev())).body); // bez force — nowa próba jest świeża
+    expect(j2.stale_unconfirmed).toEqual([]); expect(j2.sent).toEqual(["a1@example.invalid"]); expect(j2.ok).toBe(true);
+    expect(mails.filter((m) => m.body.to[0] === "a1@example.invalid")).toHaveLength(1); expect(row.status).toBe("sent"); expect(row.attempt).toBe(2);
+    const j3 = JSON.parse((await send(ev({ force: true }))).body); expect(j3.already_sent).toContain("a1@example.invalid"); expect(mails.filter((m) => m.body.to[0] === "a1@example.invalid")).toHaveLength(1);
+  });
+  it("P2/2: dwa równoczesne wymuszenia tego samego starego wpisu → jedna nowa próba, jeden mail, oba wywołania zgodne", async () => {
+    tables.fm_plan_deliveries.push({ id: "x1", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: PLAN_AT, status: "sending", created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt_started_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt: 1, attempts: 1, idempotency_key: "old-key" });
+    const [r1, r2] = (await Promise.all([send(ev({ force: true })), send(ev({ force: true }))])).map((r) => JSON.parse(r.body));
+    const a1mails = mails.filter((m) => m.body.to[0] === "a1@example.invalid"); expect(a1mails).toHaveLength(1);
+    const row = tables.fm_plan_deliveries.find((d) => d.id === "x1"); expect(row.attempt).toBe(2); expect(row.status).toBe("sent"); expect(a1mails[0].key).toBe(row.idempotency_key);
+    expect([r1, r2].flatMap((r) => [...r.sent, ...r.already_sent]).filter((e) => e === "a1@example.invalid").length).toBeGreaterThanOrEqual(1);
+    expect([r1, r2].flatMap((r) => r.failed)).toEqual([]);
+  });
+  it("adresaci już obsłużeni nie uruchamiają ani pobierania logotypów, ani renderu, ani odczytu bucketu", async () => {
+    await send(ev()); const fetches = vi.mocked(fetch).mock.calls.length; mock.cards = []; objects.clear();
+    const j = JSON.parse((await send(ev())).body);
+    expect(j.ok).toBe(true); expect(j.already_sent.sort()).toEqual(["a1@example.invalid", "a2@example.invalid"]);
+    expect(vi.mocked(fetch).mock.calls.length).toBe(fetches); expect(mock.cards).toHaveLength(0); expect(j.artefact).toBeUndefined();
   });
   it("nowa wersja planu = nowy artefakt i nowe doręczenia (stare wpisy nie blokują)", async () => {
     tables.fm_plan_deliveries.push({ id: "old", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: "2026-09-21T10:00:00Z", status: "sent", created_at: "2026-09-21T10:00:00Z" });
