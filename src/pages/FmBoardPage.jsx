@@ -17,34 +17,51 @@ export default function FmBoardPage() {
   const [stale, setStale] = useState(false);
   const [page, setPage] = useState(0);
   const [now, setNow] = useState(new Date());
+  const [readAt, setReadAt] = useState(null);
   const lastOk = useRef(0);
   const isMobile = typeof window !== "undefined" && window.innerWidth < 760;
 
   useEffect(() => {
     let alive = true;
+    let sequence = 0, applied = 0;
     async function load() {
+      const request = ++sequence;
+      const accept = (data) => {
+        if (!alive || request < applied) return;
+        applied = request;
+        const at = Date.now();
+        setSnap(data); lastOk.current = at; setReadAt(at); setStale(false);
+      };
       try {
         const u = `/.netlify/functions/fm-queue-snapshot${dateParam ? `?date=${encodeURIComponent(dateParam)}` : ""}`;
         const r = await fetch(u, { cache: "no-store" });
         if (!r.ok) throw new Error("snapshot http " + r.status);
         const j = await r.json();
-        if (!alive) return;
-        setSnap(j); lastOk.current = Date.now(); setStale(false);
+        accept(j);
       } catch {
+        if (!alive || request < applied) return;
         try {
           const { data, error } = await supabase.rpc("fm_queue_public_snapshot", { p_event_date: dateParam || null });
           if (error) throw error;
-          if (!alive) return;
-          setSnap(data); lastOk.current = Date.now(); setStale(false);
+          accept(data);
         } catch {
-          if (alive && Date.now() - lastOk.current > 20_000) setStale(true);
+          if (alive && request >= applied && Date.now() - lastOk.current > 20_000) setStale(true);
         }
       }
     }
+    const onVisible = () => { if (document.visibilityState === "visible") load(); };
+    window.addEventListener("focus", load);
+    window.addEventListener("online", load);
+    document.addEventListener("visibilitychange", onVisible);
     load();
     const t = setInterval(load, POLL_MS);
     const c = setInterval(() => setNow(new Date()), 1000);
-    return () => { alive = false; clearInterval(t); clearInterval(c); };
+    return () => {
+      alive = false; clearInterval(t); clearInterval(c);
+      window.removeEventListener("focus", load);
+      window.removeEventListener("online", load);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [dateParam]);
 
   const rotateS = Number(params.get("rotate")) || snap?.settings?.rotation_s || 9;
@@ -81,6 +98,12 @@ export default function FmBoardPage() {
           {now.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}
         </div>
       </header>
+
+      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: "4px 16px", padding: isMobile ? "7px 14px" : "7px 28px", color: "#94a3b8", fontSize: isMobile ? 11 : 13 }}>
+        {snap?.event_date && <span>Dzień / Date: {snap.event_date.split("-").reverse().join(".")}</span>}
+        <span>Odświeżanie co 5 s / Updates every 5 s</span>
+        <span>Ostatni odczyt / Last check: {readAt ? new Date(readAt).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"}</span>
+      </div>
 
       {stale && <div style={{ background: "#7f1d1d", color: "white", textAlign: "center", padding: 8, fontWeight: 700 }}>Brak połączenia — dane mogą być nieaktualne / Connection lost — data may be outdated</div>}
       {closedAll && rows.length > 0 && <div style={{ background: "#1e293b", color: "#e2e8f0", textAlign: "center", padding: 10, fontWeight: 700, fontSize: isMobile ? 14 : 20 }}>Spotkania B2B zakończone — dziękujemy! · B2B meetings are over — thank you!</div>}
@@ -122,27 +145,26 @@ function ColHead({ isMobile }) {
 function BoardRow({ s, isMobile }) {
   const ml = MODE_LABEL[s.mode] || MODE_LABEL.closed;
   const open = s.mode === "open";
+  const freeEntry = s.mode === "free_entry";
   // 'closing' = dzień zamknięty, ale trwa ostatnie spotkanie: TERAZ widoczne, NASTĘPNY nie
   const showNow = open || s.mode === "closing";
   const nowNr = showNow && s.current_nr ? s.current_nr : null;
   const nextNr = open ? s.next_nr : null;
   const name = `${s.retailer_name}${s.group_label ? ` · ${s.group_label}` : ""}`;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 72px 64px" : "1fr 130px 110px 150px", gap: 10, alignItems: "center", background: showNow ? "#0f172a" : "#0b1120", border: `1.5px solid ${showNow ? "#1e3a8a" : "#1e293b"}`, borderRadius: 14, padding: isMobile ? "8px 10px" : "8px 12px", minHeight: isMobile ? 56 : 68 }}>
+    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr) 72px 64px" : "1fr 130px 110px 150px", gap: 10, alignItems: "center", background: showNow || freeEntry ? "#0f172a" : "#0b1120", border: `1.5px solid ${freeEntry ? "#3b82f6" : showNow ? "#1e3a8a" : "#1e293b"}`, borderRadius: 14, padding: isMobile ? "8px 10px" : "8px 12px", minHeight: isMobile ? 56 : 68 }}>
       <div style={{ minWidth: 0 }}>
         {s.gate && <div style={{ fontSize: 11, color: "#fbbf24", fontWeight: 800, letterSpacing: "0.12em" }}>GATE {s.gate}</div>}
-        <div style={{ fontSize: isMobile ? 16 : 22, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: showNow ? "#f8fafc" : "#94a3b8" }}>{name}</div>
+        <div style={{ fontSize: isMobile ? 16 : 22, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: isMobile ? "normal" : "nowrap", overflowWrap: isMobile ? "anywhere" : undefined, color: showNow || freeEntry ? "#f8fafc" : "#94a3b8" }}>{name}</div>
         {s.station_label && <div style={{ fontSize: 12, color: "#64748b" }}>{s.station_label}</div>}
       </div>
       <div style={{ textAlign: "center", fontSize: isMobile ? 34 : 54, fontWeight: 900, lineHeight: 1, fontVariantNumeric: "tabular-nums", color: nowNr ? "#4ade80" : "#334155" }}>{nowNr ?? "—"}</div>
       <div style={{ textAlign: "center", fontSize: isMobile ? 24 : 36, fontWeight: 800, lineHeight: 1, fontVariantNumeric: "tabular-nums", color: nextNr ? "#fbbf24" : "#334155" }}>{nextNr ?? "—"}</div>
-      {!isMobile && (
-        <div style={{ textAlign: "center" }}>
-          <span style={{ display: "inline-block", padding: "5px 10px", borderRadius: 999, background: open ? "rgba(74,222,128,0.15)" : s.mode === "free_entry" ? "rgba(96,165,250,0.18)" : s.mode === "paused" ? "rgba(251,191,36,0.18)" : "#1e293b", color: open ? "#4ade80" : s.mode === "free_entry" ? "#93c5fd" : s.mode === "paused" ? "#fbbf24" : "#94a3b8", fontWeight: 800, fontSize: 12, letterSpacing: "0.06em" }}>
-            {ml.pl} / {ml.en}
-          </span>
-        </div>
-      )}
+      <div style={{ gridColumn: isMobile ? "1 / -1" : undefined, textAlign: isMobile ? "left" : "center" }}>
+        <span style={{ display: "inline-block", padding: "5px 10px", borderRadius: 999, background: open ? "rgba(74,222,128,0.15)" : freeEntry ? "rgba(96,165,250,0.18)" : s.mode === "paused" ? "rgba(251,191,36,0.18)" : "#1e293b", color: open ? "#4ade80" : freeEntry ? "#93c5fd" : s.mode === "paused" ? "#fbbf24" : "#94a3b8", fontWeight: 800, fontSize: 12, letterSpacing: "0.06em" }}>
+          {ml.pl} / {ml.en}
+        </span>
+      </div>
     </div>
   );
 }
