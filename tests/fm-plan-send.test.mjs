@@ -30,12 +30,16 @@ const LOGO_PNG = readFileSync(new URL("./fixtures/logo.png", import.meta.url));
 const PLAN_AT = "2026-09-22T10:00:00.000+00:00";
 
 // ── atrapy: PostgREST (filtry, insert z UNIQUE, update, delete) + Storage ──
-let tables, mails, resendMode, ledgerUpdateFail, objects, uploads;
+let tables, mails, resendMode, ledgerUpdateFail, ledgerReadFail, casSteal, objects, uploads, allowedMime;
+const MIGRATION = readFileSync(new URL("../supabase/migrations/20260922100000_fm_plan_deliveries.sql", import.meta.url), "utf8");
+const MIGRATION_MIME = (MIGRATION.match(/'fm-plan-cards',\s*false,\s*\d+,\s*array\[([^\]]+)\]/) || [])[1]?.split(",").map((x) => x.trim().replace(/^'|'$/g, "")) || [];
 function fakeDb() {
   return {
     storage: { from(bucket) { return {
       async download(path) { const key = bucket + "/" + path; return objects.has(key) ? { data: new Blob([objects.get(key)]), error: null } : { data: null, error: { message: "Object not found" } }; },
-      async upload(path, buf, opts) { const key = bucket + "/" + path; uploads.push({ key, opts }); if (objects.has(key) && !opts?.upsert) return { data: null, error: { message: "The resource already exists" } }; objects.set(key, Buffer.from(buf)); return { data: { path }, error: null }; },
+      async upload(path, buf, opts) { const key = bucket + "/" + path; uploads.push({ key, opts });
+        if (!allowedMime.includes(opts?.contentType)) return { data: null, error: { message: `mime type ${opts?.contentType} is not supported` } }; // jak Supabase Storage przy allowed_mime_types
+        if (objects.has(key) && !opts?.upsert) return { data: null, error: { message: "The resource already exists" } }; objects.set(key, Buffer.from(buf)); return { data: { path }, error: null }; },
     }; } },
     from(table) {
       const filters = []; let one = false, limit = Infinity, op = "select", payload = null, wantSingle = false;
@@ -56,13 +60,19 @@ function fakeDb() {
             }
             tables[table].push(row); out = { data: wantSingle ? row : [row], error: null };
           } else {
-            const rows = tables[table].filter((r) => filters.every((f) => f(r))).slice(0, limit);
+            let rows = tables[table].filter((r) => filters.every((f) => f(r))).slice(0, limit);
+            if (op === "update" && table === "fm_plan_deliveries" && payload.attempt != null && casSteal(rows[0])) {
+              // „inny worker” wygrał CAS chwilę wcześniej: generacja już podbita, nasz warunek attempt=N nie trafia
+              const victim = rows[0]; Object.assign(victim, { attempt: payload.attempt, idempotency_key: "stolen-" + payload.idempotency_key, attempt_started_at: new Date().toISOString() }); rows = [];
+            }
+            if (op === "select" && table === "fm_plan_deliveries" && one && ledgerReadFail(rows[0])) return Promise.resolve({ data: null, error: { message: "connection reset" } }).then(resolve, reject);
             if (op === "update") {
               if (table === "fm_plan_deliveries" && payload.status === "sent" && ledgerUpdateFail(rows[0])) return Promise.resolve({ data: null, error: { message: "connection reset" } }).then(resolve, reject);
               rows.forEach((r) => Object.assign(r, payload));
             }
             if (op === "delete") tables[table] = tables[table].filter((r) => !rows.includes(r));
-            out = { data: one ? rows[0] || null : rows, error: null };
+            const copy = (r) => (r ? JSON.parse(JSON.stringify(r)) : r);
+            out = { data: one ? copy(rows[0]) || null : rows.map(copy), error: null };
           }
           return Promise.resolve(out).then(resolve, reject);
         },
@@ -108,7 +118,7 @@ function fixture({ phase = "published", plan = true, bigA = false } = {}) {
 
 beforeEach(() => {
   tables = fixture(); mails = []; objects = new Map(); uploads = []; mock.cards = []; logoTesting.cache.clear();
-  resendMode = () => ({ ok: true }); ledgerUpdateFail = () => false;
+  resendMode = () => ({ ok: true }); ledgerUpdateFail = () => false; ledgerReadFail = () => false; casSteal = () => false; allowedMime = [...MIGRATION_MIME];
   mock.db = fakeDb(); mock.user = { data: { user: { id: "admin" } }, error: null };
   vi.stubEnv("NETLIFY_DEV", "false"); vi.stubEnv("NETLIFY_LOCAL", "false"); vi.stubEnv("FM_EXPORT_TOKEN", "");
   vi.stubGlobal("fetch", vi.fn(async (url, opts) => {
@@ -316,6 +326,35 @@ describe("artefakt, idempotencja i niepewne wyniki", () => {
     expect(j.ok).toBe(true); expect(j.already_sent.sort()).toEqual(["a1@example.invalid", "a2@example.invalid"]);
     expect(vi.mocked(fetch).mock.calls.length).toBe(fetches); expect(mock.cards).toHaveLength(0); expect(j.artefact).toBeUndefined();
   });
+  it("P1: migracja dopuszcza application/json; manifest zapisuje się; przy MIME tylko PDF funkcja odmawia PRZED pocztą", async () => {
+    expect(MIGRATION_MIME).toContain("application/json");
+    const ok = JSON.parse((await send(ev())).body); expect(ok.ok).toBe(true); expect(uploads[0].opts.contentType).toBe("application/json");
+    tables = fixture(); mock.db = fakeDb(); objects.clear(); uploads.length = 0; mails.length = 0; allowedMime = ["application/pdf"];
+    const r = await send(ev()); const j = JSON.parse(r.body);
+    expect(r.statusCode).toBe(500); expect(j.error).toBe("artefact_failed"); expect(j.detail).toMatch(/mime type application\/json is not supported/); expect(mails).toHaveLength(0);
+  });
+  it("P2: po przegranym CAS błąd odczytu wpisu = wynik niepewny (nie already_sent, bez znacznika, bez maila)", async () => {
+    tables.fm_plan_deliveries.push({ id: "x1", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: PLAN_AT, status: "sending", created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt_started_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt: 1, attempts: 1, idempotency_key: "old-key" });
+    casSteal = (row) => row?.id === "x1"; ledgerReadFail = (row) => row?.id === "x1";
+    const j = JSON.parse((await send(ev({ force: true }))).body);
+    expect(j.ok).toBe(false); expect(j.already_sent).toEqual([]); expect(j.marked).toBe(false); expect(tables.companies[0].fm_plan_sent_at).toBeUndefined();
+    expect(j.failed).toEqual([{ email: "a1@example.invalid", error: "delivery_read_failed", uncertain: true }]);
+    expect(mails.filter((m) => m.body.to[0] === "a1@example.invalid")).toHaveLength(0);
+    expect(tables.fm_plan_deliveries.find((d) => d.id === "x1").status).toBe("sending");
+  });
+  it("P2: po przegranym CAS brak rekordu = wynik niepewny; istniejący 'sending' = replay jego klucza", async () => {
+    tables.fm_plan_deliveries.push({ id: "x1", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: PLAN_AT, status: "sending", created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt_started_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt: 1, attempts: 1, idempotency_key: "old-key" });
+    casSteal = (row) => { if (row?.id !== "x1") return false; tables.fm_plan_deliveries = tables.fm_plan_deliveries.filter((d) => d.id !== "x1"); return true; }; // rekord znika po przegranym CAS
+    const j = JSON.parse((await send(ev({ force: true }))).body);
+    expect(j.failed).toEqual([{ email: "a1@example.invalid", error: "delivery_read_failed", uncertain: true }]); expect(j.already_sent).toEqual([]); expect(j.marked).toBe(false);
+    // wariant: rekord istnieje ze 'stolen' kluczem → replay tego klucza, jedna wiadomość, potwierdzenie na generacji 2
+    tables = fixture(); mock.db = fakeDb(); mails.length = 0; objects.clear();
+    tables.fm_plan_deliveries.push({ id: "x1", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: PLAN_AT, status: "sending", created_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt_started_at: new Date(Date.now() - 25 * 3600 * 1000).toISOString(), attempt: 1, attempts: 1, idempotency_key: "old-key" });
+    casSteal = (row) => row?.id === "x1"; ledgerReadFail = () => false;
+    const j2 = JSON.parse((await send(ev({ force: true }))).body);
+    expect(j2.sent).toContain("a1@example.invalid"); const m1 = mails.find((m) => m.body.to[0] === "a1@example.invalid"); expect(m1.key).toMatch(/^stolen-/);
+    expect(tables.fm_plan_deliveries.find((d) => d.id === "x1")).toMatchObject({ status: "sent", attempt: 2 });
+  });
   it("nowa wersja planu = nowy artefakt i nowe doręczenia (stare wpisy nie blokują)", async () => {
     tables.fm_plan_deliveries.push({ id: "old", kind: "supplier", target_id: "A", email: "a1@example.invalid", plan_updated_at: "2026-09-21T10:00:00Z", status: "sent", created_at: "2026-09-21T10:00:00Z" });
     const j = JSON.parse((await send(ev())).body);
@@ -330,7 +369,15 @@ describe("tryb testowy", () => {
     const r = await send(ev({ test: true, planUpdatedAt: undefined })); const j = JSON.parse(r.body);
     expect(r.statusCode).toBe(200); expect(j.test).toBe(true); expect(j.mode).toBe("simulation"); expect(j.sent).toEqual(["admin@example.invalid"]);
     expect(mails).toHaveLength(1); expect(mails[0].body.to).toEqual(["admin@example.invalid"]); expect(mails[0].body.subject).toMatch(/^\[TEST\]/);
-    expect(tables.fm_plan_deliveries).toHaveLength(0); expect(uploads).toHaveLength(0); expect(tables.companies[0].fm_plan_sent_at).toBeUndefined();
+    expect(tables.fm_plan_deliveries).toHaveLength(0); expect(tables.companies[0].fm_plan_sent_at).toBeUndefined();
+    // tryb testowy ćwiczy Storage: manifest pod test/…, nadpisywalny, ten sam MIME co w wysyłce właściwej
+    expect(uploads).toHaveLength(1); expect(uploads[0].key).toMatch(/^fm-plan-cards\/test\/simulation\/supplier-A\.json$/); expect(uploads[0].opts).toMatchObject({ contentType: "application/json", upsert: true });
+    expect(j.artefact).toMatchObject({ path: "test/simulation/supplier-A.json", stored: true });
+  });
+  it("tryb testowy zgłasza błąd konfiguracji Storage (MIME) zamiast go maskować; zero maili", async () => {
+    allowedMime = ["application/pdf"];
+    const r = await send(ev({ test: true })); const j = JSON.parse(r.body);
+    expect(r.statusCode).toBe(500); expect(j.error).toBe("artefact_failed"); expect(j.detail).toMatch(/mime type/); expect(mails).toHaveLength(0);
   });
 });
 
