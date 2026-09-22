@@ -5,34 +5,42 @@
  * [feat/fm-plan-send-server-card] Wysyła JEDNĄ kartę spotkań B2B na adresy
  * firmy/sieci przez Resend. Karta jest GENEROWANA NA SERWERZE z zatwierdzonego
  * planu (fm_plan_private) tym samym rendererem co panel/CLI (layout.js).
- * Przeglądarka administratora nie przesyła już PDF-a — jedyne, co dostarcza,
- * to logotypy (PNG/JPEG data URI zdekodowane w przeglądarce, bo Supabase
- * trzyma je jako WebP). Obraz nie może wnieść cudzych spotkań, nazwisk ani
- * numerów: dane karty pochodzą wyłącznie z bazy, więc PDF zawiera dokładnie
- * kartę wskazanego odbiorcy, także gdy ma kilka stron.
+ * Przeglądarka administratora nie dostarcza ŻADNYCH bajtów karty — ani PDF,
+ * ani obrazów: logotypy pochodzą wyłącznie z adresów zapisanych w bazie na
+ * naszym Supabase Storage (_shared/fm-plan-logos.js). PDF zawiera więc
+ * dokładnie kartę wskazanego odbiorcy, także gdy ma kilka stron.
  *
  * Body (JSON):
  *   kind: "supplier" | "chain", id: uuid|int,
- *   planUpdatedAt: ISO — wersja planu, którą admin oglądał w panelu (musi być
- *                  równa fm_plan_private.updated_at; inaczej 409 plan_changed),
- *   logos?: { self?: dataUri, [cid|supplierId]: dataUri } — opcjonalne obrazy,
- *   test?: boolean — wysyłka WYŁĄCZNIE na adres zalogowanego administratora
- *          (bez rejestru doręczeń, bez znacznika; przy braku planu karta
- *          symulacyjna ze znakiem wodnym — nigdy w wysyłce właściwej).
+ *   planUpdatedAt: ISO — wersja planu z panelu (= fm_plan_private.updated_at,
+ *                  inaczej 409 plan_changed),
+ *   test?: boolean — WYŁĄCZNIE na adres zalogowanego administratora, bez
+ *          rejestru; przy braku planu karta symulacyjna ze znakiem wodnym,
+ *   force?: boolean — ponowienie niepewnego doręczenia starszego niż okno
+ *          idempotencji dostawcy (24 h); świadoma zgoda na możliwy duplikat.
  * Auth: Bearer JWT admina (profiles.role = 'admin' i active ≠ false).
  *
- * Wysyłka właściwa wymaga: fazy published/final_published/event_day,
- * istniejącego planu, zgodnej wersji planu i co najmniej jednego spotkania
- * odbiorcy. Adresaci zawsze z bazy (profile firmy/sieci), nigdy z żądania.
- * Każdy adresat dostaje OSOBNĄ wiadomość; rejestr fm_plan_deliveries
- * (UNIQUE kind+target+email+wersja planu, rezerwacja 'sending' przed wysyłką)
- * sprawia, że ponowienie po częściowym błędzie nie wysyła drugi raz do już
- * obsłużonych adresatów, a dwa równoległe wywołania nie dublują maili.
+ * Gwarancje doręczeń (rejestr fm_plan_deliveries + bucket fm-plan-cards):
+ *   • karta dla (kind, id, wersja planu) jest renderowana RAZ i zapisywana w
+ *     prywatnym buckecie; każde ponowienie używa tych samych bajtów,
+ *   • każdy adresat dostaje osobną wiadomość z trwałym Idempotency-Key
+ *     (kind, id, adresat, wersja planu) — Resend odtwarza wynik zamiast
+ *     wysyłać drugi raz, o ile żądanie jest identyczne (jest: te same bajty),
+ *   • wiersz 'sending' powstaje PRZED wysyłką (UNIQUE blokuje równoległy
+ *     duplikat) i NIGDY nie jest usuwany po niepewnym wyniku (5xx, timeout,
+ *     nieudany zapis potwierdzenia) — ponowienie odtwarza to samo żądanie;
+ *     usuwany tylko po jednoznacznej odmowie dostawcy (4xx) dla świeżej próby,
+ *   • mail przyjęty, ale zapis potwierdzenia nieudany = 'unconfirmed', nie
+ *     sukces; znacznik fm_plan_sent_at dopiero, gdy KAŻDY adresat ma 'sent'.
  */
+import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import PdfPrinter from "pdfmake";
 import { resolveEnvConfig, missingEnvNames, envErrorPayload } from "./_shared/function-env.js";
 import { loadFmPlanRaw } from "./_shared/fm-plan-raw.js";
+import { attachCanonicalLogos, webpToPngDataUri } from "./_shared/fm-plan-logos.js";
+// re-eksport do smoke-testu spakowanej funkcji (dekoder WASM w bundlu); bez wpływu na handler
+export { webpToPngDataUri };
 import { buildPlanModel } from "../../src/lib/fm-plan/model.js";
 import { supplierDoc, chainDoc } from "../../src/lib/fm-plan/layout.js";
 import { FM_PLAN_FONTS_VFS, FM_PLAN_FONT_FAMILIES } from "../../src/lib/fm-plan/fonts.js";
@@ -40,49 +48,24 @@ import { FM_PLAN_FONTS_VFS, FM_PLAN_FONT_FAMILIES } from "../../src/lib/fm-plan/
 const json = (statusCode, body) => ({ statusCode, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }, body: JSON.stringify(body) });
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PUBLISHED_PHASES = new Set(["published", "final_published", "event_day"]);
-const LOGO_RE = /^data:image\/(png|jpeg);base64,([A-Za-z0-9+/]+=*)$/;
-const MAX_LOGO_BYTES = 200 * 1024;      // jeden logotyp
-const MAX_LOGOS_BYTES = 4 * 1024 * 1024; // wszystkie logotypy w żądaniu
-const STALE_CLAIM_MS = 15 * 60 * 1000;   // porzucona rezerwacja 'sending' (np. timeout funkcji)
+const BUCKET = "fm-plan-cards";
+const LEDGER = "fm_plan_deliveries";
+const IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000; // Resend przechowuje klucze 24 h
 
 const uniqueEmails = (rows) => [...new Set((rows || []).map((row) => String(row.email || "").trim().toLowerCase()).filter((email) => EMAIL_RE.test(email)))];
 const slug = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/&amp;/g, "and").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
+const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
+const planTag = (ts) => String(ts).replace(/[^0-9]/g, "").slice(0, 20);
+export const artefactPath = (kind, targetId, planAt) => `${planTag(planAt)}/${kind}-${String(targetId).replace(/[^0-9A-Za-z-]/g, "")}.pdf`;
+export const idempotencyKey = (kind, targetId, planAt, email, suffix = "") =>
+  `fm2026-${kind}-${String(targetId).replace(/[^0-9A-Za-z]/g, "")}-${sha256(String(email).toLowerCase()).slice(0, 24)}-${planTag(planAt)}${suffix}`;
 
-// ── karta odbiorcy z modelu (czysta logika, testowana osobno) ────────────
+// ── karta odbiorcy z modelu ──────────────────────────────────────────────
 export function findCard(model, kind, id) {
   if (kind === "supplier") return model.suppliers.find((s) => String(s.id) === String(id)) || null;
   const rid = Number(id);
   if (!Number.isInteger(rid) || rid <= 0) return null;
   return model.chains.find((c) => Number(c.id) === rid) || null;
-}
-
-// Logotypy z przeglądarki: tylko PNG/JPEG data URI, tylko klucze należące do
-// tej karty ("self" = odbiorca; cid sieci na karcie dostawcy; id firmy na
-// karcie sieci). Cokolwiek innego jest ignorowane i raportowane.
-export function attachLogos(card, logos) {
-  const ignored = [];
-  const input = logos && typeof logos === "object" && !Array.isArray(logos) ? logos : {};
-  let total = 0;
-  const valid = (key) => {
-    const v = input[key];
-    if (v == null) return null;
-    const m = typeof v === "string" && v.length <= MAX_LOGO_BYTES * 1.4 ? LOGO_RE.exec(v) : null;
-    const bytes = m ? Math.floor(m[2].length * 0.75) : 0;
-    if (!m || bytes > MAX_LOGO_BYTES) { ignored.push(key); return null; }
-    total += bytes;
-    if (total > MAX_LOGOS_BYTES) { ignored.push(key); return null; }
-    return v;
-  };
-  const allowed = new Set(["self"]);
-  card.logo = valid("self");
-  for (const m of card.meetings) {
-    const key = card.kind === "supplier" ? String(m.chain.cid) : String(m.supplier.id);
-    allowed.add(key);
-    const target = card.kind === "supplier" ? m.chain : m.supplier;
-    target.logo = valid(key);
-  }
-  for (const key of Object.keys(input)) if (!allowed.has(key)) ignored.push(key);
-  return { ignored: [...new Set(ignored)] };
 }
 
 let printer = null;
@@ -101,6 +84,20 @@ export function renderCardPdf(card, mode) {
     doc.on("data", (c) => chunks.push(c)); doc.on("end", () => resolve(Buffer.concat(chunks))); doc.on("error", reject);
     doc.end();
   });
+}
+
+// Artefakt: jeden PDF per (kind, id, wersja planu). Pierwszy zapis wygrywa (upsert: false);
+// przy wyścigu pobieramy zapisaną wersję, żeby wszystkie ponowienia miały te same bajty.
+async function getOrCreateArtefact(db, card, mode, path) {
+  const bucket = db.storage.from(BUCKET);
+  const first = await bucket.download(path);
+  if (!first.error && first.data) return { pdf: Buffer.from(await first.data.arrayBuffer()), reused: true };
+  const pdf = await renderCardPdf(card, mode);
+  const up = await bucket.upload(path, pdf, { contentType: "application/pdf", upsert: false });
+  if (!up.error) return { pdf, reused: false };
+  const again = await bucket.download(path);
+  if (!again.error && again.data) return { pdf: Buffer.from(await again.data.arrayBuffer()), reused: true };
+  throw new Error("artefact_store_failed: " + String(up.error.message || up.error));
 }
 
 async function resolveRecipients(db, kind, card) {
@@ -145,18 +142,26 @@ const MAIL = {
   },
 };
 
-async function sendViaResend(env, { to, subject, html, filename, pdf, tag }) {
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${env.resendApiKey}` },
-    body: JSON.stringify({
-      from: "Fresh Market <newsletter@freshmarket.eu>", reply_to: "support@freshmarket.eu",
-      to: [to], subject, html,
-      attachments: [{ filename, content: pdf.toString("base64") }],
-      tags: [{ name: "fm2026", value: tag }],
-    }),
-  });
-  if (!res.ok) { const detail = await res.text().catch(() => ""); return { error: `resend_${res.status}${detail ? ": " + detail.slice(0, 200) : ""}` }; }
+async function sendViaResend(env, { to, subject, html, filename, pdf, tag, idempotencyKey: key }) {
+  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${env.resendApiKey}` };
+  if (key) headers["Idempotency-Key"] = key;
+  let res;
+  try {
+    res = await fetch("https://api.resend.com/emails", {
+      method: "POST", headers,
+      body: JSON.stringify({
+        from: "Fresh Market <newsletter@freshmarket.eu>", reply_to: "support@freshmarket.eu",
+        to: [to], subject, html,
+        attachments: [{ filename, content: pdf.toString("base64") }],
+        tags: [{ name: "fm2026", value: tag }],
+      }),
+    });
+  } catch (e) { return { error: "resend_network: " + String(e?.message || e).slice(0, 120), status: 0, uncertain: true }; }
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    const conflict = res.status === 409 || /idempoten/i.test(detail);
+    return { error: `resend_${res.status}${detail ? ": " + detail.slice(0, 200) : ""}`, status: res.status, conflict, uncertain: res.status >= 500 };
+  }
   const sent = await res.json().catch(() => ({}));
   return { id: sent.id || null };
 }
@@ -186,7 +191,9 @@ export async function handler(event) {
   if (body.kind !== "supplier" && body.kind !== "chain") return json(400, { error: "invalid_kind" });
   const kind = body.kind;
   const test = body.test === true;
-  if (body.pdfBase64 != null) return json(400, { error: "pdf_not_accepted" }); // karta powstaje na serwerze
+  const force = body.force === true;
+  // Żadne bajty karty z klienta: ani PDF, ani obrazy.
+  if (body.pdfBase64 != null || body.logos != null) return json(400, { error: "client_payload_not_accepted" });
 
   // ── plan: faza, istnienie, wersja ──────────────────────────────────────
   const raw = await loadFmPlanRaw(db);
@@ -203,7 +210,6 @@ export async function handler(event) {
   const card = findCard(model, kind, body.id);
   if (!card) return json(400, { error: "card_not_found" });
   if (!card.meetings.length) return json(409, { error: "no_meetings" });
-  const { ignored: logosIgnored } = attachLogos(card, body.logos);
 
   // ── adresaci (zawsze z bazy) ───────────────────────────────────────────
   const rec = await resolveRecipients(db, kind, card);
@@ -211,62 +217,83 @@ export async function handler(event) {
   const recipients = test ? uniqueEmails([{ email: profile.email }]) : rec.recipients;
   if (!recipients.length) return json(400, { error: test ? "admin_email_missing" : "no_canonical_recipients" });
   const name = String(rec.name || card.name || "").slice(0, 200);
-
-  // ── render na serwerze ─────────────────────────────────────────────────
-  let pdf;
-  try { pdf = await renderCardPdf(card, model.mode); } catch (e) { return json(500, { error: "render_failed", detail: String(e?.message || e).slice(0, 200) }); }
   const filename = `${card.card}-${slug(name)}-${card.lang}.pdf`;
   const m = MAIL[card.lang === "pl" ? "pl" : "en"];
   const subject = (test ? "[TEST] " : "") + m.subject(kind);
   const html = m.body(kind, name);
   const targetId = String(card.id);
 
-  // ── wysyłka per adresat + rejestr doręczeń ─────────────────────────────
-  const result = { sent: [], already_sent: [], in_progress: [], failed: [] };
+  // ── karta: kanoniczne logotypy + artefakt ──────────────────────────────
+  let logos;
+  try { logos = await attachCanonicalLogos(card, env.supabaseUrl); } catch { logos = { attached: 0, requested: 0 }; }
+
   if (test) {
+    let pdf;
+    try { pdf = await renderCardPdf(card, model.mode); } catch (e) { return json(500, { error: "render_failed", detail: String(e?.message || e).slice(0, 200) }); }
     const r = await sendViaResend(env, { to: recipients[0], subject, html, filename, pdf, tag: "plan-card-test" });
-    if (r.error) result.failed.push({ email: recipients[0], error: r.error }); else result.sent.push(recipients[0]);
-    return json(result.failed.length ? 502 : 200, { ok: !result.failed.length, test: true, mode: model.mode, filename, ...result, logos_ignored: logosIgnored });
+    if (r.error) return json(502, { ok: false, test: true, mode: model.mode, filename, failed: [{ email: recipients[0], error: r.error }], logos });
+    return json(200, { ok: true, test: true, mode: model.mode, filename, sent: [recipients[0]], logos });
   }
 
-  const ledgerKey = { kind, target_id: targetId, plan_updated_at: raw.plan_updated_at };
-  const { data: existing, error: ledgerError } = await db.from("fm_plan_deliveries").select("id, email, status, created_at")
+  const path = artefactPath(kind, targetId, raw.plan_updated_at);
+  let artefact;
+  try { artefact = await getOrCreateArtefact(db, card, model.mode, path); } catch (e) { return json(500, { error: "artefact_failed", detail: String(e?.message || e).slice(0, 200) }); }
+  const pdf = artefact.pdf, pdfSha = sha256(pdf);
+
+  // ── wysyłka per adresat + rejestr doręczeń ─────────────────────────────
+  const result = { sent: [], already_sent: [], in_progress: [], unconfirmed: [], stale_unconfirmed: [], failed: [] };
+  const { data: existing, error: ledgerError } = await db.from(LEDGER).select("id, email, status, created_at, attempts, idempotency_key")
     .eq("kind", kind).eq("target_id", targetId).eq("plan_updated_at", raw.plan_updated_at);
   if (ledgerError) return json(500, { error: "deliveries_lookup_failed" });
   const byEmail = new Map((existing || []).map((r) => [String(r.email).toLowerCase(), r]));
+  const now = () => new Date().toISOString();
 
   for (const to of recipients) {
     const prior = byEmail.get(to);
     if (prior?.status === "sent") { result.already_sent.push(to); continue; }
-    if (prior?.status === "sending") {
+    let rowId, key, fresh = false;
+    if (prior) {
+      // Niepewna próba (5xx/timeout/nieudany zapis) — odtwarzamy TO SAMO żądanie: ten sam klucz, te same bajty.
       const age = Date.now() - Date.parse(prior.created_at || 0);
-      if (!(age > STALE_CLAIM_MS)) { result.in_progress.push(to); continue; }
-      // porzucona rezerwacja (np. timeout) — zwalniamy i próbujemy ponownie
-      const { error: delErr } = await db.from("fm_plan_deliveries").delete().eq("id", prior.id).eq("status", "sending");
-      if (delErr) { result.failed.push({ email: to, error: "stale_claim_release_failed" }); continue; }
+      const stale = !(age <= IDEMPOTENCY_WINDOW_MS);
+      if (stale && !force) { result.stale_unconfirmed.push(to); continue; }
+      rowId = prior.id;
+      key = stale ? idempotencyKey(kind, targetId, raw.plan_updated_at, to, `-f${Date.now()}`) : (prior.idempotency_key || idempotencyKey(kind, targetId, raw.plan_updated_at, to));
+      const { error: bumpErr } = await db.from(LEDGER).update({ attempts: (Number(prior.attempts) || 0) + 1, idempotency_key: key, pdf_path: path, pdf_sha256: pdfSha }).eq("id", rowId);
+      if (bumpErr) { result.failed.push({ email: to, error: "delivery_update_failed" }); continue; }
+    } else {
+      key = idempotencyKey(kind, targetId, raw.plan_updated_at, to);
+      const { data: claim, error: claimErr } = await db.from(LEDGER)
+        .insert({ kind, target_id: targetId, plan_updated_at: raw.plan_updated_at, email: to, status: "sending", sent_by: userData.user.id, idempotency_key: key, pdf_path: path, pdf_sha256: pdfSha, attempts: 1 })
+        .select("id").single();
+      if (claimErr || !claim) { if (claimErr?.code === "23505") result.in_progress.push(to); else result.failed.push({ email: to, error: "delivery_claim_failed" }); continue; }
+      rowId = claim.id; fresh = true;
     }
-    // rezerwacja PRZED wysyłką: UNIQUE odrzuca równoległy duplikat
-    const { data: claim, error: claimErr } = await db.from("fm_plan_deliveries")
-      .insert({ ...ledgerKey, email: to, status: "sending", sent_by: userData.user.id }).select("id").single();
-    if (claimErr || !claim) { if (claimErr?.code === "23505") result.in_progress.push(to); else result.failed.push({ email: to, error: "delivery_claim_failed" }); continue; }
-    const r = await sendViaResend(env, { to, subject, html, filename, pdf, tag: `plan-card-${kind}` });
+    const r = await sendViaResend(env, { to, subject, html, filename, pdf, tag: `plan-card-${kind}`, idempotencyKey: key });
     if (r.error) {
-      await db.from("fm_plan_deliveries").delete().eq("id", claim.id);
-      result.failed.push({ email: to, error: r.error });
-      continue;
+      if (r.conflict) { await db.from(LEDGER).update({ last_error: r.error }).eq("id", rowId); result.failed.push({ email: to, error: "idempotency_conflict", detail: r.error }); continue; }
+      if (!r.uncertain && fresh) {
+        // jednoznaczna odmowa dostawcy dla świeżej próby (4xx): nic nie wyszło, zwalniamy rezerwację
+        await db.from(LEDGER).delete().eq("id", rowId).eq("status", "sending");
+        result.failed.push({ email: to, error: r.error }); continue;
+      }
+      // 5xx / sieć / timeout albo wcześniejsza niepewna próba: wiersz zostaje 'sending' — ponowienie odtworzy żądanie
+      await db.from(LEDGER).update({ last_error: r.error }).eq("id", rowId);
+      result.failed.push({ email: to, error: r.error, uncertain: true }); continue;
     }
-    const { error: doneErr } = await db.from("fm_plan_deliveries").update({ status: "sent", resend_id: r.id, sent_at: new Date().toISOString() }).eq("id", claim.id);
+    const { error: doneErr } = await db.from(LEDGER).update({ status: "sent", resend_id: r.id, sent_at: now(), last_error: null }).eq("id", rowId);
+    if (doneErr) { result.unconfirmed.push(to); continue; } // przyjęte przez pocztę, zapis niepotwierdzony — NIE sukces; ponowienie = replay tym samym kluczem
     result.sent.push(to);
-    if (doneErr) result.ledger_warning = "delivery_mark_failed";
   }
 
-  // znacznik na rekordzie firmy/sieci dopiero, gdy KAŻDY adresat tej wersji planu ma kartę
+  // znacznik na rekordzie firmy/sieci dopiero, gdy KAŻDY adresat tej wersji planu ma potwierdzone doręczenie
   let marked = false;
   if (result.sent.length + result.already_sent.length === recipients.length) {
     const table = kind === "chain" ? "retailers" : "companies";
-    const { error } = await db.from(table).update({ fm_plan_sent_at: new Date().toISOString() }).eq("id", card.id);
+    const { error } = await db.from(table).update({ fm_plan_sent_at: now() }).eq("id", card.id);
     marked = !error;
   }
-  const ok = !result.failed.length && !result.in_progress.length;
-  return json(200, { ok, mode: model.mode, filename, recipient_count: recipients.length, marked, plan_updated_at: raw.plan_updated_at, ...result, logos_ignored: logosIgnored });
+  const ok = ["failed", "in_progress", "unconfirmed", "stale_unconfirmed"].every((k) => result[k].length === 0);
+  return json(200, { ok, mode: model.mode, filename, recipient_count: recipients.length, marked, plan_updated_at: raw.plan_updated_at,
+    artefact: { path, sha256: pdfSha, reused: artefact.reused }, logos, ...result });
 }

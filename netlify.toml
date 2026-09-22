@@ -82,4 +82,5 @@
 # z plikami AFM czytanymi z dysku) nie może być wbundlowany przez esbuild — kopiujemy pakiet
 # z node_modules razem z zależnościami. Reszta (layout, fonty, model) trafia do bundla z src/.
 [functions."fm-plan-send"]
-  external_node_modules = ["pdfmake"]
+  # + @jsquash/webp: dekoder WebP w WASM (plik .wasm czytany z node_modules w czasie wykonania)
+  external_node_modules = ["pdfmake", "@jsquash/webp"]
