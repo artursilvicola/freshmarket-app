@@ -77,3 +77,9 @@
     "docs/PRECONNECT_KOMPENDIUM_DLA_GPT.md",
     "docs/FRESH_MARKET_EVENT_2026_KOMPENDIUM.md",
   ]
+
+# [feat/fm-plan-send-server-card] Karta PDF generowana na serwerze: pdfmake (+ @foliojs-fork/pdfkit
+# z plikami AFM czytanymi z dysku) nie może być wbundlowany przez esbuild — kopiujemy pakiet
+# z node_modules razem z zależnościami. Reszta (layout, fonty, model) trafia do bundla z src/.
+[functions."fm-plan-send"]
+  external_node_modules = ["pdfmake"]

@@ -3317,7 +3317,10 @@
     "tab_chains": "Chains",
     "status_ok": "sent",
     "status_err": "error",
-    "status_skip": "skipped"
+    "status_skip": "skipped",
+    "send_note": "Cards for e-mail are generated on the server from the approved plan (the same version you see in the table); the browser only passes logos. Each recipient gets a separate message and a retry after an error never re-sends to addresses already served.",
+    "already_sent": "all recipients already had this version",
+    "in_progress": "in progress"
   },
   "profile": {
     "impersonation": {

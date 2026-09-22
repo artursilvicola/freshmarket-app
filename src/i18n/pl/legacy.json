@@ -3317,7 +3317,10 @@
     "tab_chains": "Sieci",
     "status_ok": "wysłano",
     "status_err": "błąd",
-    "status_skip": "pominięto"
+    "status_skip": "pominięto",
+    "send_note": "Karty do wysyłki generuje serwer z zatwierdzonego planu (ta sama wersja, którą widzisz w tabeli); przeglądarka przekazuje tylko logotypy. Każdy adresat dostaje osobną wiadomość, a ponowienie po błędzie nie wysyła drugi raz do już obsłużonych adresów.",
+    "already_sent": "wszyscy adresaci mieli już tę wersję",
+    "in_progress": "w toku"
   },
   "profile": {
     "impersonation": {

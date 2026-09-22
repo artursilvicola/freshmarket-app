@@ -13,6 +13,7 @@
  *     ta furtka nigdy się tam nie otwiera.
  *
  * Zwraca (JSON):
+ *   plan_updated_at — wersja zatwierdzonego planu (fm_plan_private.updated_at) albo null
  *   settings   — ostatni wiersz fm_settings (algo_phase, schedule, ui_content, …)
  *   companies  — firmy dopuszczone do FM B2B (fm_b2b_enabled, active) + kontakty
  *   supplier_profiles — konta dostawców (e-mail do wysyłki karty)
@@ -25,6 +26,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { resolveEnvConfig, missingEnvNames, envErrorPayload } from "./_shared/function-env.js";
+import { loadFmPlanRaw } from "./_shared/fm-plan-raw.js";
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -69,66 +71,19 @@ export async function handler(event) {
     const { data: userData, error: uErr } = await supaUser.auth.getUser(token);
     if (uErr || !userData?.user) return json(401, { error: "invalid_token" });
     const supaCheck = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+    // [feat/fm-plan-send-server-card] rola admin + aktywne konto (dezaktywacja profilu zamyka eksport)
     const { data: profile } = await supaCheck
-      .from("profiles").select("role").eq("id", userData.user.id).maybeSingle();
-    if (profile?.role !== "admin") return json(403, { error: "admin_only" });
+      .from("profiles").select("role, active").eq("id", userData.user.id).maybeSingle();
+    if (profile?.role !== "admin" || profile.active === false) return json(403, { error: "admin_only" });
     authorized = true;
   }
   if (!authorized) return json(403, { error: "forbidden" });
 
   // ── dane ───────────────────────────────────────────────────────────────
+  // [feat/fm-plan-send-server-card] wspólny loader z fm-plan-send — ten sam
+  // obraz danych w eksporcie i w wysyłce; plan_updated_at = wersja planu.
   const db = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
-  const fail = (scope, error) => json(500, { error: `${scope}: ${error.message || error}` });
-
-  const settingsQ = await db.from("fm_settings").select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle();
-  if (settingsQ.error) return fail("fm_settings", settingsQ.error);
-  // [fix/security-hotfix] plan spotkań żyje w fm_plan_private (054); fm_settings.schedule = null
-  const planQ = await db.from("fm_plan_private").select("schedule, updated_at").eq("id", 1).maybeSingle();
-  if (planQ.error && !/fm_plan_private/i.test(planQ.error.message || "")) return fail("fm_plan_private", planQ.error);
-  const settings = settingsQ.data
-    ? { ...settingsQ.data, schedule: planQ.data?.schedule ?? settingsQ.data.schedule ?? null }
-    : null;
-
-  const companiesQ = await db
-    .from("companies")
-    .select("*, company_contacts(name, position, phone, email, role, sort_order)")
-    .eq("fm_b2b_enabled", true)
-    .neq("account_status", "suspended")
-    .neq("account_status", "rejected")
-    .order("name");
-  if (companiesQ.error) return fail("companies", companiesQ.error);
-  const companyIds = (companiesQ.data || []).map((c) => c.id);
-
-  let supplierProfiles = [];
-  if (companyIds.length) {
-    const profQ = await db
-      .from("profiles")
-      .select("id, company_id, email, name, phone, position, role, locale, active")
-      .in("company_id", companyIds);
-    if (profQ.error) return fail("profiles", profQ.error);
-    supplierProfiles = profQ.data || [];
-  }
-
-  const retailersQ = await db
-    .from("retailers")
-    .select(`*, buyers:profiles!fk_profiles_retailer(id, role, name, email, phone, position, active, fm26_active, buyer_categories, locale)`)
-    .eq("fm26_active", true)
-    .order("name");
-  if (retailersQ.error) return fail("retailers", retailersQ.error);
-
-  const prefsQ = await db.from("company_target_retailers").select("*");
-  if (prefsQ.error) return fail("company_target_retailers", prefsQ.error);
-  const respsQ = await db.from("fm_resps").select("*");
-  if (respsQ.error) return fail("fm_resps", respsQ.error);
-
-  return json(200, {
-    ok: true,
-    generated_at: new Date().toISOString(),
-    settings,
-    companies: companiesQ.data || [],
-    supplier_profiles: supplierProfiles,
-    retailers: retailersQ.data || [],
-    prefs: prefsQ.data || [],
-    resps: respsQ.data || [],
-  });
+  const raw = await loadFmPlanRaw(db);
+  if (raw.error) return json(500, { error: raw.error });
+  return json(200, raw);
 }
