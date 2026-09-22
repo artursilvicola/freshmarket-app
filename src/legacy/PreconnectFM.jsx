@@ -104,6 +104,7 @@ import SimplePhotoUploader from "../components/SimplePhotoUploader";
 const FmPlanExport = lazy(() => import("../components/admin/FmPlanExport"));
 // [feat/fm-queue] Dzień wydarzenia (admin) i „Twoja kolej” (dostawca) — leniwie.
 const FmEventDay = lazy(() => import("../components/admin/FmEventDay"));
+import MeetingDisclaimer from "../components/fm/MeetingDisclaimer.jsx";
 const FmMyQueue = lazy(() => import("../components/supplier/FmMyQueue"));
 import FreshMarketLogo from "../components/FreshMarketLogo";
 // [B2B Round prod-rollout / email-open-tracking] Potrzebny do auth.getSession()
@@ -1488,7 +1489,7 @@ const KNOWLEDGE_BASE = [
   },
   {
     keywords: ["kontakt", "telefon", "email", "oksana", "administrator", "pomoc", "problem", "blad", "błąd"],
-    answer: "W pilnych sprawach: Oksana Kozłowska · oksana@freshmarket.eu · +48 603 811 818. Odpowiadamy w ciągu 24 godzin roboczych."
+    answer: "W pilnych sprawach: Oksana Kozłowska · oksana@freshmarket.eu · +48 509 086 949. Odpowiadamy w ciągu 24 godzin roboczych."
   },
   {
     keywords: ["aktywacja", "aktywować", "aktywuj", "zatwierdzenie", "zatwierdź"],
@@ -1505,7 +1506,7 @@ function getAiAnswer(text) {
       return entry.answer;
     }
   }
-  return "Dzień dobry! Przekazuję to zapytanie do naszego zespołu. Wrócę z odpowiedzią najszybciej jak to możliwe. W pilnych sprawach zapraszam do kontaktu: oksana@freshmarket.eu · +48 603 811 818.";
+  return "Dzień dobry! Przekazuję to zapytanie do naszego zespołu. Wrócę z odpowiedzią najszybciej jak to możliwe. W pilnych sprawach zapraszam do kontaktu: oksana@freshmarket.eu · +48 509 086 949.";
 }
 
 
@@ -14161,6 +14162,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
               })
           }
         </Card>
+        <MeetingDisclaimer audience="supplier"/>
         {/* [B2B Round prod-rollout / FM queue model] Mechanika spotkań FM 2026 —
             system kolejkowy z numerkami + wywołania na ekranie/w aplikacji + Gate 1/2.
             Patrz: dashboard-supplier-mockup.html v5 i kompendium PRECONNECT_KOMPENDIUM_DLA_GPT.md. */}
@@ -14564,6 +14566,8 @@ export function PageBuyerFM({ chainId, fmSettings, fmPrefs, fmResps, setFmResps,
             })
         }
       </Card>
+
+      {pub && <MeetingDisclaimer audience="buyer"/>}
 
       {/* Firmy z którymi chciałbyś się jeszcze spotkać */}
       <Card title={t("fm.buyer.wish_card_title")} icon={Heart}>

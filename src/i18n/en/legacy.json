@@ -1495,7 +1495,7 @@
         "btn_see_meetings": "See meetings",
         "contact_pre": "Questions? Contact: ",
         "contact_name": "Oksana Kozłowska",
-        "contact_post": " · oksana@freshmarket.eu · +48 603 811 818"
+        "contact_post": " · oksana@freshmarket.eu · +48 509 086 949"
       }
     },
     "offers": {
@@ -2609,7 +2609,7 @@
     "venue_footer_brand": "Fresh Market 2026",
     "lock_screen": {
       "processing_title": "Generating the meeting plan",
-      "contact_html": "Questions? Contact: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818",
+      "contact_html": "Questions? Contact: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 509 086 949",
       "default_title": "B2B Meetings — Fresh Market 2026",
       "default_desc_html": "Planning B2B meetings with retailer buyers at the <strong>Fresh Market 2026</strong> trade show.<br/>Partner selection: <strong>until September 16</strong>. Plan publication: <strong>September 22</strong>. Event: <strong>September 24</strong>.",
       "open_date_format": "Planned opening: {{date}}",
@@ -2670,7 +2670,7 @@
       "zone_red": "🔴 Late",
       "wyniki_lock_emoji": "⏳",
       "wyniki_lock_title": "Plan being finalized",
-      "wyniki_lock_desc_html": "The administrator is preparing the final meeting plan.<br/>It will be published on <strong>September 22, 2026</strong>. That day you'll see your meeting numbers.<br/><br/>Questions? Contact: <strong>Oksana Kozłowska</strong><br/>oksana@freshmarket.eu · +48 603 811 818",
+      "wyniki_lock_desc_html": "The administrator is preparing the final meeting plan.<br/>It will be published on <strong>September 22, 2026</strong>. That day you'll see your meeting numbers.<br/><br/>Questions? Contact: <strong>Oksana Kozłowska</strong><br/>oksana@freshmarket.eu · +48 509 086 949",
       "wyniki_hero_event_title": "Fresh Market 2026",
       "wyniki_hero_meta_format": "{{date}} · {{venue}}",
       "wyniki_hero_badge": "● Final plan published",
@@ -2741,7 +2741,7 @@
       "wish_summary_few": "{{count}} additional companies reported to the administrator. Oksana Kozłowska will make manual corrections if possible.",
       "wish_summary_many": "{{count}} additional companies reported to the administrator. Oksana Kozłowska will make manual corrections if possible.",
       "wish_summary_other": "{{count}} additional companies reported to the administrator. Oksana Kozłowska will make manual corrections if possible.",
-      "pub_contact_html": "For changes contact: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 603 811 818",
+      "pub_contact_html": "For changes contact: <strong>Oksana Kozłowska</strong> · oksana@freshmarket.eu · +48 509 086 949",
       "footer_extra": "Your booth — you'll find out at event reception.\nRegistration starts: 8:00–9:00 AM."
     },
     "admin": {
@@ -3078,7 +3078,7 @@
       "clear_btn": "Clear",
       "send_failed": "The message could not be sent. Please try again.",
       "no_recipient_error": "Cannot send the message: this company has no active user account assigned.",
-      "ai_fallback_reply": "Hello! I'm forwarding this question to our team. I'll get back to you as soon as possible. For urgent matters please contact: oksana@freshmarket.eu · +48 603 811 818."
+      "ai_fallback_reply": "Hello! I'm forwarding this question to our team. I'll get back to you as soon as possible. For urgent matters please contact: oksana@freshmarket.eu · +48 509 086 949."
     }
   },
   "errors": {

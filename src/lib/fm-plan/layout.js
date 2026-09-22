@@ -5,8 +5,9 @@
 //   (dontBreakRows), • nazwa firmy/sieci w nagłówku i stopce KAŻDEJ strony,
 //   • karta dostawcy bez danych kupców; karta sieci z logo/krajem/opisem/kontaktem dostawcy,
 //   • GATE 1 = pełna plakietka, GATE 2 = obrys (czytelne w druku cz-b).
-import { T, EVENT, contactsLines } from "./i18n.js";
-import { FM_LOGO_DATA_URI, SPONSOR_LOGOS } from "./assets.js";
+import { T, EVENT } from "./i18n.js";
+import { FM_LOGO_DATA_URI } from "./assets.js";
+import { meetingNoticeBlock, meetingResourcesBlock } from "./notice-pdf.js";
 
 const C = { ink: "#14211a", ink2: "#3d4a43", mute: "#6c7a72", rule: "#d9e2dc", ruleStrong: "#b9c6be",
   brand: "#1f8f4e", brandDeep: "#166b3b", tint: "#eaf5ee", warn: "#b45309", warnTint: "#fdf3e4", warnInk: "#5a3d12" };
@@ -127,7 +128,7 @@ export function supplierDoc(card, { mode = "final" } = {}) {
   } : { text: "—", color: C.mute };
 
   const how = {
-    margin: [0, 5 * MM, 0, 0],
+    margin: [0, 3 * MM, 0, 0],
     table: { widths: ["*"], body: [[{
       columns: [
         { width: "58%", stack: [
@@ -146,7 +147,7 @@ export function supplierDoc(card, { mode = "final" } = {}) {
     layout: { hLineWidth: () => 0.8, vLineWidth: () => 0.8, hLineColor: () => C.ruleStrong, vLineColor: () => C.ruleStrong, paddingLeft: () => 11, paddingRight: () => 11, paddingTop: () => 7, paddingBottom: () => 7 },
   };
 
-  return docDefinition(card, t, "supplier", [titleBlock(card, t, "supplier"), identityBand(card, t, "supplier"), table, { unbreakable: true, stack: [how, contactsBlock(t)] }], mode);
+  return docDefinition(card, t, "supplier", [titleBlock(card, t, "supplier"), identityBand(card, t, "supplier"), table, { unbreakable: true, stack: [how, meetingResourcesBlock(card.lang)] }, meetingNoticeBlock(card.lang, "supplier")], mode);
 }
 
 export function chainDoc(card, { mode = "final" } = {}) {
@@ -189,28 +190,7 @@ export function chainDoc(card, { mode = "final" } = {}) {
     layout: { hLineWidth: () => 0.8, vLineWidth: () => 0.8, hLineColor: () => C.ruleStrong, vLineColor: () => C.ruleStrong, paddingLeft: () => 11, paddingRight: () => 11, paddingTop: () => 7, paddingBottom: () => 7 },
   };
 
-  return docDefinition(card, t, "chain", [titleBlock(card, t, "chain"), identityBand(card, t, "chain"), table, { unbreakable: true, stack: [info, contactsBlock(t)] }], mode);
-}
-
-function contactsBlock(t) {
-  const lines = contactsLines(t === T.pl ? "pl" : "en");
-  return {
-    margin: [0, 4 * MM, 0, 0],
-    stack: [
-      { canvas: [{ type: "line", x1: 0, y1: 0, x2: PAGE.w - PAGE.left - PAGE.right, y2: 0, lineWidth: 0.8, lineColor: C.ruleStrong }] },
-      { columns: [
-        { width: "*", stack: [
-          { text: t.help.toUpperCase(), fontSize: 6.8, characterSpacing: 0.6, color: C.mute, bold: true, margin: [0, 0, 0, 2] },
-          ...lines.map((l) => ({ text: l, fontSize: 8, color: C.ink2, lineHeight: 1.3 })),
-          { text: [t.live + ": ", { text: EVENT.app, bold: true }, ` · ${EVENT.support}`], fontSize: 8, color: C.ink2, lineHeight: 1.35 },
-        ], margin: [0, 6, 0, 0] },
-        { width: "auto", columns: [
-          { text: t.sponsors.toUpperCase(), fontSize: 6.6, characterSpacing: 0.6, color: C.mute, width: 60, margin: [0, 10, 0, 0] },
-          ...SPONSOR_LOGOS.map((s) => ({ image: s.dataUri, fit: [66, 22], width: 70, margin: [4, 6, 0, 0] })),
-        ] },
-      ], columnGap: 10 },
-    ],
-  };
+  return docDefinition(card, t, "chain", [titleBlock(card, t, "chain"), identityBand(card, t, "chain"), table, { unbreakable: true, stack: [info, meetingResourcesBlock(card.lang)] }, meetingNoticeBlock(card.lang, "buyer")], mode);
 }
 
 function docDefinition(card, t, kind, content, mode) {

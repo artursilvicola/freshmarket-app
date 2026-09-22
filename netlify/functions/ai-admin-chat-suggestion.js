@@ -121,7 +121,7 @@ function buildSystemPrompt(kompendiumContent) {
     "- Zakaz wymyślania liczb, cen, terminów, zasad, mechanizmów. Jeśli czegoś nie ma w bazie wiedzy poniżej — NIE pisz tego.",
     "- Zakaz pisania o '14 dniach zwrotu kredytu' lub podobnych nieaktualnych zasadach billingu — model rozliczeń to NIE jest dziś relewantne dla pytań o cenę udziału w evencie.",
     "- Nigdy nie obiecuj rzeczy nieoczywistych: spotkania 1:1 zależą od akceptacji kupców, finalny harmonogram od algorytmu i admina.",
-    "- Jeśli pytanie wykracza poza bazę wiedzy — odpowiedz uczciwie 'sprawdzę i wrócę z konkretną odpowiedzią' albo skieruj do Oksany (oksana@freshmarket.eu, +48 603 811 818).",
+    "- Jeśli pytanie wykracza poza bazę wiedzy — odpowiedz uczciwie 'sprawdzę i wrócę z konkretną odpowiedzią' albo skieruj do Oksany (oksana@freshmarket.eu, +48 509 086 949).",
     "",
     "MAPOWANIE PYTAŃ NA CZĘŚCI BAZY:",
     "- 'Ile kosztuje udział?', 'Cena pakietu?', 'Ile za stoisko?' → Część B sekcje 8 (pakiety) + 9 (cennik) + 10 (stoiska).",
@@ -137,7 +137,7 @@ function buildSystemPrompt(kompendiumContent) {
       "MINIMALNA BAZA FAKTÓW (fallback — pełna baza wiedzy nie załadowała się):",
       "- Fresh Market 2026: 24 września 2026, Ożarów Mazowiecki, Ptak Warsaw Expo.",
       "- Plan spotkań publikowany 22 września po korektach admina.",
-      "- Kontakt do organizatora: Oksana Kozłowska, oksana@freshmarket.eu, +48 603 811 818.",
+      "- Kontakt do organizatora: Oksana Kozłowska, oksana@freshmarket.eu, +48 509 086 949.",
       "- PreConnect (b2b.freshmarket.eu) = panel B2B z profilami firm, ofertami, matchmakingiem i harmonogramem spotkań."
     );
     return introRules.join("\n");
