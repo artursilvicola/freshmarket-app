@@ -48,7 +48,31 @@ async function loadPdfMake() {
   return pdfMakeReady;
 }
 const pdfBlob = (pdfMake, doc) => new Promise((res) => pdfMake.createPdf(doc).getBlob(res));
-const blobToBase64 = (blob) => new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(",")[1]); fr.readAsDataURL(blob); });
+// [feat/fm-plan-send-server-card] Logotypy do żądania wysyłki: pomniejszone PNG (kafelek na karcie ma
+// 60×24 / 68×34 pt, 280×140 px to ok. 280 dpi). Klucze: "self" = odbiorca, cid sieci (karta dostawcy),
+// id firmy (karta sieci) — serwer ignoruje wszystko, co nie należy do tej karty.
+async function shrinkLogo(dataUri, maxW = 280, maxH = 140) {
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUri; });
+    const scale = Math.min(1, maxW / img.width, maxH / img.height);
+    if (scale >= 1 && dataUri.length < 60000) return dataUri;
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(img.width * scale)); c.height = Math.max(1, Math.round(img.height * scale));
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL("image/png");
+  } catch { return null; }
+}
+async function logosFor(c) {
+  const out = {};
+  const put = async (key, dataUri) => { if (!dataUri) return; const small = await shrinkLogo(dataUri); if (small) out[key] = small; };
+  await put("self", c.src?.logo);
+  for (const m of c.src?.meetings || []) {
+    const target = c.kind === "supplier" ? m.chain : m.supplier;
+    await put(c.kind === "supplier" ? String(target.cid) : String(target.id), target?.logo);
+  }
+  return out;
+}
 async function pageCount(blob) { const { PDFDocument } = await import("pdf-lib"); return (await PDFDocument.load(await blob.arrayBuffer())).getPageCount(); }
 async function mergeBlobs(blobs) {
   const { PDFDocument } = await import("pdf-lib");
@@ -62,7 +86,9 @@ export default function FmPlanExport({ fl, adminEmail }) {
   const [phase, setPhase] = useState("idle"); // idle | loading | ready | sending
   const [step, setStep] = useState("");
   const [model, setModel] = useState(null);
-  const [cards, setCards] = useState([]); // {card, kind, id, name, lang, n, pages, emails[], blob, filename, sentAt, status}
+  const [cards, setCards] = useState([]); // {card, kind, id, name, lang, n, pages, emails[], blob, filename, sentAt, status, src}
+  // [feat/fm-plan-send-server-card] wersja zatwierdzonego planu z fm-plan-data — serwer odrzuca wysyłkę, gdy plan się zmienił
+  const [planUpdatedAt, setPlanUpdatedAt] = useState(null);
   const [tab, setTab] = useState("supplier");
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [summary, setSummary] = useState(null);
@@ -77,6 +103,7 @@ export default function FmPlanExport({ fl, adminEmail }) {
       const r = await fetch("/.netlify/functions/fm-plan-data", { headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) throw new Error(`fm-plan-data ${r.status}`);
       const raw = await r.json();
+      setPlanUpdatedAt(raw.plan_updated_at || null);
       const m = buildPlanModel(raw, { simulate: true });
       setStep(t("fm_plan.step_images"));
       await resolveImages(m, imageToPngDataUri);
@@ -88,7 +115,7 @@ export default function FmPlanExport({ fl, adminEmail }) {
         const c = all[i];
         setStep(t("fm_plan.step_render", { done: i + 1, total: all.length }));
         const blob = await pdfBlob(pdfMake, c.kind === "supplier" ? supplierDoc(c, { mode: m.mode }) : chainDoc(c, { mode: m.mode }));
-        out.push({ card: c.card, kind: c.kind, id: c.id, name: c.name, lang: c.lang, n: c.meetings.length, pages: await pageCount(blob), emails: c.emails || [], blob, filename: `${c.card}-${slug(c.name)}-${c.lang}.pdf`, sentAt: sentMap.get(`${c.kind}:${c.id}`) || null, status: null });
+        out.push({ card: c.card, kind: c.kind, id: c.id, name: c.name, lang: c.lang, n: c.meetings.length, pages: await pageCount(blob), emails: c.emails || [], blob, filename: `${c.card}-${slug(c.name)}-${c.lang}.pdf`, sentAt: sentMap.get(`${c.kind}:${c.id}`) || null, status: null, src: c });
       }
       setModel(m); setCards(out); setPhase("ready");
     } catch (e) {
@@ -110,10 +137,13 @@ export default function FmPlanExport({ fl, adminEmail }) {
   }
   function preview(c) { window.open(URL.createObjectURL(c.blob), "_blank", "noopener"); }
 
+  // [feat/fm-plan-send-server-card] Serwer sam generuje kartę odbiorcy z zatwierdzonego planu
+  // (fm_plan_private) tym samym rendererem. Z przeglądarki idą WYŁĄCZNIE logotypy (PNG, pomniejszone),
+  // bo Supabase trzyma je jako WebP, którego pdfmake w Node nie odczyta. Żaden PDF nie jest przesyłany.
   async function sendOne(c, test) {
     const token = await getToken();
     const r = await fetch("/.netlify/functions/fm-plan-send", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ kind: c.kind, id: c.id, lang: c.lang, filename: c.filename, pdfBase64: await blobToBase64(c.blob), test }) });
+      body: JSON.stringify({ kind: c.kind, id: c.id, planUpdatedAt, logos: await logosFor(c), test }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error ? `${j.error}${j.detail ? " — " + j.detail : ""}` : `HTTP ${r.status}`);
     return j;
@@ -134,7 +164,12 @@ export default function FmPlanExport({ fl, adminEmail }) {
     for (let i = 0; i < withEmail.length; i++) {
       if (abortRef.current) break;
       const c = withEmail[i];
-      try { await sendOne(c, false); c.status = "ok"; c.sentAt = new Date().toISOString(); ok++; }
+      try {
+        const j = await sendOne(c, false);
+        const problems = [...(j.failed || []).map((f) => `${f.email} (${f.error})`), ...(j.in_progress || []).map((e) => `${e} (${t("fm_plan.in_progress")})`)];
+        if (j.ok) { c.status = (j.already_sent || []).length && !(j.sent || []).length ? "ok:" + t("fm_plan.already_sent") : "ok"; c.sentAt = new Date().toISOString(); ok++; }
+        else { c.status = "err:" + (problems.join(", ") || "unknown"); err++; }
+      }
       catch (e) { c.status = "err:" + (e?.message || e); err++; }
       setProgress({ done: i + 1, total: withEmail.length }); setCards([...cards]);
     }
@@ -180,6 +215,7 @@ export default function FmPlanExport({ fl, adminEmail }) {
             {phase === "sending" && progress.total > 0 && <span style={{ fontSize: 12, color: "#0f172a", fontWeight: 600 }}>{t("fm_plan.sending", progress)}</span>}
           </div>
           {!canSend && <div style={{ fontSize: 11.5, color: "#b45309", marginTop: 6 }}>{t("fm_plan.send_blocked")}</div>}
+          <div style={{ fontSize: 11, color: "#64748b", marginTop: 6 }}>{t("fm_plan.send_note")}</div>
           {summary && <div style={{ fontSize: 12, color: "#0f172a", marginTop: 8, fontWeight: 600 }}>{t("fm_plan.sent_summary", summary)}</div>}
 
           <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
@@ -204,7 +240,7 @@ export default function FmPlanExport({ fl, adminEmail }) {
                     <td style={{ padding: "6px 8px", fontVariantNumeric: "tabular-nums" }}>{c.pages}</td>
                     <td style={{ padding: "6px 8px", color: c.emails.length ? "#0f172a" : "#dc2626", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.emails.join(", ")}>{c.emails.length ? c.emails.join(", ") : t("fm_plan.no_email")}</td>
                     <td style={{ padding: "6px 8px", fontSize: 11, color: c.status?.startsWith("err") ? "#dc2626" : c.status === "ok" ? "#059669" : "#64748b" }}>
-                      {c.status === "ok" ? t("fm_plan.status_ok") : c.status === "skip" ? t("fm_plan.status_skip") : c.status?.startsWith("err") ? `${t("fm_plan.status_err")}: ${c.status.slice(4)}` : c.sentAt ? t("fm_plan.sent_at", { when: new Date(c.sentAt).toLocaleString() }) : ""}
+                      {c.status === "ok" ? t("fm_plan.status_ok") : c.status?.startsWith("ok:") ? `${t("fm_plan.status_ok")} (${c.status.slice(3)})` : c.status === "skip" ? t("fm_plan.status_skip") : c.status?.startsWith("err") ? `${t("fm_plan.status_err")}: ${c.status.slice(4)}` : c.sentAt ? t("fm_plan.sent_at", { when: new Date(c.sentAt).toLocaleString() }) : ""}
                     </td>
                     <td style={{ padding: "6px 8px" }}><button onClick={() => preview(c)} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "white", cursor: "pointer", fontFamily: "inherit" }}>{t("fm_plan.preview")}</button></td>
                   </tr>
