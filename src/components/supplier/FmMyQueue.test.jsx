@@ -12,13 +12,13 @@ vi.mock("../../lib/fm-queue", () => ({ listMyFmQueueMeetings: api.list }));
 import FmMyQueue, { MINE_MS, SNAP_MS } from "./FmMyQueue.jsx";
 
 let tree;
-const meeting = (nr, status = "called") => ({ id: `m${nr}`, nr, status, queue_group_id: "g" });
+const meeting = (nr, status = "called", companyId = "company-a") => ({ id: `${companyId}-m${nr}`, company_id: companyId, nr, status, queue_group_id: "g" });
 const snapshot = (date, over = {}) => ({ event_date: date, settings: { closed_all_at: null }, stations: [{ group_id: "g", retailer_name: "TEST", mode: "open", current_nr: 12, last_called_nr: 12, ...over }] });
 const deferred = () => { let resolve, reject; const promise = new Promise((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; };
 const byTestId = (id) => tree.root.findAllByProps({ "data-testid": id });
 const byStatus = (s) => tree.root.findAllByProps({ "data-status": s });
-async function mount(date, lang = "pl") { await act(async () => { tree = create(<FmMyQueue lang={lang} eventDate={date} />); }); }
-async function update(date, lang = "pl") { await act(async () => { tree.update(<FmMyQueue lang={lang} eventDate={date} />); }); }
+async function mount(date, lang = "pl", companyId = "company-a") { await act(async () => { tree = create(<FmMyQueue lang={lang} eventDate={date} companyId={companyId} />); }); }
+async function update(date, lang = "pl", companyId = "company-a") { await act(async () => { tree.update(<FmMyQueue lang={lang} eventDate={date} companyId={companyId} />); }); }
 const textOf = (n) => (typeof n === "string" ? n : (n.children || []).map(textOf).join(""));
 
 beforeEach(() => {
@@ -27,6 +27,54 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async (url) => ({ ok: true, json: async () => snapshot(String(url).split("date=")[1]) })));
 });
 afterEach(() => { if (tree) act(() => tree.unmount()); tree = undefined; vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+describe("karta dostawcy — zakres firmy w podglądzie admina", () => {
+  it("przekazuje ID firmy i nie wyświetla obcych numerów nawet przy szerszej odpowiedzi", async () => {
+    api.list.mockResolvedValue([meeting(1, "planned", "other"), meeting(58, "planned")]);
+    await mount("2026-09-24");
+    expect(api.list).toHaveBeenCalledWith("2026-09-24", expect.objectContaining({ companyId: "company-a" }));
+    expect(byTestId("my-meeting-1")).toHaveLength(0);
+    expect(byTestId("my-meeting-58")).toHaveLength(1);
+  });
+  it("zmiana firmy usuwa stare numery od razu; błąd nowego odczytu ich nie przywraca", async () => {
+    const next = deferred();
+    api.list.mockResolvedValueOnce([meeting(58)]).mockReturnValueOnce(next.promise);
+    await mount("2026-09-24");
+    await update("2026-09-24", "en", "company-b");
+    expect(byTestId("my-meeting-58")).toHaveLength(0);
+    expect(api.list).toHaveBeenLastCalledWith("2026-09-24", expect.objectContaining({ companyId: "company-b" }));
+    await act(async () => { next.reject(new Error("network")); });
+    expect(byTestId("my-meeting-58")).toHaveLength(0);
+    expect(byTestId("my-queue-error")).toHaveLength(1);
+  });
+  it("spóźniona odpowiedź poprzedniej firmy nie nadpisuje aktualnej", async () => {
+    const old = deferred();
+    api.list.mockReturnValueOnce(old.promise).mockResolvedValueOnce([meeting(7, "planned", "company-b")]);
+    await mount("2026-09-24");
+    const oldSignal = api.list.mock.calls[0][1].signal;
+    await update("2026-09-24", "pl", "company-b");
+    expect(oldSignal.aborted).toBe(true);
+    await act(async () => { old.resolve([meeting(58)]); });
+    expect(byTestId("my-meeting-58")).toHaveLength(0);
+    expect(byTestId("my-meeting-7")).toHaveLength(1);
+  });
+  it("brak identyfikatora firmy nie wykonuje żadnego odczytu", async () => {
+    await mount("2026-09-24", "pl", null);
+    expect(api.list).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+    expect(byTestId("fm-my-queue")).toHaveLength(0);
+  });
+  it("usunięcie firmy anuluje odczyt; spóźniony wynik nie pojawi się po powrocie", async () => {
+    const old = deferred();
+    api.list.mockReturnValueOnce(old.promise).mockResolvedValueOnce([]);
+    await mount("2026-09-24");
+    await update("2026-09-24", "pl", null);
+    expect(api.list.mock.calls[0][1].signal.aborted).toBe(true);
+    await act(async () => { old.resolve([meeting(58)]); });
+    await update("2026-09-24");
+    expect(byTestId("my-meeting-58")).toHaveLength(0);
+  });
+});
 
 describe("karta dostawcy — zakres daty", () => {
   it("zmiana daty natychmiast usuwa spotkania poprzedniego dnia, zanim nadejdzie nowy odczyt", async () => {

@@ -14,7 +14,7 @@ import { LIST_TIMEOUT_MS, isDataStale, withReadTimeout } from "../../lib/fm-read
 import { groupsFromSnapshot, meetingStatusKey, nowNumbers } from "./fmMyQueueStatus";
 
 export const SNAP_MS = 8000, MINE_MS = 20000;
-const EMPTY = { date: null, rows: null, at: null, error: false };
+const EMPTY = { scope: null, rows: null, at: null, error: false };
 
 const TXT = {
   pl: {
@@ -43,10 +43,11 @@ const TXT = {
 
 const TONE = { your_turn: "#fbbf24", next_up: "#fde68a", in_progress: "#4ade80", no_show: "#fca5a5", returned: "#93c5fd", free: "#93c5fd", closing: "#fca5a5" };
 
-export default function FmMyQueue({ lang, eventDate }) {
+export default function FmMyQueue({ lang, eventDate, companyId }) {
   const t = TXT[String(lang || "pl").startsWith("pl") ? "pl" : "en"];
-  const [mine, setMine] = useState(EMPTY);   // { date, rows, at, error }
-  const [snap, setSnap] = useState(EMPTY);   // { date, rows: snapshot, at, error }
+  const scope = eventDate && companyId ? `${eventDate}|${companyId}` : null;
+  const [mine, setMine] = useState(EMPTY);   // { scope, rows, at, error }
+  const [snap, setSnap] = useState(EMPTY);   // { scope, rows: snapshot, at, error }
   const [, setTick] = useState(0);
   const genRef = useRef(0);
   const seq = useRef({ mine: 0, snap: 0 });
@@ -54,11 +55,11 @@ export default function FmMyQueue({ lang, eventDate }) {
   const inflight = useRef({ mine: false, snap: false });
 
   useEffect(() => {
-    if (!eventDate) return undefined;               // bez znanej daty produkcyjnej nie pokazujemy niczego
+    if (!scope) return undefined; // No date or company: no read, including in admin preview.
     const gen = ++genRef.current;
     seq.current = { mine: 0, snap: 0 }; applied.current = { mine: 0, snap: 0 }; inflight.current = { mine: false, snap: false };
-    setMine({ ...EMPTY, date: eventDate });
-    setSnap({ ...EMPTY, date: eventDate });
+    setMine({ ...EMPTY, scope });
+    setSnap({ ...EMPTY, scope });
     const live = () => gen === genRef.current;
     // [review 9.09] Limit czasu PRZERYWA transport (AbortController → fetch / abortSignal Supabase),
     // a nie tylko rozstrzyga obietnicę; zmiana daty i demontaż anulują wszystkie żądania w locie.
@@ -81,10 +82,10 @@ export default function FmMyQueue({ lang, eventDate }) {
       if (n <= applied.current[source]) return;
       applied.current[source] = n;
       setScope(prev => (failed
-        ? { ...(prev.date === eventDate ? prev : { ...EMPTY, date: eventDate }), date: eventDate, error: true }
-        : { date: eventDate, rows, at: Date.now(), error: false }));
+        ? { ...(prev.scope === scope ? prev : { ...EMPTY, scope }), scope, error: true }
+        : { scope, rows, at: Date.now(), error: false }));
     };
-    const loadMine = () => read("mine", (signal) => listMyFmQueueMeetings(eventDate, { signal }), setMine);
+    const loadMine = () => read("mine", (signal) => listMyFmQueueMeetings(eventDate, { companyId, signal }), setMine);
     const loadSnap = () => read("snap", async (signal) => {
       const r = await fetch(`/.netlify/functions/fm-queue-snapshot?date=${encodeURIComponent(eventDate)}`, { cache: "no-store", signal });
       if (!r.ok) throw new Error(`snapshot ${r.status}`);
@@ -92,21 +93,21 @@ export default function FmMyQueue({ lang, eventDate }) {
     }, setSnap);
     loadMine(); loadSnap();
     const a = setInterval(loadMine, MINE_MS), b = setInterval(loadSnap, SNAP_MS), c = setInterval(() => setTick(x => x + 1), 1000);
-    return () => { clearInterval(a); clearInterval(b); clearInterval(c); controllers.forEach(x => x.abort()); controllers.clear(); };
-  }, [eventDate]);
+    return () => { ++genRef.current; clearInterval(a); clearInterval(b); clearInterval(c); controllers.forEach(x => x.abort()); controllers.clear(); };
+  }, [eventDate, companyId, scope]);
 
-  // Render TYLKO z danych bieżącej daty — po zmianie daty poprzedni numer znika natychmiast.
-  const mineRows = mine.date === eventDate ? mine.rows : null;
-  const snapData = snap.date === eventDate ? snap.rows : null;
+  // Changing the preview company hides old numbers immediately, before the next fetch.
+  const mineRows = mine.scope === scope ? mine.rows?.filter(m => m.company_id === companyId) ?? null : null;
+  const snapData = snap.scope === scope ? snap.rows : null;
   const groups = useMemo(() => groupsFromSnapshot(snapData?.stations, snapData?.settings), [snapData]);
-  const stale = (mine.date === eventDate && (mine.error || isDataStale(mine.at)))
-    || (snap.date === eventDate && (snap.error || isDataStale(snap.at)));
+  const stale = (mine.scope === scope && (mine.error || isDataStale(mine.at)))
+    || (snap.scope === scope && (snap.error || isDataStale(snap.at)));
 
-  if (!eventDate) return null;
+  if (!scope) return null;
   // [review 9.09] Pierwszy odczyt spotkań nieudany (jeszcze żadnych danych tej daty): krótki komunikat
   // z linkiem do tablicy zamiast pustki. Udana pusta lista (przed importem planu) nadal chowa kartę.
   if (mineRows === null) {
-    if (!(mine.date === eventDate && mine.error)) return null;
+    if (!(mine.scope === scope && mine.error)) return null;
     return (
       <section data-testid="my-queue-error" style={{ background: "#0f172a", borderRadius: 14, padding: "12px 16px", marginBottom: 16, color: "#fca5a5", fontSize: 13, fontWeight: 700, display: "flex", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
         <span>{t.load_error}</span>

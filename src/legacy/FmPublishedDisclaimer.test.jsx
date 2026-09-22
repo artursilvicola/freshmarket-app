@@ -5,7 +5,7 @@ const language = vi.hoisted(() => ({ value: "pl" }));
 vi.mock("../lib/supabase", () => ({ supabase: {} }));
 vi.mock("../i18n", () => ({ default: { language: "pl", t: key => key } }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: key => key, i18n: { language: language.value } }), Trans: ({ i18nKey }) => i18nKey }));
-vi.mock("../components/supplier/FmMyQueue", () => ({ default: () => null }));
+vi.mock("../components/supplier/FmMyQueue", () => ({ default: ({ companyId }) => <div data-testid="queue-company" data-company-id={companyId}/> }));
 vi.mock("../components/fm/LateSelections.jsx", () => ({ BuyerLateSelections: () => null, AdminLateSelections: () => null }));
 import { PageSupplierFM, PageBuyerFM } from "./PreconnectFM.jsx";
 import MeetingDisclaimer from "../components/fm/MeetingDisclaimer.jsx";
@@ -19,6 +19,17 @@ function props(published, phase = published ? 4 : 3) {
 }
 
 describe("published participant information", () => {
+  it.each([false, true])("live queue gets canonical company ID, including legacy routing (admin=%s)", async viewerIsAdmin => {
+    const companies = [
+      { id: "canonical-a", fmId: "s1", name: "Same name", fm_b2b_packages: 1 },
+      { id: "canonical-b", fmId: "s2", name: "Same name", fm_b2b_packages: 1 },
+    ];
+    let tree;
+    await act(async () => { tree = render(<PageSupplierFM {...props(true)} companies={companies} accountId="canonical-a" viewerIsAdmin={viewerIsAdmin}/>); });
+    expect(tree.root.findByProps({ "data-testid": "queue-company" }).props["data-company-id"]).toBe("canonical-a");
+    await act(async () => { tree.update(<PageSupplierFM {...props(true)} fmId="s2" companies={companies} accountId="canonical-b" viewerIsAdmin={viewerIsAdmin}/>); });
+    expect(tree.root.findByProps({ "data-testid": "queue-company" }).props["data-company-id"]).toBe("canonical-b");
+  });
   it.each([false, true])("supplier sees the notice and buyer sees help only after publication (admin preview=%s)", async viewerIsAdmin => {
     const p = props(true), before = JSON.stringify(p);
     const supplier = render(<PageSupplierFM {...p} viewerIsAdmin={viewerIsAdmin}/>);

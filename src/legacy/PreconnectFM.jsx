@@ -14138,7 +14138,7 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
         </div>
         {/* [feat/fm-queue] „Twoja kolej” — renderuje się tylko, gdy admin zaimportował plan do kolejek (dzień eventu). */}
         {/* [fix/fm-queue-day-scoping] tylko dzień produkcyjny — spotkania z dni testowych nie trafiają do dostawców */}
-        <Suspense fallback={null}><FmMyQueue lang={i18n.language} eventDate={fmSettings.event_date || fmSettings.eventDate || null}/></Suspense>
+        <Suspense fallback={null}><FmMyQueue lang={i18n.language} companyId={myFmCo?.id || null} eventDate={fmSettings.event_date || fmSettings.eventDate || null}/></Suspense>
         <Card title={t("fm.supplier.wyniki_card_title")} icon={Calendar}>
           {rows.length===0
             ? <div style={{ padding:30,textAlign:"center",color:"#94a3b8" }}>{t("fm.supplier.wyniki_empty")}</div>

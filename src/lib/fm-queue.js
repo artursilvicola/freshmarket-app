@@ -213,10 +213,13 @@ export async function listFmStations(groupId, { timeoutMs = READ_TIMEOUT_MS } = 
 // próbny numer pokazany dostawcy jako prawdziwy. [fix/fm-queue-day-scoping]
 // [review 9.09] `signal` — karta przerywa transport po limicie czasu / zmianie daty / demontażu,
 // żeby wiszące żądania nie kumulowały się przy awarii (kolejność wyników pilnuje komponent).
-export async function listMyFmQueueMeetings(eventDate, { signal = null, timeoutMs = READ_TIMEOUT_MS } = {}) {
-  if (!eventDate) return [];
+export async function listMyFmQueueMeetings(eventDate, { companyId = null, signal = null, timeoutMs = READ_TIMEOUT_MS } = {}) {
+  // Admin preview retains admin RLS, so RLS alone does not select the viewed company.
+  // Require its canonical companies.id; never fall back to an unfiltered read.
+  if (!eventDate || !companyId) return [];
   let q = supabase.from("fm_queue_meetings")
-    .select("id,nr,status,queue_group_id,called_at,started_at,ended_at,return_after_nr,fm_queue_groups!inner(event_date)")
+    .select("id,company_id,nr,status,queue_group_id,called_at,started_at,ended_at,return_after_nr,fm_queue_groups!inner(event_date)")
+    .eq("company_id", companyId)
     .eq("fm_queue_groups.event_date", eventDate).order("nr");
   const sig = signal || readSignal(timeoutMs);
   if (sig) q = q.abortSignal(sig);
