@@ -48,37 +48,16 @@ async function loadPdfMake() {
   return pdfMakeReady;
 }
 const pdfBlob = (pdfMake, doc) => new Promise((res) => pdfMake.createPdf(doc).getBlob(res));
-// [feat/fm-plan-send-server-card] Logotypy do żądania wysyłki: pomniejszone PNG (kafelek na karcie ma
-// 60×24 / 68×34 pt, 280×140 px to ok. 280 dpi). Klucze: "self" = odbiorca, cid sieci (karta dostawcy),
-// id firmy (karta sieci) — serwer ignoruje wszystko, co nie należy do tej karty.
-async function shrinkLogo(dataUri, maxW = 280, maxH = 140) {
-  try {
-    const img = new Image();
-    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = dataUri; });
-    const scale = Math.min(1, maxW / img.width, maxH / img.height);
-    if (scale >= 1 && dataUri.length < 60000) return dataUri;
-    const c = document.createElement("canvas");
-    c.width = Math.max(1, Math.round(img.width * scale)); c.height = Math.max(1, Math.round(img.height * scale));
-    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
-    return c.toDataURL("image/png");
-  } catch { return null; }
-}
-async function logosFor(c) {
-  const out = {};
-  const put = async (key, dataUri) => { if (!dataUri) return; const small = await shrinkLogo(dataUri); if (small) out[key] = small; };
-  await put("self", c.src?.logo);
-  for (const m of c.src?.meetings || []) {
-    const target = c.kind === "supplier" ? m.chain : m.supplier;
-    await put(c.kind === "supplier" ? String(target.cid) : String(target.id), target?.logo);
-  }
-  return out;
-}
-async function pageCount(blob) { const { PDFDocument } = await import("pdf-lib"); return (await PDFDocument.load(await blob.arrayBuffer())).getPageCount(); }
-async function mergeBlobs(blobs) {
-  const { PDFDocument } = await import("pdf-lib");
-  const out = await PDFDocument.create();
-  for (const b of blobs) { const src = await PDFDocument.load(await b.arrayBuffer()); (await out.copyPages(src, src.getPageIndices())).forEach((p) => out.addPage(p)); }
-  return new Blob([await out.save()], { type: "application/pdf" });
+// Wynik wysyłki jednej karty → tekst statusu. Sukces TYLKO gdy wszyscy adresaci mają potwierdzone doręczenie.
+export function describeSendResult(j, t) {
+  if (j.ok) return (j.already_sent || []).length && !(j.sent || []).length ? "ok:" + t("fm_plan.already_sent") : "ok";
+  const parts = [
+    ...(j.failed || []).map((f) => `${f.email} (${f.uncertain ? t("fm_plan.uncertain") + ": " : ""}${f.error})`),
+    ...(j.unconfirmed || []).map((e) => `${e} (${t("fm_plan.unconfirmed")})`),
+    ...(j.stale_unconfirmed || []).map((e) => `${e} (${t("fm_plan.stale_unconfirmed")})`),
+    ...(j.in_progress || []).map((e) => `${e} (${t("fm_plan.in_progress")})`),
+  ];
+  return "err:" + (parts.join(", ") || "unknown");
 }
 
 export default function FmPlanExport({ fl, adminEmail }) {
@@ -138,15 +117,22 @@ export default function FmPlanExport({ fl, adminEmail }) {
   function preview(c) { window.open(URL.createObjectURL(c.blob), "_blank", "noopener"); }
 
   // [feat/fm-plan-send-server-card] Serwer sam generuje kartę odbiorcy z zatwierdzonego planu
-  // (fm_plan_private) tym samym rendererem. Z przeglądarki idą WYŁĄCZNIE logotypy (PNG, pomniejszone),
-  // bo Supabase trzyma je jako WebP, którego pdfmake w Node nie odczyta. Żaden PDF nie jest przesyłany.
-  async function sendOne(c, test) {
+  // (fm_plan_private) tym samym rendererem, z logotypami pobranymi z naszego Storage. Z przeglądarki
+  // nie idą ŻADNE bajty karty (ani PDF, ani obrazy) — tylko wskazanie odbiorcy i wersja planu.
+  // force = świadome ponowienie niepewnego doręczenia starszego niż 24 h (możliwy duplikat).
+  async function sendOne(c, test, force = false) {
     const token = await getToken();
     const r = await fetch("/.netlify/functions/fm-plan-send", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ kind: c.kind, id: c.id, planUpdatedAt, logos: await logosFor(c), test }) });
+      body: JSON.stringify({ kind: c.kind, id: c.id, planUpdatedAt, test, force }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error ? `${j.error}${j.detail ? " — " + j.detail : ""}` : `HTTP ${r.status}`);
     return j;
+  }
+  async function resendOne(c, force) {
+    setPhase("sending");
+    try { const j = await sendOne(c, false, force); c.status = describeSendResult(j, t); c.stale = (j.stale_unconfirmed || []).length > 0; if (j.ok) c.sentAt = new Date().toISOString(); }
+    catch (e) { c.status = "err:" + (e?.message || e); }
+    finally { setCards([...cards]); setPhase("ready"); }
   }
   async function sendTest() {
     const c = cards[0]; if (!c || !adminEmail) return;
@@ -166,9 +152,8 @@ export default function FmPlanExport({ fl, adminEmail }) {
       const c = withEmail[i];
       try {
         const j = await sendOne(c, false);
-        const problems = [...(j.failed || []).map((f) => `${f.email} (${f.error})`), ...(j.in_progress || []).map((e) => `${e} (${t("fm_plan.in_progress")})`)];
-        if (j.ok) { c.status = (j.already_sent || []).length && !(j.sent || []).length ? "ok:" + t("fm_plan.already_sent") : "ok"; c.sentAt = new Date().toISOString(); ok++; }
-        else { c.status = "err:" + (problems.join(", ") || "unknown"); err++; }
+        c.status = describeSendResult(j, t); c.stale = (j.stale_unconfirmed || []).length > 0;
+        if (j.ok) { c.sentAt = new Date().toISOString(); ok++; } else err++;
       }
       catch (e) { c.status = "err:" + (e?.message || e); err++; }
       setProgress({ done: i + 1, total: withEmail.length }); setCards([...cards]);
@@ -242,7 +227,8 @@ export default function FmPlanExport({ fl, adminEmail }) {
                     <td style={{ padding: "6px 8px", fontSize: 11, color: c.status?.startsWith("err") ? "#dc2626" : c.status === "ok" ? "#059669" : "#64748b" }}>
                       {c.status === "ok" ? t("fm_plan.status_ok") : c.status?.startsWith("ok:") ? `${t("fm_plan.status_ok")} (${c.status.slice(3)})` : c.status === "skip" ? t("fm_plan.status_skip") : c.status?.startsWith("err") ? `${t("fm_plan.status_err")}: ${c.status.slice(4)}` : c.sentAt ? t("fm_plan.sent_at", { when: new Date(c.sentAt).toLocaleString() }) : ""}
                     </td>
-                    <td style={{ padding: "6px 8px" }}><button onClick={() => preview(c)} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "white", cursor: "pointer", fontFamily: "inherit" }}>{t("fm_plan.preview")}</button></td>
+                    <td style={{ padding: "6px 8px", whiteSpace: "nowrap" }}><button onClick={() => preview(c)} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: "1px solid #cbd5e1", background: "white", cursor: "pointer", fontFamily: "inherit" }}>{t("fm_plan.preview")}</button>
+                      {c.status?.startsWith("err:") && canSend && phase === "ready" && <button onClick={() => { if (!c.stale || window.confirm(t("fm_plan.force_confirm"))) resendOne(c, !!c.stale); }} style={{ fontSize: 11, padding: "3px 8px", marginLeft: 6, borderRadius: 6, border: "1px solid #f59e0b", background: "#fffbeb", cursor: "pointer", fontFamily: "inherit" }}>{c.stale ? t("fm_plan.force_send") : t("fm_plan.retry_send")}</button>}</td>
                   </tr>
                 ))}
               </tbody>

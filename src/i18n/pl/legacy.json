@@ -3318,9 +3318,15 @@
     "status_ok": "wysłano",
     "status_err": "błąd",
     "status_skip": "pominięto",
-    "send_note": "Karty do wysyłki generuje serwer z zatwierdzonego planu (ta sama wersja, którą widzisz w tabeli); przeglądarka przekazuje tylko logotypy. Każdy adresat dostaje osobną wiadomość, a ponowienie po błędzie nie wysyła drugi raz do już obsłużonych adresów.",
+    "send_note": "Karty do wysyłki generuje serwer z zatwierdzonego planu (ta sama wersja, którą widzisz w tabeli), z logotypami pobranymi z naszego Storage; przeglądarka nie przekazuje żadnych bajtów karty. Każdy adresat dostaje osobną wiadomość z kluczem idempotencji, a ponowienie po błędzie nie wysyła drugi raz do już obsłużonych adresów.",
     "already_sent": "wszyscy adresaci mieli już tę wersję",
-    "in_progress": "w toku"
+    "in_progress": "w toku",
+    "uncertain": "wynik niepewny, ponów",
+    "unconfirmed": "poczta przyjęła, zapis niepotwierdzony — ponów (bez duplikatu)",
+    "stale_unconfirmed": "niepewny wynik starszy niż 24 h — sprawdź w Resend, potem „Wyślij ponownie mimo to”",
+    "retry_send": "Ponów",
+    "force_send": "Wyślij ponownie mimo to",
+    "force_confirm": "Ta próba jest starsza niż 24 h, więc dostawca poczty nie rozpozna powtórzenia. Jeśli wiadomość wyszła wcześniej, adresat dostanie ją drugi raz. Wysłać mimo to?"
   },
   "profile": {
     "impersonation": {
