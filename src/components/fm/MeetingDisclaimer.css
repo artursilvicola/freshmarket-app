@@ -14,4 +14,5 @@
 .fm-meeting-notice__help{margin-top:24px}.fm-meeting-notice__contacts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .fm-meeting-notice__contact{display:flex;flex-direction:column;gap:5px;padding:16px;background:#f7faf8;border:1px solid #dce7e1;border-radius:9px;font-size:12px}
 .fm-meeting-notice__language{color:#12794e;font-weight:600}
+.fm-meeting-notice--help .fm-meeting-notice__help{margin-top:0}
 @media(max-width:600px){.fm-meeting-notice__priorities,.fm-meeting-notice__contacts{grid-template-columns:1fr}.fm-meeting-notice__body,.fm-meeting-notice__header{padding:18px}}
