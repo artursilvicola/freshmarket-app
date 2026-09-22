@@ -12,6 +12,7 @@ import { newIdemKey, staffApi } from "../lib/fm-queue";
 import StaffLoginPage, { LangToggle } from "./StaffLoginPage";
 import { C, MODE_LABEL, fmtElapsed, humanFmError, statusLabel } from "./staffUi";
 import { useStaffLang } from "./staffI18n";
+import "./staffQuickSwitch.css";
 import { fmtDatePL, warsawToday } from "../lib/fm-date";
 import {
   LIST_TIMEOUT_MS, MEETING_FILTERS, countByFilter, filterMeetings, fmtClock, isDataStale,
@@ -217,6 +218,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   // lista, wyniki operacji, etykiety), traci prawo do zmiany ekranu. Historia „Cofnij” też jest
   // per wybór. Powrót do listy stanowisk odświeża karty (i cache do zasiewu).
   function pick(id) {
+    if (id && id === selectedRef.current) return;
     genRef.current += 1;
     selectedRef.current = id;
     stateRef.current = null;
@@ -230,6 +232,8 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
     setGroupStations({ groupId: null, rows: [] });
     setLastAction(null);
     setReturneeChoice(null);
+    setExcModal(null);
+    setToast(null);
     try { if (id) localStorage.setItem("fm_station_id", id); else localStorage.removeItem("fm_station_id"); } catch { /* noop */ }
     if (!id) loadStations();
   }
@@ -362,10 +366,10 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
 
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", color: C.ink, display: "flex", flexDirection: "column" }}>
-      <header style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: C.white, borderBottom: `1px solid ${C.line}` }}>
+      <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "10px 16px", background: C.white, borderBottom: `1px solid ${C.line}` }}>
         <div style={{ fontWeight: 800, letterSpacing: "0.04em", color: C.teal }}>{t.brand} · {t.staff_title.toUpperCase()}</div>
         <div style={{ color: C.slate, fontSize: 13 }}>{isAdmin ? "admin" : (profile?.name || user.email?.split("@")[0]?.toUpperCase())}</div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ marginLeft: "auto", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           <LangToggle lang={lang} setLang={setLang} />
           {selected && state && (
             <SmallBtn tone={view === "list" ? "primary" : "ghost"} onClick={() => setView(v => (v === "list" ? "station" : "list"))} testId="btn-list">
@@ -376,6 +380,30 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
           <SmallBtn onClick={() => { pick(""); signOut?.(); }}>{t.logout}</SmallBtn>
         </div>
       </header>
+
+      {stations.length > 0 && (
+        <nav className="staff-quick-switch" aria-label={t.quick_switch_title}>
+          <div className="staff-quick-switch-inner">
+            <div className="staff-quick-switch-title">{t.quick_switch_title}</div>
+            <div className="staff-quick-switch-grid" style={{ "--staff-station-columns": Math.min(stations.length, 5) }}>
+              {stations.map(s => {
+                const active = s.station_id === selectedId;
+                return (
+                  <button key={s.station_id} type="button" className="staff-quick-switch-button"
+                    data-testid={`quick-station-${s.station_id}`} aria-pressed={active}
+                    onClick={() => pick(s.station_id)}>
+                    <span className="staff-quick-switch-name">{s.retailer_name}</span>
+                    <span className="staff-quick-switch-detail">
+                      {s.group_label ? `${s.group_label} · ` : ""}{t.station} {s.station_label || s.station_idx}
+                    </span>
+                    {active && <span className="staff-quick-switch-active">✓ {t.quick_switch_selected}</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </nav>
+      )}
 
       {!online && <div role="alert" style={{ background: C.red, color: "white", textAlign: "center", padding: "10px 12px", fontWeight: 700 }}>{t.offline}</div>}
 
