@@ -50,7 +50,8 @@ create policy fmpd_admin_read on public.fm_plan_deliveries
 do $$ begin
   if to_regclass('storage.buckets') is not null then
     insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-    values ('fm-plan-cards', 'fm-plan-cards', false, 10485760, array['application/pdf'])
+    -- manifest = application/json (PDF w środku jako base64); sam PDF dopuszczony na przyszłość
+    values ('fm-plan-cards', 'fm-plan-cards', false, 10485760, array['application/json', 'application/pdf'])
     on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
   end if;
 end $$;

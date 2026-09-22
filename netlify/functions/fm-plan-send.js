@@ -233,14 +233,21 @@ export async function handler(event) {
   const html = m.body(kind, name);
   const targetId = String(card.id);
 
-  // ── tryb testowy: świeży render z kanonicznymi logotypami, tylko admin, bez rejestru ─
+  // ── tryb testowy: świeży render z kanonicznymi logotypami, tylko admin, bez rejestru. ─
+  // Manifest jest zapisywany do bucketu pod test/… (nadpisywalny), żeby próba na Lambda sprawdzała
+  // także konfigurację Storage (prywatny bucket, MIME manifestu); błąd zapisu = błąd próby.
   if (test) {
     let logos = { attached: 0, requested: 0 }, pdf;
     try { logos = await attachCanonicalLogos(card, env.supabaseUrl); } catch { /* brak logo ≠ blokada */ }
     try { pdf = await renderCardPdf(card, model.mode); } catch (e) { return json(500, { error: "render_failed", detail: String(e?.message || e).slice(0, 200) }); }
-    const r = await sendViaResend(env, { to: recipients[0], subject: "[TEST] " + m.subject(kind), html: m.body(kind, name), filename, pdf, tag: "plan-card-test" });
-    if (r.error) return json(502, { ok: false, test: true, mode: model.mode, filename, failed: [{ email: recipients[0], error: r.error }], logos });
-    return json(200, { ok: true, test: true, mode: model.mode, filename, sent: [recipients[0]], logos });
+    const testPath = `test/${raw.plan_updated_at ? planTag(raw.plan_updated_at) : "simulation"}/${kind}-${targetId.replace(/[^0-9A-Za-z-]/g, "")}.json`;
+    const manifest = { v: 1, test: true, kind, target_id: targetId, plan_updated_at: raw.plan_updated_at, lang: card.lang, name, card: card.card, created_at: new Date().toISOString(),
+      subject: "[TEST] " + m.subject(kind), html: m.body(kind, name), filename, tag: "plan-card-test", pdf_sha256: sha256(pdf), pdf_base64: pdf.toString("base64"), logos };
+    const up = await db.storage.from(BUCKET).upload(testPath, Buffer.from(JSON.stringify(manifest), "utf8"), { contentType: "application/json", upsert: true });
+    if (up.error) return json(500, { ok: false, test: true, error: "artefact_failed", detail: "artefact_store_failed: " + String(up.error.message || up.error).slice(0, 200), artefact: { path: testPath } });
+    const r = await sendViaResend(env, { to: recipients[0], subject: manifest.subject, html: manifest.html, filename, pdf, tag: manifest.tag });
+    if (r.error) return json(502, { ok: false, test: true, mode: model.mode, filename, failed: [{ email: recipients[0], error: r.error }], logos, artefact: { path: testPath, stored: true } });
+    return json(200, { ok: true, test: true, mode: model.mode, filename, sent: [recipients[0]], logos, artefact: { path: testPath, stored: true, sha256: manifest.pdf_sha256 } });
   }
 
   // ── rejestr doręczeń NAJPIERW: adresaci już obsłużeni nie kosztują ani logotypów, ani renderu ─
@@ -286,9 +293,12 @@ export async function handler(event) {
           .eq("id", rowId).eq("attempt", attempt).eq("status", "sending").select("id");
         if (casErr) { result.failed.push({ email: to, error: "delivery_update_failed" }); continue; }
         if (!cas || !cas.length) {
-          // ktoś już rozpoczął nową próbę — odczytujemy ją i odtwarzamy JEJ klucz (replay), nie tworzymy kolejnej
-          const { data: cur } = await db.from(LEDGER).select("id, status, attempt, idempotency_key").eq("id", rowId).maybeSingle();
-          if (!cur || cur.status === "sent") { result.already_sent.push(to); continue; }
+          // ktoś już rozpoczął nową próbę — odczytujemy ją i odtwarzamy JEJ klucz (replay), nie tworzymy kolejnej.
+          // Błąd odczytu albo brak rekordu NIE jest sukcesem: wynik niepewny, bez already_sent i bez znacznika.
+          const { data: cur, error: curErr } = await db.from(LEDGER).select("id, status, attempt, idempotency_key").eq("id", rowId).maybeSingle();
+          if (curErr || !cur) { result.failed.push({ email: to, error: "delivery_read_failed", uncertain: true }); continue; }
+          if (cur.status === "sent") { result.already_sent.push(to); continue; }
+          if (cur.status !== "sending" || !cur.idempotency_key) { result.in_progress.push(to); continue; }
           attempt = Number(cur.attempt) || attempt; key = cur.idempotency_key;
         } else { attempt = attempt + 1; key = nextKey; }
       } else {
