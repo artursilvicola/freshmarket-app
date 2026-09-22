@@ -53,6 +53,8 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   const [groupStations, setGroupStations] = useState({ groupId: null, rows: [] });
   const [view, setView] = useState(initial?.view === "list" ? "list" : "station"); // "station" | "list"
   const [busy, setBusy] = useState(false);
+  const actionBusyRef = useRef(false);
+  const [returneeChoice, setReturneeChoice] = useState(null);
   const [toast, setToast] = useState(null);
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
   const [lastAction, setLastAction] = useState(null); // { ts, label }
@@ -191,10 +193,10 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   useEffect(() => {
     // Realtime (zmiany z drugiego tabletu) + polling awaryjny: stan stanowiska zawsze,
     // lista przy każdej zmianie (koalescencja) oraz co POLL_MS, gdy jest otwarta.
-    const unsub = api.subscribe(() => { refreshState(); refreshMeetings(); });
-    const i = setInterval(() => { refreshState(); if (viewRef.current === "list") refreshMeetings(); }, POLL_MS);
+    const unsub = api.subscribe(() => { if (!selectedRef.current) loadStations(); else { refreshState(); refreshMeetings(); } });
+    const i = setInterval(() => { if (!selectedRef.current) loadStations(); else { refreshState(); if (viewRef.current === "list") refreshMeetings(); } }, POLL_MS);
     return () => { unsub(); clearInterval(i); };
-  }, [api, refreshState, refreshMeetings]);
+  }, [api, refreshState, refreshMeetings, loadStations]);
   useEffect(() => { if (view === "list") refreshMeetings({ manual: true }); }, [view, refreshMeetings]);
   useEffect(() => {
     const i = setInterval(() => setTick(x => x + 1), 1000);
@@ -227,6 +229,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
     setMtg(EMPTY_SCOPE);
     setGroupStations({ groupId: null, rows: [] });
     setLastAction(null);
+    setReturneeChoice(null);
     try { if (id) localStorage.setItem("fm_station_id", id); else localStorage.removeItem("fm_station_id"); } catch { /* noop */ }
     if (!id) loadStations();
   }
@@ -236,7 +239,8 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   // niczego nie zmieniają. Wynik wpływa na ekran, listę, „Cofnij” i komunikaty TYLKO, jeśli operator
   // nadal jest na tym samym stanowisku w tej samej generacji wyboru (review v2 8.09 — P1 #1).
   const act = useCallback(async (label, makeCall) => {
-    if (busy || !online) return;
+    if (actionBusyRef.current || busy || !online) return;
+    actionBusyRef.current = true;
     const gen = genRef.current, stationId = selectedRef.current;
     const order = ++stateOrderRef.current;
     const expectedVersion = stateRef.current?.version ?? 0;
@@ -260,16 +264,73 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
           if (e?.fmCode === "FM_BUSY" && attempt < 1) { attempt++; await new Promise(r => setTimeout(r, 400)); continue; }
           if (!live()) return null;               // operator już gdzie indziej — cudzy ekran zostaje nietknięty
           if (network) { await refreshState(); showToast(t.err_network); return null; }
-          if (e?.fmCode === "FM_CONFLICT") await refreshState();
+          if (e?.fmCode === "FM_CONFLICT" || label === "finish_serve_returnee") await refreshState();
           showToast(humanFmError(e, lang));
           return null;
         }
       }
     } finally {
+      actionBusyRef.current = false;
       setBusy(false);
       if (live()) refreshMeetingsRef.current?.();
     }
   }, [busy, online, applyState, refreshState, showToast, lang, t]);
+
+  // Staff-only prompt: a returnee is never called as a public queue number.
+  function requestAdvance(finishing) {
+    if (actionBusyRef.current || !online) return;
+    const st = stateRef.current, stationId = selectedRef.current;
+    if (!st || st.mode !== "open" || st.returnee) return;
+    const candidate = (st.waiting_returnees || []).find(r => r.ready
+      || (finishing && st.current?.status === "in_progress" && r.return_after_nr === st.current.nr));
+    if (candidate) {
+      setReturneeChoice({ stationId, gen: genRef.current, version: st.version, groupVersion: st.group_version,
+        currentId: st.current?.id || null, finishing, candidate, nextNr: st.next?.nr });
+    } else {
+      return act(finishing ? "finish" : "call_next", (idem, v) => finishing
+        ? api.rpc.finishAndCallNext(stationId, v, true, idem) : api.rpc.callNext(stationId, v, idem));
+    }
+  }
+
+  function choiceMatches(choice, st) {
+    return choice && st && choice.gen === genRef.current && choice.stationId === selectedRef.current
+      && choice.version === st.version && choice.groupVersion === st.group_version
+      && choice.currentId === (st.current?.id || null) && st.mode === "open" && !st.returnee
+      && (st.waiting_returnees || []).some(r => r.id === choice.candidate.id
+        && (r.ready || (choice.finishing && st.current?.status === "in_progress" && r.return_after_nr === st.current.nr)));
+  }
+
+  async function confirmReturneeChoice(serve) {
+    const choice = returneeChoice;
+    if (actionBusyRef.current || !online) return;
+    if (!choiceMatches(choice, stateRef.current)) {
+      setReturneeChoice(null); showToast(t.returnee_choice_changed); return;
+    }
+    setReturneeChoice(null);
+    const stationId = choice.stationId, meetingId = choice.candidate.id;
+    if (!serve) {
+      return act(choice.finishing ? "finish" : "call_next", (idem, v) => choice.finishing
+        ? api.rpc.finishAndCallNext(stationId, v, true, idem) : api.rpc.callNext(stationId, v, idem));
+    }
+    if (!choice.finishing) {
+      return act("serve_returnee", (idem, v) => api.rpc.serveReturnee(stationId, meetingId, v, idem));
+    }
+    // Two existing idempotent operations, each with its own frozen key/version.
+    // Failure of step two leaves the current meeting finished, with no next number called.
+    const serveIdem = newIdemKey();
+    let finished = null;
+    return act("finish_serve_returnee", async (finishIdem, v) => {
+      if (!finished) finished = await api.rpc.finishAndCallNext(stationId, v, false, finishIdem);
+      if (choice.gen !== genRef.current || stationId !== selectedRef.current) return finished;
+      if (!finished || finished.station_id !== stationId || finished.mode !== "open"
+        || finished.current || finished.returnee
+        || !(finished.waiting_returnees || []).some(r => r.id === meetingId && r.ready)) {
+        showToast(t.returnee_choice_changed);
+        return finished;
+      }
+      return api.rpc.serveReturnee(stationId, meetingId, finished.version, serveIdem);
+    });
+  }
 
   const undoLeft = lastAction ? Math.max(0, Math.ceil((lastAction.ts + UNDO_WINDOW_MS - Date.now()) / 1000)) : 0;
   // Cofnięcie: start zawsze (nie zmienia numeru); no_show/finish tylko gdy stanowisko wolne
@@ -336,6 +397,9 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
                     <Pill color={ml.color} bg={ml.bg}>{ml[lang]}</Pill>
                     {s.state?.current?.nr && <span style={{ fontSize: 13, color: C.slate }}>{t.now} <b>{s.state.current.nr}</b></span>}
                   </div>
+                  {s.state?.waiting_returnees?.length > 0 && <div style={{ ...hint, fontWeight: 800 }} data-testid={`returnee-count-${s.station_id}`}>
+                    {t.returnee_count(s.state.waiting_returnees.length)}
+                  </div>}
                 </button>
               );
             })}
@@ -355,6 +419,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
       {selected && state && view === "list" && (
         <main style={{ padding: "14px 16px 24px", maxWidth: 1100, margin: "0 auto", width: "100%", boxSizing: "border-box", flex: 1 }}>
           <StationHeader s={selected} state={state} t={t} lang={lang} />
+          <ReturneeReminder state={state} t={t} />
           <MeetingListView scope={scope} stations={stationList} online={online} currentId={state.current?.id || state.returnee?.id || null}
             t={t} lang={lang} onRefresh={() => refreshMeetings({ manual: true })} onBack={() => setView("station")} initial={initial} />
         </main>
@@ -368,13 +433,14 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
             <NextCard state={state} upcoming={upcoming} t={t} />
           </div>
 
+          <ReturneeReminder state={state} t={t} />
           <ActionBar
             state={state} busy={busy || !online} canUndo={canUndo} undoLeft={undoLeft} readyReturnee={readyReturnee} t={t}
             on={{
               open: () => act("open_station", (idem, v) => api.rpc.openStation(selectedId, v, idem)),
-              callNext: () => act("call_next", (idem, v) => api.rpc.callNext(selectedId, v, idem)),
+              callNext: () => requestAdvance(false),
               start: () => act("start", (idem, v) => api.rpc.start(selectedId, v, idem)),
-              finishNext: () => act("finish", (idem, v) => api.rpc.finishAndCallNext(selectedId, v, true, idem)),
+              finishNext: () => requestAdvance(true),
               finish: () => act("finish", (idem, v) => api.rpc.finishAndCallNext(selectedId, v, false, idem)),
               noShow: () => act("no_show", (idem, v) => api.rpc.noShow(selectedId, v, idem)),
               undo: () => act("undo", (idem, v) => api.rpc.undo(selectedId, v, idem)),
@@ -402,6 +468,26 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
             </ListCard>
           </div>
         </main>
+      )}
+
+      {returneeChoice && (
+        <Modal onClose={() => setReturneeChoice(null)}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#92400e" }}>{t.returnee_choice_title}</div>
+          <p style={{ fontSize: 19, fontWeight: 700, overflowWrap: "anywhere" }}>
+            {t.nr_label} {returneeChoice.candidate.nr} — {returneeChoice.candidate.name || t.no_company}
+          </p>
+          <p style={{ color: C.slate, lineHeight: 1.5 }}>{t.returnee_private_hint}</p>
+          {!choiceMatches(returneeChoice, state) && <Note tone="error">{t.returnee_choice_changed}</Note>}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <BigBtn disabled={busy || !online || !choiceMatches(returneeChoice, state)} onClick={() => confirmReturneeChoice(true)}>
+              {returneeChoice.finishing ? t.btn_finish_serve_returnee : t.btn_serve_returnee} ({returneeChoice.candidate.nr})
+            </BigBtn>
+            <BigBtn tone="ghost" disabled={busy || !online || !choiceMatches(returneeChoice, state) || (!returneeChoice.finishing && !state?.next)} onClick={() => confirmReturneeChoice(false)}>
+              {returneeChoice.finishing ? t.btn_finish_next : t.btn_call_next}{returneeChoice.nextNr ? ` → ${returneeChoice.nextNr}` : ""}
+            </BigBtn>
+            <BigBtn tone="ghost" onClick={() => setReturneeChoice(null)}>{t.exc_cancel}</BigBtn>
+          </div>
+        </Modal>
       )}
 
       {excModal && (
@@ -678,6 +764,21 @@ function Kv({ k, v }) {
   return <span><span style={{ color: C.muted }}>{k}:</span> <b style={{ color: C.ink, fontVariantNumeric: "tabular-nums" }}>{v || "—"}</b></span>;
 }
 
+function ReturneeReminder({ state, t }) {
+  const waiting = state.waiting_returnees || [];
+  if (!waiting.length) return null;
+  return (
+    <section role="status" data-testid="returnee-reminder" style={{ ...hint, border: "2px solid #f59e0b", padding: "12px 16px", fontSize: 15 }}>
+      <div style={{ fontSize: 18, fontWeight: 800 }}>{t.returnee_count(waiting.length)}</div>
+      {waiting.map(r => <div key={r.id} style={{ marginTop: 6 }}>
+        <b>{t.nr_label} {r.nr} — {r.name || t.no_company}</b>
+        <div>{r.ready ? (state.current || state.returnee ? t.returnee_ready_busy : t.returnee_ready_now) : `${t.waits_for} ${r.return_after_nr}`}</div>
+      </div>)}
+      <div style={{ fontSize: 13, marginTop: 8 }}>{t.returnee_private_hint}</div>
+    </section>
+  );
+}
+
 function ActionBar({ state, busy, canUndo, undoLeft, readyReturnee, on, t }) {
   const cur = state.current;
   const active = cur && ["called", "in_progress"].includes(cur.status);
@@ -706,8 +807,8 @@ function ActionBar({ state, busy, canUndo, undoLeft, readyReturnee, on, t }) {
     btns.push(<BigBtn key="f" tone="ghost" disabled={busy} onClick={on.finish}>{t.btn_finish}</BigBtn>);
     btns.push(<BigBtn key="ns" tone="danger" disabled={busy} onClick={on.noShow}>{t.btn_no_show}</BigBtn>);
   } else {
-    btns.push(<BigBtn key="cn" tone="primary" disabled={busy || !state.next} onClick={on.callNext}>{t.btn_call_next}{state.next ? ` → ${state.next.nr}` : ""}</BigBtn>);
-    if (readyReturnee) btns.push(<BigBtn key="sr" tone="info" disabled={busy} onClick={on.serveReturnee}>{t.btn_serve_returnee} ({readyReturnee.nr})</BigBtn>);
+    if (readyReturnee) btns.push(<BigBtn key="sr" tone="primary" disabled={busy} onClick={on.serveReturnee}>{t.btn_serve_returnee} ({readyReturnee.nr})</BigBtn>);
+    btns.push(<BigBtn key="cn" tone={readyReturnee ? "ghost" : "primary"} disabled={busy || !state.next} onClick={on.callNext}>{t.btn_call_next}{state.next ? ` → ${state.next.nr}` : ""}</BigBtn>);
     btns.push(<BigBtn key="fe" tone="ghost" disabled={busy} onClick={() => on.mode("free_entry")}>{t.btn_free_entry}</BigBtn>);
     btns.push(<BigBtn key="pa" tone="ghost" disabled={busy} onClick={() => on.mode("paused")}>{t.btn_pause}</BigBtn>);
     btns.push(<BigBtn key="cl" tone="ghost" disabled={busy} onClick={() => on.mode("closed")}>{t.btn_close}</BigBtn>);
