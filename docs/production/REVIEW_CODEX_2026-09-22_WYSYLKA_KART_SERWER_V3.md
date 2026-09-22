@@ -97,4 +97,3 @@ Wszystkie żądania bazy, Storage i poczty są atrapami. Nie są potrzebne klucz
 Wyniki oczekiwane obecnie: 27 PASS / 2 FAIL. Po naprawie obu usterek: 29 PASS.
 
 Gałąź review służy do konsultacji i sprawdzenia połączenia zmian. Main i produkcja pozostają poza zakresem tego review.
-
