@@ -7,7 +7,7 @@
 //   • GATE 1 = pełna plakietka, GATE 2 = obrys (czytelne w druku cz-b).
 import { T, EVENT } from "./i18n.js";
 import { FM_LOGO_DATA_URI } from "./assets.js";
-import { meetingNoticeBlock, meetingResourcesBlock } from "./notice-pdf.js";
+import { meetingNoticeBlock, meetingResourcesBlock, meetingContactsBlock, meetingSponsorsBlock } from "./notice-pdf.js";
 
 const C = { ink: "#14211a", ink2: "#3d4a43", mute: "#6c7a72", rule: "#d9e2dc", ruleStrong: "#b9c6be",
   brand: "#1f8f4e", brandDeep: "#166b3b", tint: "#eaf5ee", warn: "#b45309", warnTint: "#fdf3e4", warnInk: "#5a3d12" };
@@ -156,20 +156,24 @@ export function chainDoc(card, { mode = "final" } = {}) {
     const s = m.supplier;
     return [
       { text: String(m.nr).padStart(2, "0"), font: "Barlow", bold: true, fontSize: 15, lineHeight: 0.9, margin: [0, 3, 0, 0] },
-      { columns: [
-        { width: 70, ...logoTile(s.logo, s.initials, 68, 34) },
-        { width: "*", stack: [
-          { text: s.name, bold: true, fontSize: 10.5, lineHeight: 1.05 },
-          { text: [{ text: s.country, bold: true, color: C.ink2, characterSpacing: 0.4 }, ` · ${s.countryName} · ${s.pkg}`], fontSize: 8, color: C.mute, margin: [0, 1.5, 0, 0] },
-          s.desc ? { text: s.desc, fontSize: 8.2, color: C.ink2, lineHeight: 1.25, margin: [0, 3, 0, 0] } : null,
-        ].filter(Boolean), margin: [4, 1, 0, 0] },
-      ], columnGap: 4 },
-      { stack: [{ text: s.contact.name || "—", fontSize: 9, margin: [0, 3, 0, 0] }, s.contact.phone ? { text: s.contact.phone, fontSize: 8.5, color: C.mute, margin: [0, 2, 0, 0] } : null].filter(Boolean) },
+      { stack: [
+        { columns: [
+          { width: 62, ...logoTile(s.logo, s.initials, 60, 30) },
+          { width: "*", stack: [
+            { text: s.name, bold: true, fontSize: 10.5, lineHeight: 1.05 },
+            { text: [{ text: s.country, bold: true, color: C.ink2, characterSpacing: 0.4 }, ` · ${s.countryName} · ${s.pkg}`], fontSize: 8, color: C.mute, margin: [0, 1.5, 0, 0] },
+          ], margin: [4, 1, 0, 0] },
+        ], columnGap: 4 },
+        s.desc ? { text: s.desc, fontSize: 8.2, color: C.ink2, lineHeight: 1.25, margin: [0, 4, 0, 0] } : null,
+        s.contact.name || s.contact.phone ? { text: [s.contact.name, s.contact.phone].filter(Boolean).join(" · "), fontSize: 8.5, color: C.mute, margin: [0, 4, 0, 0] } : null,
+      ].filter(Boolean) },
+      // Three handwriting lines, about 5 cm wide; canvas also gives short rows room for notes.
+      { canvas: [16, 35, 54].map(y => ({ type: "line", x1: 0, y1: y, x2: 137, y2: y, lineWidth: 0.5, lineColor: C.ruleStrong })), margin: [4, 2, 0, 2] },
     ];
   });
   const table = rows.length ? {
-    table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: [36, "*", 130],
-      body: [[th("NR"), th(t.th_sup), th(t.th_person)], ...rows] },
+    table: { headerRows: 1, keepWithHeaderRows: 1, dontBreakRows: true, widths: [36, "*", 145],
+      body: [[th("NR"), th(t.th_sup), th(t.th_notes)], ...rows] },
     layout: { ...rowLines, paddingTop: () => 5, paddingBottom: () => 5 },
   } : { text: "—", color: C.mute };
 
@@ -190,7 +194,11 @@ export function chainDoc(card, { mode = "final" } = {}) {
     layout: { hLineWidth: () => 0.8, vLineWidth: () => 0.8, hLineColor: () => C.ruleStrong, vLineColor: () => C.ruleStrong, paddingLeft: () => 11, paddingRight: () => 11, paddingTop: () => 7, paddingBottom: () => 7 },
   };
 
-  return docDefinition(card, t, "chain", [titleBlock(card, t, "chain"), identityBand(card, t, "chain"), table, { unbreakable: true, stack: [info, meetingResourcesBlock(card.lang)] }, meetingNoticeBlock(card.lang, "buyer")], mode);
+  const contactsTip = {
+    text: [t.contacts_in_app + " ", { text: EVENT.app, link: `https://${EVENT.app}`, bold: true, color: C.brandDeep }, ". " + t.contacts_in_app_after],
+    fontSize: 9, color: C.ink2, lineHeight: 1.2, margin: [0, 0, 0, 12],
+  };
+  return docDefinition(card, t, "chain", [titleBlock(card, t, "chain"), identityBand(card, t, "chain"), contactsTip, table, { unbreakable: true, stack: [info, meetingContactsBlock(card.lang), { ...meetingSponsorsBlock(), margin: [0, 12, 0, 0] }] }], mode);
 }
 
 function docDefinition(card, t, kind, content, mode) {

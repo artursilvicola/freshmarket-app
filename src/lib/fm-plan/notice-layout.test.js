@@ -22,20 +22,28 @@ function card(lang, kind, n) {
 }
 
 describe("meeting cards from the production pdfmake renderer", () => {
-  for (const lang of ["pl", "en"]) for (const [kind, n] of [["supplier", 5], ["supplier", 9], ["supplier", 17], ["chain", 72]]) {
-    it(`renders ${kind} ${n} ${lang}, preserving rows and including exactly one QR pair`, async () => {
+  for (const lang of ["pl", "en"]) for (const [kind, n] of [["supplier", 5], ["supplier", 9], ["supplier", 17], ["chain", 5], ["chain", 72]]) {
+    it(`renders ${kind} ${n} ${lang}, preserving rows and audience-specific print content`, async () => {
       const c = card(lang, kind, n), def = (kind === "supplier" ? supplierDoc : chainDoc)(c, { mode: "simulation" });
-      expect(nodes(def.content, "qr")).toEqual(["https://b2b.freshmarket.eu", "https://b2b.freshmarket.eu/tablice"]);
+      expect(nodes(def.content, "qr")).toEqual(kind === "supplier" ? ["https://b2b.freshmarket.eu", "https://b2b.freshmarket.eu/tablice"] : []);
       expect(nodes(def.content, "dontBreakRows")).toContain(true);
-      const text = nodes(def.content, "text").filter(v => typeof v === "string").join(" ");
+      const text = nodes(def.content, "text").flat(Infinity).filter(v => typeof v === "string").join(" ");
       expect(text.match(/Oksana Kozłowska/g)).toHaveLength(1);
       expect(text.match(/Jagoda Knadel/g)).toHaveLength(1);
       expect(text).toContain("+48 509 086 949");
-      if (kind === "chain") expect(text).not.toMatch(/PreConnect|Biedron|płatności|payment/);
+      if (kind === "chain") {
+        expect(text).not.toMatch(/PreConnect|Biedron|płatności|payment|Ważne informacje dotyczące|Important information about B2B|Śledź kolejność|Follow the meeting/);
+        expect(nodes(def.content, "link")).not.toContain("https://b2b.freshmarket.eu/tablice");
+        expect(text).toContain(lang === "pl" ? "NOTATKI" : "NOTES");
+        expect(text).toContain(lang === "pl" ? "numery telefonów i adresy e-mail" : "phone numbers and email addresses");
+        expect(text).toContain("b2b.freshmarket.eu");
+        expect(text).toContain("Jan Kowalski · +48 500 000 000");
+      }
       else { expect(text).toContain("PreConnect"); expect(text).toContain(lang === "pl" ? "Przegapiłeś numer?" : "Missed your number?"); }
       const pdf = await render(def), parsed = await PDFDocument.load(pdf);
-      expect(parsed.getPageCount()).toBeGreaterThanOrEqual(2);
-      expect(parsed.getPageCount()).toBeLessThanOrEqual(kind === "chain" ? 14 : n === 5 ? 2 : 4);
+      expect(parsed.getPageCount()).toBeGreaterThanOrEqual(kind === "chain" && n === 5 ? 1 : 2);
+      // Buyer rows now reserve handwriting space; long names/descriptions need more pages.
+      expect(parsed.getPageCount()).toBeLessThanOrEqual(kind === "chain" ? (n === 5 ? 3 : 16) : n === 5 ? 2 : 4);
       if (process.env.FM_NOTICE_QA_OUT) {
         await fs.mkdir(process.env.FM_NOTICE_QA_OUT, { recursive: true });
         await fs.writeFile(path.join(process.env.FM_NOTICE_QA_OUT, `${kind}-${n}-${lang}.pdf`), pdf);
