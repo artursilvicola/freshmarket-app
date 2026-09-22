@@ -161,7 +161,7 @@ export function chainDoc(card, { mode = "final" } = {}) {
           { width: 62, ...logoTile(s.logo, s.initials, 60, 30) },
           { width: "*", stack: [
             { text: s.name, bold: true, fontSize: 10.5, lineHeight: 1.05 },
-            { text: [{ text: s.country, bold: true, color: C.ink2, characterSpacing: 0.4 }, ` · ${s.countryName} · ${s.pkg}`], fontSize: 8, color: C.mute, margin: [0, 1.5, 0, 0] },
+          { text: [{ text: s.country, bold: true, color: C.ink2, characterSpacing: 0.4 }, ` · ${s.countryName}`], fontSize: 8, color: C.mute, margin: [0, 1.5, 0, 0] },
           ], margin: [4, 1, 0, 0] },
         ], columnGap: 4 },
         s.desc ? { text: s.desc, fontSize: 8.2, color: C.ink2, lineHeight: 1.25, margin: [0, 4, 0, 0] } : null,

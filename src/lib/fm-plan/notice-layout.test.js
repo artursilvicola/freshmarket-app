@@ -32,6 +32,8 @@ describe("meeting cards from the production pdfmake renderer", () => {
       expect(text.match(/Jagoda Knadel/g)).toHaveLength(1);
       expect(text).toContain("+48 509 086 949");
       if (kind === "chain") {
+        expect(text).not.toMatch(/Business|Premium/);
+        expect(text).toContain(lang === "pl" ? "Polska" : "Poland");
         expect(text).not.toMatch(/PreConnect|Biedron|płatności|payment|Ważne informacje dotyczące|Important information about B2B|Śledź kolejność|Follow the meeting/);
         expect(nodes(def.content, "link")).not.toContain("https://b2b.freshmarket.eu/tablice");
         expect(text).toContain(lang === "pl" ? "NOTATKI" : "NOTES");

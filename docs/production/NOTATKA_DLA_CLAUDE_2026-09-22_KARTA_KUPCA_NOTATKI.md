@@ -10,7 +10,7 @@ Zmiana przygotowana na prośbę Artura z 22.09.2026. **Bez wdrożenia, bez wysy�
 - Dotychczasowy kontakt (osoba i telefon) przeniesiono pod opis dostawcy w tej samej komórce. Nie rozszerzono zakresu danych osobowych drukowanych na karcie.
 - Nad tabelą dodano informację: dane kontaktowe dostawców, z którymi kupiec ma spotkania, w tym telefony i e-maile, są dostępne po zalogowaniu w **b2b.freshmarket.eu**; można do nich wrócić po spotkaniach. Adres ma zwykły link, bez QR i bez dodatkowego bloku o kolejce. To późniejsze, jawne życzenie Artura dotyczące kontaktów.
 - Zachowano informacje o dniu spotkań przeznaczone dla kupca, pomoc Oksany/Jagody z poprawnymi numerami oraz logotypy sponsorów. Końcowy blok organizacyjny utrzymywany jest razem, żeby nie urywać listy informacji między stronami.
-- Wydruk dostawcy i ekranowy komponent `MeetingDisclaimer` pozostają funkcjonalnie bez zmian. Zakres tej korekty to **karta do druku kupca**.
+- Pierwszy commit `df5a7d6` dotyczył wyłącznie karty do druku kupca. Późniejsze rozszerzenie o ekran kupca opisuje sekcja v2 poniżej. Wydruk i komunikat dostawcy pozostają bez zmian.
 
 ## Kod i współpraca z poprawką bezpieczeństwa
 
@@ -35,3 +35,17 @@ Przy pobieraniu repo zauważono gałąź Claude’a `feat/fm-plan-send-server-ca
 `http://127.0.0.1:5196/` → **Kupiec → Karta do druku**, PL/EN.
 
 Pliki w `outputs/fm-phase4-preview-20260922/pdf/buyer-pl.pdf` i `buyer-en.pdf` w głównym workspace `1FMK2026`. Przykładowe firmy, numery i wejścia; znak wodny symulacji; nie są to karty do rozsyłania uczestnikom. Podgląd nie łączy się z bazą.
+
+## v2 — bez nazwy pakietu i bez disclaimera w aplikacji kupca
+
+Kolejna prośba Artura z 22.09.2026, na tej samej gałęzi, po `df5a7d6`:
+
+- W wierszu dostawcy na karcie kupca `PL · Polska · Business` zmieniono na `PL · Polska` (w EN: `PL · Poland`). Renderer nie wyświetla tam żadnej nazwy pakietu. Dane pakietu i matching pozostają niezmienione.
+- W aplikacji kupca usunięto cały wskazany blok: tytuł „Ważne informacje dotyczące spotkań B2B”, wprowadzenie, informacje o stanowiskach, zmianach i braku gwarancji spotkania oraz sekcję śledzenia kolejności z dwoma linkami. Dotyczy PL, EN i podglądu admina.
+- W tym miejscu pozostawiono wyłącznie kartę pomocy Oksany/Jagody. Nadal pojawia się dopiero przy `planPublished`, tak jak dotychczasowy komunikat. W aplikacji dostawcy pozostaje pełny komunikat.
+- `MeetingDisclaimer` dla `audience="buyer"` zwraca teraz wyłącznie wspólny blok kontaktów, z osobną etykietą dostępności i identyfikatorem `fm-meeting-help`. Dla dostawcy układ i treść się nie zmieniają.
+- Przykładowe PDF-y PL/EN i podgląd aplikacji na porcie 5196 zostały odświeżone. Każda przykładowa karta kupca ma nadal 2 strony, z notatkami i informacją o kontaktach dostawców w aplikacji.
+
+Weryfikacja v2: **432/432 testy Vitest (58 plików), build OK, diff --check OK**. Istniejące testy sprawdzają brak pakietu na karcie kupca, brak sekcji informacyjnych/linków kolejki w jego widoku, zachowanie kontaktów PL/EN oraz brak wstawki przed publikacją. Obejrzano wszystkie 4 strony przykładowych PDF-ów kupca i oba języki podglądu aplikacji.
+
+Nadal **bez wdrożenia, migracji, zmian planu i wysyłki maili**. Do wspólnego wydania z poprawką wysyłki należy wziąć oba commity z tej gałęzi, nie tylko pierwszy `df5a7d6`.

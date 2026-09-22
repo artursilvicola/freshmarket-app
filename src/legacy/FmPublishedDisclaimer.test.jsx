@@ -19,19 +19,21 @@ function props(published, phase = published ? 4 : 3) {
 }
 
 describe("published participant information", () => {
-  it.each([false, true])("supplier and buyer see their notice after publication (admin preview=%s)", async viewerIsAdmin => {
+  it.each([false, true])("supplier sees the notice and buyer sees help only after publication (admin preview=%s)", async viewerIsAdmin => {
     const p = props(true), before = JSON.stringify(p);
     const supplier = render(<PageSupplierFM {...p} viewerIsAdmin={viewerIsAdmin}/>);
     const buyer = render(<PageBuyerFM {...p} viewerIsAdmin={viewerIsAdmin}/>);
     await act(async () => {});
     expect(supplier.root.findAllByProps({ "data-testid": "fm-meeting-notice" })).toHaveLength(1);
-    expect(buyer.root.findAllByProps({ "data-testid": "fm-meeting-notice" })).toHaveLength(1);
+    expect(buyer.root.findAllByProps({ "data-testid": "fm-meeting-notice" })).toHaveLength(0);
+    expect(buyer.root.findAllByProps({ "data-testid": "fm-meeting-help" })).toHaveLength(1);
     expect(text(supplier)).toContain("PreConnect");
     expect(text(buyer)).not.toContain("PreConnect");
     expect(text(buyer)).not.toContain("Biedronka");
     expect(text(buyer)).not.toContain("płatności");
+    expect(text(buyer)).not.toMatch(/Ważne informacje dotyczące spotkań B2B|Sieci z więcej niż jednym stanowiskiem|Zmiany w planie spotkań|Śledź kolejność spotkań/);
     expect(text(supplier).indexOf("fm.supplier.wyniki_card_title")).toBeLessThan(text(supplier).indexOf("fm-meeting-notice"));
-    expect(text(buyer).indexOf("fm.buyer.final_card_title_published")).toBeLessThan(text(buyer).indexOf("fm-meeting-notice"));
+    expect(text(buyer).indexOf("fm.buyer.final_card_title_published")).toBeLessThan(text(buyer).indexOf("fm-meeting-help"));
     expect(JSON.stringify(p)).toBe(before);
     for (const fn of [p.setFmPrefs, p.setFmResps, p.setFmSchedule, p.setFmWishlists]) expect(fn).not.toHaveBeenCalled();
   });
@@ -39,6 +41,7 @@ describe("published participant information", () => {
     const p = props(false, phase);
     expect(text(render(<PageSupplierFM {...p}/>))).not.toContain("fm-meeting-notice");
     expect(text(render(<PageBuyerFM {...p}/>))).not.toContain("fm-meeting-notice");
+    expect(text(render(<PageBuyerFM {...p}/>))).not.toContain("fm-meeting-help");
   });
   it("does not show the notice in the supplier's phase 3 algorithm preview", () => {
     expect(text(render(<PageSupplierFM {...props(false)} subPage="fm-algo" previewFor={{ s1: true }}/>))).not.toContain("fm-meeting-notice");
@@ -46,13 +49,19 @@ describe("published participant information", () => {
   it.each(["supplier", "buyer"])("updates %s copy and contact labels on language change", audience => {
     const tree = render(<MeetingDisclaimer audience={audience}/>);
     expect(text(tree)).toContain("Pomoc po polsku");
+    if (audience === "buyer") expect(tree.root.findAllByType("h3")).toHaveLength(0);
     language.value = "en-GB";
     act(() => tree.update(<MeetingDisclaimer audience={audience}/>));
     expect(text(tree)).toContain("Help in Polish");
     expect(text(tree)).toContain("Help in English");
     expect(text(tree)).not.toContain("Pomoc po polsku");
     const links = tree.root.findAllByType("a").map(a => a.props.href);
-    for (const href of ["mailto:oksana@freshmarket.eu", "tel:+48509086949", "mailto:jagoda.knadel@freshmarket.eu", "tel:+48603811818", "https://wa.me/48603811818", "https://b2b.freshmarket.eu/tablice"]) expect(links).toContain(href);
+    for (const href of ["mailto:oksana@freshmarket.eu", "tel:+48509086949", "mailto:jagoda.knadel@freshmarket.eu", "tel:+48603811818", "https://wa.me/48603811818"]) expect(links).toContain(href);
+    if (audience === "buyer") {
+      expect(text(tree)).not.toMatch(/Important information about B2B|PreConnect|Biedronka|payment|guarantee|Follow the meeting/);
+      expect(links).not.toContain("https://b2b.freshmarket.eu/tablice");
+      expect(links).not.toContain("https://b2b.freshmarket.eu");
+    } else expect(links).toContain("https://b2b.freshmarket.eu/tablice");
     expect(tree.root.findAllByType("input")).toHaveLength(0);
   });
 });
