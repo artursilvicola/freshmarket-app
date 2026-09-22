@@ -51,6 +51,7 @@ end $$;
 select pg_temp.login('admin'); set local role authenticated;
 select pg_temp.ok((select count(*)=2 from public.fm_plan_deliveries),'admin reads delivery history');
 select pg_temp.ok((select count(*)=1 from information_schema.columns where table_schema='public' and table_name='fm_plan_deliveries' and column_name='idempotency_key'),'idempotency_key column present');
+select pg_temp.ok((select count(*)=2 from information_schema.columns where table_schema='public' and table_name='fm_plan_deliveries' and column_name in ('attempt','attempt_started_at')),'attempt generation columns present');
 select pg_temp.ok((select count(*)=1 from storage.buckets where id='fm-plan-cards' and public=false),'private bucket fm-plan-cards present');
 select pg_temp.denied($q$insert into public.fm_plan_deliveries(kind,target_id,email,plan_updated_at) values ('chain','990821','b@deliveries.test',now())$q$);
 select pg_temp.denied($q$update public.fm_plan_deliveries set status='sent'$q$);

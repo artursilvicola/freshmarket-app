@@ -21,8 +21,10 @@
  * Auth: Bearer JWT admina (profiles.role = 'admin' i active ≠ false).
  *
  * Gwarancje doręczeń (rejestr fm_plan_deliveries + bucket fm-plan-cards):
- *   • karta dla (kind, id, wersja planu) jest renderowana RAZ i zapisywana w
- *     prywatnym buckecie; każde ponowienie używa tych samych bajtów,
+ *   • MANIFEST żądania (PDF + nazwa załącznika + temat + HTML + tagi) dla
+ *     (kind, id, wersja planu) powstaje RAZ i jest zapisywany atomowo w prywatnym
+ *     buckecie; każde ponowienie odtwarza identyczne żądanie (zmiana nazwy firmy,
+ *     języka, numeru karty czy szablonu maila nie zmienia rozpoczętej próby),
  *   • każdy adresat dostaje osobną wiadomość z trwałym Idempotency-Key
  *     (kind, id, adresat, wersja planu) — Resend odtwarza wynik zamiast
  *     wysyłać drugi raz, o ile żądanie jest identyczne (jest: te same bajty),
@@ -30,6 +32,10 @@
  *     duplikat) i NIGDY nie jest usuwany po niepewnym wyniku (5xx, timeout,
  *     nieudany zapis potwierdzenia) — ponowienie odtwarza to samo żądanie;
  *     usuwany tylko po jednoznacznej odmowie dostawcy (4xx) dla świeżej próby,
+ *   • nowa próba po oknie 24 h (force) = generacja attempt+1 nadawana atomowo
+ *     (CAS na poprzedniej generacji) z własnym czasem startu i kluczem; z jednego
+ *     starego stanu może wystartować tylko jedna nowa próba, drugie wywołanie
+ *     odtwarza jej klucz; potwierdzenie wyniku jest warunkowane tą generacją,
  *   • mail przyjęty, ale zapis potwierdzenia nieudany = 'unconfirmed', nie
  *     sukces; znacznik fm_plan_sent_at dopiero, gdy KAŻDY adresat ma 'sent'.
  */
@@ -56,7 +62,6 @@ const uniqueEmails = (rows) => [...new Set((rows || []).map((row) => String(row.
 const slug = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/&amp;/g, "and").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48);
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 const planTag = (ts) => String(ts).replace(/[^0-9]/g, "").slice(0, 20);
-export const artefactPath = (kind, targetId, planAt) => `${planTag(planAt)}/${kind}-${String(targetId).replace(/[^0-9A-Za-z-]/g, "")}.pdf`;
 export const idempotencyKey = (kind, targetId, planAt, email, suffix = "") =>
   `fm2026-${kind}-${String(targetId).replace(/[^0-9A-Za-z]/g, "")}-${sha256(String(email).toLowerCase()).slice(0, 24)}-${planTag(planAt)}${suffix}`;
 
@@ -86,17 +91,22 @@ export function renderCardPdf(card, mode) {
   });
 }
 
-// Artefakt: jeden PDF per (kind, id, wersja planu). Pierwszy zapis wygrywa (upsert: false);
-// przy wyścigu pobieramy zapisaną wersję, żeby wszystkie ponowienia miały te same bajty.
-async function getOrCreateArtefact(db, card, mode, path) {
+// Artefakt = MANIFEST całego żądania do poczty dla (kind, id, wersja planu): PDF (base64), nazwa
+// załącznika, temat, HTML, nadawca, reply-to, tagi. Jeden obiekt JSON zapisany atomowo (upsert: false);
+// przy wyścigu przegrany pobiera wersję zwycięzcy. Dzięki temu KAŻDE ponowienie odtwarza identyczne
+// żądanie z tym samym Idempotency-Key, nawet gdy w międzyczasie zmieniła się nazwa firmy, język,
+// numer karty albo szablon maila. Zmienia się tylko adresat (`to`).
+export const artefactPath = (kind, targetId, planAt) => `${planTag(planAt)}/${kind}-${String(targetId).replace(/[^0-9A-Za-z-]/g, "")}.json`;
+async function getOrCreateManifest(db, path, build) {
   const bucket = db.storage.from(BUCKET);
+  const parse = async (blob) => { const m = JSON.parse(Buffer.from(await blob.arrayBuffer()).toString("utf8")); if (m?.v !== 1 || !m.pdf_base64) throw new Error("artefact_manifest_invalid"); return m; };
   const first = await bucket.download(path);
-  if (!first.error && first.data) return { pdf: Buffer.from(await first.data.arrayBuffer()), reused: true };
-  const pdf = await renderCardPdf(card, mode);
-  const up = await bucket.upload(path, pdf, { contentType: "application/pdf", upsert: false });
-  if (!up.error) return { pdf, reused: false };
+  if (!first.error && first.data) return { manifest: await parse(first.data), reused: true };
+  const manifest = await build();
+  const up = await bucket.upload(path, Buffer.from(JSON.stringify(manifest), "utf8"), { contentType: "application/json", upsert: false });
+  if (!up.error) return { manifest, reused: false };
   const again = await bucket.download(path);
-  if (!again.error && again.data) return { pdf: Buffer.from(await again.data.arrayBuffer()), reused: true };
+  if (!again.error && again.data) return { manifest: await parse(again.data), reused: true };
   throw new Error("artefact_store_failed: " + String(up.error.message || up.error));
 }
 
@@ -142,7 +152,7 @@ const MAIL = {
   },
 };
 
-async function sendViaResend(env, { to, subject, html, filename, pdf, tag, idempotencyKey: key }) {
+async function sendViaResend(env, { to, subject, html, filename, pdf, tag, idempotencyKey: key, from = "Fresh Market <newsletter@freshmarket.eu>", reply_to = "support@freshmarket.eu" }) {
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${env.resendApiKey}` };
   if (key) headers["Idempotency-Key"] = key;
   let res;
@@ -150,7 +160,7 @@ async function sendViaResend(env, { to, subject, html, filename, pdf, tag, idemp
     res = await fetch("https://api.resend.com/emails", {
       method: "POST", headers,
       body: JSON.stringify({
-        from: "Fresh Market <newsletter@freshmarket.eu>", reply_to: "support@freshmarket.eu",
+        from, reply_to,
         to: [to], subject, html,
         attachments: [{ filename, content: pdf.toString("base64") }],
         tags: [{ name: "fm2026", value: tag }],
@@ -223,53 +233,78 @@ export async function handler(event) {
   const html = m.body(kind, name);
   const targetId = String(card.id);
 
-  // ── karta: kanoniczne logotypy + artefakt ──────────────────────────────
-  let logos;
-  try { logos = await attachCanonicalLogos(card, env.supabaseUrl); } catch { logos = { attached: 0, requested: 0 }; }
-
+  // ── tryb testowy: świeży render z kanonicznymi logotypami, tylko admin, bez rejestru ─
   if (test) {
-    let pdf;
+    let logos = { attached: 0, requested: 0 }, pdf;
+    try { logos = await attachCanonicalLogos(card, env.supabaseUrl); } catch { /* brak logo ≠ blokada */ }
     try { pdf = await renderCardPdf(card, model.mode); } catch (e) { return json(500, { error: "render_failed", detail: String(e?.message || e).slice(0, 200) }); }
-    const r = await sendViaResend(env, { to: recipients[0], subject, html, filename, pdf, tag: "plan-card-test" });
+    const r = await sendViaResend(env, { to: recipients[0], subject: "[TEST] " + m.subject(kind), html: m.body(kind, name), filename, pdf, tag: "plan-card-test" });
     if (r.error) return json(502, { ok: false, test: true, mode: model.mode, filename, failed: [{ email: recipients[0], error: r.error }], logos });
     return json(200, { ok: true, test: true, mode: model.mode, filename, sent: [recipients[0]], logos });
   }
 
-  const path = artefactPath(kind, targetId, raw.plan_updated_at);
-  let artefact;
-  try { artefact = await getOrCreateArtefact(db, card, model.mode, path); } catch (e) { return json(500, { error: "artefact_failed", detail: String(e?.message || e).slice(0, 200) }); }
-  const pdf = artefact.pdf, pdfSha = sha256(pdf);
-
-  // ── wysyłka per adresat + rejestr doręczeń ─────────────────────────────
+  // ── rejestr doręczeń NAJPIERW: adresaci już obsłużeni nie kosztują ani logotypów, ani renderu ─
   const result = { sent: [], already_sent: [], in_progress: [], unconfirmed: [], stale_unconfirmed: [], failed: [] };
-  const { data: existing, error: ledgerError } = await db.from(LEDGER).select("id, email, status, created_at, attempts, idempotency_key")
+  const { data: existing, error: ledgerError } = await db.from(LEDGER).select("id, email, status, created_at, attempts, attempt, attempt_started_at, idempotency_key")
     .eq("kind", kind).eq("target_id", targetId).eq("plan_updated_at", raw.plan_updated_at);
   if (ledgerError) return json(500, { error: "deliveries_lookup_failed" });
   const byEmail = new Map((existing || []).map((r) => [String(r.email).toLowerCase(), r]));
   const now = () => new Date().toISOString();
+  const pending = recipients.filter((to) => byEmail.get(to)?.status !== "sent");
+  for (const to of recipients) if (byEmail.get(to)?.status === "sent") result.already_sent.push(to);
+  if (!pending.length) return json(200, { ok: true, mode: model.mode, filename, recipient_count: recipients.length, marked: false, plan_updated_at: raw.plan_updated_at, ...result });
 
-  for (const to of recipients) {
+  // ── manifest żądania (tworzony raz; logotypy pobierane tylko wtedy) ────
+  const path = artefactPath(kind, targetId, raw.plan_updated_at);
+  let logos = null, art;
+  try {
+    art = await getOrCreateManifest(db, path, async () => {
+      try { logos = await attachCanonicalLogos(card, env.supabaseUrl); } catch { logos = { attached: 0, requested: 0 }; }
+      const pdf = await renderCardPdf(card, model.mode);
+      return { v: 1, kind, target_id: targetId, plan_updated_at: raw.plan_updated_at, lang: card.lang, name, card: card.card, created_at: now(),
+        from: "Fresh Market <newsletter@freshmarket.eu>", reply_to: "support@freshmarket.eu", subject: m.subject(kind), html: m.body(kind, name),
+        filename, tag: `plan-card-${kind}`, pdf_sha256: sha256(pdf), pdf_base64: pdf.toString("base64"), logos };
+    });
+  } catch (e) { return json(500, { error: "artefact_failed", detail: String(e?.message || e).slice(0, 200) }); }
+  const M = art.manifest; const pdf = Buffer.from(M.pdf_base64, "base64"); const pdfSha = M.pdf_sha256 || sha256(pdf);
+  const mail = { subject: M.subject, html: M.html, filename: M.filename, pdf, tag: M.tag, from: M.from, reply_to: M.reply_to };
+
+  for (const to of pending) {
     const prior = byEmail.get(to);
-    if (prior?.status === "sent") { result.already_sent.push(to); continue; }
-    let rowId, key, fresh = false;
+    let rowId, key, attempt, fresh = false;
     if (prior) {
-      // Niepewna próba (5xx/timeout/nieudany zapis) — odtwarzamy TO SAMO żądanie: ten sam klucz, te same bajty.
-      const age = Date.now() - Date.parse(prior.created_at || 0);
-      const stale = !(age <= IDEMPOTENCY_WINDOW_MS);
+      // Niepewna próba — odtwarzamy TO SAMO żądanie (klucz + manifest). Okno 24 h liczone od startu BIEŻĄCEJ próby.
+      const started = Date.parse(prior.attempt_started_at || prior.created_at || 0);
+      const stale = !(Date.now() - started <= IDEMPOTENCY_WINDOW_MS);
+      rowId = prior.id; attempt = Number(prior.attempt) || 1;
       if (stale && !force) { result.stale_unconfirmed.push(to); continue; }
-      rowId = prior.id;
-      key = stale ? idempotencyKey(kind, targetId, raw.plan_updated_at, to, `-f${Date.now()}`) : (prior.idempotency_key || idempotencyKey(kind, targetId, raw.plan_updated_at, to));
-      const { error: bumpErr } = await db.from(LEDGER).update({ attempts: (Number(prior.attempts) || 0) + 1, idempotency_key: key, pdf_path: path, pdf_sha256: pdfSha }).eq("id", rowId);
-      if (bumpErr) { result.failed.push({ email: to, error: "delivery_update_failed" }); continue; }
+      if (stale) {
+        // NOWA próba: atomowo (CAS na generacji) — z jednego starego stanu może wystartować tylko jedna nowa próba
+        const nextKey = idempotencyKey(kind, targetId, raw.plan_updated_at, to, `-a${attempt + 1}`);
+        const { data: cas, error: casErr } = await db.from(LEDGER)
+          .update({ attempt: attempt + 1, attempt_started_at: now(), idempotency_key: nextKey, attempts: (Number(prior.attempts) || 0) + 1, last_error: null, pdf_path: path, pdf_sha256: pdfSha })
+          .eq("id", rowId).eq("attempt", attempt).eq("status", "sending").select("id");
+        if (casErr) { result.failed.push({ email: to, error: "delivery_update_failed" }); continue; }
+        if (!cas || !cas.length) {
+          // ktoś już rozpoczął nową próbę — odczytujemy ją i odtwarzamy JEJ klucz (replay), nie tworzymy kolejnej
+          const { data: cur } = await db.from(LEDGER).select("id, status, attempt, idempotency_key").eq("id", rowId).maybeSingle();
+          if (!cur || cur.status === "sent") { result.already_sent.push(to); continue; }
+          attempt = Number(cur.attempt) || attempt; key = cur.idempotency_key;
+        } else { attempt = attempt + 1; key = nextKey; }
+      } else {
+        key = prior.idempotency_key || idempotencyKey(kind, targetId, raw.plan_updated_at, to);
+        const { error: bumpErr } = await db.from(LEDGER).update({ attempts: (Number(prior.attempts) || 0) + 1, idempotency_key: key, pdf_path: path, pdf_sha256: pdfSha }).eq("id", rowId);
+        if (bumpErr) { result.failed.push({ email: to, error: "delivery_update_failed" }); continue; }
+      }
     } else {
-      key = idempotencyKey(kind, targetId, raw.plan_updated_at, to);
+      key = idempotencyKey(kind, targetId, raw.plan_updated_at, to); attempt = 1;
       const { data: claim, error: claimErr } = await db.from(LEDGER)
-        .insert({ kind, target_id: targetId, plan_updated_at: raw.plan_updated_at, email: to, status: "sending", sent_by: userData.user.id, idempotency_key: key, pdf_path: path, pdf_sha256: pdfSha, attempts: 1 })
+        .insert({ kind, target_id: targetId, plan_updated_at: raw.plan_updated_at, email: to, status: "sending", sent_by: userData.user.id, idempotency_key: key, pdf_path: path, pdf_sha256: pdfSha, attempts: 1, attempt: 1, attempt_started_at: now() })
         .select("id").single();
       if (claimErr || !claim) { if (claimErr?.code === "23505") result.in_progress.push(to); else result.failed.push({ email: to, error: "delivery_claim_failed" }); continue; }
       rowId = claim.id; fresh = true;
     }
-    const r = await sendViaResend(env, { to, subject, html, filename, pdf, tag: `plan-card-${kind}`, idempotencyKey: key });
+    const r = await sendViaResend(env, { to, ...mail, idempotencyKey: key });
     if (r.error) {
       if (r.conflict) { await db.from(LEDGER).update({ last_error: r.error }).eq("id", rowId); result.failed.push({ email: to, error: "idempotency_conflict", detail: r.error }); continue; }
       if (!r.uncertain && fresh) {
@@ -278,11 +313,12 @@ export async function handler(event) {
         result.failed.push({ email: to, error: r.error }); continue;
       }
       // 5xx / sieć / timeout albo wcześniejsza niepewna próba: wiersz zostaje 'sending' — ponowienie odtworzy żądanie
-      await db.from(LEDGER).update({ last_error: r.error }).eq("id", rowId);
+      await db.from(LEDGER).update({ last_error: r.error }).eq("id", rowId).eq("attempt", attempt);
       result.failed.push({ email: to, error: r.error, uncertain: true }); continue;
     }
-    const { error: doneErr } = await db.from(LEDGER).update({ status: "sent", resend_id: r.id, sent_at: now(), last_error: null }).eq("id", rowId);
-    if (doneErr) { result.unconfirmed.push(to); continue; } // przyjęte przez pocztę, zapis niepotwierdzony — NIE sukces; ponowienie = replay tym samym kluczem
+    // potwierdzenie warunkowane generacją próby: starsze żądanie nie potwierdzi nowszej próby
+    const { data: done, error: doneErr } = await db.from(LEDGER).update({ status: "sent", resend_id: r.id, sent_at: now(), last_error: null }).eq("id", rowId).eq("attempt", attempt).select("id");
+    if (doneErr || !done || !done.length) { result.unconfirmed.push(to); continue; } // przyjęte przez pocztę, zapis niepotwierdzony — NIE sukces; ponowienie = replay tym samym kluczem
     result.sent.push(to);
   }
 
@@ -294,6 +330,6 @@ export async function handler(event) {
     marked = !error;
   }
   const ok = ["failed", "in_progress", "unconfirmed", "stale_unconfirmed"].every((k) => result[k].length === 0);
-  return json(200, { ok, mode: model.mode, filename, recipient_count: recipients.length, marked, plan_updated_at: raw.plan_updated_at,
-    artefact: { path, sha256: pdfSha, reused: artefact.reused }, logos, ...result });
+  return json(200, { ok, mode: model.mode, filename: M.filename, recipient_count: recipients.length, marked, plan_updated_at: raw.plan_updated_at,
+    artefact: { path, sha256: pdfSha, reused: art.reused }, logos: logos || M.logos || null, ...result });
 }
