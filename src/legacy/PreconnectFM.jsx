@@ -14132,7 +14132,6 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
       <div style={{ maxWidth:700 }}>
         <FMPhaseBanner phase={5}/>
         <div style={{ background:"linear-gradient(135deg,#064e3b,#0f172a)",borderRadius:14,padding:"28px 24px",marginBottom:16,textAlign:"center" }}>
-          <div style={{ fontSize:40,marginBottom:10 }}>🎪</div>
           <div style={{ fontSize:22,fontWeight:800,color:"white",marginBottom:4 }}>{t("fm.supplier.wyniki_hero_event_title")}</div>
           <div style={{ fontSize:13,color:"rgba(255,255,255,0.55)" }}>{t("fm.supplier.wyniki_hero_meta_format", { date: t("fm.event_date", { defaultValue: FM_DATE }), venue: FM_VENUE })}</div>
           <div style={{ marginTop:12 }}><Badge color="#6ee7b7" bg="rgba(5,150,105,0.2)">{t("fm.supplier.wyniki_hero_badge")}</Badge></div>
