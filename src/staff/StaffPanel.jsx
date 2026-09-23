@@ -268,7 +268,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
           if (e?.fmCode === "FM_BUSY" && attempt < 1) { attempt++; await new Promise(r => setTimeout(r, 400)); continue; }
           if (!live()) return null;               // operator już gdzie indziej — cudzy ekran zostaje nietknięty
           if (network) { await refreshState(); showToast(t.err_network); return null; }
-          if (e?.fmCode === "FM_CONFLICT" || label === "finish_serve_returnee") await refreshState();
+          if (e?.fmCode === "FM_CONFLICT" || label === "finish_serve_returnee" || label === "serve_returnee") await refreshState();
           showToast(humanFmError(e, lang));
           return null;
         }
@@ -281,12 +281,26 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
   }, [busy, online, applyState, refreshState, showToast, lang, t]);
 
   // Staff-only prompt: a returnee is never called as a public queue number.
+  function returneeOptions(st, finishing) {
+    return (st?.waiting_returnees || []).filter(r => r.ready
+      || (finishing && st.current?.status === "in_progress" && r.return_after_nr === st.current.nr));
+  }
+
+  function requestServeReturnee(meetingId) {
+    if (actionBusyRef.current || !online) return;
+    const st = stateRef.current;
+    if (!st || st.mode !== "open" || st.current || st.returnee) return;
+    const candidate = returneeOptions(st, false).find(r => r.id === meetingId);
+    if (!candidate) return;
+    setReturneeChoice({ stationId: selectedRef.current, gen: genRef.current, version: st.version,
+      groupVersion: st.group_version, currentId: null, finishing: false, direct: true, candidate });
+  }
+
   function requestAdvance(finishing) {
     if (actionBusyRef.current || !online) return;
     const st = stateRef.current, stationId = selectedRef.current;
     if (!st || st.mode !== "open" || st.returnee) return;
-    const candidate = (st.waiting_returnees || []).find(r => r.ready
-      || (finishing && st.current?.status === "in_progress" && r.return_after_nr === st.current.nr));
+    const candidate = returneeOptions(st, finishing)[0];
     if (candidate) {
       setReturneeChoice({ stationId, gen: genRef.current, version: st.version, groupVersion: st.group_version,
         currentId: st.current?.id || null, finishing, candidate, nextNr: st.next?.nr });
@@ -300,8 +314,16 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
     return choice && st && choice.gen === genRef.current && choice.stationId === selectedRef.current
       && choice.version === st.version && choice.groupVersion === st.group_version
       && choice.currentId === (st.current?.id || null) && st.mode === "open" && !st.returnee
+      && (choice.finishing ? st.current?.status === "in_progress" : !st.current)
       && (st.waiting_returnees || []).some(r => r.id === choice.candidate.id
         && (r.ready || (choice.finishing && st.current?.status === "in_progress" && r.return_after_nr === st.current.nr)));
+  }
+
+  function selectReturnee(meetingId) {
+    const st = stateRef.current;
+    if (actionBusyRef.current || !online || !choiceMatches(returneeChoice, st)) return;
+    const candidate = returneeOptions(st, returneeChoice.finishing).find(r => r.id === meetingId);
+    if (candidate) setReturneeChoice({ ...returneeChoice, candidate });
   }
 
   async function confirmReturneeChoice(serve) {
@@ -472,7 +494,7 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
               finish: () => act("finish", (idem, v) => api.rpc.finishAndCallNext(selectedId, v, false, idem)),
               noShow: () => act("no_show", (idem, v) => api.rpc.noShow(selectedId, v, idem)),
               undo: () => act("undo", (idem, v) => api.rpc.undo(selectedId, v, idem)),
-              serveReturnee: () => readyReturnee && act("serve_returnee", (idem, v) => api.rpc.serveReturnee(selectedId, readyReturnee.id, v, idem)),
+              serveReturnee: () => readyReturnee && requestServeReturnee(readyReturnee.id),
               finishReturnee: () => act("finish_returnee", (idem, v) => api.rpc.finishReturnee(selectedId, v, idem)),
               mode: (m) => act("set_mode", (idem, v) => api.rpc.setMode(selectedId, m, v, idem)),
               exception: () => setExcModal({ name: "", step: "form" }),
@@ -484,8 +506,13 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
             <ListCard title={t.returnees_title} empty={t.returnees_empty}>
               {(state.waiting_returnees || []).map(r => (
                 <Row key={r.id} nr={r.nr} name={r.name}
-                  sub={r.ready ? t.ready_hint : `${t.waits_for} ${r.return_after_nr}`}
-                  right={<SmallBtn tone="ghost" disabled={busy} onClick={() => act("skip", async (idem) => { await api.rpc.skip(r.id, idem); return null; })}>{t.resigns}</SmallBtn>} />
+                  sub={r.ready ? (state.current || state.returnee ? t.returnee_finish_first : t.ready_hint) : `${t.waits_for} ${r.return_after_nr}`}
+                  right={<div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                    {r.ready && <SmallBtn tone="primary" testId={`serve-returnee-${r.id}`}
+                      disabled={busy || !online || state.mode !== "open" || !!state.current || !!state.returnee}
+                      onClick={() => requestServeReturnee(r.id)}>{t.btn_serve_company}</SmallBtn>}
+                    <SmallBtn tone="ghost" disabled={busy || !online} onClick={() => act("skip", async (idem) => { await api.rpc.skip(r.id, idem); return null; })}>{t.resigns}</SmallBtn>
+                  </div>} />
               ))}
             </ListCard>
             <ListCard title={t.noshows_title} empty={t.noshows_empty}>
@@ -500,7 +527,19 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
 
       {returneeChoice && (
         <Modal onClose={() => setReturneeChoice(null)}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: "#92400e" }}>{t.returnee_choice_title}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: "#92400e" }}>{returneeChoice.direct ? t.returnee_confirm_title : t.returnee_choice_title}</div>
+          <p style={{ color: C.slate }}>{selected && whereLabel(selected, t)}</p>
+          {returneeOptions(state, returneeChoice.finishing).length > 1 && <label style={{ display: "block", fontWeight: 700 }}>
+            {t.returnee_select_label}
+            <select value={returneeChoice.candidate.id}
+              disabled={busy || !online || !choiceMatches(returneeChoice, state)}
+              onChange={e => selectReturnee(e.target.value)}
+              style={{ display: "block", width: "100%", minHeight: 48, marginTop: 8, padding: 8, borderRadius: 10, fontSize: 16 }}>
+              {returneeOptions(state, returneeChoice.finishing).map(r => <option key={r.id} value={r.id}>
+                {t.nr_label} {r.nr} — {r.name || t.no_company}
+              </option>)}
+            </select>
+          </label>}
           <p style={{ fontSize: 19, fontWeight: 700, overflowWrap: "anywhere" }}>
             {t.nr_label} {returneeChoice.candidate.nr} — {returneeChoice.candidate.name || t.no_company}
           </p>
@@ -508,11 +547,11 @@ export function Operator({ user, profile, signOut, isAdmin, lang, setLang, t, ap
           {!choiceMatches(returneeChoice, state) && <Note tone="error">{t.returnee_choice_changed}</Note>}
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <BigBtn disabled={busy || !online || !choiceMatches(returneeChoice, state)} onClick={() => confirmReturneeChoice(true)}>
-              {returneeChoice.finishing ? t.btn_finish_serve_returnee : t.btn_serve_returnee} ({returneeChoice.candidate.nr})
+              {returneeChoice.finishing ? t.btn_finish_serve_returnee : t.btn_confirm_serve_company} ({returneeChoice.candidate.nr})
             </BigBtn>
-            <BigBtn tone="ghost" disabled={busy || !online || !choiceMatches(returneeChoice, state) || (!returneeChoice.finishing && !state?.next)} onClick={() => confirmReturneeChoice(false)}>
+            {!returneeChoice.direct && <BigBtn tone="ghost" disabled={busy || !online || !choiceMatches(returneeChoice, state) || (!returneeChoice.finishing && !state?.next)} onClick={() => confirmReturneeChoice(false)}>
               {returneeChoice.finishing ? t.btn_finish_next : t.btn_call_next}{returneeChoice.nextNr ? ` → ${returneeChoice.nextNr}` : ""}
-            </BigBtn>
+            </BigBtn>}
             <BigBtn tone="ghost" onClick={() => setReturneeChoice(null)}>{t.exc_cancel}</BigBtn>
           </div>
         </Modal>

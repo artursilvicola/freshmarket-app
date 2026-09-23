@@ -21,12 +21,156 @@ const click = async label => {
   await act(async () => { await b.props.onClick(); });
 };
 const dialog = () => tree.root.findAllByProps({ role: "dialog" });
+const serveRow = id => tree.root.findByProps({ "data-testid": `serve-returnee-${id}` });
+const clickServeRow = async id => {
+  const b = serveRow(id); expect(b.props.disabled).not.toBe(true);
+  await act(async () => { await b.props.onClick(); });
+};
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const returnee = (patch = {}) => ({ id: "returnee-a", nr: 2, name: "Firma powracająca", ready: false, return_after_nr: 12, ...patch });
 const baseState = () => ({
   station_id: "a", group_id: "group-a", version: 10, group_version: 5, mode: "open",
   last_called_nr: 12, current: { id: "current-a", nr: 12, status: "in_progress", name: "Bieżąca firma" },
   next: { id: "next-a", nr: 13, name: "Kolejna firma" }, returnee: null, waiting_returnees: [returnee()],
+});
+
+describe("operator chooses an exact returning company", () => {
+  const waiting = () => [returnee({ ready: true }), returnee({ id: "r7", nr: 7, name: "Firma Siedem", ready: true })];
+
+  it("confirms the higher chosen number, leaves other returnees waiting, and never advances the public queue", async () => {
+    const h = await mount({ current: null, waiting_returnees: waiting() });
+    await clickServeRow("r7");
+    expect(h.api.rpc.serveReturnee).not.toHaveBeenCalled();
+    expect(textOf(dialog()[0])).toContain("Numer 7 — Firma Siedem");
+    expect(textOf(dialog()[0])).toContain("Dino · stanowisko 1");
+    expect(dialog()[0].findAllByType("button").some(b => textOf(b).startsWith("Wywołaj"))).toBe(false);
+    await click("Potwierdź — obsłuż firmę (7)");
+    expect(h.api.rpc.serveReturnee).toHaveBeenCalledWith("a", "r7", 10, expect.any(String));
+    expect(h.state().returnee.nr).toBe(7);
+    expect(h.state().waiting_returnees.map(r => r.id)).toEqual(["returnee-a"]);
+    expect(h.state().last_called_nr).toBe(12);
+    expect(h.api.rpc.finishAndCallNext).not.toHaveBeenCalled();
+    expect(h.api.rpc.callNext).not.toHaveBeenCalled();
+    expect(text()).toContain("Czekają powracający: 1");
+  });
+
+  it("cancel is read-only and the quick serve button also requires confirmation", async () => {
+    const h = await mount({ current: null, waiting_returnees: waiting() });
+    await clickServeRow("r7"); await click("Anuluj");
+    expect(dialog()).toHaveLength(0);
+    await click("Obsłuż powracającego (2)");
+    expect(dialog()).toHaveLength(1);
+    expect(h.api.rpc.serveReturnee).not.toHaveBeenCalled();
+    await click("Anuluj");
+    expect(h.state().waiting_returnees).toHaveLength(2);
+  });
+
+  it("allows another eligible company in the finish reminder, including the current barrier, without calling next", async () => {
+    const h = await mount({ waiting_returnees: [returnee({ ready: true }), returnee({ id: "r7", nr: 7 }), returnee({ id: "r9", nr: 9, return_after_nr: 14 })] });
+    await click("Zakończ i wywołaj następny");
+    const select = dialog()[0].findByType("select");
+    expect(select.findAllByType("option").map(o => o.props.value)).toEqual(["returnee-a", "r7"]);
+    await act(async () => { select.props.onChange({ target: { value: "r7" } }); });
+    await click("Zakończ i obsłuż powracającego (7)");
+    expect(h.api.rpc.finishAndCallNext).toHaveBeenCalledWith("a", 10, false, expect.any(String));
+    expect(h.api.rpc.serveReturnee).toHaveBeenCalledWith("a", "r7", 11, expect.any(String));
+    expect(h.state().last_called_nr).toBe(12);
+    expect(h.state().waiting_returnees.map(r => r.id)).toEqual(["returnee-a", "r9"]);
+  });
+
+  it.each(["closed", "paused", "free_entry", "closing"])("does not serve from mode %s, even from a stale handler", async mode => {
+    const h = await mount({ current: null, mode, waiting_returnees: waiting() });
+    expect(serveRow("r7").props.disabled).toBe(true);
+    await act(async () => { serveRow("r7").props.onClick(); });
+    expect(dialog()).toHaveLength(0);
+    expect(h.api.rpc.serveReturnee).not.toHaveBeenCalled();
+  });
+
+  it.each(["called", "in_progress", "returned_in_progress"])("does not interrupt a %s meeting from the list", async status => {
+    const active = { id: "active", nr: 12, status };
+    const h = await mount({ current: status === "returned_in_progress" ? null : active,
+      returnee: status === "returned_in_progress" ? active : null, waiting_returnees: waiting() });
+    expect(serveRow("r7").props.disabled).toBe(true);
+    await act(async () => { serveRow("r7").props.onClick(); });
+    expect(dialog()).toHaveLength(0);
+    expect(h.api.rpc.serveReturnee).not.toHaveBeenCalled();
+  });
+
+  it("hides early entry and rejects loss of readiness without switching to the lower number", async () => {
+    const h = await mount({ current: null, waiting_returnees: waiting() });
+    await clickServeRow("r7");
+    const staleConfirm = button("Potwierdź — obsłuż firmę").props.onClick;
+    h.set({ waiting_returnees: waiting().map(r => r.id === "r7" ? { ...r, ready: false, return_after_nr: 14 } : r) });
+    await h.refresh();
+    expect(tree.root.findAllByProps({ "data-testid": "serve-returnee-r7" })).toHaveLength(0);
+    expect(button("Potwierdź — obsłuż firmę").props.disabled).toBe(true);
+    await act(async () => { await staleConfirm(); });
+    expect(h.api.rpc.serveReturnee).not.toHaveBeenCalled();
+    expect(text()).toContain("Stan stanowiska zmienił się");
+  });
+
+  it("refreshes a server rejection when another desk has taken the chosen returnee", async () => {
+    const h = await mount({ current: null, waiting_returnees: waiting() });
+    await clickServeRow("r7");
+    h.api.rpc.serveReturnee.mockImplementation(async () => {
+      h.set({ waiting_returnees: [waiting()[0]] });
+      throw Object.assign(new Error("FM_BAD_STATUS"), { fmCode: "FM_BAD_STATUS" });
+    });
+    await click("Potwierdź — obsłuż firmę (7)");
+    expect(h.api.rpc.serveReturnee).toHaveBeenCalledTimes(1);
+    expect(h.api.rpc.serveReturnee.mock.calls[0][1]).toBe("r7");
+    expect(tree.root.findAllByProps({ "data-testid": "serve-returnee-r7" })).toHaveLength(0);
+    expect(h.state().last_called_nr).toBe(12);
+    expect(h.api.rpc.callNext).not.toHaveBeenCalled();
+  });
+
+  it("clears a manual selection when switching networks", async () => {
+    const h = await mount({ current: null, waiting_returnees: waiting() });
+    await clickServeRow("r7");
+    const staleConfirm = button("Potwierdź — obsłuż firmę").props.onClick;
+    await click("Zmień stanowisko"); await click("Carrefour");
+    expect(dialog()).toHaveLength(0);
+    await act(async () => { await staleConfirm(); });
+    expect(h.api.rpc.serveReturnee).not.toHaveBeenCalled();
+  });
+
+  it("blocks double taps and retries a lost response with the same selected ID/key/version", async () => {
+    const h = await mount({ current: null, waiting_returnees: waiting() });
+    const realServe = h.api.rpc.serveReturnee.getMockImplementation();
+    let accepted;
+    h.api.rpc.serveReturnee.mockImplementationOnce(async (...args) => {
+      accepted = await realServe(...args); throw Object.assign(new Error("network"), { network: true });
+    }).mockImplementation(async () => accepted);
+    await clickServeRow("r7");
+    const confirm = button("Potwierdź — obsłuż firmę").props.onClick;
+    let first, second;
+    await act(async () => { first = confirm(); second = confirm(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); await Promise.all([first, second]); });
+    expect(h.api.rpc.serveReturnee).toHaveBeenCalledTimes(2);
+    expect(h.api.rpc.serveReturnee.mock.calls[1]).toEqual(h.api.rpc.serveReturnee.mock.calls[0]);
+    expect(h.api.rpc.serveReturnee.mock.calls[0][1]).toBe("r7");
+    expect(h.state().waiting_returnees).toHaveLength(1);
+    expect(h.state().last_called_nr).toBe(12);
+  });
+
+  it("blocks actions offline", async () => {
+    vi.stubGlobal("navigator", { onLine: false });
+    const h = await mount({ current: null, waiting_returnees: waiting() }, { lang: "en" });
+    expect(textOf(serveRow("r7"))).toBe("Serve this company");
+    expect(serveRow("r7").props.disabled).toBe(true);
+    await act(async () => { serveRow("r7").props.onClick(); });
+    expect(dialog()).toHaveLength(0);
+    expect(h.api.rpc.serveReturnee).not.toHaveBeenCalled();
+  });
+
+  it("shows the selected company and confirmation in English", async () => {
+    const h = await mount({ current: null, waiting_returnees: waiting() }, { lang: "en" });
+    await clickServeRow("r7");
+    expect(textOf(dialog()[0])).toContain("Confirm serving a returnee");
+    expect(textOf(dialog()[0])).toContain("Number 7 — Firma Siedem");
+    await click("Confirm — serve company (7)");
+    expect(h.api.rpc.serveReturnee.mock.calls[0][1]).toBe("r7");
+  });
 });
 beforeEach(() => {
   vi.useFakeTimers();

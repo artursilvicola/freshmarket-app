@@ -223,6 +223,35 @@ SELECT pg_temp.expect_error($q$SELECT public.fm_queue_call_next(pg_temp.st('test
 DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_finish_returnee(pg_temp.st('test-a-1'), pg_temp.ver('test-a-1'), 'idem-finret-a-0002');
 SELECT pg_temp.ok((SELECT s->'returnee' FROM t_state) = 'null'::jsonb, 'T5 powracajacy zakonczony');
 
+-- T5b: operator wybiera wyzszy numer gotowego powracajacego; pozostali czekaja.
+-- Lokalny scenariusz w savepoint, nie zmienia fixture kolejnych testow.
+SAVEPOINT returnee_choice;
+RESET ROLE;
+WITH added AS (INSERT INTO public.fm_stations (queue_group_id, idx) VALUES (pg_temp.grp('test-a'), 2) RETURNING id)
+INSERT INTO t_st (key, sid) SELECT 'test-a-2', id FROM added;
+UPDATE public.fm_queue_meetings SET status = 'returned_waiting', return_after_nr = 4
+  WHERE queue_group_id = pg_temp.grp('test-a') AND nr IN (1, 3);
+SET LOCAL ROLE authenticated; SELECT pg_temp.login('op1');
+SELECT public.fm_queue_open_station(pg_temp.st('test-a-2'), pg_temp.ver('test-a-2'), 'choice-open-second');
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_station_state(pg_temp.st('test-a-1'));
+SELECT pg_temp.ok(jsonb_array_length((SELECT s->'waiting_returnees' FROM t_state)) = 2, 'T5b dwa gotowe powroty');
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_serve_returnee(pg_temp.st('test-a-1'), pg_temp.mtg('test-a', 3), pg_temp.ver('test-a-1'), 'choice-serve-three');
+SELECT pg_temp.ok((SELECT (s->'returnee'->>'nr')::int FROM t_state) = 3, 'T5b wybrano 3 pomimo czekajacego 1');
+SELECT pg_temp.ok((SELECT s->'waiting_returnees'->0->>'nr' FROM t_state) = '1', 'T5b numer 1 nadal czeka');
+SELECT pg_temp.ok((SELECT (s->>'last_called_nr')::int FROM t_state) = 4, 'T5b ostatni publiczny numer nadal 4');
+SELECT pg_temp.expect_error($q$SELECT public.fm_queue_serve_returnee(pg_temp.st('test-a-2'), pg_temp.mtg('test-a', 3), pg_temp.ver('test-a-2'), 'choice-second-desk')$q$, 'FM_BAD_STATUS');
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_serve_returnee(pg_temp.st('test-a-1'), pg_temp.mtg('test-a', 3), 999, 'choice-serve-three');
+SELECT pg_temp.ok((SELECT s->'returnee'->>'nr' FROM t_state) = '3', 'T5b ponowienie tego samego klucza nie rozpoczyna innej firmy');
+SELECT pg_temp.ok((SELECT x->>'current_nr' FROM jsonb_array_elements(public.fm_queue_public_snapshot((SELECT today FROM t_day))->'stations') x WHERE (x->>'station_id')::uuid = pg_temp.st('test-a-1')) IS NULL, 'T5b numer powracajacego niewidoczny publicznie');
+SELECT pg_temp.ok(position('TEST Firma 3' in public.fm_queue_public_snapshot((SELECT today FROM t_day))::text) = 0, 'T5b nazwa powracajacego niewidoczna publicznie');
+SELECT public.fm_queue_finish_returnee(pg_temp.st('test-a-1'), pg_temp.ver('test-a-1'), 'choice-finish-three');
+DELETE FROM t_state; INSERT INTO t_state SELECT public.fm_queue_station_state(pg_temp.st('test-a-1'));
+SELECT pg_temp.ok((SELECT s->'waiting_returnees'->0->>'nr' FROM t_state) = '1' AND (SELECT s->>'last_called_nr' FROM t_state) = '4', 'T5b po zakonczeniu 3 pozostaje 1, publiczny numer bez zmian');
+RESET ROLE;
+SELECT pg_temp.ok((SELECT count(*) FROM public.fm_queue_log WHERE idempotency_key = 'choice-serve-three') = 1, 'T5b jeden zapis historii wybranej firmy');
+ROLLBACK TO SAVEPOINT returnee_choice;
+RELEASE SAVEPOINT returnee_choice;
+
 -- ── T6 wyjatek = max+1 ───────────────────────────────────────────────────────
 SELECT pg_temp.ok((public.fm_queue_add_exception(pg_temp.grp('test-a'), 'TEST Wyjatek', 'idem-exc-a-0001')->>'nr')::int = 5, 'T6 wyjatek dostal nr 5');
 SELECT pg_temp.ok((public.fm_queue_add_exception(pg_temp.grp('test-a'), 'TEST Wyjatek', 'idem-exc-a-0001')->>'nr')::int = 5, 'T6 powtorka z tym samym kluczem nie tworzy 6');
