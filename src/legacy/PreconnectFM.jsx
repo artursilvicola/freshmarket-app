@@ -13415,10 +13415,11 @@ const FM_VENUE = "MCC Mazurkas Conference Centre, Ożarów Mazowiecki";
 const FM_DATE  = "24 września 2026";
 
 /* ── NumBadge — colored slot number badge (light theme) ── */
-function NumBadge({ num, size="md" }) {
+function NumBadge({ num, size="md", plain=false }) {
   if (!num || num <= 0) return <span style={{ color:"#94a3b8",fontFamily:"'JetBrains Mono',monospace" }}>—</span>;
-  const zone = num <= 25 ? "green" : num <= 35 ? "orange" : "red";
-  const zc = FM_NZS[zone];
+  // [fix/fm-neutral-slot-colors] plain = numer bez strefy. Dostawcy czytali czerwień
+  // jako ocenę spotkania, a to tylko pozycja w kolejce — w ich widokach numer jest neutralny.
+  const zc = plain ? FM_NEUTRAL : FM_NZS[num <= 25 ? "green" : num <= 35 ? "orange" : "red"];
   const fs = size==="lg" ? 22 : size==="sm" ? 11 : 14;
   const dim = size==="lg" ? 52 : size==="sm" ? 26 : 36;
   return (
@@ -14086,15 +14087,15 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
             : meetings.map(cid => {
                 const ch = _chains.find(x=>x.id===cid);
                 const slotNum = currentPlan?.nums?.[sid]?.[cid] ?? null;
-                const zoneKey = fmNZ(slotNum);
-                const zc = zoneKey ? FM_NZS[zoneKey] : null;
+                // [fix/fm-neutral-slot-colors] bez strefy i bez etykiety „Dobra/Średnia/Późna” —
+                // dostawca dostawał ocenę swojej pozycji, a numer mówi tylko o kolejności.
+                const nc = slotNum ? FM_NEUTRAL : null;
                 return (
-                  <div key={cid} style={{ display:"flex",alignItems:"center",gap:12,padding:"10px 8px",borderBottom:"1px solid #f1f5f9",background:zc?zc.bg+"44":"transparent" }}>
-                    <div style={{ width:34,height:34,borderRadius:"50%",background:zc?zc.c+"20":"#f1f5f9",border:`1.5px solid ${zc?zc.c:"#e2e8f0"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                      {slotNum ? <span style={{ fontWeight:800,fontSize:13,color:zc?.c }}>{slotNum}</span> : <span style={{ fontSize:12 }}>?</span>}
+                  <div key={cid} style={{ display:"flex",alignItems:"center",gap:12,padding:"10px 8px",borderBottom:"1px solid #f1f5f9" }}>
+                    <div style={{ width:34,height:34,borderRadius:"50%",background:nc?nc.bg:"#f1f5f9",border:`1.5px solid ${nc?nc.b:"#e2e8f0"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                      {slotNum ? <span style={{ fontWeight:800,fontSize:13,color:nc.c }}>{slotNum}</span> : <span style={{ fontSize:12 }}>?</span>}
                     </div>
                     <div style={{ flex:1 }}><div style={{ fontWeight:700,fontSize:13 }}>{ch?.name||cid}</div><div style={{ fontSize:11,color:"#64748b" }}>{ch?.country} · {ch?.cat}</div><MeetingNote retailer={ch}/></div>
-                    {zc&&<span style={{ fontSize:11,fontWeight:600,color:zc.c }}>{zoneKey==="green"?t("fm.supplier.zone_green"):zoneKey==="orange"?t("fm.supplier.zone_orange"):t("fm.supplier.zone_red")}</span>}
                   </div>
                 );
               })
@@ -14144,11 +14145,9 @@ export function PageSupplierFM({ fmId, fmSettings, fmPrefs, setFmPrefs, fmResps,
             ? <div style={{ padding:30,textAlign:"center",color:"#94a3b8" }}>{t("fm.supplier.wyniki_empty")}</div>
             : rows.map(([cid,num])=>{
                 const c = _chains.find(x=>x.id===cid);
-                const zone = num<=25?"green":num<=35?"orange":"red";
-                const zc = FM_NZS[zone];
                 return (
-                  <div key={cid} style={{ display:"flex",alignItems:"center",gap:14,padding:"12px 8px",marginBottom:5,borderRadius:10,background:zc.bg,border:`1px solid ${zc.b}` }}>
-                    <NumBadge num={num} size="lg"/>
+                  <div key={cid} style={{ display:"flex",alignItems:"center",gap:14,padding:"12px 8px",marginBottom:5,borderRadius:10,background:"white",border:"1px solid #e2e8f0" }}>
+                    <NumBadge num={num} size="lg" plain/>
                     <div style={{ flex:1 }}>
                       <div style={{ fontSize:14,fontWeight:700,color:"#1e293b" }}>{c?.name}</div>
                       <div style={{ fontSize:11,color:"#64748b" }}>{t("fm.supplier.wyniki_meeting_sub_format", { country: c?.country, num })}</div>
@@ -14618,6 +14617,8 @@ const FM_NZS = {
   orange: { c:"#d97706", bg:"#fffbeb", b:"#fde68a" },
   red:    { c:"#dc2626", bg:"#fee2e2", b:"#fca5a5" },
 };
+// [fix/fm-neutral-slot-colors] Numer bez oceny pozycji — widoki dostawcy.
+const FM_NEUTRAL = { c:"#0d9488", bg:"#f0fdfa", b:"#99f6e4" };
 function fmNZ(n) {
   if (!n || n <= 0) return null; // no slot assigned yet — caller handles null
   if (n <= FM_ZONE_GREEN_MAX) return "green";
