@@ -15,6 +15,8 @@ describe('offer enum labels',()=>{
  it('localizes known values without mutating persisted choices',()=>{
   expect(offerEnumLabel('packaging','Luz',enT)).toBe('Bulk');
   expect(offerEnumLabel('packaging','Luz',plT)).toBe('Luz');
+  expect(offerEnumLabel('category','zioła',enT)).toBe('Herbs');
+  expect(offerEnumLabel('category','ziola',enT)).toBe('Herbs');
   expect(offerEnumLabel('srp','Do uzgodnienia',enT)).toBe('To be agreed');
   expect(offerEnumOptions('packaging',enT)).toContainEqual(['Karton','Carton']);
   expect(offerEnumOptions('packaging',enT).map(([v])=>v)).toEqual(offerEnumOptions('packaging',plT).map(([v])=>v));

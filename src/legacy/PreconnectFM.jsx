@@ -6001,7 +6001,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl, co }) {
 }
 
 /* ── Offer Form – 3 steps (Preconnect Offer Form) ───────────────────────── */
-function PageOfferForm({ offer, saveOffer, nav, co }) {
+export function PageOfferForm({ offer, saveOffer, nav, co }) {
   const { t } = useTranslation("legacy");
   const [step,setStep]=useState(1);
   const [f,setF]=useState(offer||{
@@ -6186,7 +6186,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           </Row>
           <Row>
             <Inp label={t("supplier.offer_form.step1.identification.category_label")} required value={f.category} onChange={e=>u("category",e.target.value)} style={errStyle("category")}>
-              <option value="">{t("supplier.offer_form.select_dash")}</option>{Object.entries(CEMOJI).map(([k,v])=><option key={k} value={k}>{v} {k}</option>)}
+                <option value="">{t("supplier.offer_form.select_dash")}</option>{Object.entries(CEMOJI).map(([k,v])=><option key={k} value={k}>{v} {offerEnumLabel("category",k,t)}</option>)}
             </Inp>
             <Inp label={t("supplier.offer_form.step1.identification.subcategory_label")} value={f.subcategory||""} onChange={e=>u("subcategory",e.target.value)} placeholder={t("supplier.offer_form.step1.identification.subcategory_placeholder")}/>
           </Row>

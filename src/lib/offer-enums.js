@@ -138,7 +138,7 @@ export const OFFER_ENUM_KEYS = {
     "owoce": "common.offer_filters.category_options.owoce",
     "warzywa": "common.offer_filters.category_options.warzywa",
     "kwiaty": "common.offer_filters.category_options.kwiaty",
-    "ziola": "common.offer_filters.category_options.ziola",
+    "zioła": "common.offer_filters.category_options.ziola",
     "inne": "common.offer_filters.category_options.inne"
   }
 };
@@ -146,7 +146,8 @@ export const OFFER_ENUM_KEYS = {
 export function offerEnumLabel(field, value, t) {
   if (value == null || value === "") return value;
   const stored = typeof value === "boolean" ? (value ? "Tak" : "Nie") : value;
-  const lookup = field === "deliveryDays" && stored === "Pn" ? "Pon" : stored;
+  const lookup = field === "deliveryDays" && stored === "Pn" ? "Pon"
+    : field === "category" && stored === "ziola" ? "zioła" : stored;
   const key = Object.hasOwn(OFFER_ENUM_KEYS[field] || {}, lookup) ? OFFER_ENUM_KEYS[field][lookup] : null;
   return key ? t(key, { defaultValue: String(stored) }) : value;
 }

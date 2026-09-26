@@ -7,13 +7,25 @@ import pl from '../i18n/pl/legacy.json';
 const lang=vi.hoisted(()=>({t:null}));
 vi.mock('react-i18next',()=>({useTranslation:()=>({t:lang.t,i18n:{language:'en'}}),Trans:()=>null}));
 vi.mock('../i18n',()=>({default:{language:'en',t:k=>k}}));
-import { OfferPreviewModal, PageBuyerDetail, OfferFilters, applyFilters } from './PreconnectFM.jsx';
+vi.mock('../lib/supabase',()=>({supabase:{}}));
+import { OfferPreviewModal, PageBuyerDetail, PageOfferForm, OfferFilters, applyFilters } from './PreconnectFM.jsx';
+import { OFFER_ENUM_KEYS } from '../lib/offer-enums';
 const i18n=createInstance();
 await i18n.init({lng:'en',fallbackLng:false,defaultNS:'legacy',resources:{en:{legacy:en},pl:{legacy:pl}}});
 const offer={id:'o1',supplierId:'s1',title:'Avocado',product:'Avocado',category:'owoce',packaging:['Luz','Karton','Siatka'],customPackaging:'Wooden crate',srp:'Do uzgodnienia',volume:'10',volumeUnit:'palety',offerType:'Propozycja sezonowa',positioning:'Bio / ekologiczne',coldChain:'Po stronie kupca',deliveryDays:['Pon','Śr'],traceability:'Tak',currentTests:'Nie',samplesAvail:'Po uzgodnieniu'};
 function render(component,lng='en') {lang.t=i18n.getFixedT(lng,'legacy');let tree;act(()=>{tree=create(component)});return tree;}
 function text(tree){return JSON.stringify(tree.toJSON());}
 describe('offer views language regressions',()=>{
+ it('form categories match the dictionary and translate labels while retaining stored values',()=>{
+  const tree=render(<PageOfferForm co={{}} saveOffer={()=>{}} nav={()=>{}}/>);
+  const herbs=tree.root.findAllByType('option').find(n=>n.props.value==='zioła');
+  expect(herbs.children.join('')).toContain('Herbs');
+  const select=herbs.parent;
+  expect(select.findAllByType('option').map(n=>n.props.value).filter(Boolean)).toEqual(Object.keys(OFFER_ENUM_KEYS.category));
+  act(()=>select.props.onChange({target:{value:'zioła'}}));
+  expect(select.props.value).toBe('zioła');
+  act(()=>tree.unmount());
+ });
  for(const full of [false,true]) it(`preview ${full?'full':'compact'} uses EN labels and preserves input`,()=>{
   const before=JSON.stringify(offer);const tree=render(<OfferPreviewModal offer={offer} co={{}} onClose={()=>{}} adminFull={full}/>);
   const out=text(tree);for(const label of ['Bulk','Carton','Net','Wooden crate']) expect(out).toContain(label);

@@ -47,3 +47,13 @@ Raport wylicza 17 grup; technicznie słownik obejmuje 21 pól, licząc pięć p�
 ## Po akceptacji i wdrożeniu
 
 Zmiana frontu oraz renderera funkcji wysyłki, bez migracji. Najpierw upewnić się, że main nie zmienił się i uwzględnić ewentualne nowsze zmiany innych osób. Sprawdzić ofertę ze zrzutu u kupca EN, przełączyć PL, sprawdzić filtr Bulk i pełny/skrócony podgląd dostawcy/admina. Zweryfikować render maila bez wysyłki; prawdziwy mail testowy wyłącznie po osobnym poleceniu użytkownika.
+
+## Uzupełnienie po review Claude’a — 26.09.2026
+
+Wszystkie trzy uwagi do commita 3f7b8e1 poprawione:
+
+1. Test komponentów mockuje `../lib/supabase`, tak jak pozostałe testy monolitu. Pełny zestaw uruchomiono po usunięciu `VITE_SUPABASE_URL` i `VITE_SUPABASE_ANON_KEY` ze środowiska: **529/529 testów, 67 plików, PASS**. Poprzedni wynik 528/528 wymagał fikcyjnego env; ten wymóg został usunięty.
+2. Kanoniczny klucz kategorii to teraz `zioła`, zgodnie z rzeczywistym formularzem. `ziola` jest obsługiwane jako alias tylko podczas wyświetlania. Test jednostkowy sprawdza obie wartości w EN.
+3. Select kategorii pokazuje przetłumaczone etykiety przez wspólny helper. Nowy test renderuje rzeczywisty formularz, porównuje wszystkie jego wartości kategorii ze słownikiem, sprawdza etykietę Herbs i potwierdza, że wybór nadal zachowuje wartość `zioła`.
+
+Build Vite i `git diff --check`: PASS; pozostaje dotychczasowe ostrzeżenie o rozmiarze chunków. Bez migracji, zmian danych, wdrożenia i wysyłania maili. Zakres odłożonych tematów opisany powyżej pozostaje bez zmian.
