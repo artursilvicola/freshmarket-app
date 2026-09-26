@@ -382,6 +382,7 @@
       "deleted_fallback_title": "(no title)"
     },
     "offer_form": {
+      "copy_suffix": " (Copy)",
       "select_empty": "— select —",
       "select_dash": "—",
       "yes": "Yes",

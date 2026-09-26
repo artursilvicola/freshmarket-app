@@ -1,3 +1,6 @@
+import { offerEnumLabel } from "../../../src/lib/offer-enums.js";
+import enLabels from "../../../src/i18n/en/legacy.json";
+
 /**
  * Renderer HTML maila zbiorczego dla pojedynczej sieci handlowej.
  * [B2B Round pipeline-retailer-email-mvp]
@@ -203,7 +206,9 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng, magicLinks
     : null;
 
   const certs = [...(offer.certs || []), offer.customCert].filter(Boolean);
-  const packaging = [...(offer.packaging || []), offer.customPackaging].filter(Boolean);
+  const enumLabel = (field, value) => offerEnumLabel(field, value, (key, { defaultValue }) =>
+    lng === "en" ? (key.split(".").reduce((o, k) => o?.[k], enLabels) ?? defaultValue) : defaultValue);
+  const packaging = [...(offer.packaging || []).map(p => enumLabel("packaging", p)), offer.customPackaging].filter(Boolean);
 
   // [P2-backend-mails C2] Locale-aware country names in origin label.
   const cnames = lng === "en" ? CNAME_EN : CNAME_PL;
@@ -269,7 +274,7 @@ function renderOfferBlock(send, offersMap, companiesMap, appUrl, lng, magicLinks
           <td valign="top">
             <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:2px;">${esc(companyName)}${isPrem ? `<span style="background:#d97706;color:white;font-size:10px;padding:2px 8px;border-radius:20px;margin-left:8px;text-transform:none;letter-spacing:0;">PREMIUM</span>` : ""}</div>
             <div style="font-weight:700;font-size:16px;color:#0f172a;line-height:1.3;margin-bottom:4px;">${esc(offerTitle)}</div>
-            <div style="font-size:12px;color:#64748b;">${originLabel}${offer.volume ? ` · ${esc(offer.volume)} ${esc(offer.volumeUnit || "")}` : ""}${packaging[0] ? ` · ${esc(packaging[0])}` : ""}</div>
+            <div style="font-size:12px;color:#64748b;">${originLabel}${offer.volume ? ` · ${esc(offer.volume)} ${esc(enumLabel("volumeUnit", offer.volumeUnit || ""))}` : ""}${packaging[0] ? ` · ${esc(packaging[0])}` : ""}</div>
           </td>
         </tr>
       </table>

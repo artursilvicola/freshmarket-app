@@ -1,3 +1,4 @@
+import { offerEnumLabel, offerEnumOptions } from "../lib/offer-enums.js";
 import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Suspense } from "react";
 import AdminFmPaymentDate from "../components/AdminFmPaymentDate";
 import { applyPaymentDate } from "../lib/fm-payment-date";
@@ -961,7 +962,7 @@ function TrackingBar({ daysLeft, status }) {
 function RetailerLogo2({ retailer, size=40 }) { return <RetailerLogo retailer={retailer} size={size}/>; }
 
 /* ─────────────── FILTER COMPONENT ────────────────────────────────────────── */
-function OfferFilters({ filters, setFilters, showStarred }) {
+export function OfferFilters({ filters, setFilters, showStarred }) {
   const { t } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
   const active = Object.values(filters).some(v=>v&&v!=="");
@@ -982,7 +983,7 @@ function OfferFilters({ filters, setFilters, showStarred }) {
           <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.category_label")}</label><select value={filters.category} onChange={e=>setFilters(f=>({...f,category:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{Object.entries(CEMOJI).map(([k,v])=><option key={k} value={k}>{v} {t(`common.offer_filters.category_options.${catKeyToPath(k)}`)}</option>)}</select></div>
           <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.country_label")}</label><select value={filters.country} onChange={e=>setFilters(f=>({...f,country:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{getSortedCountries().map(([k,v])=><option key={k} value={k}>{FLAGS[k]||"🌐"} {v}</option>)}</select></div>
           <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.cert_label")}</label><select value={filters.cert} onChange={e=>setFilters(f=>({...f,cert:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{["GlobalGAP","GRASP","BRC","IFS","Bio","FSSC"].map(c=><option key={c} value={c}>{c}</option>)}</select></div>
-          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.packaging_label")}</label><select value={filters.packaging} onChange={e=>setFilters(f=>({...f,packaging:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{["Bulk","Cartons","IFCO","Flowpack","Punnet"].map(p=><option key={p} value={p}>{p}</option>)}</select></div>
+          <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.packaging_label")}</label><select value={filters.packaging} onChange={e=>setFilters(f=>({...f,packaging:e.target.value}))} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit" }}><option value="">{t("common.offer_filters.all_option")}</option>{["Luz","Karton","IFCO","Flowpack","Punnet"].map(p=><option key={p} value={p}>{offerEnumLabel("packaging",p,t)}</option>)}</select></div>
           <div><label style={{ fontSize:11,fontWeight:500,color:"#64748b",display:"block",marginBottom:4 }}>{t("common.offer_filters.volume_min_label")}</label><input type="number" value={filters.volumeMin} onChange={e=>setFilters(f=>({...f,volumeMin:e.target.value}))} placeholder={t("common.offer_filters.volume_min_placeholder")} style={{ width:"100%",padding:"7px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:12,fontFamily:"inherit",boxSizing:"border-box" }}/></div>
           {showStarred&&<div style={{ display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:filters.starred?"#fffbeb":"#f8fafc",border:`1px solid ${filters.starred?"#fbbf24":"#e2e8f0"}`,borderRadius:7,cursor:"pointer" }} onClick={()=>setFilters(f=>({...f,starred:!f.starred}))}><Heart size={14} color={filters.starred?"#dc2626":"#94a3b8"} fill={filters.starred?"#dc2626":"none"}/><span style={{ fontSize:12,fontWeight:filters.starred?600:400,color:filters.starred?"#dc2626":"#64748b" }}>{t("common.offer_filters.starred_label")}</span></div>}
         </div>
@@ -991,7 +992,7 @@ function OfferFilters({ filters, setFilters, showStarred }) {
   );
 }
 
-function applyFilters(offers, filters, starredIds) {
+export function applyFilters(offers, filters, starredIds) {
   return offers.filter(o=>{
     if (filters.category && o.category!==filters.category) return false;
     if (filters.country  && o.origin!==filters.country)   return false;
@@ -3694,7 +3695,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey} setOffers={setOffers} fl={fl} co={co}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
-    if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+" (Kopia)",product:(src.product||"")+" (Kopia)",internalTitle:src.internalTitle?src.internalTitle+" (Kopia)":undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
+    if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+t("supplier.offer_form.copy_suffix"),product:(src.product||"")+t("supplier.offer_form.copy_suffix"),internalTitle:src.internalTitle?src.internalTitle+t("supplier.offer_form.copy_suffix"):undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
     if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} pkgPlan={pkgPlan} retailers={retailers} accountId={mySupplierKey}/>;
     if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl} readOnly={viewingOtherAccount} onSaved={(patch) => setAccount(prev => ({ ...prev, personName: patch.name, phone: patch.phone, position: patch.position }))}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
@@ -4920,7 +4921,7 @@ export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wall
                   <div style={{ flex:1 }}>
                     {getInternalOfferTitle(o)&&<div style={{ display:"flex",alignItems:"center",gap:5,marginBottom:2 }}><span style={{ fontSize:10,fontWeight:700,color:"#64748b" }}>{t("supplier.wysylki.new.internal_title_label")}</span><strong style={{ fontSize:12 }}>{getInternalOfferTitle(o)}</strong></div>}
                     <div style={{ display:"flex",alignItems:"center",gap:5 }}><span style={{ fontSize:10,fontWeight:700,color:"#0d9488" }}>{t("supplier.wysylki.new.public_title_label")}</span><span style={{ fontSize:12 }}>{getPublicOfferTitle(o)}</span></div>
-                    <div style={{ color:"#64748b",marginTop:3,fontSize:11 }}>{o?.volume} {o?.volumeUnit} · {FLAGS[o?.origin]||"🌐"}</div>
+                    <div style={{ color:"#64748b",marginTop:3,fontSize:11 }}>{o?.volume} {offerEnumLabel("volumeUnit",o?.volumeUnit,t)} · {FLAGS[o?.origin]||"🌐"}</div>
                   </div>
                   <div style={{ display:"flex",alignItems:"center",gap:8 }}><RetailerLogo retailer={r} size={28}/><div><div style={{ fontWeight:600 }}>{r?.name}</div><div style={{ color:"#64748b" }}>{t("supplier.wysylki.new.next_send_format", { date: effectiveNextSend(r?.nextSend) })}</div></div></div>
                 </div>
@@ -5905,7 +5906,7 @@ function PageOffers({ offers, sends, nav, accountId, setOffers, fl, co }) {
               {priv&&<span style={{ fontSize:9,fontWeight:700,color:"#0d9488",background:"rgba(13,148,136,0.08)",padding:"1px 6px",borderRadius:4,textTransform:"uppercase",letterSpacing:"0.03em" }}>{t("supplier.offers.card.for_buyer_badge")}</span>}
               <Badge color={o.status==="active"?"#16a34a":"#64748b"}>{o.status==="active"?t("supplier.offers.card.status_published"):t("supplier.offers.card.status_draft")}</Badge>
             </div>
-            <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · {o.volume} {o.volumeUnit}</div>
+            <div style={{ fontSize:12,color:"#64748b" }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · {o.volume} {offerEnumLabel("volumeUnit",o.volumeUnit,t)}</div>
           </div>
           <div style={{ display:"flex",gap:14,flexShrink:0 }}>{[[t("supplier.offers.card.kpi_retailers"),sc.length,"#3b82f6"],[t("supplier.offers.card.kpi_read"),rc,"#059669"]].map(([l,v,cl])=><div key={l} style={{ textAlign:"center" }}><div style={{ fontSize:15,fontWeight:700,color:cl }}>{v}</div><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div></div>)}</div>
           <div style={{ display:"flex",gap:5,flexShrink:0 }}>
@@ -6198,21 +6199,11 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <Row>
             <Inp label={t("supplier.offer_form.step1.identification.offer_type_label")} required value={f.offerType||""} onChange={e=>u("offerType",e.target.value)} style={errStyle("offerType")} hint={t("supplier.offer_form.step1.identification.offer_type_hint")}>
               <option value="">{t("supplier.offer_form.select_empty")}</option>
-              <option value="Program stały">{t("supplier.offer_form.step1.identification.offer_type_options.program")}</option>
-              <option value="Propozycja sezonowa">{t("supplier.offer_form.step1.identification.offer_type_options.seasonal")}</option>
-              <option value="Propozycja pod promocję">{t("supplier.offer_form.step1.identification.offer_type_options.promo")}</option>
-              <option value="Testowy listing">{t("supplier.offer_form.step1.identification.offer_type_options.test")}</option>
-              <option value="Dostawa spot / uzupełnienie braków">{t("supplier.offer_form.step1.identification.offer_type_options.spot")}</option>
+              {offerEnumOptions("offerType",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
             <Inp label={t("supplier.offer_form.step1.identification.positioning_label")} required value={f.positioning||""} onChange={e=>u("positioning",e.target.value)} style={errStyle("positioning")} hint={t("supplier.offer_form.step1.identification.positioning_hint")}>
               <option value="">{t("supplier.offer_form.select_empty")}</option>
-              <option value="Codzienna półka">{t("supplier.offer_form.step1.identification.positioning_options.daily")}</option>
-              <option value="Premium">{t("supplier.offer_form.step1.identification.positioning_options.premium")}</option>
-              <option value="Promocja">{t("supplier.offer_form.step1.identification.positioning_options.promo")}</option>
-              <option value="Bio / ekologiczne">{t("supplier.offer_form.step1.identification.positioning_options.bio")}</option>
-              <option value="Lokalne / regionalne">{t("supplier.offer_form.step1.identification.positioning_options.local")}</option>
-              <option value="Sezonowe">{t("supplier.offer_form.step1.identification.positioning_options.seasonal")}</option>
-              <option value="Wygodne opakowanie / gotowe na półkę">{t("supplier.offer_form.step1.identification.positioning_options.shelf_ready")}</option>
+              {offerEnumOptions("positioning",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
           </Row>
         </Card>
@@ -6223,11 +6214,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <Inp label={t("supplier.offer_form.step1.quality_spec.size_label")} value={f.size||""} onChange={e=>u("size",e.target.value)} placeholder={t("supplier.offer_form.step1.quality_spec.size_placeholder")} hint={t("supplier.offer_form.step1.quality_spec.size_hint")}/>
             <Inp label={t("supplier.offer_form.step1.quality_spec.quality_class_label")} value={f.qualityClass||""} onChange={e=>u("qualityClass",e.target.value)} hint={t("supplier.offer_form.step1.quality_spec.quality_class_hint")}>
               <option value="">{t("supplier.offer_form.select_empty")}</option>
-              <option value="Klasa I">{t("supplier.offer_form.step1.quality_spec.quality_class_options.class1")}</option>
-              <option value="Klasa Extra">{t("supplier.offer_form.step1.quality_spec.quality_class_options.extra")}</option>
-              <option value="Premium">{t("supplier.offer_form.step1.quality_spec.quality_class_options.premium")}</option>
-              <option value="A">{t("supplier.offer_form.step1.quality_spec.quality_class_options.a")}</option>
-              <option value="Inna">{t("supplier.offer_form.step1.quality_spec.quality_class_options.other")}</option>
+              {offerEnumOptions("qualityClass",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
           </Row>
           <div style={{ marginBottom:14 }}>
@@ -6239,10 +6226,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <Inp label={t("supplier.offer_form.step1.quality_spec.brand_label")} value={f.brand||""} onChange={e=>u("brand",e.target.value)} placeholder={t("supplier.offer_form.step1.quality_spec.brand_placeholder")} hint={t("supplier.offer_form.step1.quality_spec.brand_hint")}/>
             <Inp label={t("supplier.offer_form.step1.quality_spec.sale_mode_label")} required value={f.saleMode||""} onChange={e=>u("saleMode",e.target.value)} style={errStyle("saleMode")}>
               <option value="">{t("supplier.offer_form.select_empty")}</option>
-              <option value="Bez marki">{t("supplier.offer_form.step1.quality_spec.sale_mode_options.no_brand")}</option>
-              <option value="Marka producenta">{t("supplier.offer_form.step1.quality_spec.sale_mode_options.producer")}</option>
-              <option value="Marka własna sieci (Private label)">{t("supplier.offer_form.step1.quality_spec.sale_mode_options.private_label")}</option>
-              <option value="Marka regionalna">{t("supplier.offer_form.step1.quality_spec.sale_mode_options.regional")}</option>
+              {offerEnumOptions("saleMode",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
           </Row>
           <div style={{ marginBottom:14,display:"flex",alignItems:"center",gap:10 }}>
@@ -6307,12 +6291,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <div style={{ marginBottom:14 }}>
             <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.availability.model_label")} <span style={{ color:"#dc2626" }}>*</span></label>
             <div style={{ padding:errors.availabilityModel?"8px":0,borderRadius:8,...(errors.availabilityModel?{border:"2px solid #dc2626",background:"#fef2f2"}:{}) }}>
-              <RadioGroup name="avail" options={[
-                ["Całorocznie", t("supplier.offer_form.step2.availability.model_options.yearly")],
-                ["Sezonowo", t("supplier.offer_form.step2.availability.model_options.seasonal")],
-                ["Krótkie okno", t("supplier.offer_form.step2.availability.model_options.short_window")],
-                ["Tylko promo / spot", t("supplier.offer_form.step2.availability.model_options.spot")],
-              ]} val={f.availabilityModel||""} onChange={v=>u("availabilityModel",v)}/>
+              <RadioGroup name="avail" options={offerEnumOptions("availabilityModel",t)} val={f.availabilityModel||""} onChange={v=>u("availabilityModel",v)}/>
             </div>
             <div style={{ fontSize:11,color:"#94a3b8",marginTop:5 }}>{t("supplier.offer_form.step2.availability.model_hint")}</div>
             {errors.availabilityModel&&<div style={{fontSize:11,color:"#dc2626",marginTop:3}}>⚠ {t("supplier.offer_form.validation.field_required_msg")}</div>}
@@ -6321,14 +6300,8 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <Inp label={t("supplier.offer_form.step2.availability.vol_min_label")} required value={f.volumeMin||""} onChange={e=>u("volumeMin",e.target.value)} placeholder={t("supplier.offer_form.step2.availability.vol_min_placeholder")} style={errStyle("volumeMin")}/><ErrMsg fieldKey="volumeMin"/>
             <Inp label={t("supplier.offer_form.step2.availability.vol_max_label")} required value={f.volumeMax||""} onChange={e=>u("volumeMax",e.target.value)} placeholder={t("supplier.offer_form.step2.availability.vol_max_placeholder")} style={errStyle("volumeMax")}/><ErrMsg fieldKey="volumeMax"/>
             <Inp label={t("supplier.offer_form.step2.availability.unit_label")} required value={f.volumeUnit||"kg"} onChange={e=>u("volumeUnit",e.target.value)}>
-              <option value="kg">{t("supplier.offer_form.step2.availability.unit_options.kg")}</option>
-              <option value="t">{t("supplier.offer_form.step2.availability.unit_options.t")}</option>
-              <option value="kartony">{t("supplier.offer_form.step2.availability.unit_options.cartons")}</option>
-              <option value="palety">{t("supplier.offer_form.step2.availability.unit_options.pallets")}</option>
-              <option value="sztuki">{t("supplier.offer_form.step2.availability.unit_options.pieces")}</option>
-              <option value="pęczki">{t("supplier.offer_form.step2.availability.unit_options.bunches")}</option>
-              <option value="bukiety">{t("supplier.offer_form.step2.availability.unit_options.bouquets")}</option>
-              <option value="wiadra">{t("supplier.offer_form.step2.availability.unit_options.buckets")}</option>
+
+              {offerEnumOptions("volumeUnit",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
           </div>
           <Row>
@@ -6338,22 +6311,14 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <Row>
             <div>
               <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.availability.promo_vol_label")} <span style={{ color:"#dc2626" }}>*</span></label>
-              <RadioGroup name="promoVol" options={[["Tak", t("supplier.offer_form.yes")], ["Nie", t("supplier.offer_form.no")]]} val={f.promoVolume||""} onChange={v=>u("promoVolume",v)}/>
+              <RadioGroup name="promoVol" options={offerEnumOptions("promoVolume",t)} val={f.promoVolume||""} onChange={v=>u("promoVolume",v)}/>
             </div>
             {f.promoVolume==="Tak"&&<Inp label={t("supplier.offer_form.step2.availability.promo_pct_label")} value={f.promoVolumePct||""} onChange={e=>u("promoVolumePct",e.target.value)} placeholder={t("supplier.offer_form.step2.availability.promo_pct_placeholder")}/>}
           </Row>
           <div style={{ marginBottom:14 }}>
             <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.availability.days_label")} <span style={{ fontSize:10,color:"#94a3b8" }}>{t("supplier.offer_form.step2.availability.days_optional")}</span></label>
             <div style={{ display:"flex",gap:5,flexWrap:"wrap" }}>
-              {[
-                ["Pon", t("supplier.offer_form.step2.availability.days.mon")],
-                ["Wt", t("supplier.offer_form.step2.availability.days.tue")],
-                ["Śr", t("supplier.offer_form.step2.availability.days.wed")],
-                ["Czw", t("supplier.offer_form.step2.availability.days.thu")],
-                ["Pt", t("supplier.offer_form.step2.availability.days.fri")],
-                ["Sob", t("supplier.offer_form.step2.availability.days.sat")],
-                ["Nd", t("supplier.offer_form.step2.availability.days.sun")],
-              ].map(([d,lbl])=>{
+              {offerEnumOptions("deliveryDays",t).map(([d,lbl])=>{
                 const on=(f.deliveryDays||[]).includes(d);
                 return <span key={d} onClick={()=>toggleArr("deliveryDays",d)} style={{ padding:"5px 12px",border:`1.5px solid ${on?"#0d9488":"#e2e8f0"}`,borderRadius:7,fontSize:12,fontWeight:on?600:500,background:on?"rgba(13,148,136,0.08)":"white",color:on?"#0d9488":"#64748b",cursor:"pointer",userSelect:"none" }}>{lbl}</span>;
               })}
@@ -6365,20 +6330,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <Alrt type="success">{t("supplier.offer_form.step2.packaging.success_alert")}</Alrt>
           <div style={{ marginBottom:14 }}>
             <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.packaging.format_label")} <span style={{ color:"#dc2626" }}>*</span></label>
-            <TagToggle items={[
-              ["Luz", t("supplier.offer_form.step2.packaging.format_items.luz")],
-              ["Flowpack", t("supplier.offer_form.step2.packaging.format_items.flowpack")],
-              ["Punnet", t("supplier.offer_form.step2.packaging.format_items.punnet")],
-              ["Clamshell", t("supplier.offer_form.step2.packaging.format_items.clamshell")],
-              ["Siatka", t("supplier.offer_form.step2.packaging.format_items.siatka")],
-              ["Worek", t("supplier.offer_form.step2.packaging.format_items.worek")],
-              ["Karton", t("supplier.offer_form.step2.packaging.format_items.karton")],
-              ["IFCO", t("supplier.offer_form.step2.packaging.format_items.ifco")],
-              ["SRP", t("supplier.offer_form.step2.packaging.format_items.srp")],
-              ["Pęczek", t("supplier.offer_form.step2.packaging.format_items.peczek")],
-              ["Bukiet", t("supplier.offer_form.step2.packaging.format_items.bukiet")],
-              ["Display", t("supplier.offer_form.step2.packaging.format_items.display")],
-            ]} active={f.packaging||[]} onChange={v=>u("packaging",v)}/>
+            <TagToggle items={offerEnumOptions("packaging",t)} active={f.packaging||[]} onChange={v=>u("packaging",v)}/>
           </div>
           <Inp label={t("supplier.offer_form.step2.packaging.custom_packaging_label")} value={f.customPackaging||""} onChange={e=>u("customPackaging",e.target.value)} hint={t("supplier.offer_form.step2.packaging.custom_packaging_hint")}/>
           <Inp label={t("supplier.offer_form.step2.packaging.desc_label")} required value={f.packagingDesc||""} onChange={e=>u("packagingDesc",e.target.value)} placeholder={t("supplier.offer_form.step2.packaging.desc_placeholder")} style={errStyle("packagingDesc")}/><ErrMsg fieldKey="packagingDesc"/>
@@ -6387,10 +6339,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <Row>
             <Inp label={t("supplier.offer_form.step2.packaging.pallet_type_label")} value={f.palletType||""} onChange={e=>u("palletType",e.target.value)}>
               <option value="">{t("supplier.offer_form.select_empty")}</option>
-              <option value="EUR">{t("supplier.offer_form.step2.packaging.pallet_type_options.eur")}</option>
-              <option value="CHEP">{t("supplier.offer_form.step2.packaging.pallet_type_options.chep")}</option>
-              <option value="IFCO">{t("supplier.offer_form.step2.packaging.pallet_type_options.ifco")}</option>
-              <option value="Inna">{t("supplier.offer_form.step2.packaging.pallet_type_options.other")}</option>
+              {offerEnumOptions("palletType",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
             <Inp label={t("supplier.offer_form.step2.packaging.pallet_height_label")} value={f.palletHeight||""} onChange={e=>u("palletHeight",e.target.value)} placeholder={t("supplier.offer_form.step2.packaging.pallet_height_placeholder")}/>
           </Row>
@@ -6401,11 +6350,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           </div>
           <div style={{ marginBottom:14 }}>
             <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.packaging.srp_label")}</label>
-            <RadioGroup name="srp" options={[
-              ["Tak", t("supplier.offer_form.step2.packaging.srp_options.yes")],
-              ["Nie", t("supplier.offer_form.step2.packaging.srp_options.no")],
-              ["Do uzgodnienia", t("supplier.offer_form.step2.packaging.srp_options.tbd")],
-            ]} val={f.srp||""} onChange={v=>u("srp",v)}/>
+            <RadioGroup name="srp" options={offerEnumOptions("srp",t)} val={f.srp||""} onChange={v=>u("srp",v)}/>
           </div>
         </Card>
 
@@ -6413,12 +6358,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <Row>
             <Inp label={t("supplier.offer_form.step2.logistics.delivery_model_label")} required value={f.deliveryModel||""} onChange={e=>u("deliveryModel",e.target.value)} style={errStyle("deliveryModel")}>
               <option value="">{t("supplier.offer_form.select_empty")}</option>
-              <option value="Centrum dystrybucyjne (CD)">{t("supplier.offer_form.step2.logistics.delivery_model_options.cd")}</option>
-              <option value="Cross-dock">{t("supplier.offer_form.step2.logistics.delivery_model_options.cross_dock")}</option>
-              <option value="Bezpośrednio do sklepów">{t("supplier.offer_form.step2.logistics.delivery_model_options.direct")}</option>
-              <option value="EXW">{t("supplier.offer_form.step2.logistics.delivery_model_options.exw")}</option>
-              <option value="FCA">{t("supplier.offer_form.step2.logistics.delivery_model_options.fca")}</option>
-              <option value="DDP">{t("supplier.offer_form.step2.logistics.delivery_model_options.ddp")}</option>
+              {offerEnumOptions("deliveryModel",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
             <Inp label={t("supplier.offer_form.step2.logistics.loading_point_label")} required value={f.loadingPoint||""} onChange={e=>u("loadingPoint",e.target.value)} placeholder={t("supplier.offer_form.step2.logistics.loading_point_placeholder")} style={errStyle("loadingPoint")}/><ErrMsg fieldKey="loadingPoint"/>
           </Row>
@@ -6426,13 +6366,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <Row>
             <div>
               <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.logistics.transport_label")} <span style={{ color:"#dc2626" }}>*</span></label>
-              <RadioGroup name="cold" options={[
-                ["Po stronie dostawcy", t("supplier.offer_form.step2.logistics.transport_options.supplier")],
-                ["Po stronie kupca", t("supplier.offer_form.step2.logistics.transport_options.buyer")],
-                ["Możliwe oba warianty", t("supplier.offer_form.step2.logistics.transport_options.both")],
-                ["Do ustalenia", t("supplier.offer_form.step2.logistics.transport_options.tbd")],
-                ["Nie dotyczy", t("supplier.offer_form.step2.logistics.transport_options.n_a")],
-              ]} val={f.coldChain||""} onChange={v=>u("coldChain",v)}/>
+              <RadioGroup name="cold" options={offerEnumOptions("coldChain",t)} val={f.coldChain||""} onChange={v=>u("coldChain",v)}/>
               <div style={{ fontSize:10,color:"#94a3b8",marginTop:4 }}>{t("supplier.offer_form.step2.logistics.transport_hint")}</div>
             </div>
             <Inp label={t("supplier.offer_form.step2.logistics.temp_label")} value={f.tempTransport||""} onChange={e=>u("tempTransport",e.target.value)} placeholder={t("supplier.offer_form.step2.logistics.temp_placeholder")} hint={t("supplier.offer_form.step2.logistics.temp_hint")}/>
@@ -6443,7 +6377,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <div style={{ marginBottom:14 }}>
             <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.certs.traceability_label")} <span style={{ color:"#dc2626" }}>*</span></label>
             <div style={{ padding:errors.traceability?"8px":0,borderRadius:8,...(errors.traceability?{border:"2px solid #dc2626",background:"#fef2f2"}:{}) }}>
-              <RadioGroup name="trace" options={[["Tak", t("supplier.offer_form.yes")], ["Nie", t("supplier.offer_form.no")]]} val={f.traceability||""} onChange={v=>u("traceability",v)}/>
+              <RadioGroup name="trace" options={offerEnumOptions("traceability",t)} val={f.traceability||""} onChange={v=>u("traceability",v)}/>
             </div>
             {errors.traceability&&<div style={{fontSize:11,color:"#dc2626",marginTop:3}}>⚠ {t("supplier.offer_form.validation.field_required_msg")}</div>}
           </div>
@@ -6468,7 +6402,7 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             <Inp label={t("supplier.offer_form.step2.certs.cert_valid_label")} type="date" value={f.certValid||""} onChange={e=>u("certValid",e.target.value)}/>
             <div>
               <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.certs.tests_label")}</label>
-              <RadioGroup name="tests" options={[["Tak", t("supplier.offer_form.yes")], ["Nie", t("supplier.offer_form.no")]]} val={f.currentTests||""} onChange={v=>u("currentTests",v)}/>
+              <RadioGroup name="tests" options={offerEnumOptions("currentTests",t)} val={f.currentTests||""} onChange={v=>u("currentTests",v)}/>
             </div>
           </div>
         </Card>
@@ -6485,22 +6419,14 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
             </Inp>
             <Inp label={t("supplier.offer_form.step2.commercial.price_label")} type="number" value={f.priceOffer||""} onChange={e=>u("priceOffer",e.target.value)} placeholder={t("supplier.offer_form.step2.commercial.price_placeholder")} hint={t("supplier.offer_form.step2.commercial.price_hint")}/>
             <Inp label={t("supplier.offer_form.step2.commercial.price_unit_label")} value={f.priceUnit||"kg"} onChange={e=>u("priceUnit",e.target.value)}>
-              <option value="kg">{t("supplier.offer_form.step2.commercial.price_unit_options.kg")}</option>
-              <option value="szt.">{t("supplier.offer_form.step2.commercial.price_unit_options.pcs")}</option>
-              <option value="karton">{t("supplier.offer_form.step2.commercial.price_unit_options.carton")}</option>
-              <option value="paleta">{t("supplier.offer_form.step2.commercial.price_unit_options.pallet")}</option>
-              <option value="pęczek">{t("supplier.offer_form.step2.commercial.price_unit_options.peczek")}</option>
-              <option value="bukiet">{t("supplier.offer_form.step2.commercial.price_unit_options.bukiet")}</option>
+
+              {offerEnumOptions("priceUnit",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
           </div>
           <Row>
             <Inp label={t("supplier.offer_form.step2.commercial.incoterm_label")} value={f.incoterm||""} onChange={e=>u("incoterm",e.target.value)}>
               <option value="">{t("supplier.offer_form.select_empty")}</option>
-              <option value="EXW">{t("supplier.offer_form.step2.commercial.incoterm_options.exw")}</option>
-              <option value="FCA">{t("supplier.offer_form.step2.commercial.incoterm_options.fca")}</option>
-              <option value="DDP">{t("supplier.offer_form.step2.commercial.incoterm_options.ddp")}</option>
-              <option value="CPT">{t("supplier.offer_form.step2.commercial.incoterm_options.cpt")}</option>
-              <option value="Inne">{t("supplier.offer_form.step2.commercial.incoterm_options.other")}</option>
+              {offerEnumOptions("incoterm",t).map(([value,label])=><option key={value} value={value}>{label}</option>)}
             </Inp>
             <div>
               <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.commercial.price_range_label")}</label>
@@ -6513,20 +6439,16 @@ function PageOfferForm({ offer, saveOffer, nav, co }) {
           <Row>
             <div>
               <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.commercial.promo_price_label")}</label>
-              <RadioGroup name="promoP" options={[["Tak", t("supplier.offer_form.yes")], ["Nie", t("supplier.offer_form.no")]]} val={f.promoPrice||""} onChange={v=>u("promoPrice",v)}/>
+              <RadioGroup name="promoP" options={offerEnumOptions("promoPrice",t)} val={f.promoPrice||""} onChange={v=>u("promoPrice",v)}/>
             </div>
             <div>
               <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.commercial.contract_label")}</label>
-              <RadioGroup name="contractP" options={[["Tak", t("supplier.offer_form.yes")], ["Nie", t("supplier.offer_form.no")]]} val={f.contractProgram||""} onChange={v=>u("contractProgram",v)}/>
+              <RadioGroup name="contractP" options={offerEnumOptions("contractProgram",t)} val={f.contractProgram||""} onChange={v=>u("contractProgram",v)}/>
             </div>
           </Row>
           <div>
             <label style={{ fontSize:12,fontWeight:500,display:"block",marginBottom:5 }}>{t("supplier.offer_form.step2.commercial.samples_label")}</label>
-            <RadioGroup name="samplesA" options={[
-              ["Tak — wyślemy", t("supplier.offer_form.step2.commercial.samples_options.yes")],
-              ["Po uzgodnieniu", t("supplier.offer_form.step2.commercial.samples_options.tbd")],
-              ["Nie", t("supplier.offer_form.step2.commercial.samples_options.no")],
-            ]} val={f.samplesAvail||""} onChange={v=>u("samplesAvail",v)}/>
+            <RadioGroup name="samplesA" options={offerEnumOptions("samplesAvail",t)} val={f.samplesAvail||""} onChange={v=>u("samplesAvail",v)}/>
           </div>
         </Card>
 
@@ -7648,7 +7570,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                 <div style={{ display:"flex",gap:5,alignItems:"center",marginBottom:5,flexWrap:"wrap" }}>
                   {isPremium&&<Badge color="#d97706" bg="#fef3c7"><Star size={9} fill="#d97706" color="#d97706"/> {t("buyer.offers.card.premium_badge")}</Badge>}
                   {isNew&&<Badge color="#0d9488">{t("buyer.offers.card.new_badge")}</Badge>}
-                  {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{o.positioning}</Badge>}
+                  {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{offerEnumLabel("positioning",o.positioning,t)}</Badge>}
                   {o.isBio&&<Badge color="#059669" bg="#f0fdf4">{t("buyer.offers.card.bio_badge")}</Badge>}
                   <Badge>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}</Badge>
                 </div>
@@ -7657,7 +7579,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                 {/* Meta */}
                 <div style={{ fontSize:12,color:"#64748b",marginBottom:6,lineHeight:1.5 }}>
                   {o.product&&o.product!==o.title&&<><strong style={{ color:"#475569" }}>{o.product}</strong>{o.variety?` · ${o.variety}`:""} · </>}
-                  {o.volumeMin&&o.volumeMax?`${o.volumeMin}–${o.volumeMax} ${o.volumeUnit||""}`:o.volume?`${o.volume} ${o.volumeUnit||""}`:""}
+                  {o.volumeMin&&o.volumeMax?`${o.volumeMin}–${o.volumeMax} ${offerEnumLabel("volumeUnit",o.volumeUnit||"",t)}`:o.volume?`${o.volume} ${offerEnumLabel("volumeUnit",o.volumeUnit||"",t)}`:""}
                   {o.moq&&<> · {t("buyer.offers.card.moq_label")}: {o.moq}</>}
                   {o.leadTime&&<> · {t("buyer.offers.card.lead_time_label")}: {o.leadTime}</>}
                 </div>
@@ -7680,7 +7602,7 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
                 {/* Cena orientacyjna z disclaimerem */}
                 {o.priceOffer&&(
                   <div style={{ display:"inline-flex",alignItems:"center",gap:7,marginTop:4,padding:"5px 10px",background:"#fffbeb",borderRadius:7,border:"1px solid #fde68a",fontSize:11 }}>
-                    <span style={{ fontWeight:700,color:"#92400e" }}>{o.priceOffer} {o.currency||"EUR"}/{o.priceUnit||"kg"}</span>
+                    <span style={{ fontWeight:700,color:"#92400e" }}>{o.priceOffer} {o.currency||"EUR"}/{offerEnumLabel("priceUnit",o.priceUnit||"kg",t)}</span>
                     <span style={{ color:"#a16207",fontStyle:"italic" }}>{t("buyer.offers.card.price_disclaimer")}</span>
                   </div>
                 )}
@@ -8020,7 +7942,7 @@ function ChangePasswordSection({ fl }) {
   );
 }
 
-function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, buyerRetailerId, sends, onOpened }) {
+export function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, buyerRetailerId, sends, onOpened }) {
   // [Krok P2-2c] Bilingual via legacy.buyer.detail.*
   // CompanyPreviewModal (open via showCoModal) zostaje PL — shared modal,
   // czeka na P2-2d osobno.
@@ -8040,9 +7962,9 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
   if(!send) return <div><Btn outline onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> {t("buyer.detail.top.back_short")}</Btn></div>;
   const o=getOffer(send.offerId,offers); if(!o) return null;
   const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
-  const allPack=[...(o.packaging||[]),o.customPackaging].filter(Boolean);
+  const allPack=[...(o.packaging||[]).map(p=>offerEnumLabel("packaging",p,t)),o.customPackaging].filter(Boolean);
   const isStarred=(buyer.starred||[]).map(String).includes(String(send.id));
-  const vol = o.volumeMin&&o.volumeMax ? `${o.volumeMin}–${o.volumeMax} ${o.volumeUnit||""}` : o.volume ? `${o.volume} ${o.volumeUnit||""}` : "—";
+  const vol = o.volumeMin&&o.volumeMax ? `${o.volumeMin}–${o.volumeMax} ${offerEnumLabel("volumeUnit",o.volumeUnit||"",t)}` : o.volume ? `${o.volume} ${offerEnumLabel("volumeUnit",o.volumeUnit||"",t)}` : "—";
 
   /* helper: sekcja z opcjonalnym rozwinięciem */
   function Sec({label,icon,color="#0d9488",bg="#f0fdfa",children,defaultOpen=true}){
@@ -8100,8 +8022,8 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
           <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>
             {allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}
             {o.origin&&<Badge>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}</Badge>}
-            {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{o.positioning}</Badge>}
-            {o.offerType&&<Badge color="#2563eb" bg="#eff6ff">{o.offerType}</Badge>}
+            {o.positioning&&<Badge color="#7c3aed" bg="#faf5ff">{offerEnumLabel("positioning",o.positioning,t)}</Badge>}
+            {o.offerType&&<Badge color="#2563eb" bg="#eff6ff">{offerEnumLabel("offerType",o.offerType,t)}</Badge>}
             {o.isBio&&<Badge color="#059669" bg="#ecfdf5">🌿 Bio</Badge>}
           </div>
           <div style={{ fontWeight:700,fontSize:16,color:"#0f172a",marginBottom:8 }}>{o.title||o.product}</div>
@@ -8117,7 +8039,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
           {/* Identyfikacja */}
           <Sec label={t("buyer.detail.sections.identification")} icon="🎯" defaultOpen={true}>
-            <KV items={[[t("buyer.detail.kv.name"),o.product],[t("buyer.detail.kv.variety"),o.variety],[t("buyer.detail.kv.category"),o.category],[t("buyer.detail.kv.subcategory"),o.subcategory],[t("buyer.detail.kv.country"),o.origin?`${FLAGS[o.origin]||"🌐"} ${getCountryName(o.origin)}`:null],[t("buyer.detail.kv.region"),o.region],[t("buyer.detail.kv.offer_type"),o.offerType],[t("buyer.detail.kv.positioning"),o.positioning]]}/>
+            <KV items={[[t("buyer.detail.kv.name"),o.product],[t("buyer.detail.kv.variety"),o.variety],[t("buyer.detail.kv.category"),offerEnumLabel("category",o.category,t)],[t("buyer.detail.kv.subcategory"),o.subcategory],[t("buyer.detail.kv.country"),o.origin?`${FLAGS[o.origin]||"🌐"} ${getCountryName(o.origin)}`:null],[t("buyer.detail.kv.region"),o.region],[t("buyer.detail.kv.offer_type"),offerEnumLabel("offerType",o.offerType,t)],[t("buyer.detail.kv.positioning"),offerEnumLabel("positioning",o.positioning,t)]]}/>
           </Sec>
 
           {/* Co Cię wyróżnia — przeniesione tuż pod Identyfikację, otwarte domyślnie */}
@@ -8178,7 +8100,7 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
           {/* Specyfikacja jakościowa */}
           <Sec label={t("buyer.detail.sections.quality_spec")} icon="📊" color="#2563eb" bg="#eff6ff" defaultOpen={false}>
-            <KV items={[[t("buyer.detail.kv.size"),o.size],[t("buyer.detail.kv.quality_class"),o.qualityClass],[t("buyer.detail.kv.brand"),o.brand],[t("buyer.detail.kv.sale_mode"),o.saleMode],[t("buyer.detail.kv.brix"),o.brix],[t("buyer.detail.kv.color_spec"),o.colorSpec],[t("buyer.detail.kv.bio_organic"),o.isBio?t("buyer.detail.kv.bio_yes"):null]]}/>
+            <KV items={[[t("buyer.detail.kv.size"),o.size],[t("buyer.detail.kv.quality_class"),offerEnumLabel("qualityClass",o.qualityClass,t)],[t("buyer.detail.kv.brand"),o.brand],[t("buyer.detail.kv.sale_mode"),offerEnumLabel("saleMode",o.saleMode,t)],[t("buyer.detail.kv.brix"),o.brix],[t("buyer.detail.kv.color_spec"),o.colorSpec],[t("buyer.detail.kv.bio_organic"),o.isBio?t("buyer.detail.kv.bio_yes"):null]]}/>
             {o.qualitySpec&&<div style={{ marginTop:10,padding:"10px 12px",background:"#f8fafc",borderRadius:7,fontSize:13,color:"#334155",lineHeight:1.65,border:"1px solid #e2e8f0" }}>{o.qualitySpec}</div>}
           </Sec>
 
@@ -8191,25 +8113,25 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
 
           {/* Dostępność i wolumen */}
           <Sec label={t("buyer.detail.sections.availability")} icon="📅" defaultOpen={false}>
-            <KV items={[[t("buyer.detail.kv.availability_from"),o.from],[t("buyer.detail.kv.availability_to"),o.to],[t("buyer.detail.kv.availability_model"),o.availabilityModel],[t("buyer.detail.kv.volume_min"),o.volumeMin?`${o.volumeMin} ${o.volumeUnit||""}`:null],[t("buyer.detail.kv.volume_max"),o.volumeMax?`${o.volumeMax} ${o.volumeUnit||""}`:null],[t("buyer.detail.kv.moq"),o.moq||o.minOrder],[t("buyer.detail.kv.lead_time"),o.leadTime],[t("buyer.detail.kv.promo_volume"),o.promoVolumePct||o.promoVolume]]}/>
-            {(o.deliveryDays||[]).length>0&&<div style={{ marginTop:8,display:"flex",gap:5,flexWrap:"wrap" }}>{(o.deliveryDays||[]).map(d=><Badge key={d} color="#0d9488">{d}</Badge>)}</div>}
+            <KV items={[[t("buyer.detail.kv.availability_from"),o.from],[t("buyer.detail.kv.availability_to"),o.to],[t("buyer.detail.kv.availability_model"),offerEnumLabel("availabilityModel",o.availabilityModel,t)],[t("buyer.detail.kv.volume_min"),o.volumeMin?`${o.volumeMin} ${offerEnumLabel("volumeUnit",o.volumeUnit||"",t)}`:null],[t("buyer.detail.kv.volume_max"),o.volumeMax?`${o.volumeMax} ${offerEnumLabel("volumeUnit",o.volumeUnit||"",t)}`:null],[t("buyer.detail.kv.moq"),o.moq||o.minOrder],[t("buyer.detail.kv.lead_time"),o.leadTime],[t("buyer.detail.kv.promo_volume"),o.promoVolumePct||offerEnumLabel("promoVolume",o.promoVolume,t)]]}/>
+            {(o.deliveryDays||[]).length>0&&<div style={{ marginTop:8,display:"flex",gap:5,flexWrap:"wrap" }}>{(o.deliveryDays||[]).map(d=><Badge key={d} color="#0d9488">{offerEnumLabel("deliveryDays",d,t)}</Badge>)}</div>}
           </Sec>
 
           {/* Opakowanie */}
           <Sec label={t("buyer.detail.sections.packaging")} icon="📦" color="#d97706" bg="#fffbeb" defaultOpen={false}>
             {allPack.length>0&&<div style={{ marginBottom:10,display:"flex",gap:5,flexWrap:"wrap" }}>{allPack.map(p=><Badge key={p} color="#d97706" bg="#fef3c7">{p}</Badge>)}</div>}
-            <KV items={[[t("buyer.detail.kv.packaging_desc"),o.packagingDesc],[t("buyer.detail.kv.pallet_type"),o.palletType],[t("buyer.detail.kv.pallet_height"),o.palletHeight],[t("buyer.detail.kv.cartons_per_layer"),o.cartonsPerLayer],[t("buyer.detail.kv.layers_per_pallet"),o.layersPerPallet],[t("buyer.detail.kv.units_per_pallet"),o.unitsPerPallet],[t("buyer.detail.kv.srp"),o.srp]]}/>
+            <KV items={[[t("buyer.detail.kv.packaging_desc"),o.packagingDesc],[t("buyer.detail.kv.pallet_type"),offerEnumLabel("palletType",o.palletType,t)],[t("buyer.detail.kv.pallet_height"),o.palletHeight],[t("buyer.detail.kv.cartons_per_layer"),o.cartonsPerLayer],[t("buyer.detail.kv.layers_per_pallet"),o.layersPerPallet],[t("buyer.detail.kv.units_per_pallet"),o.unitsPerPallet],[t("buyer.detail.kv.srp"),offerEnumLabel("srp",o.srp,t)]]}/>
           </Sec>
 
           {/* Logistyka */}
           <Sec label={t("buyer.detail.sections.logistics")} icon="🚛" color="#1d4ed8" bg="#eff6ff" defaultOpen={false}>
-            <KV items={[[t("buyer.detail.kv.delivery_model"),o.deliveryModel],[t("buyer.detail.kv.loading_point"),o.loadingPoint],[t("buyer.detail.kv.delivery_regions"),o.deliveryRegions],[t("buyer.detail.kv.cold_chain"),o.coldChain],[t("buyer.detail.kv.temp_transport"),o.tempTransport]]}/>
+            <KV items={[[t("buyer.detail.kv.delivery_model"),offerEnumLabel("deliveryModel",o.deliveryModel,t)],[t("buyer.detail.kv.loading_point"),o.loadingPoint],[t("buyer.detail.kv.delivery_regions"),o.deliveryRegions],[t("buyer.detail.kv.cold_chain"),offerEnumLabel("coldChain",o.coldChain,t)],[t("buyer.detail.kv.temp_transport"),o.tempTransport]]}/>
           </Sec>
 
           {/* Certyfikaty */}
           {(allCerts.length>0||o.traceability||o.certNumber)&&(
             <Sec label={t("buyer.detail.sections.certs")} icon="🛡️" color="#059669" bg="#f0fdf4" defaultOpen={false}>
-              <KV items={[[t("buyer.detail.kv.traceability"),o.traceability],[t("buyer.detail.kv.cert_number"),o.certNumber],[t("buyer.detail.kv.cert_valid"),o.certValid],[t("buyer.detail.kv.current_tests"),o.currentTests]]}/>
+              <KV items={[[t("buyer.detail.kv.traceability"),offerEnumLabel("traceability",o.traceability,t)],[t("buyer.detail.kv.cert_number"),o.certNumber],[t("buyer.detail.kv.cert_valid"),o.certValid],[t("buyer.detail.kv.current_tests"),offerEnumLabel("currentTests",o.currentTests,t)]]}/>
               {allCerts.length>0&&<div style={{ marginTop:8,display:"flex",gap:5,flexWrap:"wrap" }}>{allCerts.map(c=><Badge key={c} color="#059669">{c}</Badge>)}</div>}
             </Sec>
           )}
@@ -8219,16 +8141,16 @@ function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, companies, 
             <Sec label={t("buyer.detail.sections.price_terms")} icon="💰" color="#d97706" bg="#fffbeb" defaultOpen={false}>
               {o.priceOffer&&<div style={{ marginBottom:10,padding:"12px 14px",background:"#fef3c7",borderRadius:8,border:"1px solid #fde68a" }}>
                 <div style={{ display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:6 }}>
-                  <div style={{ fontWeight:700,fontSize:18,color:"#92400e" }}>{o.priceOffer} {o.currency||"EUR"}/{o.priceUnit||"kg"}</div>
+                  <div style={{ fontWeight:700,fontSize:18,color:"#92400e" }}>{o.priceOffer} {o.currency||"EUR"}/{offerEnumLabel("priceUnit",o.priceUnit||"kg",t)}</div>
                   <Badge color="#d97706" bg="#fffbeb">{t("buyer.detail.sections.price_indicative_badge")}</Badge>
-                  {o.incoterm&&<Badge color="#d97706" bg="#fffbeb">{o.incoterm}</Badge>}
+                  {o.incoterm&&<Badge color="#d97706" bg="#fffbeb">{offerEnumLabel("incoterm",o.incoterm,t)}</Badge>}
                   {o.priceFrom&&o.priceTo&&<span style={{ fontSize:11,color:"#92400e" }}>{t("buyer.detail.sections.price_current_format",{from:o.priceFrom,to:o.priceTo})}</span>}
                 </div>
                 <div style={{ fontSize:11,color:"#a16207",fontStyle:"italic",lineHeight:1.5 }}>
                   {t("buyer.detail.sections.price_disclaimer")}
                 </div>
               </div>}
-              <KV items={[[t("buyer.detail.kv.promo_price"),o.promoPrice],[t("buyer.detail.kv.contract_program"),o.contractProgram],[t("buyer.detail.kv.samples_avail"),o.samplesAvail]]}/>
+              <KV items={[[t("buyer.detail.kv.promo_price"),offerEnumLabel("promoPrice",o.promoPrice,t)],[t("buyer.detail.kv.contract_program"),offerEnumLabel("contractProgram",o.contractProgram,t)],[t("buyer.detail.kv.samples_avail"),offerEnumLabel("samplesAvail",o.samplesAvail,t)]]}/>
             </Sec>
           )}
 
@@ -9949,7 +9871,7 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
                       <span style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.pipeline.send_pos_label")}</span>
                     </div>
                     {isPrem&&<Badge color="#d97706" bg="#fef3c7"><Star size={9} fill="#d97706" color="#d97706"/> {t("admin.pipeline.send_prem_badge")}</Badge>}
-                    <div style={{ flex:1 }}><strong style={{ fontSize:12 }}>{CEMOJI[o?.category]} {o?.title||o?.product}</strong><div style={{ fontSize:11,color:"#64748b" }}>{o?.volume} {o?.volumeUnit}</div></div>
+                    <div style={{ flex:1 }}><strong style={{ fontSize:12 }}>{CEMOJI[o?.category]} {o?.title||o?.product}</strong><div style={{ fontSize:11,color:"#64748b" }}>{o?.volume} {offerEnumLabel("volumeUnit",o?.volumeUnit,t)}</div></div>
                     <Badge color={ip?"#d97706":ia?"#2563eb":"#059669"}>{ip?t("admin.pipeline.send_status_pending"):ia?t("admin.pipeline.send_status_approved"):t("admin.pipeline.send_status_queued")}</Badge>
                     <Btn sm outline onClick={()=>setPreviewOffer(o)}><Eye size={10}/></Btn>
                     {ip&&<><Btn sm onClick={()=>moderate(s.id,"approve")} style={{ background:"#059669",color:"white",border:"none",padding:"6px 14px" }}><CheckCircle size={13}/> {t("admin.pipeline.send_btn_approve")}</Btn><Btn sm onClick={()=>moderate(s.id,"reject")} style={{ background:"#dc2626",color:"white",border:"none",padding:"6px 14px" }}><X size={13}/> {t("admin.pipeline.send_btn_reject")}</Btn></>}
@@ -12638,7 +12560,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
               const isPrem=o.tier==="premium";
               const isFirstStd=idx===premSends.length && stdSends.length>0;
               const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);
-              const allPack=[...(o.packaging||[]),o.customPackaging].filter(Boolean);
+              const allPack=[...(o.packaging||[]).map(p=>offerEnumLabel("packaging",p,t)),o.customPackaging].filter(Boolean);
               const descParts=(o.description||"").split(/(\*\*[^*]+\*\*)/g);
               // [B2B Round pipeline-retailer-email-mvp] Per-offer supplier lookup —
               // wcześniej był jeden `sCo` dla wszystkich, co dla maila zbiorczego
@@ -12660,7 +12582,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
                       <div style={{ flex:1 }}>
                         <div style={{ fontSize:11,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:2 }}>{co?.name || "Dostawca Fresh Market"}</div>
                         <div style={{ fontWeight:700,fontSize:16,color:"#0f172a",lineHeight:1.3 }}>{o.title||o.product}</div>
-                        <div style={{ fontSize:12,color:"#64748b",marginTop:3 }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · pozycja {s.pos||idx+1} · {o.volume} {o.volumeUnit}</div>
+                        <div style={{ fontSize:12,color:"#64748b",marginTop:3 }}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)} · pozycja {s.pos||idx+1} · {o.volume} {offerEnumLabel("volumeUnit",o.volumeUnit,t)}</div>
                       </div>
                       {isPrem&&<span style={{ background:"#d97706",color:"white",fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:20,whiteSpace:"nowrap",flexShrink:0 }}>⭐ PREMIUM</span>}
                     </div>
@@ -12670,7 +12592,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
                       </div>
                     )}
                     <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:12 }}>
-                      {[["Wolumen",`${o.volume} ${o.volumeUnit}`],["Min. zamówienie",o.minOrder||"—"],o.from&&["Dostępność",`${o.from.slice(0,7)}–${o.to?.slice(0,7)||"?"}`],allPack.length>0&&["Opakowanie",allPack.slice(0,2).join(", ")]].filter(Boolean).map(([lbl,val])=>(
+                      {[["Wolumen",`${o.volume} ${offerEnumLabel("volumeUnit",o.volumeUnit,t)}`],["Min. zamówienie",o.minOrder||"—"],o.from&&["Dostępność",`${o.from.slice(0,7)}–${o.to?.slice(0,7)||"?"}`],allPack.length>0&&["Opakowanie",allPack.slice(0,2).join(", ")]].filter(Boolean).map(([lbl,val])=>(
                         <div key={lbl} style={{ background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:6,padding:"5px 10px",flex:"1 1 100px" }}>
                           <div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:0.5 }}>{lbl}</div>
                           <div style={{ fontWeight:700,fontSize:12,color:"#1e293b",marginTop:1 }}>{val}</div>
@@ -13059,7 +12981,7 @@ function CompanyPreviewBody({ co, onClose, offers, sends, buyerRetailerId, role,
                 <span style={{fontSize:18}}>{CEMOJI[o.category]||"📦"}</span>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:600,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{o.title||o.product}</div>
-                  <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}{o.volume?` · ${o.volume} ${o.volumeUnit||""}`:""}
+                  <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{FLAGS[o.origin]||"🌐"} {getCountryName(o.origin)}{o.volume?` · ${o.volume} ${offerEnumLabel("volumeUnit",o.volumeUnit||"",t)}`:""}
                   </div>
                 </div>
                 {o.tier==="premium"&&<Badge color="#d97706" bg="#fef3c7">{t("common.company_preview.premium_badge")}</Badge>}
@@ -13085,11 +13007,11 @@ export function CompanyPreviewModal(props) {
   );
 }
 
-function OfferPreviewModal({ offer, co, onClose, adminFull=false, supplierFull=false }) {
+export function OfferPreviewModal({ offer, co, onClose, adminFull=false, supplierFull=false }) {
   const { t } = useTranslation("legacy");
   if(!offer) return null;
   const allCerts=[...(offer.certs||[]),offer.customCert].filter(Boolean);
-  const allPack=[...(offer.packaging||[]),offer.customPackaging].filter(Boolean);
+  const allPack=[...(offer.packaging||[]).map(p=>offerEnumLabel("packaging",p,t)),offer.customPackaging].filter(Boolean);
   const ct=co?.contacts?.[0];
   const full = (key) => t(`admin.pipeline.full_preview.${key}`);
   const txt = (v) => v === true ? full("yes") : v === false ? full("no") : v;
@@ -13123,10 +13045,10 @@ function OfferPreviewModal({ offer, co, onClose, adminFull=false, supplierFull=f
   };
   const photoUrl = (p) => typeof p === "string" ? p : p?.url;
   const photos = (offer.photos||[]).map(photoUrl).filter(Boolean);
-  const volumeRange = offer.volumeMin&&offer.volumeMax ? `${offer.volumeMin}-${offer.volumeMax} ${offer.volumeUnit||""}` : (offer.volume&&offer.volumeUnit?`${offer.volume} ${offer.volumeUnit}`:offer.volume);
-  const priceLine = offer.priceOffer ? `${offer.priceOffer} ${offer.currency||"EUR"}/${offer.priceUnit||""}` : null;
+  const volumeRange = offer.volumeMin&&offer.volumeMax ? `${offer.volumeMin}-${offer.volumeMax} ${offerEnumLabel("volumeUnit",offer.volumeUnit||"",t)}` : (offer.volume&&offer.volumeUnit?`${offer.volume} ${offerEnumLabel("volumeUnit",offer.volumeUnit,t)}`:offer.volume);
+  const priceLine = offer.priceOffer ? `${offer.priceOffer} ${offer.currency||"EUR"}/${offerEnumLabel("priceUnit",offer.priceUnit||"",t)}` : null;
   const priceWindow = offer.priceFrom&&offer.priceTo ? `${offer.priceFrom} - ${offer.priceTo}` : null;
-  const deliveryDays = Array.isArray(offer.deliveryDays) ? offer.deliveryDays : [];
+  const deliveryDays = Array.isArray(offer.deliveryDays) ? offer.deliveryDays.map(d=>offerEnumLabel("deliveryDays",d,t)) : [];
   const publicTitle = getPublicOfferTitle(offer) || offer.title || offer.product;
   const internalTitle = getInternalOfferTitle(offer);
   const fullPreview = adminFull || supplierFull;
@@ -13145,7 +13067,7 @@ function OfferPreviewModal({ offer, co, onClose, adminFull=false, supplierFull=f
           <div style={{ display:"flex",gap:4,flexWrap:"wrap",marginBottom:6 }}>{allCerts.map(c=><Badge key={c} color="#0d9488">{c}</Badge>)}{offer.origin&&<Badge>{FLAGS[offer.origin]||"🌐"} {getCountryName(offer.origin)}</Badge>}</div>
           <h3 style={{ margin:"0 0 8px",fontSize:15 }}>{offer.title||offer.product}</h3>
           <div style={{ display:"flex",gap:7,flexWrap:"wrap" }}>{[
-            [t("common.offer_preview.kv_volume"), offer.volume&&offer.volumeUnit?`${offer.volume} ${offer.volumeUnit}`:offer.volume],
+            [t("common.offer_preview.kv_volume"), offer.volume&&offer.volumeUnit?`${offer.volume} ${offerEnumLabel("volumeUnit",offer.volumeUnit,t)}`:offer.volume],
             [t("common.offer_preview.kv_min"), offer.minOrder],
             [t("common.offer_preview.kv_season"), offer.from&&offer.to?`${offer.from}–${offer.to}`:null],
           ].map(([l,v])=>v&&<div key={l} style={{ textAlign:"center",padding:"6px 10px",background:"white",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:9,color:"#94a3b8",textTransform:"uppercase" }}>{l}</div><div style={{ fontWeight:700,fontSize:12 }}>{v}</div></div>)}</div>
@@ -13176,16 +13098,16 @@ function OfferPreviewModal({ offer, co, onClose, adminFull=false, supplierFull=f
               [full("subcategory"), offer.subcategory],
               [full("origin"), offer.origin ? `${FLAGS[offer.origin]||"🌐"} ${getCountryName(offer.origin)}` : null],
               [full("region"), offer.region],
-              [full("offer_type"), offer.offerType],
-              [full("positioning"), offer.positioning],
+              [full("offer_type"), offerEnumLabel("offerType",offer.offerType,t)],
+              [full("positioning"), offerEnumLabel("positioning",offer.positioning,t)],
             ]}/>
           </AdminSection>
           <AdminSection title={full("section_quality")} tone="#2563eb">
             <AdminKV items={[
               [full("size"), offer.size],
-              [full("quality_class"), offer.qualityClass],
+              [full("quality_class"), offerEnumLabel("qualityClass",offer.qualityClass,t)],
               [full("brand"), offer.brand],
-              [full("sale_mode"), offer.saleMode],
+              [full("sale_mode"), offerEnumLabel("saleMode",offer.saleMode,t)],
               [full("bio"), offer.isBio ? full("yes") : null],
               [full("brix"), offer.brix],
               [full("color_spec"), offer.colorSpec],
@@ -13201,13 +13123,13 @@ function OfferPreviewModal({ offer, co, onClose, adminFull=false, supplierFull=f
             <AdminKV items={[
               [full("from"), offer.from],
               [full("to"), offer.to],
-              [full("availability_model"), offer.availabilityModel],
+              [full("availability_model"), offerEnumLabel("availabilityModel",offer.availabilityModel,t)],
               [full("volume"), volumeRange],
-              [full("volume_min"), offer.volumeMin ? `${offer.volumeMin} ${offer.volumeUnit||""}` : null],
-              [full("volume_max"), offer.volumeMax ? `${offer.volumeMax} ${offer.volumeUnit||""}` : null],
+              [full("volume_min"), offer.volumeMin ? `${offer.volumeMin} ${offerEnumLabel("volumeUnit",offer.volumeUnit||"",t)}` : null],
+              [full("volume_max"), offer.volumeMax ? `${offer.volumeMax} ${offerEnumLabel("volumeUnit",offer.volumeUnit||"",t)}` : null],
               [full("moq"), offer.moq || offer.minOrder],
               [full("lead_time"), offer.leadTime],
-              [full("promo_volume"), offer.promoVolumePct || offer.promoVolume],
+              [full("promo_volume"), offer.promoVolumePct || offerEnumLabel("promoVolume",offer.promoVolume,t)],
               [full("delivery_days"), deliveryDays],
             ]}/>
           </AdminSection>
@@ -13218,40 +13140,40 @@ function OfferPreviewModal({ offer, co, onClose, adminFull=false, supplierFull=f
               [full("net_weight"), offer.netWeight],
               [full("units_per_carton"), offer.unitsPerCarton],
               [full("ean"), offer.ean],
-              [full("pallet_type"), offer.palletType],
+              [full("pallet_type"), offerEnumLabel("palletType",offer.palletType,t)],
               [full("pallet_height"), offer.palletHeight],
               [full("cartons_per_layer"), offer.cartonsPerLayer],
               [full("layers_per_pallet"), offer.layersPerPallet],
               [full("units_per_pallet"), offer.unitsPerPallet],
-              [full("srp"), offer.srp],
+              [full("srp"), offerEnumLabel("srp",offer.srp,t)],
             ]}/>
           </AdminSection>
           <AdminSection title={full("section_logistics")} tone="#1d4ed8">
             <AdminKV items={[
-              [full("delivery_model"), offer.deliveryModel],
+              [full("delivery_model"), offerEnumLabel("deliveryModel",offer.deliveryModel,t)],
               [full("loading_point"), offer.loadingPoint],
               [full("delivery_regions"), offer.deliveryRegions],
-              [full("cold_chain"), offer.coldChain],
+              [full("cold_chain"), offerEnumLabel("coldChain",offer.coldChain,t)],
               [full("temp_transport"), offer.tempTransport],
             ]}/>
           </AdminSection>
           <AdminSection title={full("section_certs")} tone="#059669">
             {allCerts.length>0&&<div style={{ display:"flex",gap:5,flexWrap:"wrap",marginBottom:10 }}>{allCerts.map(c=><Badge key={c} color="#059669">{c}</Badge>)}</div>}
             <AdminKV items={[
-              [full("traceability"), offer.traceability],
+              [full("traceability"), offerEnumLabel("traceability",offer.traceability,t)],
               [full("cert_number"), offer.certNumber],
               [full("cert_valid"), offer.certValid],
-              [full("current_tests"), offer.currentTests],
+              [full("current_tests"), offerEnumLabel("currentTests",offer.currentTests,t)],
             ]}/>
           </AdminSection>
           <AdminSection title={full("section_commercial")} tone="#92400e">
             <AdminKV items={[
               [full("price_offer"), priceLine],
-              [full("incoterm"), offer.incoterm],
+              [full("incoterm"), offerEnumLabel("incoterm",offer.incoterm,t)],
               [full("price_window"), priceWindow],
-              [full("promo_price"), offer.promoPrice],
-              [full("contract_program"), offer.contractProgram],
-              [full("samples"), offer.samplesAvail],
+              [full("promo_price"), offerEnumLabel("promoPrice",offer.promoPrice,t)],
+              [full("contract_program"), offerEnumLabel("contractProgram",offer.contractProgram,t)],
+              [full("samples"), offerEnumLabel("samplesAvail",offer.samplesAvail,t)],
             ]}/>
           </AdminSection>
           <AdminSection title={full("section_benefits")} tone="#047857">
