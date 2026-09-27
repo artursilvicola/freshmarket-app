@@ -4860,7 +4860,7 @@ export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wall
           </div>
         </div>
         {CREDITS_UI_SUPPLIER
-          ? <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><CreditCard size={12}/>{t("supplier.finance.credits.bar_format", { rem: Math.max(0, rem), max: pkgMax })}{creditPools&&<span style={{ opacity:0.85 }}> · {t("supplier.finance.credits.bar_free_format", { free: creditPools.free?.remaining||0, paid: creditPools.paid?.remaining||0, awaiting: awaitingRead })}</span>}</div>
+          ? <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><CreditCard size={12}/>{t("supplier.finance.credits.bar_format", { rem: Math.max(0, rem), max: pkgMax })}{creditPools&&<span style={{ opacity:0.85 }}> · {t("supplier.finance.credits.bar_free_format", { free: creditPools.free?.remaining||0, paid: creditPools.paid?.remaining||0, awaiting: awaitingRead })}{creditPools.legacy?.remaining>0&&<span> · {t("supplier.finance.credits.bar_legacy_format", { legacy: creditPools.legacy.remaining })}</span>}</span>}</div>
           : (wallet.balance > 0 && <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><Wallet size={12}/>{t("supplier.wysylki.pkg_bar.wallet_balance_format", { balance: wallet.balance })}</div>)}
         {rem <= 0
           ? <span style={{ fontSize:11,background:"rgba(239,68,68,0.2)",color:"#fca5a5",padding:"3px 10px",borderRadius:8 }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.no_credits") : t("supplier.wysylki.pkg_bar.no_credits_badge")}</span>
@@ -6720,7 +6720,6 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
                 <div style={{ display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6,color }}>{Icon&&<Icon size={13}/>}{t(`supplier.finance.pools.${key}_label`)}</div>
                 <div style={{ fontSize:26,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1 }}>{pool.remaining}<span style={{ fontSize:12,fontWeight:500,color:"#64748b",marginLeft:6 }}>{t("supplier.finance.pools.remaining_unit")}</span></div>
                 <div style={{ fontSize:12,color:"#64748b",marginTop:6 }}>{pool.total>0 ? t("supplier.finance.pools.remaining_format",{ remaining:pool.remaining,total:pool.total }) : t("supplier.finance.pools.none")}</div>
-                {key === "paid" && pool.legacy > 0 && <div style={{ fontSize:11,color:"#94a3b8",marginTop:4 }}>{t("supplier.finance.pools.legacy_note_format", { count: pool.legacy })}</div>}
                 {(pool.byExpiry||[]).map(b => (
                   <div key={String(b.expiry)} style={{ fontSize:12,color:"#64748b",marginTop:2 }}>
                     {b.expiry ? t("supplier.finance.pools.nearest_expiry"+pluralSuffixPL(b.remaining)+"_format",{ count:b.remaining, date: fmtDateDMY(b.expiry) }) : t("supplier.finance.pools.no_expiry_format",{ count:b.remaining })}
@@ -6733,6 +6732,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   {tile("free", pools.free, "#059669", "#f0fdf4", Gift)}
                   {tile("paid", pools.paid, "#2563eb", "#eff6ff", CreditCard)}
+                  {(pools.legacy?.remaining > 0 || pools.legacy?.total > 0) && tile("legacy", pools.legacy, "#64748b", "#f8fafc", Package)}
                 </div>
                 <div data-availability style={{ marginTop:12,fontSize:13,fontWeight:600,color:"#0f172a" }}>
                   {t("supplier.finance.pools.available_format",{ count: Math.max(0, Number(pkgMax||0) - Number(pkgUsed||0)) })}

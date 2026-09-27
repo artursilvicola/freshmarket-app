@@ -2393,7 +2393,7 @@ export async function adminGrantFreeCredits({ companyIds, qty, reason, message, 
   if (!ids.length) throw new Error(i18n.t("legacy:errors.db.grant_companies_required"));
   const nextQty = Number.parseInt(String(qty), 10);
   if (!Number.isFinite(nextQty) || nextQty < 1 || nextQty > 100) throw new Error(i18n.t("legacy:errors.db.grant_qty_invalid"));
-  if (!["promotion", "compensation", "gift", "other"].includes(reason)) throw new Error(i18n.t("legacy:errors.db.grant_reason_invalid"));
+  if (!["promotion", "compensation", "gift", "registration", "other"].includes(reason)) throw new Error(i18n.t("legacy:errors.db.grant_reason_invalid"));
   if (!idempotencyKey || String(idempotencyKey).length < 8) throw new Error(i18n.t("legacy:errors.db.grant_key_missing"));
   const { data, error } = await supabase.rpc("admin_grant_free_credits", {
     p_company_ids: ids,
@@ -2432,15 +2432,18 @@ export async function adminListGrantBatches(limit = 50) {
 // byExpiry: rozbicie POZOSTAŁYCH kredytów puli po terminie ważności (rosnąco; null = bez terminu),
 // żeby UI nie sugerowało, że cała pula wygasa w najbliższym terminie (review Codexa, p. 6).
 export function summarizeCreditPools(packages, todayISO = businessTodayISO()) {
+  // Trzy pule, zgodne 1:1 z company_capacity: free (source = grant), paid (source = purchase),
+  // legacy (source = legacy — pakiet historyczny o nieustalonym źródle; NIGDY nie liczony jako kupiony).
   const pools = {
     free: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [], historical: 0 },
-    // paid = kupione + pakiety historyczne o nieustalonym źródle (source = legacy); legacy liczone osobno
-    paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [], legacy: 0 },
+    paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },
+    legacy: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },
   };
   for (const p of packages || []) {
     const exp = p?.expires_at ? String(p.expires_at).slice(0, 10) : null;
     if (exp && exp < todayISO) continue;
-    const pool = String(p?.source || "purchase") === "grant" ? pools.free : pools.paid;
+    const src = String(p?.source || "purchase");
+    const pool = src === "grant" ? pools.free : src === "legacy" ? pools.legacy : pools.paid;
     const total = Number(p?.qty_total || 0);
     const used = Math.min(total, Number(p?.qty_used || 0));
     const remaining = Math.max(0, total - used);
@@ -2448,7 +2451,6 @@ export function summarizeCreditPools(packages, todayISO = businessTodayISO()) {
     pool.used += used;
     pool.remaining += remaining;
     pool.rows.push(p);
-    if (pool === pools.paid && String(p?.source || "") === "legacy") pool.legacy += remaining;
     if (pool === pools.free && p?.grant_historical) pool.historical += remaining;
     if (remaining > 0) {
       if (exp && (!pool.expiry || exp < pool.expiry)) pool.expiry = exp;
@@ -2456,7 +2458,7 @@ export function summarizeCreditPools(packages, todayISO = businessTodayISO()) {
       if (bucket) bucket.remaining += remaining; else pool.byExpiry.push({ expiry: exp, remaining });
     }
   }
-  for (const pool of [pools.free, pools.paid]) {
+  for (const pool of [pools.free, pools.paid, pools.legacy]) {
     pool.byExpiry.sort((a, b) => (a.expiry === b.expiry ? 0 : a.expiry === null ? 1 : b.expiry === null ? -1 : a.expiry < b.expiry ? -1 : 1));
   }
   return pools;

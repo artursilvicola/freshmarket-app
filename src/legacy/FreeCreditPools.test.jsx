@@ -16,6 +16,8 @@ const i18n = createInstance();
 await i18n.init({ lng: "pl", fallbackLng: false, defaultNS: "legacy", resources: { pl: { legacy: pl }, en: { legacy: en } } });
 function render(component, lng = "pl") { lang.t = i18n.getFixedT(lng, "legacy"); let tree; act(() => { tree = create(component); }); return tree; }
 const text = (tree) => JSON.stringify(tree.toJSON());
+// fragment JSON jednego kafla puli (od jego data-pool do następnego kafla)
+const tileJson = (out, key) => { const i = out.indexOf('"data-pool":"' + key + '"'); if (i < 0) return ""; const j = out.indexOf('"data-pool":"', i + 10); return out.slice(i, j < 0 ? i + 4000 : j); };
 const base = { wallet: { balance: 0, transactions: [] }, sends: [], offers: [], co: { id: "co1", pkg: "std_5" }, setCo: () => {}, fl: () => {}, nav: () => {}, buyPackage: () => {}, orders: [], pkgMax: 7, pkgUsed: 2, pkgPlan: "std_5", retailers: [], accountId: "s1" };
 const pools = summarizeCreditPools([
   { id: "g1", source: "grant", qty_total: 3, qty_used: 1, expires_at: "2026-12-27" },
@@ -81,6 +83,36 @@ describe("PageFinanse — pule kredytów", () => {
   });
 });
 
+describe("PageFinanse — pakiety o nieustalonym źródle", () => {
+  it("sam pakiet nieustalony: Kupione 0, osobny kafel „Pakiety historyczne (źródło nieustalone)” z 1; mieszanka: te same liczby co w widoku SQL", () => {
+    const only = summarizeCreditPools([{ id: "l1", source: "legacy", qty_total: 1, qty_used: 0, expires_at: "2026-12-31" }], "2026-09-27");
+    let tree = render(<PageFinanse {...base} pkgMax={1} pkgUsed={0} creditPools={only} />);
+    let out = text(tree);
+    expect(out).toContain("Pakiety historyczne (źródło nieustalone)");
+    expect(tileJson(out, "legacy")).toContain('"children":["1",');
+    expect(tileJson(out, "paid")).toContain('"children":["0",');
+    act(() => tree.unmount());
+    const mix = summarizeCreditPools([
+      { id: "g", source: "grant", grant_historical: true, qty_total: 5, qty_used: 3, expires_at: "2026-12-31" },
+      { id: "l", source: "legacy", qty_total: 1, qty_used: 0, expires_at: "2026-12-31" },
+      { id: "p", source: "purchase", qty_total: 5, qty_used: 1, expires_at: "2027-08-22" },
+    ], "2026-09-27");
+    expect([mix.free.remaining, mix.paid.remaining, mix.legacy.remaining]).toEqual([2, 4, 1]);   // = qty_remaining_free/paid/legacy
+    tree = render(<PageFinanse {...base} pkgMax={11} pkgUsed={4} creditPools={mix} />, "en");
+    out = text(tree);
+    expect(out).toContain("Historical packages (source not determined)");
+    expect(tileJson(out, "paid")).toContain('"children":["4",');
+    expect(tileJson(out, "legacy")).toContain('"children":["1",');
+    expect(tileJson(out, "free")).toContain('"children":["2",');
+    act(() => tree.unmount());
+  });
+  it("bez pakietów nieustalonych kafel nie pojawia się", () => {
+    const tree = render(<PageFinanse {...base} creditPools={pools} />);
+    expect(text(tree)).not.toContain("nieustalone");
+    act(() => tree.unmount());
+  });
+});
+
 describe("PageWysylki — pasek kredytów", () => {
   it("dostępne osobno od pul i oczekujących: 0 dostępnych nie stoi obok „w tym 3 bezpłatnych”", () => {
     const sends = [1, 2, 3].map((i) => ({ id: "s" + i, supplierId: "s1", status: "sent", offerId: "o", retailerId: 1 }));
@@ -90,6 +122,15 @@ describe("PageWysylki — pasek kredytów", () => {
     expect(out).toContain("Kredyty PreConnect: 0 z 3");
     expect(out).toContain("nierozliczone w pulach: bezpłatne 3, kupione 0 · oczekuje na odczyt: 3");
     expect(out).not.toContain("w tym 3 bezpłatnych");
+    expect(out).not.toContain("nieustalone");
+    act(() => tree.unmount());
+    const withLegacy = summarizeCreditPools([{ id: "g1", source: "grant", qty_total: 3, qty_used: 0, expires_at: "2026-12-27" }, { id: "l1", source: "legacy", qty_total: 2, qty_used: 0, expires_at: "2026-12-31" }], "2026-09-27");
+    const tree2 = render(<PageWysylki sends={sends} offers={[]} pkgUsed={3} pkgMax={5} pkgPlan="std_5" rem={2} wallet={{ balance: 0, transactions: [] }} sendToChain={() => {}} nav={() => {}} sid={null} accountId="s1" co={{ id: "co1" }} retailers={[]} companies={[]} creditPools={withLegacy} />);
+    const out2 = text(tree2);
+    expect(out2).toContain("kupione 0");
+    expect(out2).toContain("nieustalone 2");
+    act(() => tree2.unmount());
+    return;
     act(() => tree.unmount());
   });
 });

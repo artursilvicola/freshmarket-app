@@ -7,7 +7,7 @@
 //           b) dwa odczyty TEJ SAMEJ propozycji → jedno pobranie, drugie already_charged,
 //           c) dwa przyznania z tym samym kluczem idempotencji → jedna partia, jeden komplet pakietów.
 // Baza tymczasowa usuwana na końcu. Nigdy nie kieruj tego na produkcję.
-import { readFileSync, readdirSync } from "node:fs";
+import fs, { readFileSync, readdirSync } from "node:fs";
 import pg from "pg";
 const opts = { host: "127.0.0.1", port: 54329, user: "postgres", password: "pw" };
 const name = "free_credit_grants_test_" + Date.now();
@@ -85,7 +85,100 @@ try {
   const fin2 = await db.query(`select status, data from public.legacy_sends where legacy_id=990105`);
   const r2 = fin2.rows[0];
   ok(n1 === 1 && s1.billing.charged && r2.status === "read" && r2.data.billingStatus === "charged" && r2.data.chargeTxId && r2.data.supplierNotifiedAt && r2.data.readAt && r2.data.custom === "y", "równolegle powiadomienie + odczyt: oba znaczniki na wierszu, rozliczenie nienaruszone");
-  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK; concurrency (grant key, last credit, same send, app+email, notify+charge)");
+  // ── faza 3: historyczne RPC — równoległość i kontekst zaufany ──────────────
+  // f) ten sam klucz z dwóch sesji → jedna partia, drugie already_done, bez 23505
+  const HP1 = "44444444-4444-4444-8444-444444444441", HP2 = "44444444-4444-4444-8444-444444444442", HP3 = "44444444-4444-4444-8444-444444444443";
+  await db.query(`insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at) values
+    ('${HP1}','${CO}','std_5',5,3,0,'EUR','2026-07-02T07:18:42Z','2026-12-31'),
+    ('${HP2}','${CO}','std_5',5,0,0,'EUR','2026-07-03T07:18:42Z','2026-12-31'),
+    ('${HP3}','${CO}','std_1',1,0,0,'EUR','2026-07-09T10:00:00Z','2026-12-31')`);
+  const rec = (c, reason, ids, key) => c.query(`select public.admin_record_historical_grants('${reason}', array[${ids.map((x) => "'" + x + "'").join(",")}]::uuid[], '${key}') as r`).then((r) => r.rows[0].r, (e) => ({ error: e.code }));
+  // blokada wiersza trzecim połączeniem, żeby obie sesje weszły równocześnie
+  await db.query("begin"); await db.query(`select id from public.packages where id='${HP1}' for update`);
+  const hs1 = rec(c1, "registration", [HP1], "hist-same-key-000001"), hs2 = rec(c2, "registration", [HP1], "hist-same-key-000001");
+  await new Promise((r) => setTimeout(r, 300)); await db.query("commit");
+  const [hr1, hr2] = await Promise.all([hs1, hs2]);
+  ok([hr1, hr2].filter((x) => x.recorded === 1).length === 1 && [hr1, hr2].filter((x) => x.already_done).length === 1 && !hr1.error && !hr2.error, "historia: ten sam klucz równolegle → jedno odnotowanie, drugie already_done, bez 23505");
+  const hb = await db.query(`select count(*)::int as b from public.package_grant_batches where idempotency_key='hist-same-key-000001'`);
+  const hp = await db.query(`select source, grant_reason, qty_total, qty_used from public.packages where id='${HP1}'`);
+  ok(hb.rows[0].b === 1 && hp.rows[0].source === "grant" && hp.rows[0].grant_reason === "registration" && hp.rows[0].qty_total === 5 && hp.rows[0].qty_used === 3, "historia: jedna partia, pakiet 5/3 zachowany");
+  // g) różne klucze, różne powody, ta sama lista → jedno odnotowanie, drugie odrzucone bez drugiej partii i bez nadpisania
+  await db.query("begin"); await db.query(`select id from public.packages where id='${HP2}' for update`);
+  const ht1 = rec(c1, "registration", [HP2], "hist-race-a-000001"), ht2 = rec(c2, "compensation", [HP2], "hist-race-b-000001");
+  await new Promise((r) => setTimeout(r, 300)); await db.query("commit");
+  const [hq1, hq2] = await Promise.all([ht1, ht2]);
+  const okOne = [hq1, hq2].filter((x) => x.recorded === 1).length === 1, rejected = [hq1, hq2].filter((x) => x.error === "22023" || x.error === "40001").length === 1;
+  const hp2 = await db.query(`select source, grant_reason, (select count(*)::int from public.package_grant_batches where idempotency_key in ('hist-race-a-000001','hist-race-b-000001')) as b, (select count(*)::int from public.wallet_tx where meta->>'kind'='historical_grant_record' and reference_id='${HP2}') as tx from public.packages where id='${HP2}'`);
+  const winner = hq1.recorded === 1 ? "registration" : "compensation";
+  ok(okOne && rejected && hp2.rows[0].grant_reason === winner && hp2.rows[0].b === 1 && hp2.rows[0].tx === 1, "historia: sprzeczne powody równolegle → jedno odnotowanie, drugie 22023, jedna partia, bez nadpisania (" + winner + ")");
+  // h) kontekst zaufany: rola 'authenticator' (jak PostgREST) bez sub → 42501 mimo podania admina; z sub admina → OK
+  await root.query(`drop role if exists authenticator_test`).catch(() => {});
+  await db.query(`create role authenticator_test login password 'pw' noinherit; grant authenticated to authenticator_test; grant usage on schema public to authenticator_test;`);
+  const ca = new pg.Client({ ...opts, user: "authenticator_test", password: "pw", database: name }); await ca.connect(); clients.push(ca);
+  await ca.query("set role authenticated");
+  const noSub = await ca.query(`select public.admin_record_historical_grants('legacy', array['${HP3}']::uuid[], 'hist-auth-000001', null, '${ADMIN}') as r`).then(() => "ok", (e) => e.code);
+  ok(noSub === "42501", "historia: rola authenticated bez sub (PostgREST) → 42501, p_recorded_by nie jest dowodem uprawnień");
+  await ca.query(`select set_config('request.jwt.claim.sub','${ADMIN}',false), set_config('request.jwt.claims','{"sub":"${ADMIN}","role":"authenticated"}',false)`);
+  const withSub = await ca.query(`select public.admin_record_historical_grants('legacy', array['${HP3}']::uuid[], 'hist-auth-000002') as r`).then((r) => r.rows[0].r, (e) => ({ error: e.code }));
+  ok(withSub.recorded === 1, "historia: authenticated z sub admina → odnotowane (legacy)");
+  await ca.end(); clients.splice(clients.indexOf(ca), 1);
+
+  // ── faza 4: pliki uzgodnienia na archiwum 23.09 (schemat SPRZED migracji → zapis PO) ──
+  const arch = "C:/Users/Artur/OneDrive/Dokumenty/1FMK2026/outputs/";
+  const A = read("docs/production/sql/HISTORYCZNE_KREDYTY_2026-09-27_UZGODNIENIE.sql");
+  const B = read("docs/production/sql/HISTORYCZNE_KREDYTY_2026-09-27_ZAPIS.sql");
+  if (fs.existsSync(arch + "kredyty-preconnect-po-2026-09-23.json")) {
+    const po = JSON.parse(fs.readFileSync(arch + "kredyty-preconnect-po-2026-09-23.json", "utf8")).data.packages_after;
+    const setup = async (client) => {
+      await client.query(read("supabase/tests/000_supabase_shim.sql"));
+      for (const f of files.filter((f) => f !== "20260927120000_free_credit_grants.sql")) await client.query("begin;" + read("supabase/migrations/" + f) + ";commit;");
+      for (const cid of new Set(po.map((p) => p.company_id))) await client.query("insert into public.companies(id,name) values($1,'ARCHIVE FIXTURE') on conflict do nothing", [cid]);
+      for (const p of po) await client.query("insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at,payment_ref) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", [p.id, p.company_id, p.plan, p.qty_total, p.qty_used, p.price_paid, p.currency, p.purchased_at, p.expires_at, p.payment_ref]);
+      await client.query(`insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data)
+        values ('${ADMIN}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','artur.stasiak@freshmarket.eu','',now(),now(),now(),'{"role":"admin"}','{}')`);
+      await client.query(`update public.profiles set role='admin', email='artur.stasiak@freshmarket.eu' where id='${ADMIN}'`).catch(async () => { await client.query(`update public.profiles set role='admin' where id='${ADMIN}'`); });
+    };
+    const rowsOf = (res, col) => (Array.isArray(res) ? res : [res]).filter((r) => r.rows?.length && col in r.rows[0]).map((r) => r.rows);
+    // 4a. czysty przebieg
+    const n2 = name + "_arch"; await root.query("create database " + n2); const d2 = new pg.Client({ ...opts, database: n2 }); await d2.connect(); clients.push(d2);
+    try {
+      await setup(d2);
+      const resA = await d2.query(A);
+      const a1 = rowsOf(resA, "brakujacych")[0], a2 = rowsOf(resA, "d_firma")[0] || [], a3 = rowsOf(resA, "tylko_w_bazie")[0][0], a4 = rowsOf(resA, "firma").filter((x) => x.length && "payment_ref" in x[0] && !("d_firma" in x[0]))[0] || [];
+      ok(a1.every((x) => Number(x.brakujacych) === 0) && a1.length === 3 && a2.length === 0 && Number(a3.tylko_w_bazie) === 0 && Number(a3.tylko_w_archiwum) === 0 && a4.length === 0, "uzgodnienie A na schemacie sprzed migracji: 0 brakujących, 0 różnic, 123/123, 0 spoza list");
+      await d2.query(read("supabase/migrations/20260927120000_free_credit_grants.sql"));
+      const resB = await d2.query(B);
+      const ctrl = rowsOf(resB, "historyczne")[0];
+      const byL = Object.fromEntries(ctrl.map((x) => [x.lista, x]));
+      ok(Number(byL.rejestracja.pakietow) === 75 && byL.rejestracja.source === "grant" && byL.rejestracja.grant_reason === "registration" && byL.rejestracja.historyczne && byL.rejestracja.bez_banera
+        && Number(byL.rekompensata.pakietow) === 123 && byL.rekompensata.grant_reason === "compensation" && Number(byL.nieustalone.pakietow) === 3 && byL.nieustalone.source === "legacy", "zapis B po migracji: 75 rejestracja / 123 rekompensata / 3 nieustalone, bez banera");
+      const sums = await d2.query("select sum(qty_total)::int t, sum(qty_used)::int u from public.packages");
+      const expT = po.reduce((a, p) => a + p.qty_total, 0), expU = po.reduce((a, p) => a + p.qty_used, 0);
+      ok(sums.rows[0].t === expT && sums.rows[0].u === expU, "zapis B nie zmienia sald ani zużycia (" + expT + "/" + expU + ")");
+      const again = await d2.query(B).then(() => "ok", (e) => e.message);
+      await d2.query("rollback").catch(() => {});
+      ok(/już oznaczonych/.test(again), "powtórny zapis B przerwany: pakiety już oznaczone");
+    } finally { await d2.end(); clients.splice(clients.indexOf(d2), 1); await root.query("drop database " + n2 + " with (force)"); }
+    // 4b. zmieniony wiersz w bazie → A pokazuje różnicę, B się wycofuje
+    const n3 = name + "_arch2"; await root.query("create database " + n3); const d3 = new pg.Client({ ...opts, database: n3 }); await d3.connect(); clients.push(d3);
+    try {
+      await setup(d3);
+      const altered = po.find((p) => p.plan === "std_5" && p.qty_total === 5 && p.price_paid === 0 && !p.payment_ref);
+      const other = [...new Set(po.map((p) => p.company_id))].find((x) => x !== altered.company_id);
+      await d3.query("update public.packages set qty_total=9, company_id=$2, payment_ref='ZMIENIONE' where id=$1", [altered.id, other]);
+      const resA = await d3.query(A);
+      const diffs = rowsOf(resA, "d_firma")[0] || [];
+      ok(diffs.length === 1 && diffs[0].id === altered.id && diffs[0].d_qty && diffs[0].d_firma && diffs[0].d_ref, "uzgodnienie A wykrywa zmienioną ilość, właściciela i referencję jednego pakietu");
+      await d3.query(read("supabase/migrations/20260927120000_free_credit_grants.sql"));
+      const bFail = await d3.query(B).then(() => "ok", (e) => e.message);
+      await d3.query("rollback").catch(() => {});
+      const marked = await d3.query("select count(*)::int c from public.packages where source <> 'purchase'");
+      ok(/niezgodnych 1/.test(bFail) && marked.rows[0].c === 0, "zapis B przy różnicy: wyjątek, nic nie oznaczone");
+    } finally { await d3.end(); clients.splice(clients.indexOf(d3), 1); await root.query("drop database " + n3 + " with (force)"); }
+  } else {
+    console.log("skip faza 4: brak archiwum 1FMK2026/outputs (uruchom na komputerze Artura)");
+  }
+  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK; concurrency (grant key, last credit, same send, app+email, notify+charge, historical key/overlap, trusted context); reconciliation A/B on archive fixture");
 } catch (e) { console.error(e); process.exitCode = 1; }
 finally {
   for (const c of clients) await c.end().catch(() => {});

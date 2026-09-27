@@ -15,8 +15,8 @@ where table_schema = 'public' and table_name = 'packages'
 -- B. Stare wiersze = purchase (DEFAULT), zero grant ---------------------
 select source, grant_reason, grant_historical, count(*), sum(qty_total), sum(qty_used)
 from public.packages group by 1,2,3 order by 1,2;
--- oczekiwane TUŻ PO MIGRACJI: tylko purchase. PO ODNOTOWANIU HISTORII (krok 4b): grant/registration/true = 75,
--- grant/compensation/true = 123, legacy = 3, reszta purchase; sumy qty_total/qty_used identyczne jak w części A4 uzgodnienia.
+-- oczekiwane TUŻ PO MIGRACJI: tylko purchase. PO ODNOTOWANIU HISTORII (krok 4b, po deployu): grant/registration/true = 75,
+-- grant/compensation/true = 123, legacy = 3, reszta purchase; sumy qty_total/qty_used identyczne jak w części A5 uzgodnienia.
 
 -- C. Plan katalogowy grant: nieaktywny, cena 0 --------------------------
 select id, tier, qty, price_eur, active, '(grant, STANDARD, 1, 0, false)' as oczekiwane

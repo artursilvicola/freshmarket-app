@@ -1,12 +1,10 @@
 -- =====================================================================
--- HISTORYCZNE KREDYTY — CZĘŚĆ A: UZGODNIENIE Z BAZĄ (TYLKO ODCZYT)
--- Wygenerowane 27.09.2026 (v6) z archiwów 1FMK2026/outputs (kopie 23.09):
---   rejestracja  = 75 pakietów std_5 / 5 kredytów / cena 0 / bez referencji (prezent rejestracyjny),
---   rekompensata = 123 pakietów payment_ref compensation:fm2026:… (23.09 11:52, 93 firm),
---   nieustalone  = 3 pakiety std_1 / cena 0 / bez referencji (źródło nieustalone → opis neutralny).
--- Działa na schemacie SPRZED migracji (nie używa nowych kolumn). Wklej CAŁOŚĆ do SQL
--- Editora i uruchom jako jedno wykonanie (tabela tymczasowa żyje w tej transakcji).
--- Nic nie zapisuje. Wyniki (A1–A5) zachować w notatce wdrożeniowej.
+-- HISTORYCZNE KREDYTY — CZĘŚĆ B: ZAPIS PRZEZ RPC (PO MIGRACJI, PO AKCEPTACJI CZĘŚCI A)
+-- Samowystarczalny: manifest + PONOWNA weryfikacja + odnotowanie w JEDNEJ transakcji.
+-- Jeśli weryfikacja wykryje różnicę, całość się wycofuje (RAISE) — nic nie zostaje zapisane.
+-- Wykonuje admin z SQL Editora (session_user = postgres); p_recorded_by = profil admina.
+-- RPC nie zmienia qty/qty_used/expires_at, nie zwiększa salda, nie pokazuje banera, nie wysyła nic.
+-- Klucze idempotencji stałe: powtórka = already_done.
 -- =====================================================================
 begin;
 -- MANIFEST z archiwum 23.09 (kopia „po”, dla rejestracji stan z kopii „po” = ten sam wiersz co w „przed"):
@@ -219,52 +217,38 @@ insert into hist_manifest values
   ('nieustalone', 'aedb02e4-9859-492e-a31d-26c1554f5f57'::uuid, '2a9ba343-02c9-43c3-b8ff-b8f9a1404d32'::uuid, 'std_1', 1, 0, 0, 'EUR', null, '2026-07-09T10:52:49.101837+00:00'::timestamptz, '2026-12-31'::date),
   ('nieustalone', 'd481abfe-c6d6-43f3-b5f3-edee6f121c0c'::uuid, '3f821801-89f4-4519-8940-19d7066930e2'::uuid, 'std_1', 1, 0, 0, 'EUR', null, '2026-09-15T09:28:57.928201+00:00'::timestamptz, '2026-12-31'::date);
 
--- A1. Zliczenie: w archiwum vs w bazie (OCZEKIWANE: brakujących 0)
-select lista, count(*) as w_archiwum, count(p.id) as w_bazie, count(*) - count(p.id) as brakujacych
-from hist_manifest m left join public.packages p on p.id = m.id
-group by lista order by lista;
+-- 1. weryfikacja: różnice per pole → wyjątek
+do $$
+declare v_diff integer; v_missing integer; v_marked integer;
+begin
+  select count(*) into v_missing from hist_manifest m where not exists (select 1 from public.packages p where p.id = m.id);
+  select count(*) into v_diff from hist_manifest m join public.packages p on p.id = m.id
+   where p.company_id is distinct from m.company_id or p.plan is distinct from m.plan or p.qty_total is distinct from m.qty_total
+      or coalesce(p.qty_used, -1) < m.qty_used_arch or p.price_paid is distinct from m.price_paid or p.currency is distinct from m.currency
+      or p.payment_ref is distinct from m.payment_ref or p.purchased_at is distinct from m.purchased_at or p.expires_at is distinct from m.expires_at;
+  select count(*) into v_marked from hist_manifest m join public.packages p on p.id = m.id where p.source <> 'purchase';
+  if v_missing > 0 or v_diff > 0 then
+    raise exception 'ZAPIS PRZERWANY: brakujących % / niezgodnych % — uruchom część A i wyjaśnij różnice', v_missing, v_diff;
+  end if;
+  if v_marked > 0 then
+    raise exception 'ZAPIS PRZERWANY: % pakietów już oznaczonych (source <> purchase) — historia była już odnotowana?', v_marked;
+  end if;
+end $$;
 
--- A2. Różnice per pole
+-- 2. odnotowanie (p_recorded_by = profil admina wykonującego)
+select public.admin_record_historical_grants('registration', (select array_agg(id) from hist_manifest where lista = 'rejestracja'),
+  'hist-registration-2026-09-27', 'Prezent rejestracyjny FM 2026 — odnotowanie historii wg archiwum 23.09 (75 pakietów)',
+  (select id from public.profiles where email = 'artur.stasiak@freshmarket.eu' and role = 'admin')) as rejestracja;
+select public.admin_record_historical_grants('compensation', (select array_agg(id) from hist_manifest where lista = 'rekompensata'),
+  'hist-compensation-2026-09-27', 'Rekompensata za nieobecne sieci (Biedronka 46, Mega Image 52, Stokrotka 25) — wykonana 23.09 11:52, odnotowanie historii',
+  (select id from public.profiles where email = 'artur.stasiak@freshmarket.eu' and role = 'admin')) as rekompensata;
+select public.admin_record_historical_grants('legacy', (select array_agg(id) from hist_manifest where lista = 'nieustalone'),
+  'hist-legacy-2026-09-27', 'Pakiety std_1 z ceną 0 bez referencji — źródło nieustalone, opis neutralny',
+  (select id from public.profiles where email = 'artur.stasiak@freshmarket.eu' and role = 'admin')) as nieustalone;
 
--- Różnice per pole (NULL-safe). OCZEKIWANE: 0 wierszy. qty_used nie jest porównywane (może rosnąć), ale nie może zmaleć poniżej stanu z archiwum.
-select m.lista, m.id, c.name as firma,
-       case when p.id is null then 'BRAK W BAZIE' end as brak,
-       case when p.company_id is distinct from m.company_id then 'company_id: ' || coalesce(p.company_id::text,'NULL') || ' ≠ ' || m.company_id end as d_firma,
-       case when p.plan is distinct from m.plan then 'plan: ' || coalesce(p.plan,'NULL') || ' ≠ ' || m.plan end as d_plan,
-       case when p.qty_total is distinct from m.qty_total then 'qty_total: ' || coalesce(p.qty_total::text,'NULL') || ' ≠ ' || m.qty_total end as d_qty,
-       case when coalesce(p.qty_used, -1) < m.qty_used_arch then 'qty_used zmalało: ' || coalesce(p.qty_used::text,'NULL') || ' < ' || m.qty_used_arch end as d_used,
-       case when p.price_paid is distinct from m.price_paid then 'price_paid: ' || coalesce(p.price_paid::text,'NULL') || ' ≠ ' || m.price_paid end as d_cena,
-       case when p.currency is distinct from m.currency then 'currency: ' || coalesce(p.currency,'NULL') || ' ≠ ' || m.currency end as d_waluta,
-       case when p.payment_ref is distinct from m.payment_ref then 'payment_ref: ' || coalesce(p.payment_ref,'NULL') || ' ≠ ' || coalesce(m.payment_ref,'NULL') end as d_ref,
-       case when p.purchased_at is distinct from m.purchased_at then 'purchased_at: ' || coalesce(p.purchased_at::text,'NULL') || ' ≠ ' || m.purchased_at end as d_data,
-       case when p.expires_at is distinct from m.expires_at then 'expires_at: ' || coalesce(p.expires_at::text,'NULL') || ' ≠ ' || m.expires_at end as d_waznosc
-from hist_manifest m
-left join public.packages p on p.id = m.id
-left join public.companies c on c.id = coalesce(p.company_id, m.company_id)
-where p.id is null
-   or p.company_id is distinct from m.company_id or p.plan is distinct from m.plan or p.qty_total is distinct from m.qty_total
-   or coalesce(p.qty_used, -1) < m.qty_used_arch or p.price_paid is distinct from m.price_paid or p.currency is distinct from m.currency
-   or p.payment_ref is distinct from m.payment_ref or p.purchased_at is distinct from m.purchased_at or p.expires_at is distinct from m.expires_at
-order by m.lista, c.name;
-
--- A3. Rekompensaty po znaczniku — zbiory w OBIE strony (OCZEKIWANE: w_bazie_po_znaczniku = 123, tylko_w_bazie = 0, tylko_w_archiwum = 0)
-select (select count(*) from public.packages where payment_ref like 'compensation:fm2026:%') as w_bazie_po_znaczniku,
-       (select count(*) from hist_manifest where lista = 'rekompensata') as w_archiwum,
-       (select count(*) from public.packages p where p.payment_ref like 'compensation:fm2026:%' and not exists (select 1 from hist_manifest m where m.id = p.id)) as tylko_w_bazie,
-       (select count(*) from hist_manifest m where m.lista = 'rekompensata' and not exists (select 1 from public.packages p where p.id = m.id)) as tylko_w_archiwum;
--- A3b. Referencja rekompensaty musi wskazywać TĘ SAMĄ firmę, co wiersz (OCZEKIWANE: 0 wierszy)
-select p.id, p.company_id, p.payment_ref from public.packages p
-where p.payment_ref like 'compensation:fm2026:%' and p.payment_ref not like '%:company:' || p.company_id::text;
-
--- A4. Pakiety z ceną 0 / bez referencji SPOZA list (OCZEKIWANE: 0 wierszy; inaczej decyzja: nieustalone czy zostawić)
-select p.id, c.name as firma, p.plan, p.qty_total, p.qty_used, p.price_paid, p.payment_ref, p.purchased_at, p.expires_at
-from public.packages p join public.companies c on c.id = p.company_id
-where (p.price_paid = 0 or p.price_paid is null or p.payment_ref is null)
-  and not exists (select 1 from hist_manifest m where m.id = p.id)
-order by p.purchased_at;
-
--- A5. Salda list DZIŚ (do notatki; porównać z kontrolą po zapisie — sumy qty_total i qty_used muszą być identyczne)
-select m.lista, count(*) as pakietow, sum(p.qty_total) as kredytow, sum(p.qty_used) as zuzytych, sum(p.qty_total - p.qty_used) as pozostalych,
-       min(p.expires_at) as min_waznosc, max(p.expires_at) as max_waznosc
-from hist_manifest m join public.packages p on p.id = m.id group by m.lista order by m.lista;
-rollback;  -- nic nie zapisano; tabela tymczasowa znika
+-- 3. kontrola w tej samej transakcji (OCZEKIWANE: rejestracja 75 grant/registration, rekompensata 123 grant/compensation, nieustalone 3 legacy; sumy jak w A5)
+select m.lista, p.source, p.grant_reason, bool_and(p.grant_historical) as historyczne, bool_and(p.grant_seen_at is not null) as bez_banera,
+       count(*) as pakietow, sum(p.qty_total) as kredytow, sum(p.qty_used) as zuzytych
+from hist_manifest m join public.packages p on p.id = m.id group by 1,2,3 order by 1;
+-- Jeżeli powyższe się zgadza: commit; w przeciwnym razie: rollback;
+commit;

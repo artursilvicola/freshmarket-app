@@ -888,6 +888,7 @@
         "no_expiry_format": "{{count}} bez terminu",
         "free_label": "Bezpłatne od organizatora",
         "paid_label": "Kupione",
+        "legacy_label": "Pakiety historyczne (źródło nieustalone)",
         "remaining_format": "{{remaining}} z {{total}}",
         "remaining_unit": "pozostało",
         "valid_until_format": "ważne do {{date}}",
@@ -920,6 +921,7 @@
       },
       "credits": {
         "bar_free_format": "nierozliczone w pulach: bezpłatne {{free}}, kupione {{paid}} · oczekuje na odczyt: {{awaiting}}",
+        "bar_legacy_format": "nieustalone {{legacy}}",
         "balance_label": "Kredyty PreConnect",
         "amount_one_format": "{{count}} kredyt",
         "amount_few_format": "{{count}} kredyty",

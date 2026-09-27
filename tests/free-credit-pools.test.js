@@ -33,17 +33,21 @@ describe("summarizeCreditPools", () => {
     expect(pools.free.expiry).toBe("2026-10-15");
     expect(pools.paid.byExpiry).toEqual([{ expiry: "2027-01-31", remaining: 4 }, { expiry: null, remaining: 2 }]);
   });
-  it("legacy (źródło nieustalone) liczy się do puli pozostałych, ale osobno; historyczny prezent do bezpłatnych", () => {
+  it("legacy (źródło nieustalone) = osobna pula, nie kupione; historyczny prezent do bezpłatnych", () => {
     const pools = summarizeCreditPools([
       { source: "grant", grant_historical: true, qty_total: 5, qty_used: 3, expires_at: "2026-12-31" },
       { source: "legacy", qty_total: 1, qty_used: 0, expires_at: "2026-12-31" },
       { source: "purchase", qty_total: 5, qty_used: 1, expires_at: "2027-01-31" },
     ], T);
     expect(pools.free).toMatchObject({ remaining: 2, historical: 2 });
-    expect(pools.paid).toMatchObject({ remaining: 5, legacy: 1 });
+    expect(pools.paid).toMatchObject({ remaining: 4, total: 5 });            // tylko purchase — jak company_capacity.qty_remaining_paid
+    expect(pools.legacy).toMatchObject({ remaining: 1, total: 1, byExpiry: [{ expiry: "2026-12-31", remaining: 1 }] });
+    const only = summarizeCreditPools([{ source: "legacy", qty_total: 1, qty_used: 0, expires_at: "2026-12-31" }], T);
+    expect(only.paid.remaining).toBe(0);                                   // sam pakiet nieustalony NIE jest „kupiony”
+    expect(only.legacy.remaining).toBe(1);
   });
   it("puste wejście → zera, bez dat", () => {
-    expect(summarizeCreditPools([], T)).toMatchObject({ free: { remaining: 0, expiry: null, byExpiry: [] }, paid: { remaining: 0, expiry: null, byExpiry: [] } });
+    expect(summarizeCreditPools([], T)).toMatchObject({ free: { remaining: 0, expiry: null, byExpiry: [] }, paid: { remaining: 0, expiry: null, byExpiry: [] }, legacy: { remaining: 0, byExpiry: [] } });
     expect(summarizeCreditPools(null, T).paid.total).toBe(0);
   });
   it("qty_used większe niż qty_total nie daje ujemnych pozostałości", () => {
@@ -92,6 +96,11 @@ describe("adminGrantFreeCredits (front → RPC)", () => {
     });
     await adminGrantFreeCredits({ companyIds: ["c1"], qty: 2, reason: "compensation", expiresAt: "2026-12-27T10:00:00Z", idempotencyKey: "k-12345678" });
     expect(supabase.rpc.mock.calls[1][1].p_expires_at).toBe("2026-12-27");
+  });
+  it("powód „prezent za rejestrację” przechodzi przez wrapper do RPC (spójnie z formularzem i SQL)", async () => {
+    supabase.rpc.mockReset().mockResolvedValue({ data: { batch_id: "b2", created: 1, already_done: false }, error: null });
+    await adminGrantFreeCredits({ companyIds: ["c1"], qty: 5, reason: "registration", idempotencyKey: "k-12345678" });
+    expect(supabase.rpc).toHaveBeenCalledWith("admin_grant_free_credits", expect.objectContaining({ p_reason: "registration", p_qty: 5 }));
   });
   it("błąd RPC jest propagowany", async () => {
     supabase.rpc.mockReset().mockResolvedValue({ data: null, error: new Error("42501") });

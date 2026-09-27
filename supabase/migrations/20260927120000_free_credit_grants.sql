@@ -194,7 +194,7 @@ begin
   if p_qty is null or p_qty < 1 or p_qty > 100 then
     raise exception 'admin_grant_free_credits: liczba kredytów musi być w zakresie 1..100' using errcode = '22023';
   end if;
-  if p_reason is null or p_reason not in ('promotion', 'compensation', 'gift', 'other') then
+  if p_reason is null or p_reason not in ('promotion', 'compensation', 'gift', 'registration', 'other') then
     raise exception 'admin_grant_free_credits: nieznany powód %', p_reason using errcode = '22023';
   end if;
 
@@ -331,15 +331,18 @@ declare
   v_expires date;
   v_updated integer := 0;
   v_note text := nullif(trim(coalesce(p_note, '')), '');
+  v_inserted boolean := false;
 begin
+  -- Uprawnienia. Wewnątrz SECURITY DEFINER current_user = właściciel funkcji, więc NIE
+  -- jest dowodem kontekstu; session_user pozostaje rolą logowania: 'authenticator' dla
+  -- PostgREST (aplikacja / API), 'postgres' dla SQL Editora.
   if v_actor is not null then
     if not is_admin() then
       raise exception 'admin_record_historical_grants: tylko administrator' using errcode = '42501';
     end if;
   else
-    -- SQL Editor / service_role: wymagany jawny autor odnotowania będący adminem
-    if current_user not in ('postgres', 'service_role', 'supabase_admin') then
-      raise exception 'admin_record_historical_grants: tylko administrator' using errcode = '42501';
+    if session_user not in ('postgres', 'supabase_admin') then
+      raise exception 'admin_record_historical_grants: brak zalogowanego administratora' using errcode = '42501';
     end if;
     if p_recorded_by is null or not exists (select 1 from public.profiles where id = p_recorded_by and role = 'admin') then
       raise exception 'admin_record_historical_grants: p_recorded_by musi wskazywać profil administratora' using errcode = '22023';
@@ -360,27 +363,17 @@ begin
     raise exception 'admin_record_historical_grants: brak pakietów' using errcode = '22023';
   end if;
 
-  -- powtórka klucza → wynik pierwotnej partii (porównanie listy i powodu)
-  select * into v_batch from public.package_grant_batches where idempotency_key = p_idempotency_key for update;
-  if found then
-    if v_batch.reason is distinct from p_reason or v_batch.package_ids is distinct from v_ids then
-      raise exception 'admin_record_historical_grants: klucz idempotencji użyty z innymi parametrami (partia %)', v_batch.id using errcode = '22023';
-    end if;
-    return jsonb_build_object('batch_id', v_batch.id, 'recorded', 0, 'already_done', true,
-                              'company_count', v_batch.company_count, 'package_count', coalesce(array_length(v_batch.package_ids, 1), 0));
-  end if;
+  -- 1. Blokada pakietów w stałej kolejności (po id) — dwie równoległe operacje na tej
+  --    samej liście czekają na siebie zamiast obie przechodzić kontrolę na starym stanie.
+  perform 1 from public.packages where id = any(v_ids) order by id for update;
 
   select array_agg(t.id) into v_missing from unnest(v_ids) as t(id)
   where not exists (select 1 from public.packages p where p.id = t.id);
   if v_missing is not null then
     raise exception 'admin_record_historical_grants: nieznane pakiety: %', v_missing using errcode = '22023';
   end if;
-  -- wolno odnotować tylko pakiety dotąd nieoznaczone (source = purchase)
-  select array_agg(p.id) into v_taken from public.packages p where p.id = any(v_ids) and p.source <> 'purchase';
-  if v_taken is not null then
-    raise exception 'admin_record_historical_grants: pakiety już oznaczone: %', v_taken using errcode = '22023';
-  end if;
 
+  -- 2. Atomowa rezerwacja klucza: przy konflikcie NIE ma 23505 — wchodzimy w ścieżkę powtórki.
   select array_agg(distinct company_id order by company_id), max(coalesce(expires_at, business_today()))
     into v_company_ids, v_expires
   from public.packages where id = any(v_ids);
@@ -389,12 +382,30 @@ begin
     (idempotency_key, created_by, qty, reason, message, note, expires_at, company_ids, company_count, historical, package_ids)
   values
     (p_idempotency_key, v_actor, null, p_reason, null, v_note, v_expires, v_company_ids, array_length(v_company_ids, 1), true, v_ids)
+  on conflict (idempotency_key) do nothing
   returning * into v_batch;
+  v_inserted := found;
 
+  if not v_inserted then
+    select * into v_batch from public.package_grant_batches where idempotency_key = p_idempotency_key for update;
+    if v_batch.reason is distinct from p_reason or v_batch.package_ids is distinct from v_ids then
+      raise exception 'admin_record_historical_grants: klucz idempotencji użyty z innymi parametrami (partia %)', v_batch.id using errcode = '22023';
+    end if;
+    return jsonb_build_object('batch_id', v_batch.id, 'recorded', 0, 'already_done', true,
+                              'company_count', v_batch.company_count, 'package_count', coalesce(array_length(v_batch.package_ids, 1), 0));
+  end if;
+
+  -- 3. Kontrola źródła POD blokadą: wolno odnotować tylko pakiety dotąd 'purchase'.
+  select array_agg(p.id) into v_taken from public.packages p where p.id = any(v_ids) and p.source <> 'purchase';
+  if v_taken is not null then
+    raise exception 'admin_record_historical_grants: pakiety już oznaczone: %', v_taken using errcode = '22023';
+  end if;
+
+  -- 4. Zapis warunkowy + kontrola liczby zmienionych wierszy (druga bariera).
   if p_reason = 'legacy' then
     update public.packages
        set source = 'legacy'
-     where id = any(v_ids);
+     where id = any(v_ids) and source = 'purchase';
   else
     update public.packages
        set source = 'grant',
@@ -406,9 +417,13 @@ begin
            grant_seen_at = now(),            -- bez banera: to nie jest nowe przyznanie
            grant_recorded_by = v_actor,
            grant_recorded_at = now()
-     where id = any(v_ids);
+     where id = any(v_ids) and source = 'purchase';
   end if;
   get diagnostics v_updated = row_count;
+  if v_updated <> array_length(v_ids, 1) then
+    raise exception 'admin_record_historical_grants: zmieniono % z % pakietów — stan zmienił się równolegle', v_updated, array_length(v_ids, 1)
+      using errcode = '40001';
+  end if;
 
   insert into public.wallet_tx (company_id, type, amount, currency, description, reference_id, meta)
   select p.company_id, 'adjustment', 0, coalesce(p.currency, 'EUR'),

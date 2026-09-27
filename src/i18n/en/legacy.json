@@ -888,6 +888,7 @@
         "no_expiry_format": "{{count}} without expiry",
         "free_label": "Free from the organiser",
         "paid_label": "Purchased",
+        "legacy_label": "Historical packages (source not determined)",
         "remaining_format": "{{remaining}} of {{total}}",
         "remaining_unit": "remaining",
         "valid_until_format": "valid until {{date}}",
@@ -920,6 +921,7 @@
       },
       "credits": {
         "bar_free_format": "unsettled in pools: free {{free}}, purchased {{paid}} · awaiting read: {{awaiting}}",
+        "bar_legacy_format": "not determined {{legacy}}",
         "balance_label": "PreConnect Credits",
         "amount_one_format": "{{count}} credit",
         "amount_few_format": "{{count}} credits",

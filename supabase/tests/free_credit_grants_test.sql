@@ -263,15 +263,23 @@ select pg_temp.ok((select count(*)=0 from public.packages where company_id=pg_te
 select pg_temp.ok((select count(*)=0 from public.package_grant_batches),'dostawca nie widzi historii partii (ani notatek, ani partii historycznych)');
 select pg_temp.ok((select count(*)=0 from public.wallet_tx where meta::text like '%notatka wewnętrzna%') and (select count(*)=0 from public.packages where row_to_json(packages)::text like '%notatka wewnętrzna%'),'notatka wewnętrzna nie wycieka przez packages ani wallet_tx');
 select pg_temp.ok((select public.mark_credit_grant_seen((select id from public.packages where company_id=pg_temp.id('co') and source='grant' and grant_batch_id=(select (r->>'batch_id')::uuid from res)))),'dostawca A zamyka powiadomienie');
-select pg_temp.ok((select public.mark_credit_grant_seen((select id from public.packages where company_id=pg_temp.id('co2') and source='grant')) = false),'dostawca A nie zamyka powiadomienia firmy B');
+select pg_temp.ok((select public.mark_credit_grant_seen((select id from public.packages where company_id=pg_temp.id('co2') and source='grant' and grant_batch_id=(select (r->>'batch_id')::uuid from res))) = false),'dostawca A nie zamyka powiadomienia firmy B');
 select pg_temp.ok((select public.mark_credit_grant_seen((select id from public.packages where payment_ref='legacy-zero-price-row')) = false),'zakupu nie da się oznaczyć jako przyznanie');
 reset role;
 select pg_temp.ok((select grant_seen_at is not null from public.packages where company_id=pg_temp.id('co') and source='grant' and grant_batch_id=(select (r->>'batch_id')::uuid from res)),'grant_seen_at ustawione dla firmy A');
-select pg_temp.ok((select grant_seen_at is null from public.packages where company_id=pg_temp.id('co2') and source='grant'),'grant_seen_at firmy B nietknięte');
+select pg_temp.ok((select grant_seen_at is null from public.packages where company_id=pg_temp.id('co2') and source='grant' and grant_batch_id=(select (r->>'batch_id')::uuid from res)),'grant_seen_at firmy B nietknięte');
+
+-- ── nowe przyznanie z powodem 'registration' (spójnie z formularzem i wrapperem) ──
+select pg_temp.login('admin'); set local role authenticated;
+select pg_temp.ok((select (r->>'created')::int=1 from (select public.admin_grant_free_credits(array[(select v from ids where k='co2')],5,'registration','batch-R-00000001','Witamy na Fresh Market') as r) x),'nowe przyznanie: powód registration przyjęty');
+select pg_temp.ok((select count(*)=1 from public.packages where source='grant' and grant_reason='registration' and grant_historical=false and granted_by is not null and company_id=pg_temp.id('co2')),'registration jako NOWE przyznanie: autor obecny, bez flagi historycznej');
+reset role;
+update public.packages set expires_at = public.business_today() - 1 where grant_batch_id = (select id from public.package_grant_batches where idempotency_key='batch-R-00000001');  -- wygaszone, żeby nie zaburzyć dalszych sald firmy B
+
 
 -- ── admin widzi historię z notatką, anon nic ──
 select pg_temp.login('admin'); set local role authenticated;
-select pg_temp.ok((select count(*)=4 from public.package_grant_batches) and (select count(*)=2 from public.package_grant_batches where historical) and (select note='notatka wewnętrzna' from public.package_grant_batches where idempotency_key='batch-A-00000001'),'admin widzi 4 partie (2 nowe + 2 historyczne) i notatkę');
+select pg_temp.ok((select count(*)=5 from public.package_grant_batches) and (select count(*)=2 from public.package_grant_batches where historical) and (select note='notatka wewnętrzna' from public.package_grant_batches where idempotency_key='batch-A-00000001'),'admin widzi 5 partii (3 nowe + 2 historyczne) i notatkę');
 select pg_temp.denied($q$delete from public.package_grant_batches$q$);
 select pg_temp.denied($q$update public.package_grant_batches set qty=99$q$);
 reset role;
