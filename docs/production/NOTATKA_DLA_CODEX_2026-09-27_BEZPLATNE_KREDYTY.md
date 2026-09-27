@@ -1,6 +1,16 @@
-# Do review (v6) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
+# Do review (v7) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
 
-Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v6 = odpowiedź na review Codexa v5 (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY_V5.md`) i na review pakietu wdrożeniowego (`REVIEW_CODEX_2026-09-27_PAKIET_WDROZENIOWY_KREDYTY.md`); niżej v5 (historyczne przyznania) i odpowiedzi na review v3, v2, v1. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
+Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v7 = odpowiedź na review Codexa v6 (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY_V6.md`) — zabezpieczenie części B; niżej v6, v5 i odpowiedzi na review v3, v2, v1. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
+
+## Odpowiedź na review Codexa v6 (część B — zapis historii)
+
+| # | Ustalenie | Co zmieniono |
+|---|---|---|
+| P2 | Kontrola manifestu przed blokadą; zmiana pakietu, gdy B czeka na blokadę wewnątrz RPC, przechodziła | `HISTORYCZNE_KREDYTY_2026-09-27_ZAPIS.sql` zaczyna od `LOCK TABLE public.packages IN EXCLUSIVE MODE` (`lock_timeout` 10 s, `statement_timeout` 120 s) — trzymanej do COMMIT/ROLLBACK; sesja trzymająca wiersz `FOR UPDATE` blokuje wejście B, a po jej zatwierdzeniu kontrola widzi już zmieniony stan. Runner: inna sesja trzyma wiersz rejestracyjny, B czeka (widoczne w `pg_stat_activity`), sesja zmienia ilość/właściciela/referencję i zatwierdza → B rzuca „niezgodnych 1”, nic nie oznaczone. |
+| P2 | B nie powtarzało kontroli rekompensat spoza manifestu (A3/A3b) ani pakietów z ceną 0 spoza list (A4) | Blok kontrolny B pod blokadą powtarza WSZYSTKIE kontrole z A: pola per id, brakujące, już oznaczone, rekompensaty po znaczniku spoza manifestu, referencja ≠ firma wiersza, pakiety z ceną 0 / bez referencji spoza list — każda = wyjątek. Po odnotowaniu druga kontrola (źródło/powód/flaga/bez banera/ilość/ważność per lista). Runner: 124. rekompensata z poprawnym znacznikiem → B „rekompensaty spoza manifestu: 1”, nic nie oznaczone; wzrost `qty_used` (odczyt) między A i B → B przechodzi (201 oznaczonych, zużycie zachowane). |
+| — | Komentarz „jeżeli się zgadza: commit” sugerował decyzję operatora | Nagłówek i runbook mówią wprost: COMMIT automatyczny, bezpieczeństwo daje weryfikacja; powtórka całego pliku = wyjątek „już oznaczonych” (zamierzone); `already_done` dotyczy powtórki samego RPC. |
+
+**Wyniki v7 (27.09):** SQL runner PASS (23 asercje faz równoległych i uzgodnienia, w tym: nadmiarowa rekompensata → odmowa; wzrost qty_used → przejście; zmiana pakietu podczas oczekiwania B na blokadę → wykryta, nic nie oznaczone). Vitest i build bez zmian wobec v6 (zmiany tylko w pliku SQL części B i runnerze). Migracja bez zmian (sha256 29eb68f8…60a5).
 
 ## Odpowiedź na review Codexa v5
 

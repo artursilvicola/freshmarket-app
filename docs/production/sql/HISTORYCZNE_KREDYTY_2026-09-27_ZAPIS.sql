@@ -1,12 +1,20 @@
 -- =====================================================================
--- HISTORYCZNE KREDYTY — CZĘŚĆ B: ZAPIS PRZEZ RPC (PO MIGRACJI, PO AKCEPTACJI CZĘŚCI A)
--- Samowystarczalny: manifest + PONOWNA weryfikacja + odnotowanie w JEDNEJ transakcji.
--- Jeśli weryfikacja wykryje różnicę, całość się wycofuje (RAISE) — nic nie zostaje zapisane.
--- Wykonuje admin z SQL Editora (session_user = postgres); p_recorded_by = profil admina.
--- RPC nie zmienia qty/qty_used/expires_at, nie zwiększa salda, nie pokazuje banera, nie wysyła nic.
--- Klucze idempotencji stałe: powtórka = already_done.
+-- HISTORYCZNE KREDYTY — CZĘŚĆ B: ZAPIS PRZEZ RPC (PO MIGRACJI I PO DEPLOYU KODU, PO AKCEPTACJI CZĘŚCI A)
+-- Samowystarczalny: blokada tabeli → manifest → PEŁNA kontrola (pola per id, rekompensaty w obie
+-- strony, referencja = firma wiersza, pakiety z ceną 0 spoza list) → odnotowanie → kontrola → COMMIT.
+-- Wklej CAŁOŚĆ jako jedno wykonanie. COMMIT jest AUTOMATYCZNY na końcu — bezpieczeństwo daje
+-- weryfikacja: każda różnica lub już oznaczony pakiet = RAISE i pełne wycofanie (nic nie zapisane).
+-- Blokada: LOCK TABLE packages IN EXCLUSIVE MODE — odczyty (SELECT) działają, zapisy rozliczeń
+-- i zmiany pakietów czekają na tę krótką transakcję (sekundy); lock_timeout 10 s: jeśli ktoś trzyma
+-- blokadę dłużej, skrypt się poddaje i można go powtórzyć. Wykonuje admin z SQL Editora
+-- (session_user = postgres); p_recorded_by = profil admina. Powtórka całego pliku kończy się
+-- wyjątkiem „już oznaczonych” (to zamierzone); already_done dotyczy powtórki samego RPC.
+-- Manifest: rejestracja 75 / rekompensata 123 / nieustalone 3.
 -- =====================================================================
 begin;
+set local lock_timeout = '10s';
+set local statement_timeout = '120s';
+lock table public.packages in exclusive mode;   -- PRZED kontrolą; trzymana do COMMIT/ROLLBACK
 -- MANIFEST z archiwum 23.09 (kopia „po”, dla rejestracji stan z kopii „po” = ten sam wiersz co w „przed"):
 -- oczekiwane wartości PER ID. qty_used = stan z 23.09 (dziś może być większe — to nie jest różnica).
 create temp table hist_manifest (
@@ -217,9 +225,9 @@ insert into hist_manifest values
   ('nieustalone', 'aedb02e4-9859-492e-a31d-26c1554f5f57'::uuid, '2a9ba343-02c9-43c3-b8ff-b8f9a1404d32'::uuid, 'std_1', 1, 0, 0, 'EUR', null, '2026-07-09T10:52:49.101837+00:00'::timestamptz, '2026-12-31'::date),
   ('nieustalone', 'd481abfe-c6d6-43f3-b5f3-edee6f121c0c'::uuid, '3f821801-89f4-4519-8940-19d7066930e2'::uuid, 'std_1', 1, 0, 0, 'EUR', null, '2026-09-15T09:28:57.928201+00:00'::timestamptz, '2026-12-31'::date);
 
--- 1. weryfikacja: różnice per pole → wyjątek
+-- 1. PEŁNA weryfikacja pod blokadą (te same warunki co część A) → wyjątek przy jakiejkolwiek różnicy
 do $$
-declare v_diff integer; v_missing integer; v_marked integer;
+declare v_missing integer; v_diff integer; v_marked integer; v_extra_comp integer; v_bad_ref integer; v_unlisted integer;
 begin
   select count(*) into v_missing from hist_manifest m where not exists (select 1 from public.packages p where p.id = m.id);
   select count(*) into v_diff from hist_manifest m join public.packages p on p.id = m.id
@@ -227,11 +235,27 @@ begin
       or coalesce(p.qty_used, -1) < m.qty_used_arch or p.price_paid is distinct from m.price_paid or p.currency is distinct from m.currency
       or p.payment_ref is distinct from m.payment_ref or p.purchased_at is distinct from m.purchased_at or p.expires_at is distinct from m.expires_at;
   select count(*) into v_marked from hist_manifest m join public.packages p on p.id = m.id where p.source <> 'purchase';
+  -- rekompensaty po znaczniku spoza manifestu (A3)
+  select count(*) into v_extra_comp from public.packages p
+   where p.payment_ref like 'compensation:fm2026:%' and not exists (select 1 from hist_manifest m where m.id = p.id);
+  -- referencja rekompensaty musi wskazywać firmę wiersza (A3b)
+  select count(*) into v_bad_ref from public.packages p
+   where p.payment_ref like 'compensation:fm2026:%' and p.payment_ref not like '%:company:' || p.company_id::text;
+  -- pakiety z ceną 0 / bez referencji spoza list (A4) — nieuzgodnione źródło
+  select count(*) into v_unlisted from public.packages p
+   where (p.price_paid = 0 or p.price_paid is null or p.payment_ref is null)
+     and not exists (select 1 from hist_manifest m where m.id = p.id);
   if v_missing > 0 or v_diff > 0 then
-    raise exception 'ZAPIS PRZERWANY: brakujących % / niezgodnych % — uruchom część A i wyjaśnij różnice', v_missing, v_diff;
+    raise exception 'ZAPIS PRZERWANY: brakujących % / niezgodnych % z manifestem — uruchom część A i wyjaśnij różnice', v_missing, v_diff;
   end if;
   if v_marked > 0 then
     raise exception 'ZAPIS PRZERWANY: % pakietów już oznaczonych (source <> purchase) — historia była już odnotowana?', v_marked;
+  end if;
+  if v_extra_comp > 0 or v_bad_ref > 0 then
+    raise exception 'ZAPIS PRZERWANY: rekompensaty spoza manifestu: %, referencje niezgodne z firmą: % — stan nieuzgodniony (A3/A3b)', v_extra_comp, v_bad_ref;
+  end if;
+  if v_unlisted > 0 then
+    raise exception 'ZAPIS PRZERWANY: % pakietów z ceną 0 / bez referencji spoza list (A4) — decyzja o ich źródle przed zapisem', v_unlisted;
   end if;
 end $$;
 
@@ -246,9 +270,21 @@ select public.admin_record_historical_grants('legacy', (select array_agg(id) fro
   'hist-legacy-2026-09-27', 'Pakiety std_1 z ceną 0 bez referencji — źródło nieustalone, opis neutralny',
   (select id from public.profiles where email = 'artur.stasiak@freshmarket.eu' and role = 'admin')) as nieustalone;
 
--- 3. kontrola w tej samej transakcji (OCZEKIWANE: rejestracja 75 grant/registration, rekompensata 123 grant/compensation, nieustalone 3 legacy; sumy jak w A5)
+-- 3. kontrola po zapisie, wciąż pod blokadą (OCZEKIWANE: rejestracja 75 grant/registration, rekompensata 123 grant/compensation,
+--    nieustalone 3 legacy; sumy kredytów/zużycia identyczne jak w A5) → wyjątek, gdy nie
+do $$
+declare v_bad integer;
+begin
+  select count(*) into v_bad from hist_manifest m join public.packages p on p.id = m.id
+   where (m.lista = 'rejestracja' and not (p.source = 'grant' and p.grant_reason = 'registration' and p.grant_historical and p.grant_seen_at is not null))
+      or (m.lista = 'rekompensata' and not (p.source = 'grant' and p.grant_reason = 'compensation' and p.grant_historical and p.grant_seen_at is not null))
+      or (m.lista = 'nieustalone' and p.source <> 'legacy')
+      or p.qty_total is distinct from m.qty_total or coalesce(p.qty_used, -1) < m.qty_used_arch or p.expires_at is distinct from m.expires_at;
+  if v_bad > 0 then
+    raise exception 'ZAPIS PRZERWANY: kontrola po odnotowaniu wykryła % niezgodnych pakietów', v_bad;
+  end if;
+end $$;
 select m.lista, p.source, p.grant_reason, bool_and(p.grant_historical) as historyczne, bool_and(p.grant_seen_at is not null) as bez_banera,
        count(*) as pakietow, sum(p.qty_total) as kredytow, sum(p.qty_used) as zuzytych
 from hist_manifest m join public.packages p on p.id = m.id group by 1,2,3 order by 1;
--- Jeżeli powyższe się zgadza: commit; w przeciwnym razie: rollback;
-commit;
+commit;   -- automatyczny: wykonanie dochodzi tu tylko, gdy wszystkie kontrole przeszły

@@ -175,10 +175,47 @@ try {
       const marked = await d3.query("select count(*)::int c from public.packages where source <> 'purchase'");
       ok(/niezgodnych 1/.test(bFail) && marked.rows[0].c === 0, "zapis B przy różnicy: wyjątek, nic nie oznaczone");
     } finally { await d3.end(); clients.splice(clients.indexOf(d3), 1); await root.query("drop database " + n3 + " with (force)"); }
+    // 4c. nadmiarowa rekompensata spoza manifestu → B odmawia; wzrost qty_used (odczyty) → B przechodzi
+    const n4 = name + "_arch3"; await root.query("create database " + n4); const d4 = new pg.Client({ ...opts, database: n4 }); await d4.connect(); clients.push(d4);
+    try {
+      await setup(d4);
+      await d4.query(read("supabase/migrations/20260927120000_free_credit_grants.sql"));
+      const comp0 = po.find((p) => String(p.payment_ref || "").startsWith("compensation:fm2026:"));
+      const EXTRA = "55555555-5555-4555-8555-555555555551";
+      await d4.query("insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at,payment_ref) values($1,$2,'std_1',1,0,0,'EUR',now(),'2026-12-31',$3)", [EXTRA, comp0.company_id, "compensation:fm2026:retailer:100:company:" + comp0.company_id + ":extra"]);
+      const bExtra = await d4.query(B).then(() => "ok", (e) => e.message); await d4.query("rollback").catch(() => {});
+      const marked4 = await d4.query("select count(*)::int c from public.packages where source <> 'purchase'");
+      ok(/rekompensaty spoza manifestu: 1/.test(bExtra) && marked4.rows[0].c === 0, "zapis B: nowa rekompensata spoza manifestu → wyjątek, nic nie oznaczone");
+      await d4.query("delete from public.packages where id=$1", [EXTRA]);
+      const regRow = po.find((p) => p.plan === "std_5" && p.qty_total === 5 && p.price_paid === 0 && !p.payment_ref);
+      await d4.query("update public.packages set qty_used = qty_used + 1 where id=$1", [regRow.id]);       // zwykły odczyt propozycji
+      const bGrow = await d4.query(B).then(() => "ok", (e) => e.message);
+      const after4 = await d4.query("select count(*)::int c, sum(qty_used)::int u from public.packages where source <> 'purchase'");
+      ok(bGrow === "ok" && after4.rows[0].c === 201 && after4.rows[0].u === po.reduce((a, p) => a + p.qty_used, 0) + 1, "zapis B: wzrost qty_used między A i B jest dozwolony; 201 oznaczonych, zużycie zachowane (+1)");
+    } finally { await d4.end(); clients.splice(clients.indexOf(d4), 1); await root.query("drop database " + n4 + " with (force)"); }
+    // 4d. zmiana pakietu PO kontroli, gdy B czeka na blokadę → B wykrywa i wycofuje (LOCK TABLE ... EXCLUSIVE przed kontrolą)
+    const n5 = name + "_arch4"; await root.query("create database " + n5); const d5 = new pg.Client({ ...opts, database: n5 }); await d5.connect(); clients.push(d5);
+    const d5b = new pg.Client({ ...opts, database: n5 });
+    try {
+      await setup(d5);
+      await d5.query(read("supabase/migrations/20260927120000_free_credit_grants.sql"));
+      await d5b.connect(); clients.push(d5b);
+      const regRow = po.find((p) => p.plan === "std_5" && p.qty_total === 5 && p.price_paid === 0 && !p.payment_ref);
+      const other = [...new Set(po.map((p) => p.company_id))].find((x) => x !== regRow.company_id);
+      await d5b.query("begin"); await d5b.query("select id from public.packages where id=$1 for update", [regRow.id]);   // inna sesja trzyma wiersz
+      const bRace = d5.query(B).then(() => "ok", (e) => e.message);                                                       // B czeka na LOCK TABLE
+      let waiting = 0;
+      for (let i = 0; i < 100; i++) { const q = await root.query("select count(*)::int n from pg_stat_activity where datname=$1 and wait_event_type='Lock'", [n5]); waiting = q.rows[0].n; if (waiting >= 1) break; await new Promise((r) => setTimeout(r, 50)); }
+      await d5b.query("update public.packages set qty_total=9, company_id=$2, payment_ref='CHANGED-AFTER-VALIDATION' where id=$1", [regRow.id, other]);
+      await d5b.query("commit");
+      const res5 = await bRace; await d5.query("rollback").catch(() => {});
+      const marked5 = await d5.query("select count(*)::int c from public.packages where source <> 'purchase'");
+      ok(waiting >= 1 && /niezgodnych 1/.test(res5) && marked5.rows[0].c === 0, "zapis B: zmiana pakietu podczas oczekiwania na blokadę → wykryta pod blokadą, nic nie oznaczone");
+    } finally { await d5b.end().catch(() => {}); clients.splice(clients.indexOf(d5b), 1); await d5.end(); clients.splice(clients.indexOf(d5), 1); await root.query("drop database " + n5 + " with (force)"); }
   } else {
     console.log("skip faza 4: brak archiwum 1FMK2026/outputs (uruchom na komputerze Artura)");
   }
-  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK; concurrency (grant key, last credit, same send, app+email, notify+charge, historical key/overlap, trusted context); reconciliation A/B on archive fixture");
+  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK; concurrency (grant key, last credit, same send, app+email, notify+charge, historical key/overlap, trusted context); reconciliation A/B on archive fixture (+ extra compensation, qty_used growth, change while waiting for lock)");
 } catch (e) { console.error(e); process.exitCode = 1; }
 finally {
   for (const c of clients) await c.end().catch(() => {});
