@@ -127,13 +127,20 @@ try {
   const arch = "C:/Users/Artur/OneDrive/Dokumenty/1FMK2026/outputs/";
   const A = read("docs/production/sql/HISTORYCZNE_KREDYTY_2026-09-27_UZGODNIENIE.sql");
   const B = read("docs/production/sql/HISTORYCZNE_KREDYTY_2026-09-27_ZAPIS.sql");
-  if (fs.existsSync(arch + "kredyty-preconnect-po-2026-09-23.json")) {
-    const po = JSON.parse(fs.readFileSync(arch + "kredyty-preconnect-po-2026-09-23.json", "utf8")).data.packages_after;
+  const liveFile = arch + "kredyty-produkcja-odczyt-2026-09-27.json", archFile = arch + "kredyty-preconnect-po-2026-09-23.json";
+  if (fs.existsSync(liveFile) || fs.existsSync(archFile)) {
+    const po = fs.existsSync(liveFile) ? JSON.parse(fs.readFileSync(liveFile, "utf8")).packages : JSON.parse(fs.readFileSync(archFile, "utf8")).data.packages_after;
+    const isReg = (p) => p.plan === "std_5" && Number(p.qty_total) === 5 && Number(p.price_paid) === 0 && !p.payment_ref;
+    const isComp = (p) => String(p.payment_ref || "").startsWith("compensation:fm2026:");
+    const isLeg = (p) => p.plan === "std_1" && Number(p.price_paid) === 0 && !p.payment_ref;
+    const EXP = { reg: po.filter(isReg).length, comp: po.filter(isComp).length, leg: po.filter(isLeg).length };
+    EXP.marked = EXP.reg + EXP.comp + EXP.leg;
+    console.log("fixture:", fs.existsSync(liveFile) ? "odczyt produkcji 27.09" : "archiwum 23.09", po.length, "pakietów; oczekiwane", JSON.stringify(EXP));
     const setup = async (client) => {
       await client.query(read("supabase/tests/000_supabase_shim.sql"));
       for (const f of files.filter((f) => f !== "20260927120000_free_credit_grants.sql")) await client.query("begin;" + read("supabase/migrations/" + f) + ";commit;");
       for (const cid of new Set(po.map((p) => p.company_id))) await client.query("insert into public.companies(id,name) values($1,'ARCHIVE FIXTURE') on conflict do nothing", [cid]);
-      for (const p of po) await client.query("insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at,payment_ref) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", [p.id, p.company_id, p.plan, p.qty_total, p.qty_used, p.price_paid, p.currency, p.purchased_at, p.expires_at, p.payment_ref]);
+      for (const p of po) await client.query("insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at,payment_ref) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", [p.id, p.company_id, p.plan, Number(p.qty_total), Number(p.qty_used), Number(p.price_paid), p.currency, p.purchased_at, p.expires_at, p.payment_ref || null]);
       await client.query(`insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data)
         values ('${ADMIN}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','artur.stasiak@freshmarket.eu','',now(),now(),now(),'{"role":"admin"}','{}')`);
       await client.query(`update public.profiles set role='admin', email='artur.stasiak@freshmarket.eu' where id='${ADMIN}'`).catch(async () => { await client.query(`update public.profiles set role='admin' where id='${ADMIN}'`); });
@@ -145,15 +152,15 @@ try {
       await setup(d2);
       const resA = await d2.query(A);
       const a1 = rowsOf(resA, "brakujacych")[0], a2 = rowsOf(resA, "d_firma")[0] || [], a3 = rowsOf(resA, "tylko_w_bazie")[0][0], a4 = rowsOf(resA, "firma").filter((x) => x.length && "payment_ref" in x[0] && !("d_firma" in x[0]))[0] || [];
-      ok(a1.every((x) => Number(x.brakujacych) === 0) && a1.length === 3 && a2.length === 0 && Number(a3.tylko_w_bazie) === 0 && Number(a3.tylko_w_archiwum) === 0 && a4.length === 0, "uzgodnienie A na schemacie sprzed migracji: 0 brakujących, 0 różnic, 123/123, 0 spoza list");
+      ok(a1.every((x) => Number(x.brakujacych) === 0) && a1.length === 3 && a2.length === 0 && Number(a3.tylko_w_bazie) === 0 && Number(a3.tylko_w_manifescie) === 0 && a4.length === 0, "uzgodnienie A na schemacie sprzed migracji: 0 brakujących, 0 różnic, " + EXP.comp + "/" + EXP.comp + ", 0 spoza list");
       await d2.query(read("supabase/migrations/20260927120000_free_credit_grants.sql"));
       const resB = await d2.query(B);
       const ctrl = rowsOf(resB, "historyczne")[0];
       const byL = Object.fromEntries(ctrl.map((x) => [x.lista, x]));
-      ok(Number(byL.rejestracja.pakietow) === 75 && byL.rejestracja.source === "grant" && byL.rejestracja.grant_reason === "registration" && byL.rejestracja.historyczne && byL.rejestracja.bez_banera
-        && Number(byL.rekompensata.pakietow) === 123 && byL.rekompensata.grant_reason === "compensation" && Number(byL.nieustalone.pakietow) === 3 && byL.nieustalone.source === "legacy", "zapis B po migracji: 75 rejestracja / 123 rekompensata / 3 nieustalone, bez banera");
+      ok(Number(byL.rejestracja.pakietow) === EXP.reg && byL.rejestracja.source === "grant" && byL.rejestracja.grant_reason === "registration" && byL.rejestracja.historyczne && byL.rejestracja.bez_banera
+        && Number(byL.rekompensata.pakietow) === EXP.comp && byL.rekompensata.grant_reason === "compensation" && Number(byL.nieustalone.pakietow) === EXP.leg && byL.nieustalone.source === "legacy", "zapis B po migracji: " + EXP.reg + " rejestracja / " + EXP.comp + " rekompensata / " + EXP.leg + " nieustalone, bez banera");
       const sums = await d2.query("select sum(qty_total)::int t, sum(qty_used)::int u from public.packages");
-      const expT = po.reduce((a, p) => a + p.qty_total, 0), expU = po.reduce((a, p) => a + p.qty_used, 0);
+      const expT = po.reduce((a, p) => a + Number(p.qty_total), 0), expU = po.reduce((a, p) => a + Number(p.qty_used), 0);
       ok(sums.rows[0].t === expT && sums.rows[0].u === expU, "zapis B nie zmienia sald ani zużycia (" + expT + "/" + expU + ")");
       const again = await d2.query(B).then(() => "ok", (e) => e.message);
       await d2.query("rollback").catch(() => {});
@@ -163,7 +170,7 @@ try {
     const n3 = name + "_arch2"; await root.query("create database " + n3); const d3 = new pg.Client({ ...opts, database: n3 }); await d3.connect(); clients.push(d3);
     try {
       await setup(d3);
-      const altered = po.find((p) => p.plan === "std_5" && p.qty_total === 5 && p.price_paid === 0 && !p.payment_ref);
+      const altered = po.find(isReg);
       const other = [...new Set(po.map((p) => p.company_id))].find((x) => x !== altered.company_id);
       await d3.query("update public.packages set qty_total=9, company_id=$2, payment_ref='ZMIENIONE' where id=$1", [altered.id, other]);
       const resA = await d3.query(A);
@@ -180,18 +187,18 @@ try {
     try {
       await setup(d4);
       await d4.query(read("supabase/migrations/20260927120000_free_credit_grants.sql"));
-      const comp0 = po.find((p) => String(p.payment_ref || "").startsWith("compensation:fm2026:"));
+      const comp0 = po.find(isComp);
       const EXTRA = "55555555-5555-4555-8555-555555555551";
       await d4.query("insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at,payment_ref) values($1,$2,'std_1',1,0,0,'EUR',now(),'2026-12-31',$3)", [EXTRA, comp0.company_id, "compensation:fm2026:retailer:100:company:" + comp0.company_id + ":extra"]);
       const bExtra = await d4.query(B).then(() => "ok", (e) => e.message); await d4.query("rollback").catch(() => {});
       const marked4 = await d4.query("select count(*)::int c from public.packages where source <> 'purchase'");
       ok(/rekompensaty spoza manifestu: 1/.test(bExtra) && marked4.rows[0].c === 0, "zapis B: nowa rekompensata spoza manifestu → wyjątek, nic nie oznaczone");
       await d4.query("delete from public.packages where id=$1", [EXTRA]);
-      const regRow = po.find((p) => p.plan === "std_5" && p.qty_total === 5 && p.price_paid === 0 && !p.payment_ref);
+      const regRow = po.find(isReg);
       await d4.query("update public.packages set qty_used = qty_used + 1 where id=$1", [regRow.id]);       // zwykły odczyt propozycji
       const bGrow = await d4.query(B).then(() => "ok", (e) => e.message);
       const after4 = await d4.query("select count(*)::int c, sum(qty_used)::int u from public.packages where source <> 'purchase'");
-      ok(bGrow === "ok" && after4.rows[0].c === 201 && after4.rows[0].u === po.reduce((a, p) => a + p.qty_used, 0) + 1, "zapis B: wzrost qty_used między A i B jest dozwolony; 201 oznaczonych, zużycie zachowane (+1)");
+      ok(bGrow === "ok" && after4.rows[0].c === EXP.marked && after4.rows[0].u === po.reduce((a, p) => a + Number(p.qty_used), 0) + 1, "zapis B: wzrost qty_used między A i B jest dozwolony; " + EXP.marked + " oznaczonych, zużycie zachowane (+1)");
     } finally { await d4.end(); clients.splice(clients.indexOf(d4), 1); await root.query("drop database " + n4 + " with (force)"); }
     // 4d. zmiana pakietu PO kontroli, gdy B czeka na blokadę → B wykrywa i wycofuje (LOCK TABLE ... EXCLUSIVE przed kontrolą)
     const n5 = name + "_arch4"; await root.query("create database " + n5); const d5 = new pg.Client({ ...opts, database: n5 }); await d5.connect(); clients.push(d5);
@@ -200,7 +207,7 @@ try {
       await setup(d5);
       await d5.query(read("supabase/migrations/20260927120000_free_credit_grants.sql"));
       await d5b.connect(); clients.push(d5b);
-      const regRow = po.find((p) => p.plan === "std_5" && p.qty_total === 5 && p.price_paid === 0 && !p.payment_ref);
+      const regRow = po.find(isReg);
       const other = [...new Set(po.map((p) => p.company_id))].find((x) => x !== regRow.company_id);
       await d5b.query("begin"); await d5b.query("select id from public.packages where id=$1 for update", [regRow.id]);   // inna sesja trzyma wiersz
       const bRace = d5.query(B).then(() => "ok", (e) => e.message);                                                       // B czeka na LOCK TABLE

@@ -12,13 +12,15 @@ Kolejność jest obowiązkowa: **kontrola → kopia → migracja → weryfikacja
 
 Archiwum z 23.09 (`1FMK2026/outputs`, uzupełnienie Codexa `UZUPELNIENIE_CODEX_2026-09-27_HISTORYCZNE_KREDYTY.md`) mówi: **rekompensaty zostały wykonane 23.09 11:52** (123 kredyty, 93 firmy, `payment_ref = compensation:fm2026:…`, ważne do 31.12.2026), a wcześniej **75 firm dostało prezent rejestracyjny** (std_5, 5 kredytów, cena 0, bez referencji, ważne do 31.12.2026). Decyzja Artura: prezent rejestracyjny to osobne historyczne przyznanie — odnotować, nie dodawać ponownie, nie odejmować od rekompensaty, zachować zużycie i ważność, bez nowego powiadomienia.
 
-Plik: `docs/production/sql/HISTORYCZNE_KREDYTY_2026-09-27_UZGODNIENIE.sql` — **część A** (tylko odczyt, działa na schemacie SPRZED migracji, wklejona w całości jako jedno wykonanie; kończy się `rollback`). Zawiera manifest per id z archiwum (75 + 123 + 3): firma, plan, ilość, cena, waluta, referencja, data przyznania, ważność — porównania NULL-safe, raport różnic per pole:
+**Kontrola produkcji wykonana przez Codexa 27.09 18:46** (SELECT całej tabeli `packages` przez zalogowany SQL Editor; `KONTROLA_CODEX_2026-09-27_PRODUKCJA_PRZED_KREDYTAMI.md`): 240 pakietów; 123 rekompensaty zgodne w obie strony; 75 prezentów z archiwum zgodne; **poza archiwum 33 pakiety std_5/5/cena 0/bez referencji i 2 std_1/cena 0/bez referencji** (firmy spoza archiwum 23.09, wszystkie sprzed 23.09) + 1 zakup z referencją. Źródło 33 pakietów: ten sam mechanizm co 75 — `adminSetCompanyPackage` (panel Admin → Firmy → „Zapisz pakiet”) tworzy wiersz z `price_paid = 0`, bez referencji, ważnością 31.12 (`src/lib/db.js`); to procedura prezentu rejestracyjnego przy aktywacji konta. Archiwum 23.09 obejmowało tylko firmy objęte rekompensatą, nie całą tabelę. **Manifest v8 zbudowany z tego odczytu: 108 rejestracja / 123 rekompensata / 5 nieustalone; 4 zakupy z referencją zostają purchase.**
+
+Plik: `docs/production/sql/HISTORYCZNE_KREDYTY_2026-09-27_UZGODNIENIE.sql` — **część A** (tylko odczyt, działa na schemacie SPRZED migracji, wklejona w całości jako jedno wykonanie; kończy się `rollback`). Zawiera manifest per id z odczytu produkcji (108 + 123 + 5): firma, plan, ilość, cena, waluta, referencja, data przyznania, ważność — porównania NULL-safe, raport różnic per pole:
 
 | Zapytanie | Oczekiwane | Jeśli inaczej |
 |---|---|---|
 | A1 | brakujących 0 dla trzech list | zatrzymać się; usunięte pakiety wyjaśnić przed częścią B |
 | A2 | 0 wierszy różnic (firma, plan, ilość, cena, waluta, referencja, data, ważność; zużycie nie może zmaleć) | każdy wiersz różnic wyjaśnić; część B i tak odmówi zapisu przy różnicy |
-| A3 / A3b | 123 = 123, tylko_w_bazie 0, tylko_w_archiwum 0; 0 wierszy z referencją wskazującą inną firmę | w bazie jest więcej/mniej rekompensat niż w archiwum → wyjaśnić |
+| A3 / A3b | 123 = 123, tylko_w_bazie 0, tylko_w_manifescie 0; 0 wierszy z referencją wskazującą inną firmę | w bazie jest więcej/mniej rekompensat niż w manifeście → wyjaśnić |
 | A4 | 0 wierszy | pakiety z ceną 0 spoza list → decyzja: dopisać do nieustalonych (nowy manifest) albo zostawić jako purchase |
 | A5 | salda list (do notatki) | porównać z kontrolą po zapisie (sumy identyczne) |
 
@@ -70,9 +72,9 @@ Odciski → `MANIFEST.txt` (po-migracji). Dopiero po zgodności → krok 5.
 
 Dopiero po zgodności kroku 4, po deployu kodu (krok 5) i po akceptacji wyników części A przez Artura. Plik `docs/production/sql/HISTORYCZNE_KREDYTY_2026-09-27_ZAPIS.sql` — samowystarczalny i wykonywany jako JEDNO wykonanie z **automatycznym COMMIT** na końcu. Kolejność w pliku: `LOCK TABLE packages IN EXCLUSIVE MODE` (`lock_timeout` 10 s, `statement_timeout` 120 s — odczyty działają, zapisy rozliczeń czekają kilka sekund) → manifest → **pełna kontrola pod blokadą** (pola per id, rekompensaty w obie strony, referencja = firma wiersza, pakiety z ceną 0 spoza list, już oznaczone) → trzy wywołania `admin_record_historical_grants` → kontrola po zapisie → COMMIT. Każda różnica = wyjątek i pełne wycofanie, nic nie zostaje zapisane. Jeśli skrypt zgłosi przekroczenie `lock_timeout` (ktoś trzymał zapis), po prostu uruchomić ponownie. Wykonuje admin z SQL Editora; `p_recorded_by` = profil admina po e-mailu w pliku (sprawdzić, że `select id from profiles where email = 'artur.stasiak@freshmarket.eu' and role = 'admin'` zwraca 1 wiersz):
 
-1. `registration` → 75 pakietów: `source = grant`, `grant_reason = registration`, `grant_historical = true`, `granted_at` = pierwotna data, `granted_by = NULL`, autor odnotowania = admin z `p_recorded_by`, `grant_seen_at = now()` (bez banera). Saldo, zużycie i ważność bez zmian.
+1. `registration` → 108 pakietów (75 z archiwum + 33 z odczytu produkcji, ten sam mechanizm): `source = grant`, `grant_reason = registration`, `grant_historical = true`, `granted_at` = pierwotna data, `granted_by = NULL`, autor odnotowania = admin z `p_recorded_by`, `grant_seen_at = now()` (bez banera). Saldo, zużycie i ważność bez zmian.
 2. `compensation` → 123 pakiety: jak wyżej z powodem rekompensaty.
-3. `legacy` → 3 pakiety std_1 o nieustalonym źródle: `source = legacy` (opis neutralny „Pakiet historyczny — źródło nieustalone”, nie „Kupione”).
+3. `legacy` → 5 pakietów std_1 o nieustalonym źródle (3 z archiwum + 2 z odczytu): `source = legacy` (opis neutralny „Pakiet historyczny — źródło nieustalone”, nie „Kupione”).
 
 Każde wywołanie ma stały klucz idempotencji — powtórka zwraca `already_done`. Kontrola: zapytanie B i H z `KONTROLA_PO_MIGRACJI…` oraz A4 z uzgodnienia (sumy `qty_total`/`qty_used` identyczne przed i po). Dostawca po deployu zobaczy: pula „Bezpłatne od organizatora” z pozostałymi kredytami rejestracyjnymi i rekompensaty (ważne do 31.12.2026), w historii „Prezent za rejestrację na Fresh Market — przyznano wcześniej 5 kredytów”; **bez banera** (już „widziane”).
 

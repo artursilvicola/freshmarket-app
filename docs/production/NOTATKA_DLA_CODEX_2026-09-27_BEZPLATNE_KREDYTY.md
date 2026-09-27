@@ -1,6 +1,23 @@
-# Do review (v7) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
+# Do review (v8) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
 
-Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v7 = odpowiedź na review Codexa v6 (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY_V6.md`) — zabezpieczenie części B; niżej v6, v5 i odpowiedzi na review v3, v2, v1. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
+Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v8 = manifest z odczytu produkcji po kontroli Codexa (`KONTROLA_CODEX_2026-09-27_PRODUKCJA_PRZED_KREDYTAMI.md`); niżej v7 (zabezpieczenie części B), v6, v5 i odpowiedzi na review v3, v2, v1. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
+
+## v8 — manifest z odczytu produkcji (108 / 123 / 5)
+
+Kontrola Codexa na produkcji (27.09 18:46, cała tabela `packages`, 240 wierszy) wykazała 35 bezpłatnych pakietów poza manifestem z archiwum: 33 × std_5/5/cena 0/bez referencji (33 firmy spoza archiwum, 14.07–21.09) i 2 × std_1/cena 0/bez referencji (12.08). Archiwum 23.09 obejmowało tylko 93 firmy z rekompensatą — nie całą tabelę.
+
+**Źródło 33 pakietów (dowód w kodzie, nie tylko podobieństwo pól):** `adminSetCompanyPackage` w `src/lib/db.js` przy braku aktywnego pakietu wstawia wiersz `price_paid = 0`, bez `payment_ref`, z `expires_at` = koniec roku (31.12) i planem z panelu (domyślnie std_5 = 5 kredytów). To jedyna ścieżka tworząca takie wiersze; jest to procedura prezentu rejestracyjnego przy aktywacji konta (panel Admin → Firmy → „Zapisz pakiet”). 33 pakiety mają identyczny wzorzec co 75 z archiwum (ten sam plan, ilość, cena, brak referencji, ważność 31.12, godziny robocze, jeden pakiet na firmę). Decyzja Artura o 5 kredytach za rejestrację obejmuje więc 108 firm. 5 pakietów std_1/cena 0 (limit 1 ustawiony ręcznie w panelu) — opis neutralny `legacy`, zgodnie z rekomendacją Codexa.
+
+| Element | Zmiana |
+|---|---|
+| Generator manifestu | Źródło = `kredyty-produkcja-odczyt-2026-09-27.json` (240), klasyfikacja jak dotąd; każdy pakiet z ceną 0 / bez referencji musi trafić do jednej z trzech list (generator przerywa, gdy nie). Wynik: **108 rejestracja / 123 rekompensata / 5 nieustalone / 4 zakupy** (z referencją PayU/proformy — zostają purchase). |
+| Część A / B | Regenerowane z tego manifestu (A z rollback, B pod `LOCK TABLE` z pełną kontrolą, jak w v7). Nagłówki podają źródło i liczby. |
+| Runner | Fixture = odczyt produkcji (240 pakietów, fallback archiwum); oczekiwania liczone z fixture (108/123/5, 236 oznaczonych), nie na sztywno. Fazy 4a–4d bez zmian: cały plik A przed migracją, B po migracji, zmieniony wiersz, nadmiarowa rekompensata, wzrost `qty_used`, zmiana podczas oczekiwania na blokadę. |
+| Runbook / kontrola po migracji | Krok 0: wynik kontroli Codexa i pochodzenie 33 pakietów; krok 4b: 108/123/5; kontrola B/H: rozkłady po zapisie. |
+
+Bez zmian: żadnych nowych kredytów, salda/zużycie/ważność historycznych pakietów nietknięte, rekompensat nie dublujemy.
+
+**Wyniki v8 (27.09):** SQL runner PASS na fixture z odczytu produkcji (240 pakietów): A przed migracją 0/0/123/0, B po migracji 108/123/5 bez banera, sumy 681/73 bez zmian, powtórka B przerwana, zmieniony wiersz wykryty, nadmiarowa rekompensata → odmowa, wzrost qty_used → 236 oznaczonych, zmiana podczas oczekiwania na blokadę → wykryta. Vitest/build bez zmian wobec v6 (zmiany tylko w SQL/runnerze/docs). Migracja bez zmian (sha256 29eb68f8…60a5).
 
 ## Odpowiedź na review Codexa v6 (część B — zapis historii)
 
