@@ -1,4 +1,4 @@
-# Wdrożenie `feat/free-credit-grants` (kod 2c32036, głowa gałęzi 6599796 = kod + runbook) — krok po kroku
+# Wdrożenie `feat/free-credit-grants` (kod 2c32036; głowa gałęzi = kod + ten runbook) — krok po kroku
 
 Przygotowane 27.09.2026 po pozytywnym review Codexa v4 (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY_V4.md`). **Nic z poniższego nie zostało wykonane.** Każdy krok ma warunek przejścia; przy niezgodności zatrzymać się i wrócić do Claude'a/Codexa.
 
@@ -70,13 +70,13 @@ Kontrola deployu (Netlify buduje ~1–2 min):
 cd "C:/Users/Artur/OneDrive/Dokumenty/Claude/Projects/Fresh Market 2026" && netlify api listSiteDeploys --data '{"site_id":"822fc61b-464d-4a95-8fe0-72eae7df7a3f","per_page":2}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const d of JSON.parse(s))console.log(d.id,d.state,(d.commit_ref||"").slice(0,7),d.published_at||"")})'
 ```
 
-Warunek: deploy dla `6599796` (głowa gałęzi; kod identyczny z 2c32036, dodatkowo tylko ten runbook) w stanie `ready`, potem:
+Warunek: deploy dla głowy gałęzi (`git log --oneline -1 origin/feat/free-credit-grants`; kod identyczny z 2c32036, ponad nim tylko commity docs) w stanie `ready`, potem:
 
 ```bash
 curl -s https://b2b.freshmarket.eu/version.json
 ```
 
-= `{"build":"6599796…"}`. Bundle: `curl -s https://b2b.freshmarket.eu/ | grep -o '/assets/index-[^"]*\.js'` → w tym pliku występuje `admin_grant_free_credits` i `mark_credit_grant_seen`. Funkcje Netlify: log `mark-buyer-preconnect-seen` po pierwszym odczycie w kroku 6 nie może zawierać „Could not find the function public.mark_legacy_send_seen”.
+= `{"build":"<hash głowy gałęzi>…"}`. Bundle: `curl -s https://b2b.freshmarket.eu/ | grep -o '/assets/index-[^"]*\.js'` → w tym pliku występuje `admin_grant_free_credits` i `mark_credit_grant_seen`. Funkcje Netlify: log `mark-buyer-preconnect-seen` po pierwszym odczycie w kroku 6 nie może zawierać „Could not find the function public.mark_legacy_send_seen”.
 
 ## Krok 6 — test kontrolowany na encjach testowych
 
