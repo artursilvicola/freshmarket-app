@@ -901,6 +901,17 @@
         "reason_other": "from the organiser",
         "history_grant_label": "Free credits from the organiser",
         "history_purchase_label": "Purchased"
+        ,"history_legacy_label": "Historical package — source not determined",
+        "history_prior_registration_one_format": "Fresh Market registration gift — {{count}} credit granted previously",
+        "history_prior_registration_few_format": "Fresh Market registration gift — {{count}} credits granted previously",
+        "history_prior_registration_many_format": "Fresh Market registration gift — {{count}} credits granted previously",
+        "history_prior_registration_other_format": "Fresh Market registration gift — {{count}} credits granted previously",
+        "history_prior_other_one_format": "Free credits from the organiser ({{reason}}) — {{count}} credit granted previously",
+        "history_prior_other_few_format": "Free credits from the organiser ({{reason}}) — {{count}} credits granted previously",
+        "history_prior_other_many_format": "Free credits from the organiser ({{reason}}) — {{count}} credits granted previously",
+        "history_prior_other_other_format": "Free credits from the organiser ({{reason}}) — {{count}} credits granted previously",
+        "reason_registration": "registration gift",
+        "legacy_note_format": "including {{count}} from historical packages (source not determined)"
       },
       "tabs": {
         "saldo": "Balance and package",
@@ -1991,6 +2002,7 @@
       "grant_reason_promotion": "Promotion",
       "grant_reason_compensation": "Compensation",
       "grant_reason_gift": "Gift",
+      "grant_reason_registration": "Registration gift",
       "grant_reason_other": "Other",
       "grant_expires_label": "Valid until",
       "grant_expires_hint": "Defaults to 3 months from the grant date (computed in the database). Purchased credits are not affected.",

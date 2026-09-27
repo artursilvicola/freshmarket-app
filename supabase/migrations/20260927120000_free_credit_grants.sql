@@ -35,6 +35,13 @@
 --      dostawcy scalany z AKTUALNYM JSON-em (tylko supplierNotifiedAt/Via/BatchSize);
 --      notifier nie zapisuje już całego JSON-u ze snapshotu sprzed wysyłki maila
 --      (review Codexa v3, P1).
+--  10. Historyczne przyznania (uzupełnienie Codexa 27.09 / decyzja Artura): source
+--      'grant' z flagą grant_historical (prezent rejestracyjny 5 kredytów, rekompensata
+--      23.09 — 123 kredyty/93 firmy) oraz source 'legacy' (pakiet o nieustalonym źródle,
+--      opis neutralny). RPC `admin_record_historical_grants` ODNOTOWUJE historię po
+--      jawnej liście id: bez zmiany qty/qty_used/expires_at, bez nowego salda, bez
+--      banera (grant_seen_at = now()), bez maila; autor i czas odnotowania osobno od
+--      pierwotnego przyznania (granted_at = purchased_at, granted_by = NULL).
 --
 -- Stare wiersze `packages` dostają source = 'purchase' przez DEFAULT.
 -- NIE klasyfikujemy ich po cenie zero — ewentualne wcześniejsze rekompensaty
@@ -68,39 +75,41 @@ alter table public.packages
   add column if not exists granted_by uuid,
   add column if not exists granted_at timestamptz,
   add column if not exists grant_batch_id uuid,
-  add column if not exists grant_seen_at timestamptz;
+  add column if not exists grant_seen_at timestamptz,
+  add column if not exists grant_historical boolean not null default false,
+  add column if not exists grant_recorded_by uuid,
+  add column if not exists grant_recorded_at timestamptz;
 
 -- gdyby wcześniejsza wersja tej migracji zdążyła dodać kolumnę notatki — usuń
 alter table public.packages drop constraint if exists packages_grant_fields_check;
 alter table public.packages drop column if exists grant_note;
 
-do $$ begin
-  if not exists (select 1 from pg_constraint where conname = 'packages_source_check') then
-    alter table public.packages
-      add constraint packages_source_check check (source in ('purchase', 'grant'));
-  end if;
-  if not exists (select 1 from pg_constraint where conname = 'packages_grant_reason_check') then
-    alter table public.packages
-      add constraint packages_grant_reason_check
-      check (grant_reason is null or grant_reason in ('promotion', 'compensation', 'gift', 'other'));
-  end if;
-  -- przyznanie MUSI mieć powód, partię, autora i czas; zakup NIE MOŻE ich mieć
-  alter table public.packages
-    add constraint packages_grant_fields_check check (
-      (source = 'grant' and grant_reason is not null and grant_batch_id is not null
-         and granted_by is not null and granted_at is not null)
-      or
-      (source = 'purchase' and grant_reason is null and grant_batch_id is null
-         and granted_by is null and granted_at is null and grant_message is null)
-    );
-end $$;
+alter table public.packages drop constraint if exists packages_source_check;
+alter table public.packages drop constraint if exists packages_grant_reason_check;
+alter table public.packages
+  add constraint packages_source_check check (source in ('purchase', 'grant', 'legacy'));
+alter table public.packages
+  add constraint packages_grant_reason_check
+  check (grant_reason is null or grant_reason in ('promotion', 'compensation', 'gift', 'registration', 'other'));
+-- przyznanie MUSI mieć powód, partię i czas; autor obowiązkowy dla nowych, NULL dla historycznych;
+-- zakup i pakiet o nieustalonym źródle NIE MOGĄ mieć pól przyznania
+alter table public.packages
+  add constraint packages_grant_fields_check check (
+    (source = 'grant' and grant_reason is not null and grant_batch_id is not null and granted_at is not null
+       and (granted_by is not null or grant_historical))
+    or
+    (source in ('purchase', 'legacy') and grant_reason is null and grant_batch_id is null
+       and granted_by is null and granted_at is null and grant_message is null and grant_historical = false)
+  );
 
 create index if not exists idx_packages_company_source on public.packages(company_id, source);
 create index if not exists idx_packages_grant_unseen on public.packages(company_id)
   where source = 'grant' and grant_seen_at is null;
 
 comment on column public.packages.source is
-  'purchase = kupione (PayU/proforma/ręcznie przez admina), grant = przyznane bezpłatnie przez organizatora (admin_grant_free_credits).';
+  'purchase = kupione (PayU/proforma/ręcznie przez admina), grant = przyznane bezpłatnie przez organizatora (admin_grant_free_credits lub odnotowane historycznie), legacy = pakiet historyczny o nieustalonym źródle (opis neutralny, nie „kupione”).';
+comment on column public.packages.grant_historical is
+  'true = przyznanie sprzed tej migracji, odnotowane wstecz (admin_record_historical_grants): bez banera, bez nowego salda; granted_at = pierwotny purchased_at, granted_by = NULL, autor odnotowania w grant_recorded_by/at.';
 comment on column public.packages.grant_reason is
   'Powód przyznania: promotion | compensation | gift | other. Tylko dla source = grant.';
 comment on column public.packages.grant_message is
@@ -121,14 +130,18 @@ create table if not exists public.package_grant_batches (
   idempotency_key text not null unique,
   created_by uuid not null,
   created_at timestamptz not null default now(),
-  qty integer not null check (qty between 1 and 100),
-  reason text not null check (reason in ('promotion', 'compensation', 'gift', 'other')),
+  qty integer check (qty is null or qty between 1 and 100),          -- NULL dla partii historycznych (różne ilości)
+  reason text not null check (reason in ('promotion', 'compensation', 'gift', 'registration', 'legacy', 'other')),
   message text,
   note text,
   expires_at date not null,
   company_ids uuid[] not null,
-  company_count integer not null check (company_count >= 1)
+  company_count integer not null check (company_count >= 1),
+  historical boolean not null default false,
+  package_ids uuid[]
 );
+alter table public.package_grant_batches add column if not exists historical boolean not null default false;
+alter table public.package_grant_batches add column if not exists package_ids uuid[];
 
 comment on table public.package_grant_batches is
   'Jedna partia = jedno przyznanie bezpłatnych kredytów przez admina dla 1..N firm. idempotency_key chroni przed podwójnym wykonaniem tego samego formularza. note = notatka wewnętrzna (tylko admin).';
@@ -288,6 +301,131 @@ $$;
 
 revoke all on function public.admin_grant_free_credits(uuid[], integer, text, text, text, text, date) from public;
 grant execute on function public.admin_grant_free_credits(uuid[], integer, text, text, text, text, date) to authenticated;
+
+-- ── 3b. RPC: odnotowanie HISTORYCZNYCH przyznań (bez zmiany salda) ─────────
+-- Wejście: jawna lista id pakietów (z uzgodnionego archiwum), powód
+-- ('registration' | 'compensation' | 'gift' | 'promotion' | 'other' → source 'grant',
+--  'legacy' → source 'legacy', opis neutralny), klucz idempotencji, notatka.
+-- Wolno wywołać: admin z aplikacji (auth.uid()) albo z SQL Editora / service_role
+-- z jawnym p_recorded_by (id profilu admina). Nie tworzy kredytów, nie zmienia
+-- qty/qty_used/expires_at, nie pokazuje banera (grant_seen_at = now()), nie wysyła nic.
+create or replace function public.admin_record_historical_grants(
+  p_reason text,
+  p_package_ids uuid[],
+  p_idempotency_key text,
+  p_note text default null,
+  p_recorded_by uuid default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_ids uuid[];
+  v_batch public.package_grant_batches%rowtype;
+  v_missing uuid[];
+  v_taken uuid[];
+  v_company_ids uuid[];
+  v_expires date;
+  v_updated integer := 0;
+  v_note text := nullif(trim(coalesce(p_note, '')), '');
+begin
+  if v_actor is not null then
+    if not is_admin() then
+      raise exception 'admin_record_historical_grants: tylko administrator' using errcode = '42501';
+    end if;
+  else
+    -- SQL Editor / service_role: wymagany jawny autor odnotowania będący adminem
+    if current_user not in ('postgres', 'service_role', 'supabase_admin') then
+      raise exception 'admin_record_historical_grants: tylko administrator' using errcode = '42501';
+    end if;
+    if p_recorded_by is null or not exists (select 1 from public.profiles where id = p_recorded_by and role = 'admin') then
+      raise exception 'admin_record_historical_grants: p_recorded_by musi wskazywać profil administratora' using errcode = '22023';
+    end if;
+    v_actor := p_recorded_by;
+  end if;
+
+  if p_idempotency_key is null or length(trim(p_idempotency_key)) < 8 then
+    raise exception 'admin_record_historical_grants: brak klucza idempotencji' using errcode = '22023';
+  end if;
+  if p_reason is null or p_reason not in ('promotion', 'compensation', 'gift', 'registration', 'legacy', 'other') then
+    raise exception 'admin_record_historical_grants: nieznany powód %', p_reason using errcode = '22023';
+  end if;
+
+  select array_agg(id order by id) into v_ids
+  from (select distinct id from unnest(coalesce(p_package_ids, '{}'::uuid[])) as t(id) where id is not null) d;
+  if v_ids is null or array_length(v_ids, 1) = 0 then
+    raise exception 'admin_record_historical_grants: brak pakietów' using errcode = '22023';
+  end if;
+
+  -- powtórka klucza → wynik pierwotnej partii (porównanie listy i powodu)
+  select * into v_batch from public.package_grant_batches where idempotency_key = p_idempotency_key for update;
+  if found then
+    if v_batch.reason is distinct from p_reason or v_batch.package_ids is distinct from v_ids then
+      raise exception 'admin_record_historical_grants: klucz idempotencji użyty z innymi parametrami (partia %)', v_batch.id using errcode = '22023';
+    end if;
+    return jsonb_build_object('batch_id', v_batch.id, 'recorded', 0, 'already_done', true,
+                              'company_count', v_batch.company_count, 'package_count', coalesce(array_length(v_batch.package_ids, 1), 0));
+  end if;
+
+  select array_agg(t.id) into v_missing from unnest(v_ids) as t(id)
+  where not exists (select 1 from public.packages p where p.id = t.id);
+  if v_missing is not null then
+    raise exception 'admin_record_historical_grants: nieznane pakiety: %', v_missing using errcode = '22023';
+  end if;
+  -- wolno odnotować tylko pakiety dotąd nieoznaczone (source = purchase)
+  select array_agg(p.id) into v_taken from public.packages p where p.id = any(v_ids) and p.source <> 'purchase';
+  if v_taken is not null then
+    raise exception 'admin_record_historical_grants: pakiety już oznaczone: %', v_taken using errcode = '22023';
+  end if;
+
+  select array_agg(distinct company_id order by company_id), max(coalesce(expires_at, business_today()))
+    into v_company_ids, v_expires
+  from public.packages where id = any(v_ids);
+
+  insert into public.package_grant_batches
+    (idempotency_key, created_by, qty, reason, message, note, expires_at, company_ids, company_count, historical, package_ids)
+  values
+    (p_idempotency_key, v_actor, null, p_reason, null, v_note, v_expires, v_company_ids, array_length(v_company_ids, 1), true, v_ids)
+  returning * into v_batch;
+
+  if p_reason = 'legacy' then
+    update public.packages
+       set source = 'legacy'
+     where id = any(v_ids);
+  else
+    update public.packages
+       set source = 'grant',
+           grant_reason = p_reason,
+           grant_historical = true,
+           granted_at = coalesce(purchased_at, now()),
+           granted_by = null,
+           grant_batch_id = v_batch.id,
+           grant_seen_at = now(),            -- bez banera: to nie jest nowe przyznanie
+           grant_recorded_by = v_actor,
+           grant_recorded_at = now()
+     where id = any(v_ids);
+  end if;
+  get diagnostics v_updated = row_count;
+
+  insert into public.wallet_tx (company_id, type, amount, currency, description, reference_id, meta)
+  select p.company_id, 'adjustment', 0, coalesce(p.currency, 'EUR'),
+         case when p_reason = 'legacy' then 'Pakiet historyczny — źródło nieustalone (odnotowanie)'
+              else 'Odnotowanie wcześniejszego przyznania: ' || p_reason || ' (' || p.qty_total || ' kredytów)' end,
+         p.id,
+         jsonb_build_object('kind', 'historical_grant_record', 'grant_batch_id', v_batch.id, 'package_id', p.id,
+                            'reason', p_reason, 'qty', p.qty_total, 'recorded_by', v_actor)
+  from public.packages p where p.id = any(v_ids);
+
+  return jsonb_build_object('batch_id', v_batch.id, 'recorded', v_updated, 'already_done', false,
+                            'company_count', v_batch.company_count, 'package_count', array_length(v_ids, 1));
+end;
+$$;
+
+revoke all on function public.admin_record_historical_grants(text, uuid[], text, text, uuid) from public, anon;
+grant execute on function public.admin_record_historical_grants(text, uuid[], text, text, uuid) to authenticated, service_role;
 
 -- ── 4. RPC: dostawca zamyka powiadomienie o przyznaniu ──────────────────────
 create or replace function public.mark_credit_grant_seen(p_package_id uuid)
@@ -626,7 +764,8 @@ select
   coalesce(sum(case when p.expires_at >= business_today() and p.source = 'grant'    then p.qty_total else 0 end), 0)::integer as qty_total_free,
   coalesce(sum(case when p.expires_at >= business_today() and p.source = 'purchase' then p.qty_total else 0 end), 0)::integer as qty_total_paid,
   min(case when p.expires_at >= business_today() and p.source = 'grant'    and p.qty_total > p.qty_used then p.expires_at end) as free_expiry,
-  min(case when p.expires_at >= business_today() and p.source = 'purchase' and p.qty_total > p.qty_used then p.expires_at end) as paid_expiry
+  min(case when p.expires_at >= business_today() and p.source = 'purchase' and p.qty_total > p.qty_used then p.expires_at end) as paid_expiry,
+  coalesce(sum(case when p.expires_at >= business_today() and p.source = 'legacy' then p.qty_total - p.qty_used else 0 end), 0)::integer as qty_remaining_legacy
 from public.companies c
 left join public.packages p on p.company_id = c.id
 group by c.id;

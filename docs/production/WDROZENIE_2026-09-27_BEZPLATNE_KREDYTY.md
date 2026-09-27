@@ -1,24 +1,29 @@
-# Wdrożenie `feat/free-credit-grants` (kod 2c32036; głowa gałęzi = kod + ten runbook) — krok po kroku
+# Wdrożenie `feat/free-credit-grants` (kod v5; głowa gałęzi = kod + runbook) — krok po kroku
 
 Przygotowane 27.09.2026 po pozytywnym review Codexa v4 (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY_V4.md`). **Nic z poniższego nie zostało wykonane.** Każdy krok ma warunek przejścia; przy niezgodności zatrzymać się i wrócić do Claude'a/Codexa.
 
-Stan wyjściowy: `origin/main` = 37e90c7 (produkcja 792a4e9 + docs), gałąź zawiera `main` (fast-forward możliwy, 4 commity, 17 plików). Migracja: `supabase/migrations/20260927120000_free_credit_grants.sql`, 30 186 B, sha256 `7162e4c3e98b7a7bfbd3bd2dcc54c1bf9ad2329883835cb69b52ec79f9225807`.
+Stan wyjściowy: `origin/main` = 37e90c7 (produkcja 792a4e9 + docs), gałąź zawiera `main` (fast-forward możliwy, 4 commity, 17 plików). Migracja: `supabase/migrations/20260927120000_free_credit_grants.sql`, 38236 B, sha256 `c629f813be73bba4d0f0c4f045deb3eefd5e732b995a17dcef6f66637999b477` (v5, po historycznych przyznaniach).
 
 Kolejność jest obowiązkowa: **kontrola → kopia → migracja → weryfikacja → kod → test → przyznania**. Między krokiem 3 a 5 nie przyznawać kredytów (stary kod rozlicza po staremu, bez grant-first).
 
 ---
 
-## Krok 0 — kontrola istniejących rekompensat (SQL Editor, tylko odczyt)
+## Krok 0 — uzgodnienie historycznych przyznań z bazą (SQL Editor, tylko odczyt)
 
-Plik: `docs/production/sql/KONTROLA_REKOMPENSAT_PRZED_MIGRACJA_2026-09-27.sql`.
+Archiwum z 23.09 (`1FMK2026/outputs`, uzupełnienie Codexa `UZUPELNIENIE_CODEX_2026-09-27_HISTORYCZNE_KREDYTY.md`) mówi: **rekompensaty zostały wykonane 23.09 11:52** (123 kredyty, 93 firmy, `payment_ref = compensation:fm2026:…`, ważne do 31.12.2026), a wcześniej **75 firm dostało prezent rejestracyjny** (std_5, 5 kredytów, cena 0, bez referencji, ważne do 31.12.2026). Decyzja Artura: prezent rejestracyjny to osobne historyczne przyznanie — odnotować, nie dodawać ponownie, nie odejmować od rekompensaty, zachować zużycie i ważność, bez nowego powiadomienia.
 
-| Wynik zapytania 1 | Decyzja |
-|---|---|
-| pusty | rekompensat nie ma → po wdrożeniu przyznaje je admin z panelu (krok 7) |
-| wiersze z 23–27.09, `plan='std_1'`, cena 0 | rekompensaty JUŻ SĄ → **nie przyznawać drugi raz**; zapisać listę `id`; ewentualne oznaczenie jako `grant` = osobna decyzja i osobny UPDATE po tej liście (nie robić w tym wdrożeniu) |
-| inne wiersze z ceną 0 (demo, ręczne) | zostają `purchase` — nie klasyfikujemy po cenie |
+Plik: `docs/production/sql/HISTORYCZNE_KREDYTY_2026-09-27_UZGODNIENIE.sql` — **część A** (tylko odczyt) z listami id z archiwum (75 + 123 + 3 nieustalone):
 
-Wynik (wklejony) trafia do notatki wdrożeniowej (§34 runbooka).
+| Zapytanie | Oczekiwane | Jeśli inaczej |
+|---|---|---|
+| A1 | brakujących 0, już_oznaczone 0, niezgodne 0 dla trzech list | zatrzymać się; różnice (usunięte/zmienione pakiety) wyjaśnić przed częścią B |
+| A2 | 123 w bazie po znaczniku = 123 w archiwum, roznica_id 0 | w bazie jest więcej/mniej rekompensat niż w archiwum → wyjaśnić |
+| A3 | 0 wierszy | pakiety z ceną 0 spoza list → decyzja: dopisać do listy nieustalonych (legacy) albo zostawić jako purchase |
+| A4 | salda list (do notatki) | — |
+
+Wniosek dla kroku 7: **rekompensaty są już przyznane → nowych przyznań rekompensaty = 0**, chyba że A2 wykaże brakujące firmy (wtedy tylko te, przez panel).
+
+Stary plik `KONTROLA_REKOMPENSAT_PRZED_MIGRACJA_2026-09-27.sql` zostaje jako kontrola pomocnicza (zapytanie 2 powinno pokazać partię z 23.09 09:52 UTC = 11:52 PL).
 
 ## Krok 1 — kopia i odciski (SQL Editor, tylko odczyt)
 
@@ -39,7 +44,7 @@ Warunek: `git log --oneline -1 origin/main` nadal pokazuje 37e90c7. Jeśli `main
 
 ## Krok 3 — migracja (SQL Editor, jedna transakcja)
 
-1. Otworzyć `supabase/migrations/20260927120000_free_credit_grants.sql` i sprawdzić sumę: w PowerShell `Get-FileHash -Algorithm SHA256 .\supabase\migrations\20260927120000_free_credit_grants.sql` = `7162E4C3…5807`.
+1. Otworzyć `supabase/migrations/20260927120000_free_credit_grants.sql` i sprawdzić sumę: w PowerShell `Get-FileHash -Algorithm SHA256 .\supabase\migrations\20260927120000_free_credit_grants.sql` = `C629F813…B477`.
 2. Wkleić **całość** (plik zawiera `begin; … commit;`) do SQL Editora, uruchomić. Oczekiwane: „Success. No rows returned”. Dialog „destructive” (drop column if exists / drop constraint if exists) potwierdzić — obie instrukcje działają na obiektach, których w produkcji nie ma.
 3. Przy błędzie: transakcja się wycofa; nic nie poprawiać ręcznie, przekazać treść błędu.
 
@@ -56,6 +61,18 @@ Plik: `docs/production/sql/KONTROLA_PO_MIGRACJI_2026-09-27_KREDYTY.sql` — każ
 
 Odciski → `MANIFEST.txt` (po-migracji). Dopiero po zgodności → krok 5.
 
+## Krok 4b — odnotowanie historycznych przyznań (SQL Editor, zapis przez RPC)
+
+Dopiero po zgodności kroku 4 i po akceptacji wyników części A przez Artura. Plik jak w kroku 0, **część B** (trzy wywołania `admin_record_historical_grants`, zakomentowane — odkomentować po decyzji):
+
+1. `registration` → 75 pakietów: `source = grant`, `grant_reason = registration`, `grant_historical = true`, `granted_at` = pierwotna data, `granted_by = NULL`, autor odnotowania = admin z `p_recorded_by`, `grant_seen_at = now()` (bez banera). Saldo, zużycie i ważność bez zmian.
+2. `compensation` → 123 pakiety: jak wyżej z powodem rekompensaty.
+3. `legacy` → 3 pakiety std_1 o nieustalonym źródle: `source = legacy` (opis neutralny „Pakiet historyczny — źródło nieustalone”, nie „Kupione”).
+
+Każde wywołanie ma stały klucz idempotencji — powtórka zwraca `already_done`. Kontrola: zapytanie B i H z `KONTROLA_PO_MIGRACJI…` oraz A4 z uzgodnienia (sumy `qty_total`/`qty_used` identyczne przed i po). Dostawca po deployu zobaczy: pula „Bezpłatne od organizatora” z pozostałymi kredytami rejestracyjnymi i rekompensaty (ważne do 31.12.2026), w historii „Prezent za rejestrację na Fresh Market — przyznano wcześniej 5 kredytów”; **bez banera** (już „widziane”).
+
+Kolejność 4b **przed** krokiem 5 jest celowa: stary kod nie czyta nowych kolumn, a nowy front od pierwszej minuty pokaże właściwe pule zamiast „Kupione 5”.
+
 ## Krok 5 — kod (front + funkcje Netlify)
 
 Lokalny `main` jest zajęty przez stary worktree w Temp, więc push refspecem:
@@ -70,7 +87,7 @@ Kontrola deployu (Netlify buduje ~1–2 min):
 cd "C:/Users/Artur/OneDrive/Dokumenty/Claude/Projects/Fresh Market 2026" && netlify api listSiteDeploys --data '{"site_id":"822fc61b-464d-4a95-8fe0-72eae7df7a3f","per_page":2}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const d of JSON.parse(s))console.log(d.id,d.state,(d.commit_ref||"").slice(0,7),d.published_at||"")})'
 ```
 
-Warunek: deploy dla głowy gałęzi (`git log --oneline -1 origin/feat/free-credit-grants`; kod identyczny z 2c32036, ponad nim tylko commity docs) w stanie `ready`, potem:
+Warunek: deploy dla głowy gałęzi (`git log --oneline -1 origin/feat/free-credit-grants`) w stanie `ready`, potem:
 
 ```bash
 curl -s https://b2b.freshmarket.eu/version.json
@@ -98,9 +115,9 @@ Uwaga do 6.7: odczyt przez kupca uruchamia powiadomienie dostawcy — **prawdziw
 
 ## Krok 7 — faktyczne przyznania (dopiero po akceptacji wyników kroku 6)
 
-Wyłącznie przez panel admina (RPC sprawdza `auth.uid()` admina — z SQL Editora nie zadziała, i tak ma być).
+**Według archiwum rekompensaty są już przyznane (23.09) — spodziewane nowe przyznania: 0.** Krok wykonać tylko dla firm, których A2/A1 nie znalazły w bazie, albo dla nowych decyzji Artura. Wyłącznie przez panel admina (RPC sprawdza `auth.uid()` admina — z SQL Editora nie zadziała, i tak ma być).
 
-1. Lista firm: KROK 1 skryptu `1FMK2026/outputs/KREDYTY_PRECONNECT_NIEOBECNE_SIECI_2026-09-23.sql` (tylko odczyt) → nazwy firm i liczba kredytów (1 za każdą z sieci: Biedronka, Mega Image, Stokrotka). Jeśli krok 0 wykazał istniejące rekompensaty — **pominąć te firmy**.
+1. Lista firm: **nie** ze starego skryptu `KREDYTY_PRECONNECT_NIEOBECNE_SIECI_2026-09-23.sql` (pomijał historyczne przydziały dwóch sieci, bez zabezpieczenia przed ponowieniem) — tylko z różnicy A2/A1 lub z jawnej decyzji.
 2. Panel: firmy z 1 kredytem jedną partią (dodawanie firm wyszukiwarką w modalu), firmy z 2 kredytami drugą partią. Powód „Rekompensata”, data domyślna (3 miesiące od dnia przyznania), notatka wewnętrzna np. „Rekompensata FM 2026: Biedronka/Mega Image/Stokrotka nieobecne — decyzja Artura 23.09”.
 3. Proponowana wiadomość dla odbiorcy (PL; dostawcy EN zobaczą ją w tym samym brzmieniu — wiadomość nie jest tłumaczona):
    > Otrzymują Państwo bezpłatne kredyty PreConnect od organizatora Fresh Market jako rekompensatę za odwołane spotkania z siecią, która nie mogła uczestniczyć w wydarzeniu. Kredyty można wykorzystać do przesłania propozycji dowolnej sieci dostępnej w PreConnect. Najpierw zużywane są kredyty bezpłatne; kredyt jest pobierany dopiero, gdy sieć odczyta propozycję.

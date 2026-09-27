@@ -901,6 +901,17 @@
         "reason_other": "od organizatora",
         "history_grant_label": "Bezpłatne kredyty od organizatora",
         "history_purchase_label": "Kupione"
+        ,"history_legacy_label": "Pakiet historyczny — źródło nieustalone",
+        "history_prior_registration_one_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredyt",
+        "history_prior_registration_few_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredyty",
+        "history_prior_registration_many_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredytów",
+        "history_prior_registration_other_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredytów",
+        "history_prior_other_one_format": "Bezpłatne kredyty od organizatora ({{reason}}) — przyznano wcześniej {{count}} kredyt",
+        "history_prior_other_few_format": "Bezpłatne kredyty od organizatora ({{reason}}) — przyznano wcześniej {{count}} kredyty",
+        "history_prior_other_many_format": "Bezpłatne kredyty od organizatora ({{reason}}) — przyznano wcześniej {{count}} kredytów",
+        "history_prior_other_other_format": "Bezpłatne kredyty od organizatora ({{reason}}) — przyznano wcześniej {{count}} kredytów",
+        "reason_registration": "prezent za rejestrację",
+        "legacy_note_format": "w tym {{count}} z pakietów historycznych (źródło nieustalone)"
       },
       "tabs": {
         "saldo": "Saldo i pakiet",
@@ -1991,6 +2002,7 @@
       "grant_reason_promotion": "Promocja",
       "grant_reason_compensation": "Rekompensata",
       "grant_reason_gift": "Prezent",
+      "grant_reason_registration": "Prezent za rejestrację",
       "grant_reason_other": "Inny",
       "grant_expires_label": "Ważne do",
       "grant_expires_hint": "Domyślnie 3 miesiące od dnia przyznania (liczone w bazie). Kupionych kredytów to nie zmienia.",

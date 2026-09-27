@@ -12,7 +12,7 @@
 //    nowe otwarcie = nowy klucz, czyli nowa próba, nie „retry”.
 import { addCalendarMonthsISO, businessTodayISO } from "./db.js";
 
-export const GRANT_REASONS = ["promotion", "compensation", "gift", "other"];
+export const GRANT_REASONS = ["promotion", "compensation", "gift", "registration", "other"];
 
 export function newIdempotencyKey() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();

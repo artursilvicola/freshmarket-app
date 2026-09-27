@@ -2433,8 +2433,9 @@ export async function adminListGrantBatches(limit = 50) {
 // żeby UI nie sugerowało, że cała pula wygasa w najbliższym terminie (review Codexa, p. 6).
 export function summarizeCreditPools(packages, todayISO = businessTodayISO()) {
   const pools = {
-    free: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },
-    paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },
+    free: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [], historical: 0 },
+    // paid = kupione + pakiety historyczne o nieustalonym źródle (source = legacy); legacy liczone osobno
+    paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [], legacy: 0 },
   };
   for (const p of packages || []) {
     const exp = p?.expires_at ? String(p.expires_at).slice(0, 10) : null;
@@ -2447,6 +2448,8 @@ export function summarizeCreditPools(packages, todayISO = businessTodayISO()) {
     pool.used += used;
     pool.remaining += remaining;
     pool.rows.push(p);
+    if (pool === pools.paid && String(p?.source || "") === "legacy") pool.legacy += remaining;
+    if (pool === pools.free && p?.grant_historical) pool.historical += remaining;
     if (remaining > 0) {
       if (exp && (!pool.expiry || exp < pool.expiry)) pool.expiry = exp;
       const bucket = pool.byExpiry.find((b) => b.expiry === exp);

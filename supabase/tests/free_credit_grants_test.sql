@@ -43,12 +43,13 @@ update public.profiles set role='supplier',company_id=pg_temp.id('co') where id=
 update public.profiles set role='supplier',company_id=pg_temp.id('co2') where id=pg_temp.id('supplier2');
 
 -- ── schemat ──
-select pg_temp.ok((select count(*)=7 from information_schema.columns where table_schema='public' and table_name='packages'
-  and column_name in ('source','grant_reason','grant_message','granted_by','granted_at','grant_batch_id','grant_seen_at')),'packages ma kolumny przyznania');
+select pg_temp.ok((select count(*)=10 from information_schema.columns where table_schema='public' and table_name='packages'
+  and column_name in ('source','grant_reason','grant_message','granted_by','granted_at','grant_batch_id','grant_seen_at','grant_historical','grant_recorded_by','grant_recorded_at')),'packages ma kolumny przyznania (+historyczne)');
 select pg_temp.ok((select count(*)=0 from information_schema.columns where table_schema='public' and table_name='packages' and column_name='grant_note'),'packages NIE ma kolumny notatki (P1 Codex)');
 select pg_temp.ok((select active=false and price_eur=0 from public.package_plans where id='grant'),'plan katalogowy grant nieaktywny i darmowy');
 select pg_temp.ok((select count(*)=6 from information_schema.columns where table_schema='public' and table_name='company_capacity'
   and column_name in ('qty_remaining_free','qty_remaining_paid','qty_total_free','qty_total_paid','free_expiry','paid_expiry')),'company_capacity ma kolumny pul');
+select pg_temp.ok((select count(*)=1 from information_schema.columns where table_schema='public' and table_name='company_capacity' and column_name='qty_remaining_legacy'),'company_capacity ma qty_remaining_legacy');
 select pg_temp.ok((select reloptions::text like '%security_invoker=true%' from pg_class where relname='company_capacity'),'company_capacity zachowuje security_invoker');
 select pg_temp.ok((select public.business_today('2026-09-27T22:30:00Z') = date '2026-09-28' and public.business_today('2026-09-27T21:30:00Z') = date '2026-09-27'),'business_today: 22:30 UTC 27.09 = 28.09 w Warszawie');
 select pg_temp.ok((select pg_get_viewdef('public.company_capacity'::regclass) like '%business_today()%' and pg_get_viewdef('public.company_capacity'::regclass) not like '%current_date%'),'company_capacity liczy po dniu biznesowym, nie current_date');
@@ -62,6 +63,9 @@ select pg_temp.ok((select source='purchase' from public.packages where payment_r
 select pg_temp.fails($q$insert into public.packages(company_id,plan,qty_total,price_paid,expires_at,source) values ((select v from ids where k='co'),'grant',1,0,current_date+10,'grant')$q$,'23514','grant bez powodu/partii odrzucony');
 select pg_temp.fails($q$insert into public.packages(company_id,plan,qty_total,price_paid,expires_at,grant_reason) values ((select v from ids where k='co'),'std_1',1,0,current_date+10,'gift')$q$,'23514','purchase z powodem odrzucony');
 select pg_temp.fails($q$insert into public.packages(company_id,plan,qty_total,price_paid,expires_at,source) values ((select v from ids where k='co'),'std_1',1,0,current_date+10,'bonus')$q$,'23514','nieznane źródło odrzucone');
+select pg_temp.fails($q$insert into public.packages(company_id,plan,qty_total,price_paid,expires_at,source,grant_reason) values ((select v from ids where k='co'),'std_1',1,0,current_date+10,'legacy','gift')$q$,'23514','legacy z powodem odrzucony');
+select pg_temp.fails($q$insert into public.packages(company_id,plan,qty_total,price_paid,expires_at,source,grant_historical) values ((select v from ids where k='co'),'std_1',1,0,current_date+10,'purchase',true)$q$,'23514','purchase z flagą historyczną odrzucony');
+select pg_temp.fails($q$insert into public.packages(company_id,plan,qty_total,price_paid,expires_at,source,grant_reason,grant_batch_id,granted_at) values ((select v from ids where k='co'),'grant',1,0,current_date+10,'grant','gift',gen_random_uuid(),now())$q$,'23514','nowy grant bez autora odrzucony');
 
 -- ── uprawnienia: dostawca nie przyznaje, nie rozlicza ──
 select pg_temp.login('supplier'); set local role authenticated;
@@ -161,6 +165,47 @@ select pg_temp.ok((select r->>'billing_status'='no_package_available' and (r->>'
 select pg_temp.ok((select data->>'billingStatus' is null from public.legacy_sends where legacy_id=990005),'bez kredytu brak znacznika na wysyłce');
 select pg_temp.fails($q$select public.charge_legacy_send_first_seen(gen_random_uuid(),(select v from ids where k='co'))$q$,'P0002','nieistniejąca wysyłka');
 
+-- ── admin_record_historical_grants: odnotowanie historii bez zmiany salda ──
+-- firma A: stary „prezent rejestracyjny” std_5 (5 kredytów, 3 zużyte, ważny do 31.12.2026) + pakiet nieustalony
+insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at)
+values ('aaaaaaaa-0000-4000-8000-000000000001',pg_temp.id('co'),'std_5',5,3,0,'EUR','2026-07-02T07:18:42Z',date '2026-12-31'),
+       ('aaaaaaaa-0000-4000-8000-000000000002',pg_temp.id('co'),'std_1',1,0,0,'EUR','2026-07-09T10:00:00Z',date '2026-12-31');
+create temp table cap_before as select qty_remaining, qty_remaining_free, qty_remaining_paid, qty_total from public.company_capacity where id=pg_temp.id('co');
+select pg_temp.login('supplier'); set local role authenticated;
+select pg_temp.fails($q$select public.admin_record_historical_grants('registration',array['aaaaaaaa-0000-4000-8000-000000000001']::uuid[],'hist-reg-00000001')$q$,'42501','dostawca nie odnotowuje historii');
+reset role;
+select pg_temp.login('admin'); set local role authenticated;
+select pg_temp.fails($q$select public.admin_record_historical_grants('bonus',array['aaaaaaaa-0000-4000-8000-000000000001']::uuid[],'hist-x-000000001')$q$,'22023','nieznany powód (historia)');
+select pg_temp.fails($q$select public.admin_record_historical_grants('registration',array[gen_random_uuid()],'hist-x-000000002')$q$,'22023','nieznany pakiet (historia)');
+select pg_temp.fails($q$select public.admin_record_historical_grants('registration',array[(select id from public.packages where source='grant' limit 1)],'hist-x-000000003')$q$,'22023','pakiet już oznaczony jako grant odrzucony');
+create temp table hr as select public.admin_record_historical_grants('registration',array['aaaaaaaa-0000-4000-8000-000000000001']::uuid[],'hist-reg-00000001','odnotowanie wg archiwum') as r;
+select pg_temp.ok((select (r->>'recorded')::int=1 and (r->>'already_done')::boolean=false and (r->>'company_count')::int=1 from hr),'rejestracja: 1 pakiet odnotowany');
+select pg_temp.ok((select source='grant' and grant_reason='registration' and grant_historical and granted_by is null and granted_at='2026-07-02T07:18:42Z'::timestamptz
+   and grant_seen_at is not null and grant_recorded_by=pg_temp.id('admin') and grant_recorded_at is not null and grant_batch_id=(select (r->>'batch_id')::uuid from hr)
+   and qty_total=5 and qty_used=3 and expires_at=date '2026-12-31' and price_paid=0 and grant_message is null
+   from public.packages where id='aaaaaaaa-0000-4000-8000-000000000001'),'rejestracja: źródło/powód/flaga, granted_at = pierwotna data, autor NULL, bez banera, saldo/zużycie/ważność bez zmian');
+select pg_temp.ok((select historical and qty is null and reason='registration' and package_ids='{aaaaaaaa-0000-4000-8000-000000000001}'::uuid[] and note='odnotowanie wg archiwum' and expires_at=date '2026-12-31'
+   from public.package_grant_batches where idempotency_key='hist-reg-00000001'),'partia historyczna zapisana (qty NULL, package_ids)');
+select pg_temp.ok((select count(*)=1 from public.wallet_tx where meta->>'kind'='historical_grant_record' and amount=0 and (meta->>'qty')::int=5),'ślad w wallet_tx bez kwoty');
+select pg_temp.ok((select (r->>'already_done')::boolean and (r->>'recorded')::int=0 from (select public.admin_record_historical_grants('registration',array['aaaaaaaa-0000-4000-8000-000000000001']::uuid[],'hist-reg-00000001') as r) x),'powtórka klucza = already_done');
+select pg_temp.fails($q$select public.admin_record_historical_grants('gift',array['aaaaaaaa-0000-4000-8000-000000000001']::uuid[],'hist-reg-00000001')$q$,'22023','ten sam klucz z innym powodem odrzucony');
+select pg_temp.fails($q$select public.admin_record_historical_grants('registration',array['aaaaaaaa-0000-4000-8000-000000000001']::uuid[],'hist-reg-00000002')$q$,'22023','drugi klucz na już oznaczony pakiet odrzucony');
+-- legacy: neutralny opis, bez pól przyznania
+select pg_temp.ok((select (r->>'recorded')::int=1 from (select public.admin_record_historical_grants('legacy',array['aaaaaaaa-0000-4000-8000-000000000002']::uuid[],'hist-leg-00000001','źródło nieustalone') as r) x),'legacy: 1 pakiet odnotowany');
+select pg_temp.ok((select source='legacy' and grant_reason is null and grant_batch_id is null and grant_historical=false and qty_total=1 and qty_used=0 from public.packages where id='aaaaaaaa-0000-4000-8000-000000000002'),'legacy: źródło bez pól przyznania, saldo bez zmian');
+reset role;
+-- saldo firmy w widoku: suma bez zmian, przesunięcie między pulami (2 wolne z rejestracji → bezpłatne; 1 legacy → osobno)
+select pg_temp.ok((select c.qty_remaining=b.qty_remaining and c.qty_total=b.qty_total and c.qty_remaining_free=b.qty_remaining_free+2 and c.qty_remaining_paid=b.qty_remaining_paid-3 and c.qty_remaining_legacy=1
+   from public.company_capacity c, cap_before b where c.id=pg_temp.id('co')),'company_capacity: suma bez zmian, 2 do bezpłatnych, 1 do legacy');
+-- SQL Editor / service_role: bez auth.uid() wymaga jawnego admina
+select pg_temp.logout();
+select pg_temp.fails($q$select public.admin_record_historical_grants('registration',array['aaaaaaaa-0000-4000-8000-000000000002']::uuid[],'hist-svc-00000001')$q$,'22023','bez auth.uid: brak p_recorded_by odrzucony');
+select pg_temp.fails($q$select public.admin_record_historical_grants('registration',array['aaaaaaaa-0000-4000-8000-000000000002']::uuid[],'hist-svc-00000001',null,(select v from ids where k='supplier'))$q$,'22023','bez auth.uid: p_recorded_by nie-admin odrzucony');
+-- rozliczanie: historyczny prezent (grant) schodzi PRZED kupionym, jak każdy grant
+insert into public.legacy_sends(id,legacy_id,supplier_legacy_id,retailer_id,status,data) values (gen_random_uuid(),990301,'legacy-co-a',1,'sent','{}');
+select pg_temp.ok((select r->>'package_source'='grant' and (r->>'package_id')::uuid='aaaaaaaa-0000-4000-8000-000000000001' from (select public.charge_legacy_send_first_seen((select id from public.legacy_sends where legacy_id=990301),pg_temp.id('co')) as r) x),'odczyt: historyczny prezent zużywany jako bezpłatny (najbliższa ważność)');
+select pg_temp.ok((select qty_used=4 from public.packages where id='aaaaaaaa-0000-4000-8000-000000000001'),'prezent rejestracyjny: 4/5 zużyte');
+
 -- ── mark_legacy_send_seen: „odczytano” + rozliczenie w jednej transakcji, scalanie tylko pól odczytu ──
 -- firma B ma 2 bezpłatne kredyty (partia A); nowe wysyłki dla firmy B
 insert into public.legacy_sends(id,legacy_id,supplier_legacy_id,retailer_id,status,data) values
@@ -215,7 +260,7 @@ select pg_temp.ok((select (r->'billing'->>'charged')::boolean and (r->>'supplier
 select pg_temp.login('supplier'); set local role authenticated;
 select pg_temp.ok((select count(*)=2 from public.packages where source='grant' and grant_seen_at is null),'dostawca A widzi swoje 2 nieprzeczytane przyznania');
 select pg_temp.ok((select count(*)=0 from public.packages where company_id=pg_temp.id('co2')),'dostawca A nie widzi pakietów firmy B');
-select pg_temp.ok((select count(*)=0 from public.package_grant_batches),'dostawca nie widzi historii partii (ani notatek)');
+select pg_temp.ok((select count(*)=0 from public.package_grant_batches),'dostawca nie widzi historii partii (ani notatek, ani partii historycznych)');
 select pg_temp.ok((select count(*)=0 from public.wallet_tx where meta::text like '%notatka wewnętrzna%') and (select count(*)=0 from public.packages where row_to_json(packages)::text like '%notatka wewnętrzna%'),'notatka wewnętrzna nie wycieka przez packages ani wallet_tx');
 select pg_temp.ok((select public.mark_credit_grant_seen((select id from public.packages where company_id=pg_temp.id('co') and source='grant' and grant_batch_id=(select (r->>'batch_id')::uuid from res)))),'dostawca A zamyka powiadomienie');
 select pg_temp.ok((select public.mark_credit_grant_seen((select id from public.packages where company_id=pg_temp.id('co2') and source='grant')) = false),'dostawca A nie zamyka powiadomienia firmy B');
@@ -226,7 +271,7 @@ select pg_temp.ok((select grant_seen_at is null from public.packages where compa
 
 -- ── admin widzi historię z notatką, anon nic ──
 select pg_temp.login('admin'); set local role authenticated;
-select pg_temp.ok((select count(*)=2 from public.package_grant_batches) and (select note='notatka wewnętrzna' from public.package_grant_batches where idempotency_key='batch-A-00000001'),'admin widzi 2 partie i notatkę');
+select pg_temp.ok((select count(*)=4 from public.package_grant_batches) and (select count(*)=2 from public.package_grant_batches where historical) and (select note='notatka wewnętrzna' from public.package_grant_batches where idempotency_key='batch-A-00000001'),'admin widzi 4 partie (2 nowe + 2 historyczne) i notatkę');
 select pg_temp.denied($q$delete from public.package_grant_batches$q$);
 select pg_temp.denied($q$update public.package_grant_batches set qty=99$q$);
 reset role;
@@ -237,5 +282,5 @@ select pg_temp.fails($q$select public.admin_grant_free_credits(array[(select v f
 select pg_temp.denied($q$select public.charge_legacy_send_first_seen((select v from ids where k='send1'),(select v from ids where k='co'))$q$);
 reset role;
 
-select 'PASS: free credit grants v4 — źródło/powód na pakiecie, notatka tylko w partii, dzień biznesowy, powtórka klucza zgodna/niezgodna, RLS, pule, atomowe rozliczenie, mark_legacy_send_seen scala tylko pola odczytu, znacznik powiadomienia scala tylko 3 pola' result;
+select 'PASS: free credit grants v5 — źródło/powód na pakiecie, notatka tylko w partii, dzień biznesowy, powtórka klucza, RLS, pule, atomowe rozliczenie, mark_legacy_send_seen, znacznik powiadomienia, historyczne przyznania bez zmiany salda + legacy' result;
 rollback;

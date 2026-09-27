@@ -6,14 +6,17 @@
 
 -- A. Kolumny packages: 7 nowych, BEZ grant_note ------------------------
 select array_agg(column_name order by column_name) as kolumny,
-       count(*) filter (where column_name in ('source','grant_reason','grant_message','granted_by','granted_at','grant_batch_id','grant_seen_at')) as nowych,
-       '7 nowych, brak grant_note' as oczekiwane
+       count(*) filter (where column_name in ('source','grant_reason','grant_message','granted_by','granted_at','grant_batch_id','grant_seen_at','grant_historical','grant_recorded_by','grant_recorded_at')) as nowych,
+       '10 nowych, brak grant_note' as oczekiwane
 from information_schema.columns
 where table_schema = 'public' and table_name = 'packages'
   and (column_name like 'grant%' or column_name in ('source','granted_by','granted_at'));
 
 -- B. Stare wiersze = purchase (DEFAULT), zero grant ---------------------
-select source, count(*) from public.packages group by source;   -- oczekiwane: tylko 'purchase'
+select source, grant_reason, grant_historical, count(*), sum(qty_total), sum(qty_used)
+from public.packages group by 1,2,3 order by 1,2;
+-- oczekiwane TUŻ PO MIGRACJI: tylko purchase. PO ODNOTOWANIU HISTORII (krok 4b): grant/registration/true = 75,
+-- grant/compensation/true = 123, legacy = 3, reszta purchase; sumy qty_total/qty_used identyczne jak w części A4 uzgodnienia.
 
 -- C. Plan katalogowy grant: nieaktywny, cena 0 --------------------------
 select id, tier, qty, price_eur, active, '(grant, STANDARD, 1, 0, false)' as oczekiwane
@@ -26,6 +29,7 @@ select p.proname,
        has_function_privilege('service_role', p.oid, 'execute')  as service_role,
        case p.proname
          when 'admin_grant_free_credits'            then 'anon=f auth=t svc=t'
+         when 'admin_record_historical_grants'      then 'anon=f auth=t svc=t'
          when 'mark_credit_grant_seen'              then 'anon=f auth=t svc=t'
          when 'charge_legacy_send_first_seen'       then 'anon=f auth=f svc=t'
          when 'mark_legacy_send_seen'               then 'anon=f auth=f svc=t'
@@ -34,7 +38,7 @@ select p.proname,
        end as oczekiwane
 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public'
-  and p.proname in ('admin_grant_free_credits','mark_credit_grant_seen','charge_legacy_send_first_seen',
+  and p.proname in ('admin_grant_free_credits','admin_record_historical_grants','mark_credit_grant_seen','charge_legacy_send_first_seen',
                     'mark_legacy_send_seen','mark_legacy_sends_supplier_notified','business_today')
 order by p.proname;
 
@@ -52,16 +56,16 @@ select reloptions::text like '%security_invoker=true%' as security_invoker,
        pg_get_viewdef('public.company_capacity'::regclass) like '%business_today()%' as dzien_biznesowy,
        pg_get_viewdef('public.company_capacity'::regclass) not like '%current_date%' as bez_current_date,
        (select count(*) from information_schema.columns where table_name = 'company_capacity'
-         and column_name in ('qty_remaining_free','qty_remaining_paid','qty_total_free','qty_total_paid','free_expiry','paid_expiry')) as nowe_kolumny,
-       't, t, t, 6' as oczekiwane
+         and column_name in ('qty_remaining_free','qty_remaining_paid','qty_total_free','qty_total_paid','free_expiry','paid_expiry','qty_remaining_legacy')) as nowe_kolumny,
+       't, t, t, 7' as oczekiwane
 from pg_class where relname = 'company_capacity';
 
 -- G. Dzień biznesowy = dzisiejsza data w Warszawie ----------------------
 select public.business_today() as dzien_biznesowy, now() at time zone 'Europe/Warsaw' as teraz_warszawa;
 
 -- H. Suma pojemności w widoku bez zmian wobec stanu sprzed migracji ------
-select sum(qty_remaining) as kredyty_wolne, sum(qty_remaining_free) as bezplatne, sum(qty_remaining_paid) as kupione,
-       'bezplatne = 0; kredyty_wolne = kredyty_wolne_dzis sprzed migracji (o ile ten sam dzień)' as oczekiwane
+select sum(qty_remaining) as kredyty_wolne, sum(qty_remaining_free) as bezplatne, sum(qty_remaining_paid) as kupione, sum(qty_remaining_legacy) as nieustalone,
+       'tuż po migracji: bezplatne = 0; po kroku 4b: bezplatne = pozostałe z 75+123, nieustalone = pozostałe z 3; kredyty_wolne ZAWSZE = kredyty_wolne_dzis sprzed migracji (ten sam dzień)' as oczekiwane
 from public.company_capacity;
 
 -- I. ODCISKI — identyczne jak przed migracją (te same zapytania) ---------

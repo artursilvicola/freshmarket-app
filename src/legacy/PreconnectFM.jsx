@@ -6720,6 +6720,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
                 <div style={{ display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6,color }}>{Icon&&<Icon size={13}/>}{t(`supplier.finance.pools.${key}_label`)}</div>
                 <div style={{ fontSize:26,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1 }}>{pool.remaining}<span style={{ fontSize:12,fontWeight:500,color:"#64748b",marginLeft:6 }}>{t("supplier.finance.pools.remaining_unit")}</span></div>
                 <div style={{ fontSize:12,color:"#64748b",marginTop:6 }}>{pool.total>0 ? t("supplier.finance.pools.remaining_format",{ remaining:pool.remaining,total:pool.total }) : t("supplier.finance.pools.none")}</div>
+                {key === "paid" && pool.legacy > 0 && <div style={{ fontSize:11,color:"#94a3b8",marginTop:4 }}>{t("supplier.finance.pools.legacy_note_format", { count: pool.legacy })}</div>}
                 {(pool.byExpiry||[]).map(b => (
                   <div key={String(b.expiry)} style={{ fontSize:12,color:"#64748b",marginTop:2 }}>
                     {b.expiry ? t("supplier.finance.pools.nearest_expiry"+pluralSuffixPL(b.remaining)+"_format",{ count:b.remaining, date: fmtDateDMY(b.expiry) }) : t("supplier.finance.pools.no_expiry_format",{ count:b.remaining })}
@@ -6840,7 +6841,7 @@ function downloadHtmlDocument(filename, html) {
   } catch { /* no-op */ }
 }
 
-function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax, pkgUsed }) {
+export function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax, pkgUsed }) {
   const { t } = useTranslation("legacy");
   const [selected, setSelected] = useState(co.pkg||"std_5");
   const [showModal, setShowModal] = useState(false);
@@ -7278,14 +7279,19 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
             const remaining = Math.max(0, Number(pkg.qty_total||0) - Number(pkg.qty_used||0));
             const isPrem = String(pkg.plan||"").startsWith("prem");
             const isGrant = pkg.source === "grant";
-            const grantReason = ["promotion","compensation","gift","other"].includes(pkg.grant_reason) ? pkg.grant_reason : "other";
+            const isLegacy = pkg.source === "legacy";
+            const isHistorical = isGrant && !!pkg.grant_historical;
+            const grantReason = ["promotion","compensation","gift","registration","other"].includes(pkg.grant_reason) ? pkg.grant_reason : "other";
+            const historicalLabel = isHistorical
+              ? t(`supplier.finance.pools.history_prior_${grantReason === "registration" ? "registration" : "other"}${pluralSuffixPL(Number(pkg.qty_total||0))}_format`, { count: Number(pkg.qty_total||0), reason: t("supplier.finance.pools.reason_"+grantReason) })
+              : null;
             return (
               <div key={pkg.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center",opacity:expired?0.7:1 }}>
-                <div style={{ width:36,height:36,borderRadius:8,background:expired?"#f1f5f9":(isGrant?"#f0fdf4":isPrem?"#fef3c7":"#eff6ff"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                <div style={{ width:36,height:36,borderRadius:8,background:expired?"#f1f5f9":(isGrant?"#f0fdf4":isLegacy?"#f8fafc":isPrem?"#fef3c7":"#eff6ff"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
                   {isGrant ? <Gift size={15} color={expired?"#94a3b8":"#059669"}/> : <CreditCard size={15} color={expired?"#94a3b8":(isPrem?"#d97706":"#2563eb")}/>}
                 </div>
                 <div style={{ flex:1,minWidth:0 }}>
-                  <div style={{ fontWeight:600,fontSize:13 }}>{isGrant ? `${t("supplier.finance.pools.history_grant_label")} · ${t("supplier.finance.pools.reason_"+grantReason)}` : getPlanLabel(pkg.plan, { withPerSend:false })}</div>
+                  <div style={{ fontWeight:600,fontSize:13 }}>{isHistorical ? historicalLabel : isGrant ? `${t("supplier.finance.pools.history_grant_label")} · ${t("supplier.finance.pools.reason_"+grantReason)}` : isLegacy ? t("supplier.finance.pools.history_legacy_label") : getPlanLabel(pkg.plan, { withPerSend:false })}</div>
                   {isGrant&&pkg.grant_message&&<div style={{ fontSize:12,color:"#475569",marginTop:2,whiteSpace:"pre-line" }}>{pkg.grant_message}</div>}
                   <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
                     {fmtDateDMY(pkg.purchased_at)} · {expired
