@@ -71,7 +71,7 @@ import {
   // [followups / Lany #7] realna historia pakietów kredytów (status wygasłe)
   getPackages as dbGetPackages,
   // [feat/free-credit-grants] bezpłatne kredyty od organizatora: przyznanie (admin), potwierdzenie (dostawca), pule
-  adminGrantFreeCredits as dbAdminGrantFreeCredits, markCreditGrantSeen as dbMarkCreditGrantSeen, summarizeCreditPools,
+  adminGrantFreeCredits as dbAdminGrantFreeCredits, markCreditGrantSeen as dbMarkCreditGrantSeen, summarizeCreditPools, addCalendarMonthsISO, businessTodayISO,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
   getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
   // [feat/admin-instructions-announcements] treści sterowane z Brandingu
@@ -4769,6 +4769,8 @@ function HelpStripDashboard() {
 
 /* ── Wysyłki: unified hub (replaces Retail Chains + Preconnect + Send) ──── */
 export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies, creditPools }) {
+  // [feat/free-credit-grants] wysłane, nieodczytane propozycje = rezerwacja poza pulami
+  const awaitingRead = (sends||[]).filter(s => (!s.supplierId||s.supplierId===accountId) && !isSeenOrCharged(s) && ["sent","opened"].includes(s.status)).length;
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -4857,7 +4859,7 @@ export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wall
           </div>
         </div>
         {CREDITS_UI_SUPPLIER
-          ? <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><CreditCard size={12}/>{t("supplier.finance.credits.bar_format", { rem: Math.max(0, rem), max: pkgMax })}{creditPools?.free?.remaining>0&&<span style={{ opacity:0.85 }}>· {t("supplier.finance.credits.bar_free_format", { free: creditPools.free.remaining })}</span>}</div>
+          ? <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><CreditCard size={12}/>{t("supplier.finance.credits.bar_format", { rem: Math.max(0, rem), max: pkgMax })}{creditPools&&<span style={{ opacity:0.85 }}> · {t("supplier.finance.credits.bar_free_format", { free: creditPools.free?.remaining||0, paid: creditPools.paid?.remaining||0, awaiting: awaitingRead })}</span>}</div>
           : (wallet.balance > 0 && <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><Wallet size={12}/>{t("supplier.wysylki.pkg_bar.wallet_balance_format", { balance: wallet.balance })}</div>)}
         {rem <= 0
           ? <span style={{ fontSize:11,background:"rgba(239,68,68,0.2)",color:"#fca5a5",padding:"3px 10px",borderRadius:8 }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.no_credits") : t("supplier.wysylki.pkg_bar.no_credits_badge")}</span>
@@ -6627,6 +6629,8 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
   const expired=allExpired.filter(hasRefundMarker);
   const refundedExpired = expired;
   const pendingRefunds = allExpired.filter(s => !hasRefundMarker(s));
+  // [feat/free-credit-grants] wysłane, jeszcze nieodczytane: rezerwują kredyt, ale nie należą do żadnej puli
+  const awaitingRead = allSent.filter(s => !isSeenOrCharged(s) && s.status !== "unread_expired" && s.status !== "refunded").length;
   const pkgOpt=PKG_OPTS.find(p=>p.id===(pkgPlan || co.pkg))||PKG_OPTS[2];
   const activePkgMax = Number(pkgMax || pkgOpt.max || 0);
   const activePkgUsed = Number(pkgUsed || 0);
@@ -6714,7 +6718,12 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
               <div key={key} data-pool={key} style={{ flex:1,minWidth:200,padding:"14px 16px",background:bg,border:`1px solid ${color}33`,borderRadius:10 }}>
                 <div style={{ display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6,color }}>{Icon&&<Icon size={13}/>}{t(`supplier.finance.pools.${key}_label`)}</div>
                 <div style={{ fontSize:26,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1 }}>{pool.remaining}<span style={{ fontSize:12,fontWeight:500,color:"#64748b",marginLeft:6 }}>{t("supplier.finance.pools.remaining_unit")}</span></div>
-                <div style={{ fontSize:12,color:"#64748b",marginTop:6 }}>{pool.total>0 ? t("supplier.finance.pools.remaining_format",{ remaining:pool.remaining,total:pool.total }) : t("supplier.finance.pools.none")}{pool.expiry ? ` · ${t("supplier.finance.pools.valid_until_format",{ date: fmtDateDMY(pool.expiry) })}` : ""}</div>
+                <div style={{ fontSize:12,color:"#64748b",marginTop:6 }}>{pool.total>0 ? t("supplier.finance.pools.remaining_format",{ remaining:pool.remaining,total:pool.total }) : t("supplier.finance.pools.none")}</div>
+                {(pool.byExpiry||[]).map(b => (
+                  <div key={String(b.expiry)} style={{ fontSize:12,color:"#64748b",marginTop:2 }}>
+                    {b.expiry ? t("supplier.finance.pools.nearest_expiry"+pluralSuffixPL(b.remaining)+"_format",{ count:b.remaining, date: fmtDateDMY(b.expiry) }) : t("supplier.finance.pools.no_expiry_format",{ count:b.remaining })}
+                  </div>
+                ))}
               </div>
             );
             return (
@@ -6723,7 +6732,11 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
                   {tile("free", pools.free, "#059669", "#f0fdf4", Gift)}
                   {tile("paid", pools.paid, "#2563eb", "#eff6ff", CreditCard)}
                 </div>
-                <div style={{ fontSize:12,color:"#64748b",marginTop:12,lineHeight:1.5 }}>{t("supplier.finance.pools.order_hint")}</div>
+                <div data-availability style={{ marginTop:12,fontSize:13,fontWeight:600,color:"#0f172a" }}>
+                  {t("supplier.finance.pools.available_format",{ count: Math.max(0, Number(pkgMax||0) - Number(pkgUsed||0)) })}
+                  <span style={{ fontWeight:400,color:"#64748b" }}> · {t("supplier.finance.pools.awaiting_format",{ count: awaitingRead })}</span>
+                </div>
+                <div style={{ fontSize:12,color:"#64748b",marginTop:8,lineHeight:1.5 }}>{t("supplier.finance.pools.order_hint")}</div>
                 <div style={{ marginTop:12 }}><Btn outline sm onClick={()=>setTab("pakiety")}><CreditCard size={12}/> {t("supplier.finance.pools.buy_btn")}</Btn></div>
               </>
             );
@@ -10942,12 +10955,15 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
   const [grantBusy, setGrantBusy] = useState(false);
   const [grantSearch, setGrantSearch] = useState("");
   function openGrantModal(firmCo) {
-    const d = new Date(); d.setMonth(d.getMonth() + 3);
+    // Podgląd domyślnej daty liczony jak w bazie (3 miesiące kalendarzowe, koniec miesiąca obcięty,
+    // dzień biznesowy Europe/Warsaw). Do RPC idzie null, dopóki admin nie zmieni pola —
+    // wtedy datę liczy Postgres w dniu przyznania.
     setGrantSearch("");
     setGrantModal({
       key: (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `grant-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       companyIds: firmCo?.id ? [String(firmCo.id)] : [],
-      qty: 1, reason: "compensation", message: "", note: "", expiresAt: d.toISOString().slice(0, 10),
+      qty: 1, reason: "compensation", message: "", note: "",
+      expiresAt: addCalendarMonthsISO(businessTodayISO(), 3), expiresTouched: false, locked: false,
     });
   }
   async function submitGrant() {
@@ -10956,15 +10972,25 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
     try {
       const res = await dbAdminGrantFreeCredits({
         companyIds: grantModal.companyIds, qty: grantModal.qty, reason: grantModal.reason,
-        message: grantModal.message, note: grantModal.note, expiresAt: grantModal.expiresAt, idempotencyKey: grantModal.key,
+        message: grantModal.message, note: grantModal.note,
+        expiresAt: grantModal.expiresTouched ? grantModal.expiresAt : null,
+        idempotencyKey: grantModal.key,
       });
-      if (res?.already_done) fl(t("admin.firmy.grant_toast_already"), "warning");
-      else fl(t("admin.firmy.grant_toast_done_format", { qty: Number(grantModal.qty), count: res?.company_count ?? grantModal.companyIds.length, date: fmtDateDMY(res?.expires_at || grantModal.expiresAt) }));
+      if (res?.already_done) {
+        // wynik PIERWOTNEJ partii (ten sam klucz, ta sama treść) — nic nie dopisano
+        fl(t("admin.firmy.grant_toast_already", { date: fmtDateDMY(res?.created_at || ""), qty: res?.qty ?? Number(grantModal.qty), count: res?.company_count ?? grantModal.companyIds.length }), "warning");
+      } else {
+        fl(t("admin.firmy.grant_toast_done_format", { qty: res?.qty ?? Number(grantModal.qty), count: res?.company_count ?? grantModal.companyIds.length, date: fmtDateDMY(res?.expires_at || grantModal.expiresAt) }));
+      }
       setGrantModal(null);
       refreshCapacity?.();
     } catch (e) {
       console.warn("[adminGrantFreeCredits]", e);
-      fl(e?.message || t("admin.firmy.grant_toast_error"), "warning");
+      const mismatch = /innymi parametrami/i.test(String(e?.message || ""));
+      fl(mismatch ? t("admin.firmy.grant_mismatch_error") : (e?.message || t("admin.firmy.grant_toast_error")), "warning");
+      // Wynik niepewny (sieć / błąd): pola zablokowane, klucz bez zmian — wolno tylko ponowić
+      // identyczne żądanie albo zamknąć formularz (nowe otwarcie = nowy klucz).
+      setGrantModal(m => (m ? { ...m, locked: true } : m));
     } finally {
       setGrantBusy(false);
     }
@@ -10976,7 +11002,8 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
         const up = (patch) => setGrantModal(m => (m ? { ...m, ...patch } : m));
         const byId = (id) => (companies||[]).find(c => String(c.id) === String(id)) || (dbCapacity||[]).find(c => String(c.id) === String(id));
         const q = grantSearch.trim().toLowerCase();
-        const candidates = q ? (dbCapacity||[]).filter(c => !gm.companyIds.includes(String(c.id)) && String(c.name||"").toLowerCase().includes(q)).slice(0, 8) : [];
+        const locked = !!gm.locked;
+        const candidates = (q && !locked) ? (dbCapacity||[]).filter(c => !gm.companyIds.includes(String(c.id)) && String(c.name||"").toLowerCase().includes(q)).slice(0, 8) : [];
         const qtyNum = Number.parseInt(String(gm.qty), 10);
         const qtyOk = Number.isFinite(qtyNum) && qtyNum >= 1 && qtyNum <= 100;
         const total = (qtyOk ? qtyNum : 0) * gm.companyIds.length;
@@ -10986,17 +11013,18 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
         return (
           <div style={{ display:"grid",gap:12 }}>
             <Alrt type="info">{t("admin.firmy.grant_intro")}</Alrt>
+            {locked && <Alrt type="warning">{t("admin.firmy.grant_locked_hint")}</Alrt>}
             <div>
               <label style={lbl}>{t("admin.firmy.grant_companies_label", { count: gm.companyIds.length })}</label>
               <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:6 }}>
                 {gm.companyIds.map(id => (
                   <span key={id} style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",background:"#f1f5f9",borderRadius:14,fontSize:12 }}>
                     {byId(id)?.name || id}
-                    <button type="button" onClick={()=>up({ companyIds: gm.companyIds.filter(x => x !== id) })} title={t("admin.firmy.grant_remove_company")} style={{ border:"none",background:"none",cursor:"pointer",color:"#64748b",padding:0,lineHeight:1 }}><X size={12}/></button>
+                    <button type="button" disabled={locked} onClick={()=>{ if (!locked) up({ companyIds: gm.companyIds.filter(x => x !== id) }); }} title={t("admin.firmy.grant_remove_company")} style={{ border:"none",background:"none",cursor:"pointer",color:"#64748b",padding:0,lineHeight:1 }}><X size={12}/></button>
                   </span>
                 ))}
               </div>
-              <input value={grantSearch} onChange={e=>setGrantSearch(e.target.value)} placeholder={t("admin.firmy.grant_add_company_placeholder")} style={inp}/>
+              <input value={grantSearch} disabled={locked} onChange={e=>setGrantSearch(e.target.value)} placeholder={t("admin.firmy.grant_add_company_placeholder")} style={inp}/>
               {candidates.length>0 && (
                 <div style={{ border:"1px solid #e2e8f0",borderRadius:7,marginTop:4,overflow:"hidden" }}>
                   {candidates.map(c => <div key={c.id} onClick={()=>{ up({ companyIds: [...gm.companyIds, String(c.id)] }); setGrantSearch(""); }} style={{ padding:"7px 10px",fontSize:13,cursor:"pointer",borderBottom:"1px solid #f1f5f9" }}>{c.name}</div>)}
@@ -11004,17 +11032,17 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
               )}
             </div>
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10 }}>
-              <div><label style={lbl}>{t("admin.firmy.grant_qty_label")}</label><input type="number" min={1} max={100} value={gm.qty} onChange={e=>up({ qty: e.target.value })} style={inp}/></div>
-              <div><label style={lbl}>{t("admin.firmy.grant_reason_label")}</label><select value={gm.reason} onChange={e=>up({ reason: e.target.value })} style={inp}>{["promotion","compensation","gift","other"].map(r => <option key={r} value={r}>{t(`admin.firmy.grant_reason_${r}`)}</option>)}</select></div>
-              <div><label style={lbl}>{t("admin.firmy.grant_expires_label")}</label><input type="date" value={gm.expiresAt} onChange={e=>up({ expiresAt: e.target.value })} style={inp}/><div style={hint}>{t("admin.firmy.grant_expires_hint")}</div></div>
+              <div><label style={lbl}>{t("admin.firmy.grant_qty_label")}</label><input type="number" min={1} max={100} value={gm.qty} disabled={locked} onChange={e=>up({ qty: e.target.value })} style={inp}/></div>
+              <div><label style={lbl}>{t("admin.firmy.grant_reason_label")}</label><select value={gm.reason} disabled={locked} onChange={e=>up({ reason: e.target.value })} style={inp}>{["promotion","compensation","gift","other"].map(r => <option key={r} value={r}>{t(`admin.firmy.grant_reason_${r}`)}</option>)}</select></div>
+              <div><label style={lbl}>{t("admin.firmy.grant_expires_label")}</label><input type="date" value={gm.expiresAt} disabled={locked} onChange={e=>up({ expiresAt: e.target.value, expiresTouched: true })} style={inp}/><div style={hint}>{t("admin.firmy.grant_expires_hint")}</div></div>
             </div>
-            <div><label style={lbl}>{t("admin.firmy.grant_message_label")}</label><textarea rows={3} value={gm.message} onChange={e=>up({ message: e.target.value })} placeholder={t("admin.firmy.grant_message_placeholder")} style={{ ...inp,resize:"vertical" }}/><div style={hint}>{t("admin.firmy.grant_message_hint")}</div></div>
-            <div><label style={lbl}>{t("admin.firmy.grant_note_label")}</label><textarea rows={2} value={gm.note} onChange={e=>up({ note: e.target.value })} style={{ ...inp,resize:"vertical" }}/><div style={hint}>{t("admin.firmy.grant_note_hint")}</div></div>
+            <div><label style={lbl}>{t("admin.firmy.grant_message_label")}</label><textarea rows={3} value={gm.message} disabled={locked} onChange={e=>up({ message: e.target.value })} placeholder={t("admin.firmy.grant_message_placeholder")} style={{ ...inp,resize:"vertical" }}/><div style={hint}>{t("admin.firmy.grant_message_hint")}</div></div>
+            <div><label style={lbl}>{t("admin.firmy.grant_note_label")}</label><textarea rows={2} value={gm.note} disabled={locked} onChange={e=>up({ note: e.target.value })} style={{ ...inp,resize:"vertical" }}/><div style={hint}>{t("admin.firmy.grant_note_hint")}</div></div>
             <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap" }}>
               <div style={{ fontSize:12,color:"#475569" }}>{t("admin.firmy.grant_summary_format", { qty: qtyOk ? qtyNum : 0, count: gm.companyIds.length, total, date: fmtDateDMY(gm.expiresAt) })}</div>
               <div style={{ display:"flex",gap:8 }}>
                 <Btn outline sm onClick={()=>setGrantModal(null)} disabled={grantBusy}>{t("admin.firmy.grant_cancel")}</Btn>
-                <Btn primary sm onClick={submitGrant} disabled={grantBusy || gm.companyIds.length===0 || !qtyOk || !gm.expiresAt}><Gift size={12}/> {grantBusy ? t("admin.firmy.grant_submitting") : t("admin.firmy.grant_submit")}</Btn>
+                <Btn primary sm onClick={submitGrant} disabled={grantBusy || gm.companyIds.length===0 || !qtyOk || !gm.expiresAt}><Gift size={12}/> {grantBusy ? t("admin.firmy.grant_submitting") : locked ? t("admin.firmy.grant_retry_btn") : t("admin.firmy.grant_submit")}</Btn>
               </div>
             </div>
           </div>

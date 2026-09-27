@@ -23,21 +23,6 @@ async function findCompanyBySupplierKey(supaSvc, supplierKey) {
   return byId || null;
 }
 
-// [feat/free-credit-grants] Kolejność zużycia kredytów przy pierwszym odczycie:
-//   1. pakiety z wolnym kredytem (qty_used < qty_total),
-//   2. najpierw bezpłatne przyznania (source = 'grant'), potem kupione,
-//   3. wewnątrz puli najbliższa data ważności (brak daty = na końcu),
-//   4. remis: najstarszy zakup/przyznanie.
-// Wejście = wiersze z zapytania (już bez wygasłych). Czysta funkcja — testowana osobno.
-export function pickPackageForCharge(packages) {
-  const rank = (p) => (String(p?.source || "purchase") === "grant" ? 0 : 1);
-  const exp = (p) => (p?.expires_at ? String(p.expires_at).slice(0, 10) : "9999-12-31");
-  const bought = (p) => String(p?.purchased_at || "");
-  return (packages || [])
-    .filter((p) => Number(p?.qty_used || 0) < Number(p?.qty_total || 0))
-    .sort((a, b) => rank(a) - rank(b) || exp(a).localeCompare(exp(b)) || bought(a).localeCompare(bought(b)))[0] || null;
-}
-
 function getChargeMarker(row) {
   const data = row?.data || {};
   return row?.charged_at || data.chargeAt || data.chargedAt || data.chargeTxId || data.billingStatus === "charged";
@@ -72,27 +57,80 @@ async function chargeFirstSeen({ supaSvc, row, company, nowIso }) {
     return { charged: false, billingStatus: "company_not_found" };
   }
 
+  // [feat/free-credit-grants] Rozliczenie ATOMOWE w bazie: RPC blokuje wiersz wysyłki i pakiet,
+  // wybiera kolejność grant → purchase → najbliższa ważność, zwiększa qty_used, dopisuje wallet_tx
+  // i znacznik na wysyłce w jednej transakcji; powtórny/równoległy odczyt dostaje already_charged.
+  const rpc = await supaSvc.rpc("charge_legacy_send_first_seen", { p_send_id: row.id, p_company_id: company.id, p_now: nowIso });
+  if (!rpc.error) {
+    const r = rpc.data || {};
+    if (r.already_charged) {
+      return {
+        charged: false,
+        alreadyCharged: true,
+        chargeAt: r.charge_at || null,
+        packageId: r.package_id || null,
+        packageSource: r.package_source || null,
+        chargeTxId: r.charge_tx_id || null,
+        chargeAmount: Number(r.charge_amount || 0),
+        currency: r.currency || "EUR",
+        billingStatus: "charged",
+      };
+    }
+    if (!r.charged) return { charged: false, billingStatus: r.billing_status || "no_package_available" };
+    return {
+      charged: true,
+      billingStatus: "charged",
+      chargeAt: r.charge_at || nowIso,
+      packageId: r.package_id,
+      packageSource: r.package_source || "purchase",
+      chargeTxId: r.charge_tx_id || null,
+      chargeAmount: Number(r.charge_amount || 0),
+      currency: r.currency || "EUR",
+    };
+  }
+  // RPC nie istnieje (funkcja wdrożona przed migracją) → stara ścieżka, bez nowych kolumn.
+  // Każdy inny błąd RPC przerywa rozliczenie (nie zgadujemy).
+  if (!isMissingRpc(rpc.error)) throw rpc.error;
+  console.warn("[legacy-send-seen] charge_legacy_send_first_seen unavailable — legacy charge path", rpc.error?.message || rpc.error);
+  return chargeFirstSeenLegacy({ supaSvc, row, company, nowIso });
+}
+
+function isMissingRpc(error) {
+  const code = String(error?.code || "");
+  const msg = String(error?.message || "");
+  return code === "PGRST202" || code === "42883" || /could not find the function|does not exist/i.test(msg);
+}
+
+// Stara ścieżka (sprzed migracji 20260927120000): bez kolumny source, najstarszy zakup pierwszy.
+// UPDATE warunkowy sprawdza liczbę zmienionych wierszy — równoległy odczyt nie obciąży dwa razy.
+async function chargeFirstSeenLegacy({ supaSvc, row, company, nowIso }) {
+  const data = row?.data || {};
   const today = nowIso.slice(0, 10);
   const { data: packages, error: pkgErr } = await supaSvc
     .from("packages")
-    .select("id, plan, qty_total, qty_used, price_paid, currency, purchased_at, expires_at, source")
+    .select("id, plan, qty_total, qty_used, price_paid, currency, purchased_at, expires_at")
     .eq("company_id", company.id)
     .or(`expires_at.is.null,expires_at.gte.${today}`)
     .order("purchased_at", { ascending: true });
   if (pkgErr) throw pkgErr;
 
-  const pkg = pickPackageForCharge(packages);
+  const pkg = (packages || []).find((p) => Number(p.qty_used || 0) < Number(p.qty_total || 0));
   if (!pkg) {
     return { charged: false, billingStatus: "no_package_available" };
   }
 
   const nextUsed = Number(pkg.qty_used || 0) + 1;
-  const { error: upPkgErr } = await supaSvc
+  const { data: upRows, error: upPkgErr } = await supaSvc
     .from("packages")
     .update({ qty_used: nextUsed })
     .eq("id", pkg.id)
-    .eq("qty_used", pkg.qty_used || 0);
+    .eq("qty_used", pkg.qty_used || 0)
+    .select("id");
   if (upPkgErr) throw upPkgErr;
+  if (!Array.isArray(upRows) || upRows.length !== 1) {
+    // ktoś zdążył pobrać ten kredyt między SELECT a UPDATE — nie zapisujemy "charged" na ślepo
+    return { charged: false, billingStatus: "charge_conflict" };
+  }
 
   const fallbackAmount = Number(pkg.price_paid || 0) && Number(pkg.qty_total || 0)
     ? Number(pkg.price_paid) / Number(pkg.qty_total)
@@ -114,7 +152,6 @@ async function chargeFirstSeen({ supaSvc, row, company, nowIso }) {
         supplier_legacy_id: row.supplier_legacy_id,
         package_id: pkg.id,
         package_plan: pkg.plan,
-        package_source: pkg.source || "purchase",
         amount_eur: chargeAmount,
         billing_model: "package_credit",
       },
@@ -128,7 +165,7 @@ async function chargeFirstSeen({ supaSvc, row, company, nowIso }) {
     billingStatus: "charged",
     chargeAt: nowIso,
     packageId: pkg.id,
-    packageSource: pkg.source || "purchase",
+    packageSource: null,
     chargeTxId: tx?.id || null,
     chargeAmount,
     currency,

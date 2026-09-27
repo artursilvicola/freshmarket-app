@@ -2429,10 +2429,12 @@ export async function adminListGrantBatches(limit = 50) {
 
 // Pule kredytów firmy liczone z wierszy packages (to samo źródło co company_capacity):
 // osobno bezpłatne (source = grant) i kupione, tylko niewygasłe, z najbliższą datą ważności puli.
+// byExpiry: rozbicie POZOSTAŁYCH kredytów puli po terminie ważności (rosnąco; null = bez terminu),
+// żeby UI nie sugerowało, że cała pula wygasa w najbliższym terminie (review Codexa, p. 6).
 export function summarizeCreditPools(packages, todayISO = new Date().toISOString().slice(0, 10)) {
   const pools = {
-    free: { total: 0, used: 0, remaining: 0, expiry: null, rows: [] },
-    paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [] },
+    free: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },
+    paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },
   };
   for (const p of packages || []) {
     const exp = p?.expires_at ? String(p.expires_at).slice(0, 10) : null;
@@ -2440,11 +2442,40 @@ export function summarizeCreditPools(packages, todayISO = new Date().toISOString
     const pool = String(p?.source || "purchase") === "grant" ? pools.free : pools.paid;
     const total = Number(p?.qty_total || 0);
     const used = Math.min(total, Number(p?.qty_used || 0));
+    const remaining = Math.max(0, total - used);
     pool.total += total;
     pool.used += used;
-    pool.remaining += Math.max(0, total - used);
+    pool.remaining += remaining;
     pool.rows.push(p);
-    if (total - used > 0 && exp && (!pool.expiry || exp < pool.expiry)) pool.expiry = exp;
+    if (remaining > 0) {
+      if (exp && (!pool.expiry || exp < pool.expiry)) pool.expiry = exp;
+      const bucket = pool.byExpiry.find((b) => b.expiry === exp);
+      if (bucket) bucket.remaining += remaining; else pool.byExpiry.push({ expiry: exp, remaining });
+    }
+  }
+  for (const pool of [pools.free, pools.paid]) {
+    pool.byExpiry.sort((a, b) => (a.expiry === b.expiry ? 0 : a.expiry === null ? 1 : b.expiry === null ? -1 : a.expiry < b.expiry ? -1 : 1));
   }
   return pools;
+}
+
+// Data biznesowa "dziś" w strefie Europe/Warsaw jako YYYY-MM-DD (niezależnie od strefy przeglądarki).
+export function businessTodayISO(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Warsaw", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+// Dodanie miesięcy kalendarzowych do daty YYYY-MM-DD z obcięciem do ostatniego dnia miesiąca
+// docelowego (31.01 + 3 = 30.04; 30.11 + 3 = 28/29.02) — tak samo liczy Postgres
+// (current_date + interval '3 months'). Czysta arytmetyka na składowych, bez Date.setMonth.
+export function addCalendarMonthsISO(iso, months) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  if (!m) return null;
+  let y = Number(m[1]), mo = Number(m[2]) - 1 + Number(months || 0);
+  const d = Number(m[3]);
+  y += Math.floor(mo / 12); mo = ((mo % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+  const day = Math.min(d, lastDay);
+  return `${String(y).padStart(4, "0")}-${String(mo + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }

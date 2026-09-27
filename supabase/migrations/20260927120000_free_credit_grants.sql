@@ -1,31 +1,36 @@
 -- ============================================================================
 -- 20260927120000 — bezpłatne kredyty PreConnect przyznawane przez admina
--- [feat/free-credit-grants]
+-- [feat/free-credit-grants] (v2 po review Codexa 27.09)
 --
 -- Cel:
 --   1. Jednoznaczne ŹRÓDŁO kredytu na wierszu `packages`: 'purchase' (zakup,
 --      PayU/proforma/ręczne ustawienie) albo 'grant' (bezpłatne przyznanie
---      przez organizatora) + powód przyznania, wiadomość dla odbiorcy, notatka
---      wewnętrzna, kto i kiedy przyznał, partia.
+--      przez organizatora) + powód, wiadomość dla odbiorcy, kto i kiedy
+--      przyznał, partia. Notatka wewnętrzna admina żyje WYŁĄCZNIE w partii
+--      (`package_grant_batches.note`) — wiersz `packages` czyta dostawca (RLS).
 --   2. Historia przyznań: `package_grant_batches` (jedna partia = jedno
---      kliknięcie admina dla N firm) + klucz idempotencji, żeby ponowne
---      wysłanie tego samego formularza (retry, dwuklik) nie przyznało
---      kredytów drugi raz.
+--      kliknięcie admina dla N firm) + klucz idempotencji: powtórka tego samego
+--      formularza zwraca pierwotny wynik, ten sam klucz z INNYMI parametrami
+--      jest odrzucany, dwa równoległe wywołania nie tworzą dwóch partii.
 --   3. RPC `admin_grant_free_credits` — jedyna droga przyznania. Domyślna
---      ważność: 3 miesiące kalendarzowe od przyznania. Kupione kredyty bez
---      zmian (purchase_package nadal +1 rok).
---   4. RPC `mark_credit_grant_seen` — dostawca potwierdza (zamyka) baner
---      powiadomienia o przyznaniu; bez e-maili.
---   5. Widok `company_capacity` rozszerzony o rozbicie pozostałych kredytów
+--      ważność: 3 miesiące kalendarzowe od przyznania (liczone w bazie).
+--      Kupione kredyty bez zmian (purchase_package nadal +1 rok).
+--   4. RPC `mark_credit_grant_seen` — dostawca zamyka baner o przyznaniu.
+--   5. RPC `charge_legacy_send_first_seen` — ATOMOWE rozliczenie kredytu przy
+--      pierwszym odczycie propozycji: blokada wiersza wysyłki i pakietu,
+--      kolejność grant → purchase → najbliższa ważność → najstarszy,
+--      idempotencja po znaczniku na wysyłce, jeden UPDATE + wallet_tx + znacznik
+--      w jednej transakcji (zastępuje nietransakcyjną ścieżkę w Netlify).
+--   6. Widok `company_capacity` rozszerzony o rozbicie pozostałych kredytów
 --      na bezpłatne / kupione i najbliższe daty ważności każdej puli.
---
--- Rozliczanie (kolejność zużycia) jest w kodzie funkcji Netlify
--- (`legacy-send-seen.js`): najpierw 'grant', wewnątrz puli najbliższa data
--- ważności; pobranie nadal przy pierwszym odczycie propozycji.
 --
 -- Stare wiersze `packages` dostają source = 'purchase' przez DEFAULT.
 -- NIE klasyfikujemy ich po cenie zero — ewentualne wcześniejsze rekompensaty
 -- oznacza się osobną, świadomą aktualizacją po ich zidentyfikowaniu.
+--
+-- Kolejność wdrożenia: kopia + kontrola istniejących przyznań → TA MIGRACJA →
+-- weryfikacja → deploy frontu i funkcji. Stary kod funkcji działa po migracji
+-- (nie czyta nowych kolumn); nowy kod bez migracji spadnie na starą ścieżkę.
 --
 -- Idempotentne: ADD COLUMN IF NOT EXISTS, CREATE TABLE IF NOT EXISTS,
 -- CREATE OR REPLACE, ON CONFLICT DO NOTHING.
@@ -38,11 +43,14 @@ alter table public.packages
   add column if not exists source text not null default 'purchase',
   add column if not exists grant_reason text,
   add column if not exists grant_message text,
-  add column if not exists grant_note text,
   add column if not exists granted_by uuid,
   add column if not exists granted_at timestamptz,
   add column if not exists grant_batch_id uuid,
   add column if not exists grant_seen_at timestamptz;
+
+-- gdyby wcześniejsza wersja tej migracji zdążyła dodać kolumnę notatki — usuń
+alter table public.packages drop constraint if exists packages_grant_fields_check;
+alter table public.packages drop column if exists grant_note;
 
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'packages_source_check') then
@@ -54,17 +62,15 @@ do $$ begin
       add constraint packages_grant_reason_check
       check (grant_reason is null or grant_reason in ('promotion', 'compensation', 'gift', 'other'));
   end if;
-  if not exists (select 1 from pg_constraint where conname = 'packages_grant_fields_check') then
-    -- przyznanie MUSI mieć powód, partię, autora i czas; zakup NIE MOŻE ich mieć
-    alter table public.packages
-      add constraint packages_grant_fields_check check (
-        (source = 'grant' and grant_reason is not null and grant_batch_id is not null
-           and granted_by is not null and granted_at is not null)
-        or
-        (source = 'purchase' and grant_reason is null and grant_batch_id is null
-           and granted_by is null and granted_at is null and grant_message is null and grant_note is null)
-      );
-  end if;
+  -- przyznanie MUSI mieć powód, partię, autora i czas; zakup NIE MOŻE ich mieć
+  alter table public.packages
+    add constraint packages_grant_fields_check check (
+      (source = 'grant' and grant_reason is not null and grant_batch_id is not null
+         and granted_by is not null and granted_at is not null)
+      or
+      (source = 'purchase' and grant_reason is null and grant_batch_id is null
+         and granted_by is null and granted_at is null and grant_message is null)
+    );
 end $$;
 
 create index if not exists idx_packages_company_source on public.packages(company_id, source);
@@ -76,9 +82,7 @@ comment on column public.packages.source is
 comment on column public.packages.grant_reason is
   'Powód przyznania: promotion | compensation | gift | other. Tylko dla source = grant.';
 comment on column public.packages.grant_message is
-  'Wiadomość dla odbiorcy (dostawca ją widzi w panelu). Tylko dla source = grant.';
-comment on column public.packages.grant_note is
-  'Notatka wewnętrzna admina (dostawca jej NIE widzi — patrz widok packages dla dostawcy w RLS: kolumna czytelna, ale front jej nie pokazuje; do rozważenia osobny widok).';
+  'Wiadomość dla odbiorcy (dostawca ją widzi w panelu). Tylko dla source = grant. Notatka wewnętrzna admina jest WYŁĄCZNIE w package_grant_batches.note.';
 comment on column public.packages.grant_seen_at is
   'Kiedy dostawca zamknął baner powiadomienia o przyznaniu (mark_credit_grant_seen). NULL = jeszcze nie widział.';
 
@@ -105,7 +109,7 @@ create table if not exists public.package_grant_batches (
 );
 
 comment on table public.package_grant_batches is
-  'Jedna partia = jedno przyznanie bezpłatnych kredytów przez admina dla 1..N firm. idempotency_key chroni przed podwójnym wykonaniem tego samego formularza.';
+  'Jedna partia = jedno przyznanie bezpłatnych kredytów przez admina dla 1..N firm. idempotency_key chroni przed podwójnym wykonaniem tego samego formularza. note = notatka wewnętrzna (tylko admin).';
 
 alter table public.package_grant_batches enable row level security;
 
@@ -137,10 +141,13 @@ declare
   v_batch public.package_grant_batches%rowtype;
   v_ids uuid[];
   v_expires date;
+  v_message text := nullif(trim(coalesce(p_message, '')), '');
+  v_note text := nullif(trim(coalesce(p_note, '')), '');
   v_company uuid;
   v_package_id uuid;
   v_created integer := 0;
   v_missing uuid[];
+  v_inserted boolean := false;
 begin
   if v_admin is null or not is_admin() then
     raise exception 'admin_grant_free_credits: tylko administrator' using errcode = '42501';
@@ -149,19 +156,6 @@ begin
   if p_idempotency_key is null or length(trim(p_idempotency_key)) < 8 then
     raise exception 'admin_grant_free_credits: brak klucza idempotencji' using errcode = '22023';
   end if;
-
-  -- Powtórka tego samego formularza → zwróć wynik pierwszego wykonania, nic nie dopisuj.
-  select * into v_batch from public.package_grant_batches where idempotency_key = p_idempotency_key;
-  if found then
-    return jsonb_build_object(
-      'batch_id', v_batch.id,
-      'created', 0,
-      'already_done', true,
-      'company_count', v_batch.company_count,
-      'expires_at', v_batch.expires_at
-    );
-  end if;
-
   if p_qty is null or p_qty < 1 or p_qty > 100 then
     raise exception 'admin_grant_free_credits: liczba kredytów musi być w zakresie 1..100' using errcode = '22023';
   end if;
@@ -169,7 +163,9 @@ begin
     raise exception 'admin_grant_free_credits: nieznany powód %', p_reason using errcode = '22023';
   end if;
 
-  select array_agg(distinct id) into v_ids from unnest(coalesce(p_company_ids, '{}'::uuid[])) as t(id) where id is not null;
+  -- kanoniczna, posortowana lista firm (deduplikacja) — ta sama dla porównania powtórek
+  select array_agg(id order by id) into v_ids
+  from (select distinct id from unnest(coalesce(p_company_ids, '{}'::uuid[])) as t(id) where id is not null) d;
   if v_ids is null or array_length(v_ids, 1) = 0 then
     raise exception 'admin_grant_free_credits: brak firm' using errcode = '22023';
   end if;
@@ -181,28 +177,57 @@ begin
     raise exception 'admin_grant_free_credits: nieznane firmy: %', v_missing using errcode = '22023';
   end if;
 
-  -- Domyślna ważność: 3 miesiące kalendarzowe od przyznania.
+  -- Domyślna ważność: 3 miesiące kalendarzowe od dziś, liczone TU (koniec miesiąca
+  -- obcinany przez Postgresa: 30.11 + 3 miesiące = 28/29.02).
   v_expires := coalesce(p_expires_at, (current_date + interval '3 months')::date);
   if v_expires <= current_date then
     raise exception 'admin_grant_free_credits: data ważności musi być późniejsza niż dziś' using errcode = '22023';
   end if;
 
+  -- Partia: ON CONFLICT po kluczu idempotencji = jedna partia także przy dwóch
+  -- równoległych wywołaniach (drugie nie dostaje 23505, tylko wchodzi w ścieżkę powtórki).
   insert into public.package_grant_batches
     (idempotency_key, created_by, qty, reason, message, note, expires_at, company_ids, company_count)
   values
-    (p_idempotency_key, v_admin, p_qty, p_reason, nullif(trim(p_message), ''), nullif(trim(p_note), ''),
-     v_expires, v_ids, array_length(v_ids, 1))
+    (p_idempotency_key, v_admin, p_qty, p_reason, v_message, v_note, v_expires, v_ids, array_length(v_ids, 1))
+  on conflict (idempotency_key) do nothing
   returning * into v_batch;
+  v_inserted := found;
+
+  if not v_inserted then
+    -- Powtórka klucza. Blokujemy partię (czekamy, aż równoległa transakcja skończy),
+    -- potem porównujemy PARAMETRY: ta sama treść → wynik pierwotnej partii;
+    -- inna treść pod tym samym kluczem → błąd, nic nie dopisujemy.
+    select * into v_batch from public.package_grant_batches where idempotency_key = p_idempotency_key for update;
+    if v_batch.qty is distinct from p_qty
+       or v_batch.reason is distinct from p_reason
+       or v_batch.company_ids is distinct from v_ids
+       or v_batch.message is distinct from v_message
+       or v_batch.note is distinct from v_note
+       or (p_expires_at is not null and v_batch.expires_at is distinct from p_expires_at) then
+      raise exception 'admin_grant_free_credits: klucz idempotencji użyty z innymi parametrami (partia % z %)', v_batch.id, v_batch.created_at
+        using errcode = '22023';
+    end if;
+    return jsonb_build_object(
+      'batch_id', v_batch.id,
+      'created', 0,
+      'already_done', true,
+      'company_count', v_batch.company_count,
+      'qty', v_batch.qty,
+      'expires_at', v_batch.expires_at,
+      'created_at', v_batch.created_at
+    );
+  end if;
 
   foreach v_company in array v_ids loop
-    -- payment_ref = klucz unikalny (ux_packages_payment_ref): druga próba
-    -- w tej samej partii dla tej samej firmy nie może wstawić drugiego wiersza.
+    -- payment_ref = klucz unikalny (ux_packages_payment_ref): druga bariera przed
+    -- podwójnym wierszem w tej samej partii dla tej samej firmy.
     insert into public.packages
       (company_id, plan, qty_total, qty_used, price_paid, currency, purchased_at, expires_at, payment_ref,
-       source, grant_reason, grant_message, grant_note, granted_by, granted_at, grant_batch_id)
+       source, grant_reason, grant_message, granted_by, granted_at, grant_batch_id)
     values
       (v_company, 'grant', p_qty, 0, 0, 'EUR', now(), v_expires, 'grant:' || v_batch.id || ':' || v_company,
-       'grant', p_reason, v_batch.message, v_batch.note, v_admin, now(), v_batch.id)
+       'grant', p_reason, v_message, v_admin, now(), v_batch.id)
     on conflict (payment_ref) where payment_ref is not null do nothing
     returning id into v_package_id;
 
@@ -232,7 +257,9 @@ begin
     'created', v_created,
     'already_done', false,
     'company_count', v_batch.company_count,
-    'expires_at', v_batch.expires_at
+    'qty', v_batch.qty,
+    'expires_at', v_batch.expires_at,
+    'created_at', v_batch.created_at
   );
 end;
 $$;
@@ -267,7 +294,149 @@ $$;
 revoke all on function public.mark_credit_grant_seen(uuid) from public;
 grant execute on function public.mark_credit_grant_seen(uuid) to authenticated;
 
--- ── 5. company_capacity: rozbicie na pule ───────────────────────────────────
+-- ── 5. RPC: atomowe rozliczenie kredytu przy pierwszym odczycie ─────────────
+-- Wołane WYŁĄCZNIE z funkcji Netlify (service_role). Zastępuje sekwencję
+-- select→update→insert w legacy-send-seen.js, która nie sprawdzała liczby
+-- zmienionych wierszy (dwa równoległe odczyty mogły obciążyć ten sam ostatni
+-- kredyt dwa razy) i nie była transakcyjna.
+--
+-- Zwraca jsonb:
+--   charged=true  → {charged, billing_status:'charged', charge_at, package_id,
+--                    package_source, charge_tx_id, charge_amount, currency}
+--   charged=false → {charged:false, billing_status:'already_charged' | 'no_package_available',
+--                    (przy already_charged: dotychczasowe pola znacznika)}
+create or replace function public.charge_legacy_send_first_seen(
+  p_send_id uuid,
+  p_company_id uuid,
+  p_now timestamptz default now()
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_send public.legacy_sends%rowtype;
+  v_data jsonb;
+  v_pkg public.packages%rowtype;
+  v_amount numeric := 0;
+  v_currency text;
+  v_tx_id uuid;
+  v_updated integer;
+  v_marker jsonb;
+begin
+  if p_send_id is null or p_company_id is null then
+    raise exception 'charge_legacy_send_first_seen: brak wysyłki lub firmy' using errcode = '22023';
+  end if;
+
+  -- 1. blokada wiersza wysyłki: drugi równoległy odczyt tej samej propozycji czeka tu
+  select * into v_send from public.legacy_sends where id = p_send_id for update;
+  if not found then
+    raise exception 'charge_legacy_send_first_seen: wysyłka % nie istnieje', p_send_id using errcode = 'P0002';
+  end if;
+  v_data := coalesce(v_send.data, '{}'::jsonb);
+
+  -- 2. idempotencja po znaczniku (te same pola, które czyta getChargeMarker w JS)
+  if coalesce(v_data->>'chargeAt', v_data->>'chargedAt', v_data->>'chargeTxId') is not null
+     or v_data->>'billingStatus' = 'charged' then
+    return jsonb_build_object(
+      'charged', false,
+      'already_charged', true,
+      'billing_status', 'charged',
+      'charge_at', coalesce(v_data->>'chargeAt', v_data->>'chargedAt'),
+      'package_id', v_data->>'packageId',
+      'package_source', v_data->>'packageSource',
+      'charge_tx_id', v_data->>'chargeTxId',
+      'charge_amount', coalesce((v_data->>'chargeAmount')::numeric, 0),
+      'currency', coalesce(v_data->>'chargeCurrency', 'EUR')
+    );
+  end if;
+
+  -- 3. wybór pakietu: wolny kredyt, niewygasły; grant → purchase; najbliższa ważność
+  --    (brak daty na końcu); remis = najstarszy. FOR UPDATE: równoległa transakcja
+  --    czeka i po odblokowaniu widzi już zwiększone qty_used (wiersz odpada z WHERE).
+  select * into v_pkg
+  from public.packages p
+  where p.company_id = p_company_id
+    and (p.expires_at is null or p.expires_at >= (p_now at time zone 'Europe/Warsaw')::date)
+    and coalesce(p.qty_used, 0) < coalesce(p.qty_total, 0)
+  order by (case when p.source = 'grant' then 0 else 1 end),
+           p.expires_at asc nulls last,
+           p.purchased_at asc nulls last,
+           p.id
+  limit 1
+  for update of p;
+
+  if not found then
+    return jsonb_build_object('charged', false, 'already_charged', false, 'billing_status', 'no_package_available');
+  end if;
+
+  update public.packages
+     set qty_used = coalesce(qty_used, 0) + 1
+   where id = v_pkg.id
+     and coalesce(qty_used, 0) = coalesce(v_pkg.qty_used, 0);
+  get diagnostics v_updated = row_count;
+  if v_updated <> 1 then
+    raise exception 'charge_legacy_send_first_seen: pakiet % zmieniony równolegle', v_pkg.id using errcode = '40001';
+  end if;
+
+  -- kwota informacyjna (jak dotąd: data.price → data.chargeAmount → cena/kredyt z pakietu);
+  -- nienumeryczne wartości ignorujemy zamiast wywalać rozliczenie
+  v_amount := coalesce(
+    case when (v_data->>'price') ~ '^[0-9]+(\.[0-9]+)?$' then (v_data->>'price')::numeric end,
+    case when (v_data->>'chargeAmount') ~ '^[0-9]+(\.[0-9]+)?$' then (v_data->>'chargeAmount')::numeric end,
+    case when coalesce(v_pkg.price_paid, 0) > 0 and coalesce(v_pkg.qty_total, 0) > 0
+         then v_pkg.price_paid / v_pkg.qty_total else 0 end,
+    0);
+  v_currency := coalesce(nullif(v_data->>'currency', ''), v_pkg.currency, 'EUR');
+
+  insert into public.wallet_tx (company_id, type, amount, currency, description, reference_id, meta)
+  values (
+    p_company_id, 'send_charge', 0, v_currency,
+    'Rozliczenie wysyłki PreConnect #' || v_send.legacy_id,
+    v_send.id,
+    jsonb_build_object(
+      'legacy_send_id', v_send.legacy_id,
+      'supplier_legacy_id', v_send.supplier_legacy_id,
+      'package_id', v_pkg.id,
+      'package_plan', v_pkg.plan,
+      'package_source', coalesce(v_pkg.source, 'purchase'),
+      'amount_eur', v_amount,
+      'billing_model', 'package_credit'
+    )
+  )
+  returning id into v_tx_id;
+
+  v_marker := jsonb_build_object(
+    'billingStatus', 'charged',
+    'chargeAt', to_char(p_now at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
+    'packageId', v_pkg.id,
+    'packageSource', coalesce(v_pkg.source, 'purchase'),
+    'chargeTxId', v_tx_id,
+    'chargeAmount', v_amount,
+    'chargeCurrency', v_currency
+  );
+  -- 4. znacznik na wysyłce w TEJ SAMEJ transakcji — kolejny odczyt trafia w krok 2
+  update public.legacy_sends set data = v_data || v_marker, updated_at = now() where id = v_send.id;
+
+  return jsonb_build_object(
+    'charged', true,
+    'already_charged', false,
+    'billing_status', 'charged',
+    'charge_at', v_marker->>'chargeAt',
+    'package_id', v_pkg.id,
+    'package_source', coalesce(v_pkg.source, 'purchase'),
+    'charge_tx_id', v_tx_id,
+    'charge_amount', v_amount,
+    'currency', v_currency
+  );
+end;
+$$;
+
+revoke all on function public.charge_legacy_send_first_seen(uuid, uuid, timestamptz) from public, anon, authenticated;
+grant execute on function public.charge_legacy_send_first_seen(uuid, uuid, timestamptz) to service_role;
+
+-- ── 6. company_capacity: rozbicie na pule ───────────────────────────────────
 -- CREATE OR REPLACE VIEW pozwala tylko DOPISAĆ kolumny na końcu — istniejąca
 -- lista kolumn (023) pozostaje w tej samej kolejności.
 create or replace view public.company_capacity as
