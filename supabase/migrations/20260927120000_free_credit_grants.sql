@@ -23,6 +23,14 @@
 --      w jednej transakcji (zastępuje nietransakcyjną ścieżkę w Netlify).
 --   6. Widok `company_capacity` rozszerzony o rozbicie pozostałych kredytów
 --      na bezpłatne / kupione i najbliższe daty ważności każdej puli.
+--   7. `business_today()` — JEDEN dzień biznesowy (Europe/Warsaw) dla domyślnej
+--      ważności przyznań, kwalifikacji pakietu do pobrania i salda w widoku;
+--      nie zależy od strefy sesji ani od UTC (review Codexa v2, P2).
+--   8. RPC `mark_legacy_send_seen` — CAŁA aktualizacja „odczytano” (status, seenAt,
+--      readAt/readType, emailOpenedAt) + rozliczenie w jednej transakcji, scalanie
+--      tylko dozwolonych pól na AKTUALNYM wierszu pod blokadą. Funkcja Netlify nie
+--      zapisuje już JSON-u wysyłki, więc spóźniony zapis nie może skasować znacznika
+--      rozliczenia (review Codexa v2, P1).
 --
 -- Stare wiersze `packages` dostają source = 'purchase' przez DEFAULT.
 -- NIE klasyfikujemy ich po cenie zero — ewentualne wcześniejsze rekompensaty
@@ -37,6 +45,16 @@
 -- ============================================================================
 
 begin;
+
+-- ── 0. dzień biznesowy ──────────────────────────────────────────────────────
+create or replace function public.business_today(p_at timestamptz default now())
+returns date
+language sql
+stable
+as $$ select (p_at at time zone 'Europe/Warsaw')::date $$;
+comment on function public.business_today(timestamptz) is
+  'Data biznesowa Fresh Market (Europe/Warsaw). Używana do ważności przyznań, kwalifikacji pakietów do pobrania i salda w company_capacity — niezależnie od strefy sesji.';
+grant execute on function public.business_today(timestamptz) to anon, authenticated, service_role;
 
 -- ── 1. packages: źródło i metadane przyznania ───────────────────────────────
 alter table public.packages
@@ -177,10 +195,10 @@ begin
     raise exception 'admin_grant_free_credits: nieznane firmy: %', v_missing using errcode = '22023';
   end if;
 
-  -- Domyślna ważność: 3 miesiące kalendarzowe od dziś, liczone TU (koniec miesiąca
-  -- obcinany przez Postgresa: 30.11 + 3 miesiące = 28/29.02).
-  v_expires := coalesce(p_expires_at, (current_date + interval '3 months')::date);
-  if v_expires <= current_date then
+  -- Domyślna ważność: 3 miesiące kalendarzowe od DNIA BIZNESOWEGO (Europe/Warsaw),
+  -- liczone TU (koniec miesiąca obcinany przez Postgresa: 30.11 + 3 miesiące = 28/29.02).
+  v_expires := coalesce(p_expires_at, (business_today() + interval '3 months')::date);
+  if v_expires <= business_today() then
     raise exception 'admin_grant_free_credits: data ważności musi być późniejsza niż dziś' using errcode = '22023';
   end if;
 
@@ -358,7 +376,7 @@ begin
   select * into v_pkg
   from public.packages p
   where p.company_id = p_company_id
-    and (p.expires_at is null or p.expires_at >= (p_now at time zone 'Europe/Warsaw')::date)
+    and (p.expires_at is null or p.expires_at >= business_today(p_now))
     and coalesce(p.qty_used, 0) < coalesce(p.qty_total, 0)
   order by (case when p.source = 'grant' then 0 else 1 end),
            p.expires_at asc nulls last,
@@ -436,6 +454,109 @@ $$;
 revoke all on function public.charge_legacy_send_first_seen(uuid, uuid, timestamptz) from public, anon, authenticated;
 grant execute on function public.charge_legacy_send_first_seen(uuid, uuid, timestamptz) to service_role;
 
+-- ── 5b. RPC: „odczytano” + rozliczenie w JEDNEJ transakcji ─────────────────
+-- Zastępuje sekwencję z legacy-send-seen.js (RPC rozliczenia → bezwarunkowy UPDATE
+-- całego JSON-u ze starego odczytu), w której spóźniony zapis A mógł skasować znacznik
+-- zapisany przez B i pozwolić na trzecie pobranie. Tu: blokada wiersza, następny status
+-- liczony z AKTUALNEGO statusu (e-mail „opened” nie cofa „read”), scalanie TYLKO pól
+-- odczytu (coalesce = pierwszy zapis wygrywa), potem rozliczenie tą samą transakcją.
+-- Pola rozliczeń (chargeAt/packageId/chargeTxId/...) zapisuje wyłącznie
+-- charge_legacy_send_first_seen; tutaj nigdy nie są nadpisywane ani czyszczone.
+create or replace function public.mark_legacy_send_seen(
+  p_send_id uuid,
+  p_company_id uuid,
+  p_channel text default 'app_list',
+  p_now timestamptz default now()
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_send public.legacy_sends%rowtype;
+  v_data jsonb;
+  v_prev text;
+  v_next text;
+  v_read_type text;
+  v_now_txt text := to_char(p_now at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+  v_patch jsonb;
+  v_billing jsonb;
+begin
+  if p_send_id is null then
+    raise exception 'mark_legacy_send_seen: brak wysyłki' using errcode = '22023';
+  end if;
+  if p_channel not in ('app_list', 'app_detail', 'email') then
+    raise exception 'mark_legacy_send_seen: nieznany kanał %', p_channel using errcode = '22023';
+  end if;
+
+  select * into v_send from public.legacy_sends where id = p_send_id for update;
+  if not found then
+    raise exception 'mark_legacy_send_seen: wysyłka % nie istnieje', p_send_id using errcode = 'P0002';
+  end if;
+  v_prev := v_send.status;
+  v_data := coalesce(v_send.data, '{}'::jsonb);
+
+  if v_prev not in ('sent', 'opened', 'read', 'read_manual') then
+    return jsonb_build_object('skipped', true, 'reason', 'status_' || coalesce(v_prev, 'null'), 'previous_status', v_prev, 'status', v_prev, 'data', v_data);
+  end if;
+
+  v_next := case
+    when p_channel = 'email' then (case when v_prev = 'sent' then 'opened' else v_prev end)
+    when v_prev in ('sent', 'opened') then 'read'
+    else v_prev end;
+  v_read_type := case p_channel when 'app_list' then 'auto_buyer_preconnect_list' when 'app_detail' then 'auto_buyer_open' else null end;
+
+  v_patch := jsonb_build_object(
+    'status', v_next,
+    'seenAt', coalesce(v_data->>'seenAt', v_now_txt),
+    'seenChannel', coalesce(v_data->>'seenChannel', p_channel)
+  );
+  if p_channel = 'email' then
+    v_patch := v_patch || jsonb_build_object('emailOpenedAt', coalesce(v_data->>'emailOpenedAt', v_now_txt));
+  end if;
+  if v_read_type is not null then
+    v_patch := v_patch || jsonb_build_object(
+      'readAt', coalesce(v_data->>'readAt', v_now_txt),
+      'readType', coalesce(v_data->>'readType', v_read_type)
+    );
+  end if;
+
+  update public.legacy_sends
+     set data = data || v_patch,
+         status = v_next,
+         updated_at = now(),
+         email_opened_at = case when p_channel = 'email' then coalesce(email_opened_at, p_now) else email_opened_at end
+   where id = p_send_id;
+
+  if p_company_id is null then
+    v_billing := jsonb_build_object('charged', false, 'already_charged', false, 'billing_status', 'company_not_found');
+  else
+    v_billing := public.charge_legacy_send_first_seen(p_send_id, p_company_id, p_now);
+  end if;
+
+  -- billingStatus inne niż 'charged' zapisujemy tylko, gdy wiersz NIE jest rozliczony
+  if coalesce(v_billing->>'billing_status', '') <> 'charged' then
+    update public.legacy_sends
+       set data = data || jsonb_build_object('billingStatus', v_billing->>'billing_status')
+     where id = p_send_id and coalesce(data->>'billingStatus', '') <> 'charged';
+  end if;
+
+  select data into v_data from public.legacy_sends where id = p_send_id;
+  return jsonb_build_object(
+    'skipped', false,
+    'previous_status', v_prev,
+    'status', v_next,
+    'data', v_data,
+    'billing', v_billing,
+    'supplier_notified_before', (v_data->>'supplierNotifiedAt') is not null
+  );
+end;
+$$;
+
+revoke all on function public.mark_legacy_send_seen(uuid, uuid, text, timestamptz) from public, anon, authenticated;
+grant execute on function public.mark_legacy_send_seen(uuid, uuid, text, timestamptz) to service_role;
+
 -- ── 6. company_capacity: rozbicie na pule ───────────────────────────────────
 -- CREATE OR REPLACE VIEW pozwala tylko DOPISAĆ kolumny na końcu — istniejąca
 -- lista kolumn (023) pozostaje w tej samej kolejności.
@@ -450,17 +571,17 @@ select
   c.pkg_plan,
   c.legacy_supplier_id,
   c.logo_url,
-  coalesce(sum(case when p.expires_at >= current_date then p.qty_total else 0 end), 0)::integer as qty_total,
-  coalesce(sum(case when p.expires_at >= current_date then p.qty_used  else 0 end), 0)::integer as qty_used,
-  coalesce(sum(case when p.expires_at >= current_date then p.qty_total - p.qty_used else 0 end), 0)::integer as qty_remaining,
-  max(case when p.expires_at >= current_date then p.expires_at end) as pkg_expiry,
+  coalesce(sum(case when p.expires_at >= business_today() then p.qty_total else 0 end), 0)::integer as qty_total,
+  coalesce(sum(case when p.expires_at >= business_today() then p.qty_used  else 0 end), 0)::integer as qty_used,
+  coalesce(sum(case when p.expires_at >= business_today() then p.qty_total - p.qty_used else 0 end), 0)::integer as qty_remaining,
+  max(case when p.expires_at >= business_today() then p.expires_at end) as pkg_expiry,
   c.created_at,
-  coalesce(sum(case when p.expires_at >= current_date and p.source = 'grant'    then p.qty_total - p.qty_used else 0 end), 0)::integer as qty_remaining_free,
-  coalesce(sum(case when p.expires_at >= current_date and p.source = 'purchase' then p.qty_total - p.qty_used else 0 end), 0)::integer as qty_remaining_paid,
-  coalesce(sum(case when p.expires_at >= current_date and p.source = 'grant'    then p.qty_total else 0 end), 0)::integer as qty_total_free,
-  coalesce(sum(case when p.expires_at >= current_date and p.source = 'purchase' then p.qty_total else 0 end), 0)::integer as qty_total_paid,
-  min(case when p.expires_at >= current_date and p.source = 'grant'    and p.qty_total > p.qty_used then p.expires_at end) as free_expiry,
-  min(case when p.expires_at >= current_date and p.source = 'purchase' and p.qty_total > p.qty_used then p.expires_at end) as paid_expiry
+  coalesce(sum(case when p.expires_at >= business_today() and p.source = 'grant'    then p.qty_total - p.qty_used else 0 end), 0)::integer as qty_remaining_free,
+  coalesce(sum(case when p.expires_at >= business_today() and p.source = 'purchase' then p.qty_total - p.qty_used else 0 end), 0)::integer as qty_remaining_paid,
+  coalesce(sum(case when p.expires_at >= business_today() and p.source = 'grant'    then p.qty_total else 0 end), 0)::integer as qty_total_free,
+  coalesce(sum(case when p.expires_at >= business_today() and p.source = 'purchase' then p.qty_total else 0 end), 0)::integer as qty_total_paid,
+  min(case when p.expires_at >= business_today() and p.source = 'grant'    and p.qty_total > p.qty_used then p.expires_at end) as free_expiry,
+  min(case when p.expires_at >= business_today() and p.source = 'purchase' and p.qty_total > p.qty_used then p.expires_at end) as paid_expiry
 from public.companies c
 left join public.packages p on p.company_id = c.id
 group by c.id;

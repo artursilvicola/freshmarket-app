@@ -66,7 +66,16 @@ try {
   const after2 = await db.query(`select (select qty_used from public.packages where company_id='${CO}' and source='grant')::int as used, (select count(*) from public.wallet_tx where type='send_charge' and company_id='${CO}')::int as tx`);
   ok(after2.rows[0].used === 2 && after2.rows[0].tx === 2, "po dwóch propozycjach: qty_used=2, dwa wallet_tx (nie trzy)");
 
-  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK; concurrency (grant key, last credit, same send)");
+  // d) ta sama propozycja: odczyt w aplikacji i otwarcie e-maila RÓWNOLEGLE (mark_legacy_send_seen)
+  await db.query(`update public.packages set qty_total = qty_total + 1 where company_id='${CO}' and source='grant'`);
+  await db.query(`insert into public.legacy_sends(id,legacy_id,supplier_legacy_id,retailer_id,status,data) values ('33333333-3333-4333-8333-333333333334',990104,'legacy-conc',1,'sent','{"custom":"x"}')`);
+  const mark = (c, ch) => c.query(`select public.mark_legacy_send_seen('33333333-3333-4333-8333-333333333334','${CO}','${ch}') as r`).then((r) => r.rows[0].r);
+  const [m1, m2] = await Promise.all([mark(c1, "app_list"), mark(c2, "email")]);
+  const fin = await db.query(`select status, data, (select qty_used from public.packages where company_id='${CO}' and source='grant')::int as used, (select count(*) from public.wallet_tx where type='send_charge' and company_id='${CO}')::int as tx from public.legacy_sends where legacy_id=990104`);
+  const row = fin.rows[0];
+  ok(row.status === "read" && row.data.status === "read" && row.data.readAt && row.data.emailOpenedAt && row.data.custom === "x", "równolegle app+email: status read (email nie cofa), readAt i emailOpenedAt oba zapisane, reszta JSON zachowana");
+  ok(row.data.billingStatus === "charged" && row.used === 3 && row.tx === 3 && [m1, m2].filter((x) => x.billing.charged).length === 1, "równolegle app+email: dokładnie jedno pobranie, znacznik nienaruszony");
+  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK; concurrency (grant key, last credit, same send, app+email)");
 } catch (e) { console.error(e); process.exitCode = 1; }
 finally {
   for (const c of clients) await c.end().catch(() => {});

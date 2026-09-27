@@ -1979,6 +1979,7 @@
       "grant_btn": "Grant free credits",
       "grant_locked_hint": "The result of the previous attempt is uncertain (connection error). Retry without changes or close and reopen the form — fields are locked so the same key never goes out with different content.",
       "grant_retry_btn": "Retry",
+      "grant_uncertain_close": "The result of the last attempt is unknown. Before trying again, check the batch history to see whether the credits were already granted — reopening the form starts a new batch, not a retry.",
       "grant_mismatch_error": "This form was already submitted with different content. Close it and open it again.",
       "grant_modal_title": "Free PreConnect credits from the organiser",
       "grant_intro": "Credits reach the selected companies immediately, without payment. The supplier sees them separately as “Free from the organiser” together with your message. No e-mail is sent.",

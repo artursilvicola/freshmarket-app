@@ -1979,6 +1979,7 @@
       "grant_btn": "Przyznaj bezpłatne kredyty",
       "grant_locked_hint": "Wynik poprzedniej próby jest niepewny (błąd połączenia). Ponów bez zmian albo zamknij formularz i otwórz go ponownie — pola są zablokowane, żeby ten sam klucz nie poszedł z inną treścią.",
       "grant_retry_btn": "Ponów",
+      "grant_uncertain_close": "Wynik ostatniej próby jest nieznany. Zanim spróbujesz ponownie, sprawdź w historii partii, czy kredyty nie zostały już przyznane — nowe otwarcie formularza to nowa partia, nie ponowienie.",
       "grant_mismatch_error": "Ten formularz był już wysłany z inną treścią. Zamknij go i otwórz ponownie.",
       "grant_modal_title": "Bezpłatne kredyty PreConnect od organizatora",
       "grant_intro": "Kredyty trafią do wybranych firm od razu, bez płatności. Dostawca zobaczy je osobno jako „Bezpłatne od organizatora” razem z Twoją wiadomością. E-mail nie jest wysyłany.",

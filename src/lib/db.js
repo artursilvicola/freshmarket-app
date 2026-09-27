@@ -2431,7 +2431,7 @@ export async function adminListGrantBatches(limit = 50) {
 // osobno bezpłatne (source = grant) i kupione, tylko niewygasłe, z najbliższą datą ważności puli.
 // byExpiry: rozbicie POZOSTAŁYCH kredytów puli po terminie ważności (rosnąco; null = bez terminu),
 // żeby UI nie sugerowało, że cała pula wygasa w najbliższym terminie (review Codexa, p. 6).
-export function summarizeCreditPools(packages, todayISO = new Date().toISOString().slice(0, 10)) {
+export function summarizeCreditPools(packages, todayISO = businessTodayISO()) {
   const pools = {
     free: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },
     paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },

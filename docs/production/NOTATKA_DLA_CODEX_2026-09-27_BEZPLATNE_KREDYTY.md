@@ -1,8 +1,17 @@
-# Do review (v2) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
+# Do review (v3) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
 
-Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v2 = odpowiedź na review Codexa (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY.md`): wszystkie sześć ustaleń plus odziedziczone podwójne rozliczanie. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
+Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v3 = odpowiedź na review Codexa v2 (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY_V2.md`), niżej także pełna odpowiedź na review v1. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
 
-## Odpowiedź na review Codexa
+## Odpowiedź na review Codexa v2
+
+| # | Ustalenie | Co zmieniono |
+|---|---|---|
+| P1 | Spóźniony UPDATE JSON-u z Netlify kasował znacznik rozliczenia (odtworzone skryptem Codexa) | Funkcja Netlify **nie zapisuje już wiersza wysyłki**. Nowe RPC `mark_legacy_send_seen(p_send_id, p_company_id, p_channel, p_now)` (service_role) robi w JEDNEJ transakcji: blokada wiersza, następny status z AKTUALNEGO statusu pod blokadą (e-mail „opened” nie cofa „read”), scalanie **tylko pól odczytu** (`seenAt`/`seenChannel`/`readAt`/`readType`/`emailOpenedAt` przez coalesce — pierwszy zapis wygrywa), `email_opened_at`, potem `charge_legacy_send_first_seen` tą samą transakcją; `billingStatus` inne niż `charged` zapisywane tylko, gdy wiersz nie jest rozliczony. Pola rozliczeń zapisuje wyłącznie RPC rozliczenia — nic ich nie nadpisuje ani nie czyści. `legacy-send-seen.js` = wyszukanie firmy + RPC + mapowanie wyniku (kształt `results[]` bez zmian). Testy: SQL (app_list → read + rozliczenie; e-mail po read nie cofa i nie kasuje `readAt`; e-mail na sent → opened; brak firmy → `company_not_found` bez znacznika; kolejny odczyt bez kredytów **nie zamienia** `charged` na `no_package_available`; skipped nie dotyka wiersza), **runner równoległy app+email na tym samym wierszu z dwóch połączeń** (status `read`, oba znaczniki czasu, jedno pobranie), oraz Vitest `tests/legacy-send-seen-rpc.test.js` odtwarzający dokładnie scenariusz Codexa z atrapą bazy (A zwleka bez kredytów → admin przyznaje → B rozlicza → A kończy → C = `already_charged`; jedno pobranie; moduł nigdy nie woła `update()` na `legacy_sends`). |
+| P2 | Formularz edytowalny w trakcie żądania; „Ponów” z inną treścią | Stan formularza przeniesiony do czystej maszyny stanów `src/lib/grant-form.js`: pola zablokowane **od wysłania** (`busy`) do rozstrzygnięcia, edycja w toku ignorowana, przy wysyłce **snapshot payloadu** (`sent`) — „Ponów” wysyła dokładnie ten snapshot z tym samym kluczem, nie bieżące pola; zamknięcie z nieznanym wynikiem daje ostrzeżenie „sprawdź historię partii — nowe otwarcie to nowa partia, nie ponowienie”; niezgodność (22023 z bazy) = blokada bez „Ponów”. Test `tests/grant-form.test.js` odtwarza scenariusz: odroczona odpowiedź → próba edycji (bez efektu) → błąd → ponowienie identycznego payloadu i klucza. |
+| P2 | Dzień biznesowy niespójny (SQL `current_date`, JS UTC) | Jedna funkcja `public.business_today(p_at)` = `(p_at at time zone 'Europe/Warsaw')::date`, użyta w domyślnej ważności i walidacji przyznania, w kwalifikacji pakietu do pobrania i w **całym widoku `company_capacity`** (test sprawdza, że definicja widoku nie zawiera `current_date`). JS: `businessTodayISO()` jako domyślne „dziś” w `summarizeCreditPools`, w banerze nieprzeczytanych przyznań i na zakładce pakietów. Test granicy: 22:30 UTC 27.09 = 28.09 w Warszawie (SQL i JS). Zapisane daty istniejących pakietów nietknięte. |
+| — | Zbyt szeroki fallback na starą ścieżkę | **Fallback usunięty.** Brak RPC = wynik `error` dla wiersza, nic nie jest rozliczane na ślepo (test). Kolejność wdrożenia migracja → deploy jest obowiązkowa. Stara ścieżka i jej komentarz o bezpieczeństwie zniknęły z kodu. |
+
+## Odpowiedź na review Codexa v1
 
 | # | Ustalenie | Co zmieniono |
 |---|---|---|
@@ -27,6 +36,8 @@ Zapytanie tylko do odczytu: `docs/production/sql/KONTROLA_REKOMPENSAT_PRZED_MIGR
 - RPC `admin_grant_free_credits(p_company_ids, p_qty, p_reason, p_idempotency_key, p_message, p_note, p_expires_at)` — opis wyżej (p. 5). Domyślna ważność `current_date + 3 months` w bazie.
 - RPC `mark_credit_grant_seen(p_package_id)` — tylko własna firma lub admin.
 - RPC `charge_legacy_send_first_seen(p_send_id, p_company_id, p_now)` — tylko `service_role`; zwraca `charged/already_charged/no_package_available` z polami znacznika. Kwota informacyjna jak dotąd (`data.price` → `data.chargeAmount` → cena/kredyt), nienumeryczne wartości ignorowane.
+- RPC `mark_legacy_send_seen(p_send_id, p_company_id, p_channel, p_now)` — tylko `service_role`; jedyny zapis wiersza wysyłki ze ścieżki „odczytano” (patrz odpowiedź na review v2, P1).
+- `public.business_today(p_at)` — dzień biznesowy Europe/Warsaw dla ważności, kwalifikacji i salda.
 - `company_capacity` + `qty_remaining_free/paid`, `qty_total_free/paid`, `free_expiry`, `paid_expiry`; `security_invoker` i revoke z 054 ponowione.
 
 ## Front
@@ -38,8 +49,8 @@ Zapytanie tylko do odczytu: `docs/production/sql/KONTROLA_REKOMPENSAT_PRZED_MIGR
 
 ## Testy
 
-- **SQL** `supabase/tests/free_credit_grants_test.sql` + runner `scripts/free-credit-grants-sql-test.mjs` (embedded PG 17, 127.0.0.1:54329): wszystkie migracje od zera, nowa migracja dwa razy, ROLLBACK; faza 2 na osobnych połączeniach (równoległe przyznanie z tym samym kluczem, ostatni kredyt z dwóch odczytów, ta sama propozycja z dwóch sesji). **PASS 27.09 (v2)**.
-- **Vitest**: `tests/free-credit-pools.test.js` (pule, `byExpiry`, miesiące, dzień biznesowy, wrapper RPC — 10), `src/legacy/FreeCreditPools.test.jsx` (Finanse PL/EN, przypadek 3+3, dwa terminy, brak pul, pasek Wysyłek — 6). Pełny przebieg 27.09 (v2): **69 plików, 545/545** bez zmiennych Supabase; `npm run build` PASS.
+- **SQL** `supabase/tests/free_credit_grants_test.sql` + runner `scripts/free-credit-grants-sql-test.mjs` (embedded PG 17, 127.0.0.1:54329): wszystkie migracje od zera, nowa migracja dwa razy, test w ROLLBACK; faza 2 na dwóch osobnych połączeniach (równoległe przyznanie z tym samym kluczem, ostatni kredyt z dwóch odczytów, ta sama propozycja z dwóch sesji, **app + e-mail na tym samym wierszu**). **PASS 27.09 (v3)**.
+- **Vitest**: `tests/free-credit-pools.test.js` (pule, `byExpiry`, miesiące, dzień biznesowy, wrapper RPC — 10), `src/legacy/FreeCreditPools.test.jsx` (Finanse PL/EN, przypadek 3+3, dwa terminy, brak pul, pasek Wysyłek — 6), `tests/legacy-send-seen-rpc.test.js` (scenariusz P1 Codexa z atrapą bazy, e-mail po read, brak RPC = error, powiadomienia, mapowanie — 5), `tests/grant-form.test.js` (maszyna stanów formularza: edycja w toku ignorowana, retry z identycznym payloadem i kluczem, mismatch, walidacja — 4). Pełny przebieg 27.09 (v3): **71 plików, 554/554** bez zmiennych Supabase; `npm run build` PASS (27.09 v3).
 
 ## Wdrożenie (po akceptacji) — kolejność obowiązkowa
 
@@ -52,4 +63,5 @@ Zapytanie tylko do odczytu: `docs/production/sql/KONTROLA_REKOMPENSAT_PRZED_MIGR
 ## Ryzyka pozostałe
 
 - Duża liczba „Kredyty PreConnect: N z M” dalej liczy rezerwacje z wysyłek (semantyka sprzed zmiany); kafelki pul liczą z `packages`. Obie liczby są teraz podpisane i wyjaśnione, ale to nadal dwa źródła. Ujednolicenie (rezerwacja liczona w bazie) = osobny temat.
-- Fallback starej ścieżki rozliczania istnieje tylko na wypadek odwrotnej kolejności wdrożenia; po potwierdzeniu migracji na produkcji można go usunąć w kolejnej gałęzi.
+- Brak fallbacku: jeśli front i funkcje wejdą przed migracją, odczyty propozycji zwrócą `error` (nic nie zostanie rozliczone ani nadpisane) do czasu migracji. Dlatego kolejność migracja → deploy jest obowiązkowa, a między migracją a deployem nie przyznajemy kredytów.
+- `mark_legacy_send_seen` zastępuje jedyny zapis `legacy_sends` ze ścieżki odczytu; inne miejsca zapisujące ten wiersz (moderacja, zwroty, ręczne oznaczenia) nie były przedmiotem tej gałęzi i nadal piszą po swojemu — warto je przejrzeć pod kątem tego samego wzorca „przepisz cały JSON” w osobnym zadaniu.

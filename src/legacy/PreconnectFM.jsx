@@ -1,4 +1,5 @@
 import { offerEnumLabel, offerEnumOptions } from "../lib/offer-enums.js";
+import { openGrantForm, editGrantForm, addCompany as grantAddCompany, removeCompany as grantRemoveCompany, submitStart as grantSubmitStart, submitFailed as grantSubmitFailed, canSubmit as grantCanSubmit, closeNeedsWarning as grantCloseNeedsWarning, isEditable as grantIsEditable, GRANT_REASONS } from "../lib/grant-form.js";
 import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Suspense } from "react";
 import AdminFmPaymentDate from "../components/AdminFmPaymentDate";
 import { applyPaymentDate } from "../lib/fm-payment-date";
@@ -3049,7 +3050,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   useEffect(() => { refreshMyPackages(); }, [refreshMyPackages, dbCapacity]);
   const creditPools = useMemo(() => summarizeCreditPools(myPackages), [myPackages]);
   const unseenGrants = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = businessTodayISO();
     return (myPackages || []).filter(p => p?.source === "grant" && !p?.grant_seen_at && (!p?.expires_at || String(p.expires_at).slice(0, 10) >= today));
   }, [myPackages]);
   async function dismissGrant(pkgId) {
@@ -6880,7 +6881,7 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
     return () => { cancelled = true; };
   }, [co?.id]);
   // Dziś (YYYY-MM-DD) do oceny czy pakiet wygasł.
-  const _todayISO = new Date().toISOString().slice(0, 10);
+  const _todayISO = businessTodayISO();
 
   // [feat/bank-transfer-proforma / Lany #2] Generuje proformę dla przelewu.
   // NIE przechodzi przez PayU — pakiet zostaje "oczekuje na płatność".
@@ -10951,36 +10952,33 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
   const [savingPackageId, setSavingPackageId] = useState(null);
   // [feat/free-credit-grants] Formularz przyznania bezpłatnych kredytów. Klucz idempotencji
   // powstaje przy OTWARCIU formularza: retry / dwuklik z tym samym kluczem nie przyzna drugi raz.
+  // Stan formularza żyje w czystej maszynie stanów (src/lib/grant-form.js, testowanej osobno):
+  // klucz idempotencji od otwarcia, blokada pól OD WYSŁANIA do rozstrzygnięcia, snapshot payloadu
+  // dla „Ponów” (ten sam klucz nigdy nie wychodzi z inną treścią), ostrzeżenie przy zamknięciu
+  // z nieznanym wynikiem. Domyślna data = tylko podgląd; do RPC idzie null, liczy baza.
   const [grantModal, setGrantModal] = useState(null);
-  const [grantBusy, setGrantBusy] = useState(false);
   const [grantSearch, setGrantSearch] = useState("");
+  const grantBusy = !!grantModal?.busy;
   function openGrantModal(firmCo) {
-    // Podgląd domyślnej daty liczony jak w bazie (3 miesiące kalendarzowe, koniec miesiąca obcięty,
-    // dzień biznesowy Europe/Warsaw). Do RPC idzie null, dopóki admin nie zmieni pola —
-    // wtedy datę liczy Postgres w dniu przyznania.
     setGrantSearch("");
-    setGrantModal({
-      key: (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `grant-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      companyIds: firmCo?.id ? [String(firmCo.id)] : [],
-      qty: 1, reason: "compensation", message: "", note: "",
-      expiresAt: addCalendarMonthsISO(businessTodayISO(), 3), expiresTouched: false, locked: false,
-    });
+    setGrantModal(openGrantForm({ companyId: firmCo?.id || null }));
+  }
+  function closeGrantModal() {
+    if (!grantModal || grantModal.busy) return;
+    if (grantCloseNeedsWarning(grantModal)) fl(t("admin.firmy.grant_uncertain_close"), "warning");
+    setGrantModal(null);
   }
   async function submitGrant() {
-    if (!grantModal || grantBusy) return;
-    setGrantBusy(true);
+    const started = grantSubmitStart(grantModal);
+    if (!started.payload) return;
+    setGrantModal(started.state);
     try {
-      const res = await dbAdminGrantFreeCredits({
-        companyIds: grantModal.companyIds, qty: grantModal.qty, reason: grantModal.reason,
-        message: grantModal.message, note: grantModal.note,
-        expiresAt: grantModal.expiresTouched ? grantModal.expiresAt : null,
-        idempotencyKey: grantModal.key,
-      });
+      const res = await dbAdminGrantFreeCredits(started.payload);
       if (res?.already_done) {
         // wynik PIERWOTNEJ partii (ten sam klucz, ta sama treść) — nic nie dopisano
-        fl(t("admin.firmy.grant_toast_already", { date: fmtDateDMY(res?.created_at || ""), qty: res?.qty ?? Number(grantModal.qty), count: res?.company_count ?? grantModal.companyIds.length }), "warning");
+        fl(t("admin.firmy.grant_toast_already", { date: fmtDateDMY(res?.created_at || ""), qty: res?.qty ?? started.payload.qty, count: res?.company_count ?? started.payload.companyIds.length }), "warning");
       } else {
-        fl(t("admin.firmy.grant_toast_done_format", { qty: res?.qty ?? Number(grantModal.qty), count: res?.company_count ?? grantModal.companyIds.length, date: fmtDateDMY(res?.expires_at || grantModal.expiresAt) }));
+        fl(t("admin.firmy.grant_toast_done_format", { qty: res?.qty ?? started.payload.qty, count: res?.company_count ?? started.payload.companyIds.length, date: fmtDateDMY(res?.expires_at || started.state.expiresAt) }));
       }
       setGrantModal(null);
       refreshCapacity?.();
@@ -10988,21 +10986,17 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
       console.warn("[adminGrantFreeCredits]", e);
       const mismatch = /innymi parametrami/i.test(String(e?.message || ""));
       fl(mismatch ? t("admin.firmy.grant_mismatch_error") : (e?.message || t("admin.firmy.grant_toast_error")), "warning");
-      // Wynik niepewny (sieć / błąd): pola zablokowane, klucz bez zmian — wolno tylko ponowić
-      // identyczne żądanie albo zamknąć formularz (nowe otwarcie = nowy klucz).
-      setGrantModal(m => (m ? { ...m, locked: true } : m));
-    } finally {
-      setGrantBusy(false);
+      setGrantModal(m => (m ? grantSubmitFailed(m, { mismatch }) : m));
     }
   }
   const grantModalJsx = grantModal && (
-    <Modal title={t("admin.firmy.grant_modal_title")} onClose={()=>{ if (!grantBusy) setGrantModal(null); }}>
+    <Modal title={t("admin.firmy.grant_modal_title")} onClose={closeGrantModal}>
       {(() => {
         const gm = grantModal;
-        const up = (patch) => setGrantModal(m => (m ? { ...m, ...patch } : m));
+        const up = (patch) => setGrantModal(m => (m ? editGrantForm(m, patch) : m));
         const byId = (id) => (companies||[]).find(c => String(c.id) === String(id)) || (dbCapacity||[]).find(c => String(c.id) === String(id));
         const q = grantSearch.trim().toLowerCase();
-        const locked = !!gm.locked;
+        const locked = !grantIsEditable(gm);
         const candidates = (q && !locked) ? (dbCapacity||[]).filter(c => !gm.companyIds.includes(String(c.id)) && String(c.name||"").toLowerCase().includes(q)).slice(0, 8) : [];
         const qtyNum = Number.parseInt(String(gm.qty), 10);
         const qtyOk = Number.isFinite(qtyNum) && qtyNum >= 1 && qtyNum <= 100;
@@ -11013,36 +11007,37 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
         return (
           <div style={{ display:"grid",gap:12 }}>
             <Alrt type="info">{t("admin.firmy.grant_intro")}</Alrt>
-            {locked && <Alrt type="warning">{t("admin.firmy.grant_locked_hint")}</Alrt>}
+            {gm.locked && gm.error === "failed" && <Alrt type="warning">{t("admin.firmy.grant_locked_hint")}</Alrt>}
+            {gm.locked && gm.error === "mismatch" && <Alrt type="warning">{t("admin.firmy.grant_mismatch_error")}</Alrt>}
             <div>
               <label style={lbl}>{t("admin.firmy.grant_companies_label", { count: gm.companyIds.length })}</label>
               <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:6 }}>
                 {gm.companyIds.map(id => (
                   <span key={id} style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",background:"#f1f5f9",borderRadius:14,fontSize:12 }}>
                     {byId(id)?.name || id}
-                    <button type="button" disabled={locked} onClick={()=>{ if (!locked) up({ companyIds: gm.companyIds.filter(x => x !== id) }); }} title={t("admin.firmy.grant_remove_company")} style={{ border:"none",background:"none",cursor:"pointer",color:"#64748b",padding:0,lineHeight:1 }}><X size={12}/></button>
+                    <button type="button" disabled={locked} onClick={()=>setGrantModal(m => (m ? grantRemoveCompany(m, id) : m))} title={t("admin.firmy.grant_remove_company")} style={{ border:"none",background:"none",cursor:"pointer",color:"#64748b",padding:0,lineHeight:1 }}><X size={12}/></button>
                   </span>
                 ))}
               </div>
               <input value={grantSearch} disabled={locked} onChange={e=>setGrantSearch(e.target.value)} placeholder={t("admin.firmy.grant_add_company_placeholder")} style={inp}/>
               {candidates.length>0 && (
                 <div style={{ border:"1px solid #e2e8f0",borderRadius:7,marginTop:4,overflow:"hidden" }}>
-                  {candidates.map(c => <div key={c.id} onClick={()=>{ up({ companyIds: [...gm.companyIds, String(c.id)] }); setGrantSearch(""); }} style={{ padding:"7px 10px",fontSize:13,cursor:"pointer",borderBottom:"1px solid #f1f5f9" }}>{c.name}</div>)}
+                  {candidates.map(c => <div key={c.id} onClick={()=>{ setGrantModal(m => (m ? grantAddCompany(m, c.id) : m)); setGrantSearch(""); }} style={{ padding:"7px 10px",fontSize:13,cursor:"pointer",borderBottom:"1px solid #f1f5f9" }}>{c.name}</div>)}
                 </div>
               )}
             </div>
             <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10 }}>
               <div><label style={lbl}>{t("admin.firmy.grant_qty_label")}</label><input type="number" min={1} max={100} value={gm.qty} disabled={locked} onChange={e=>up({ qty: e.target.value })} style={inp}/></div>
-              <div><label style={lbl}>{t("admin.firmy.grant_reason_label")}</label><select value={gm.reason} disabled={locked} onChange={e=>up({ reason: e.target.value })} style={inp}>{["promotion","compensation","gift","other"].map(r => <option key={r} value={r}>{t(`admin.firmy.grant_reason_${r}`)}</option>)}</select></div>
-              <div><label style={lbl}>{t("admin.firmy.grant_expires_label")}</label><input type="date" value={gm.expiresAt} disabled={locked} onChange={e=>up({ expiresAt: e.target.value, expiresTouched: true })} style={inp}/><div style={hint}>{t("admin.firmy.grant_expires_hint")}</div></div>
+              <div><label style={lbl}>{t("admin.firmy.grant_reason_label")}</label><select value={gm.reason} disabled={locked} onChange={e=>up({ reason: e.target.value })} style={inp}>{GRANT_REASONS.map(r => <option key={r} value={r}>{t(`admin.firmy.grant_reason_${r}`)}</option>)}</select></div>
+              <div><label style={lbl}>{t("admin.firmy.grant_expires_label")}</label><input type="date" value={gm.expiresAt} disabled={locked} onChange={e=>up({ expiresAt: e.target.value })} style={inp}/><div style={hint}>{t("admin.firmy.grant_expires_hint")}</div></div>
             </div>
             <div><label style={lbl}>{t("admin.firmy.grant_message_label")}</label><textarea rows={3} value={gm.message} disabled={locked} onChange={e=>up({ message: e.target.value })} placeholder={t("admin.firmy.grant_message_placeholder")} style={{ ...inp,resize:"vertical" }}/><div style={hint}>{t("admin.firmy.grant_message_hint")}</div></div>
             <div><label style={lbl}>{t("admin.firmy.grant_note_label")}</label><textarea rows={2} value={gm.note} disabled={locked} onChange={e=>up({ note: e.target.value })} style={{ ...inp,resize:"vertical" }}/><div style={hint}>{t("admin.firmy.grant_note_hint")}</div></div>
             <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap" }}>
               <div style={{ fontSize:12,color:"#475569" }}>{t("admin.firmy.grant_summary_format", { qty: qtyOk ? qtyNum : 0, count: gm.companyIds.length, total, date: fmtDateDMY(gm.expiresAt) })}</div>
               <div style={{ display:"flex",gap:8 }}>
-                <Btn outline sm onClick={()=>setGrantModal(null)} disabled={grantBusy}>{t("admin.firmy.grant_cancel")}</Btn>
-                <Btn primary sm onClick={submitGrant} disabled={grantBusy || gm.companyIds.length===0 || !qtyOk || !gm.expiresAt}><Gift size={12}/> {grantBusy ? t("admin.firmy.grant_submitting") : locked ? t("admin.firmy.grant_retry_btn") : t("admin.firmy.grant_submit")}</Btn>
+                <Btn outline sm onClick={closeGrantModal} disabled={grantBusy}>{t("admin.firmy.grant_cancel")}</Btn>
+                <Btn primary sm onClick={submitGrant} disabled={grantBusy || (gm.locked ? gm.error === "mismatch" : !grantCanSubmit(gm))}><Gift size={12}/> {grantBusy ? t("admin.firmy.grant_submitting") : gm.locked ? t("admin.firmy.grant_retry_btn") : t("admin.firmy.grant_submit")}</Btn>
               </div>
             </div>
           </div>

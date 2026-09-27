@@ -50,6 +50,8 @@ select pg_temp.ok((select active=false and price_eur=0 from public.package_plans
 select pg_temp.ok((select count(*)=6 from information_schema.columns where table_schema='public' and table_name='company_capacity'
   and column_name in ('qty_remaining_free','qty_remaining_paid','qty_total_free','qty_total_paid','free_expiry','paid_expiry')),'company_capacity ma kolumny pul');
 select pg_temp.ok((select reloptions::text like '%security_invoker=true%' from pg_class where relname='company_capacity'),'company_capacity zachowuje security_invoker');
+select pg_temp.ok((select public.business_today('2026-09-27T22:30:00Z') = date '2026-09-28' and public.business_today('2026-09-27T21:30:00Z') = date '2026-09-27'),'business_today: 22:30 UTC 27.09 = 28.09 w Warszawie');
+select pg_temp.ok((select pg_get_viewdef('public.company_capacity'::regclass) like '%business_today()%' and pg_get_viewdef('public.company_capacity'::regclass) not like '%current_date%'),'company_capacity liczy po dniu biznesowym, nie current_date');
 
 -- stary wiersz zakupu: DEFAULT source = purchase, bez klasyfikacji po cenie zero
 insert into public.packages(company_id,plan,qty_total,qty_used,price_paid,currency,expires_at,payment_ref)
@@ -66,6 +68,7 @@ select pg_temp.login('supplier'); set local role authenticated;
 select pg_temp.fails($q$select public.admin_grant_free_credits(array[(select v from ids where k='co')],1,'gift','supplier-try-00000001')$q$,'42501','dostawca nie może przyznać kredytów');
 select pg_temp.denied($q$insert into public.package_grant_batches(idempotency_key,created_by,qty,reason,expires_at,company_ids,company_count) values ('x-00000001',(select v from ids where k='supplier'),1,'gift',current_date+1,array[(select v from ids where k='co')],1)$q$);
 select pg_temp.denied($q$select public.charge_legacy_send_first_seen((select v from ids where k='send1'),(select v from ids where k='co'))$q$);
+select pg_temp.denied($q$select public.mark_legacy_send_seen((select v from ids where k='send1'),(select v from ids where k='co'),'app_list')$q$);
 reset role;
 
 -- ── admin: walidacje ──
@@ -84,11 +87,11 @@ create temp table res as select public.admin_grant_free_credits(
   array[(select v from ids where k='co2'),(select v from ids where k='co'),(select v from ids where k='co')],  -- duplikat + inna kolejność
   2,'compensation','batch-A-00000001','Rekompensata za odwołane spotkania','notatka wewnętrzna') as r;
 select pg_temp.ok((select (r->>'created')::int=2 and (r->>'already_done')::boolean=false and (r->>'company_count')::int=2 from res),'partia A: 2 firmy, 2 wiersze, duplikat wejścia zdeduplikowany');
-select pg_temp.ok((select (r->>'expires_at')::date = (current_date + interval '3 months')::date from res),'domyślna ważność = 3 miesiące od dziś');
+select pg_temp.ok((select (r->>'expires_at')::date = (public.business_today() + interval '3 months')::date from res),'domyślna ważność = 3 miesiące od dziś');
 select pg_temp.ok((select count(*)=2 from public.packages where source='grant' and plan='grant' and qty_total=2 and qty_used=0 and price_paid=0
    and grant_reason='compensation' and grant_message='Rekompensata za odwołane spotkania'
    and granted_by=pg_temp.id('admin') and granted_at is not null and grant_batch_id=(select (r->>'batch_id')::uuid from res)
-   and expires_at=(current_date + interval '3 months')::date and payment_ref like 'grant:%'),'wiersze packages partii A kompletne');
+   and expires_at=(public.business_today() + interval '3 months')::date and payment_ref like 'grant:%'),'wiersze packages partii A kompletne');
 select pg_temp.ok((select note='notatka wewnętrzna' from public.package_grant_batches where idempotency_key='batch-A-00000001'),'notatka wewnętrzna zapisana TYLKO w partii');
 select pg_temp.ok((select count(*)=2 from public.wallet_tx where type='adjustment' and amount=0 and meta->>'kind'='free_credit_grant'
    and (meta->>'qty')::int=2 and meta->>'reason'='compensation'),'wallet_tx: ślad przyznania per firma');
@@ -118,7 +121,7 @@ select pg_temp.ok((select (r->>'created')::int=1 and (r->>'expires_at')::date=cu
 
 -- ── company_capacity: pule ──
 select pg_temp.ok((select qty_remaining_free=3 and qty_total_free=3 and qty_remaining_paid=1 and qty_total_paid=1
-   and free_expiry=(current_date + interval '3 months')::date and paid_expiry=current_date+30
+   and free_expiry=(public.business_today() + interval '3 months')::date and paid_expiry=current_date+30
    from public.company_capacity where id=pg_temp.id('co')),'company_capacity rozbija firmę A na pule');
 select pg_temp.ok((select qty_remaining_free=2 and qty_remaining_paid=0 and paid_expiry is null from public.company_capacity where id=pg_temp.id('co2')),'company_capacity firma B: tylko bezpłatne');
 select pg_temp.ok((select qty_remaining=4 and qty_total=4 from public.company_capacity where id=pg_temp.id('co')),'company_capacity: sumy jak dotąd');
@@ -157,6 +160,39 @@ select pg_temp.ok((select r->>'billing_status'='no_package_available' and (r->>'
 select pg_temp.ok((select data->>'billingStatus' is null from public.legacy_sends where legacy_id=990005),'bez kredytu brak znacznika na wysyłce');
 select pg_temp.fails($q$select public.charge_legacy_send_first_seen(gen_random_uuid(),(select v from ids where k='co'))$q$,'P0002','nieistniejąca wysyłka');
 
+-- ── mark_legacy_send_seen: „odczytano” + rozliczenie w jednej transakcji, scalanie tylko pól odczytu ──
+-- firma B ma 2 bezpłatne kredyty (partia A); nowe wysyłki dla firmy B
+insert into public.legacy_sends(id,legacy_id,supplier_legacy_id,retailer_id,status,data) values
+ (gen_random_uuid(),990201,'legacy-co-b',1,'sent','{"supplierId":"legacy-co-b","custom":"keep-me"}'),
+ (gen_random_uuid(),990202,'legacy-co-b',1,'sent','{}'),
+ (gen_random_uuid(),990203,'legacy-co-b',1,'rejected','{}');
+select pg_temp.fails($q$select public.mark_legacy_send_seen((select id from public.legacy_sends where legacy_id=990201),(select v from ids where k='co2'),'sms')$q$,'22023','nieznany kanał odrzucony');
+create temp table ms1 as select public.mark_legacy_send_seen((select id from public.legacy_sends where legacy_id=990201),pg_temp.id('co2'),'app_list','2026-09-27T09:00:00Z') as r;
+select pg_temp.ok((select (r->>'skipped')::boolean=false and r->>'previous_status'='sent' and r->>'status'='read'
+   and r->'data'->>'seenAt'='2026-09-27T09:00:00.000Z' and r->'data'->>'readAt'='2026-09-27T09:00:00.000Z' and r->'data'->>'readType'='auto_buyer_preconnect_list'
+   and r->'data'->>'seenChannel'='app_list' and r->'data'->>'custom'='keep-me' and r->'data'->>'billingStatus'='charged' and r->'data'->>'packageSource'='grant'
+   and (r->'billing'->>'charged')::boolean and (r->>'supplier_notified_before')::boolean=false from ms1),'app_list: status read, pola odczytu, reszta JSON zachowana, rozliczone z bezpłatnych w tej samej transakcji');
+select pg_temp.ok((select status='read' and data->>'status'='read' and email_opened_at is null from public.legacy_sends where legacy_id=990201),'kolumna status i data.status = read; email_opened_at nietknięte');
+-- e-mail PO odczycie: nie cofa read, nie kasuje readAt, nie pobiera drugi raz, ustawia emailOpenedAt
+create temp table ms2 as select public.mark_legacy_send_seen((select id from public.legacy_sends where legacy_id=990201),pg_temp.id('co2'),'email','2026-09-27T09:05:00Z') as r;
+select pg_temp.ok((select r->>'previous_status'='read' and r->>'status'='read' and r->'data'->>'readAt'='2026-09-27T09:00:00.000Z' and r->'data'->>'emailOpenedAt'='2026-09-27T09:05:00.000Z'
+   and (r->'billing'->>'already_charged')::boolean and r->'billing'->>'billing_status'='charged' from ms2),'email po read: status zostaje read, readAt bez zmian, already_charged');
+select pg_temp.ok((select email_opened_at='2026-09-27T09:05:00Z'::timestamptz and data->>'chargeTxId' is not null from public.legacy_sends where legacy_id=990201),'email_opened_at ustawione, znacznik rozliczenia nienaruszony');
+select pg_temp.ok((select qty_used=1 from public.packages where company_id=pg_temp.id('co2') and source='grant'),'firma B: jedno pobranie po dwóch kanałach');
+-- e-mail na 'sent' → 'opened'; bez firmy → company_not_found, bez znacznika rozliczenia
+create temp table ms3 as select public.mark_legacy_send_seen((select id from public.legacy_sends where legacy_id=990202),null,'email','2026-09-27T09:10:00Z') as r;
+select pg_temp.ok((select r->>'status'='opened' and r->'billing'->>'billing_status'='company_not_found' and r->'data'->>'billingStatus'='company_not_found' and (r->'data'->>'chargeAt') is null from ms3),'email na sent: opened, company_not_found bez znacznika');
+-- potem odczyt w aplikacji z firmą: opened → read, rozliczone; billingStatus nadpisany na charged
+create temp table ms4 as select public.mark_legacy_send_seen((select id from public.legacy_sends where legacy_id=990202),pg_temp.id('co2'),'app_detail','2026-09-27T09:20:00Z') as r;
+select pg_temp.ok((select r->>'previous_status'='opened' and r->>'status'='read' and r->'data'->>'readType'='auto_buyer_open' and r->'data'->>'billingStatus'='charged' and (r->'billing'->>'charged')::boolean from ms4),'opened → read w aplikacji, rozliczone');
+-- brak kredytów NIE nadpisuje 'charged' (to jest dokładnie scenariusz P1 Codexa, tym razem w bazie)
+select pg_temp.ok((select r->'data'->>'billingStatus'='charged' and (r->'billing'->>'already_charged')::boolean from (select public.mark_legacy_send_seen((select id from public.legacy_sends where legacy_id=990202),pg_temp.id('co2'),'app_list') as r) x),'kolejny odczyt nie zamienia charged na no_package_available');
+select pg_temp.ok((select qty_used=2 from public.packages where company_id=pg_temp.id('co2') and source='grant'),'firma B: dwa pobrania za dwie propozycje, nie więcej');
+-- status spoza listy → skipped, bez zmian
+select pg_temp.ok((select (r->>'skipped')::boolean and r->>'reason'='status_rejected' from (select public.mark_legacy_send_seen((select id from public.legacy_sends where legacy_id=990203),pg_temp.id('co2'),'app_list') as r) x),'rejected: skipped');
+select pg_temp.ok((select status='rejected' and data='{}'::jsonb from public.legacy_sends where legacy_id=990203),'skipped nie dotyka wiersza');
+select pg_temp.fails($q$select public.mark_legacy_send_seen(gen_random_uuid(),(select v from ids where k='co2'),'app_list')$q$,'P0002','nieistniejąca wysyłka (mark)');
+
 -- ── dostawca: widzi własne przyznanie bez notatki, zamyka powiadomienie tylko u siebie ──
 select pg_temp.login('supplier'); set local role authenticated;
 select pg_temp.ok((select count(*)=2 from public.packages where source='grant' and grant_seen_at is null),'dostawca A widzi swoje 2 nieprzeczytane przyznania');
@@ -183,5 +219,5 @@ select pg_temp.fails($q$select public.admin_grant_free_credits(array[(select v f
 select pg_temp.denied($q$select public.charge_legacy_send_first_seen((select v from ids where k='send1'),(select v from ids where k='co'))$q$);
 reset role;
 
-select 'PASS: free credit grants v2 — źródło/powód na pakiecie, notatka tylko w partii, 3 miesiące w bazie, powtórka klucza zgodna/niezgodna, RLS, pule, atomowe rozliczenie grant→purchase→ważność z idempotencją' result;
+select 'PASS: free credit grants v3 — źródło/powód na pakiecie, notatka tylko w partii, dzień biznesowy, powtórka klucza zgodna/niezgodna, RLS, pule, atomowe rozliczenie, mark_legacy_send_seen scala tylko pola odczytu' result;
 rollback;
