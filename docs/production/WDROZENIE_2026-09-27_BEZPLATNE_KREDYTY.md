@@ -43,6 +43,8 @@ Odciski na pracującej produkcji: `packages` (poza `qty_used`), `package_plans` 
 cd "C:/Users/Artur/OneDrive/Dokumenty/Claude/Projects/Fresh Market 2026" && git fetch origin && git tag prod-rollback-2026-09-27-grants 37e90c7 && git push origin refs/tags/prod-rollback-2026-09-27-grants
 ```
 
+**Wykonane 27.09 (Claude):** tag `prod-rollback-2026-09-27-grants` = 37e90c7 utworzony i wypchnięty. Deploy Netlify opublikowany przed wdrożeniem: `6ab7ad014869860007bfe884` (37e90c7, published 26.09 13:31) — do „Publish deploy” przy rollbacku.
+
 Warunek: `git log --oneline -1 origin/main` nadal pokazuje 37e90c7. Jeśli `main` się zmienił, najpierw `git merge origin/main` na gałęzi, ponowny `npm test` i `npm run build`, dopiero potem dalej.
 
 ## Krok 3 — migracja (SQL Editor, jedna transakcja)
