@@ -15,8 +15,8 @@ where table_schema = 'public' and table_name = 'packages'
 -- B. Stare wiersze = purchase (DEFAULT), zero grant ---------------------
 select source, grant_reason, grant_historical, count(*), sum(qty_total), sum(qty_used)
 from public.packages group by 1,2,3 order by 1,2;
--- oczekiwane TUŻ PO MIGRACJI: tylko purchase. PO ODNOTOWANIU HISTORII (krok 4b, po deployu): grant/registration/true = 108,
--- grant/compensation/true = 123, legacy = 5, reszta purchase (4 zakupy z referencją); sumy qty_total/qty_used identyczne jak w części A5 uzgodnienia.
+-- oczekiwane TUŻ PO MIGRACJI: tylko purchase. PO ODNOTOWANIU HISTORII (krok 4b, po deployu): grant/registration/true = 75,
+-- grant/compensation/true = 123, legacy = 38, reszta purchase (4 zakupy z referencją); sumy qty_total/qty_used identyczne jak w części A5 uzgodnienia.
 
 -- C. Plan katalogowy grant: nieaktywny, cena 0 --------------------------
 select id, tier, qty, price_eur, active, '(grant, STANDARD, 1, 0, false)' as oczekiwane
@@ -65,7 +65,7 @@ select public.business_today() as dzien_biznesowy, now() at time zone 'Europe/Wa
 
 -- H. Suma pojemności w widoku bez zmian wobec stanu sprzed migracji ------
 select sum(qty_remaining) as kredyty_wolne, sum(qty_remaining_free) as bezplatne, sum(qty_remaining_paid) as kupione, sum(qty_remaining_legacy) as nieustalone,
-       'tuż po migracji: bezplatne = 0; po kroku 4b: bezplatne = pozostałe z 108+123, nieustalone = pozostałe z 5; kredyty_wolne ZAWSZE = kredyty_wolne_dzis sprzed migracji (ten sam dzień)' as oczekiwane
+       'tuż po migracji: bezplatne = 0; po kroku 4b: bezplatne = pozostałe z 75+123, nieustalone = pozostałe z 38; kredyty_wolne ZAWSZE = kredyty_wolne_dzis sprzed migracji (ten sam dzień)' as oczekiwane
 from public.company_capacity;
 
 -- I. ODCISKI — identyczne jak przed migracją (te same zapytania) ---------

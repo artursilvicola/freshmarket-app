@@ -1,8 +1,18 @@
-# Do review (v8) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
+# Pakiet wdrożeniowy (v9) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
+
+## Aktualna decyzja Artura po review v8 — 75 / 123 / 38
+
+Artur odpowiedział na pytanie o pochodzenie 33 dodatkowych pakietów std_5: **„Nie mam pewności — oznacz neutralnie”**. Ta decyzja zastępuje klasyfikację tych 33 pakietów jako prezentów rejestracyjnych w v8. Nie trzeba ponownie pytać o ich opis.
+
+Codex zmienił obie listy SQL oraz runbook i kontrolę po migracji: **75 potwierdzonych prezentów rejestracyjnych, 123 rekompensaty, 38 pakietów neutralnych `legacy` (33 std_5 + 5 std_1)**. Pozostałe 4 zakupy pozostają `purchase`. Łącznie nadal 236 historycznych pakietów do odnotowania. Źródło `legacy` korzysta z istniejącej neutralnej puli i jej kolejności rozliczania; nie dopisujemy niepotwierdzonego powodu ani nie obiecujemy pierwszeństwa `grant`.
+
+**Testy v9 wykonane przez Codexa:** pełny runner SQL PASS na 240 pakietach z odczytu produkcji; A = 0 brakujących, 0 różnic, 123/123, 0 poza listą; B = 75/123/38. Porównanie każdego ID potwierdza niezmienione qty_total, qty_used i expires_at oraz źródło zgodne z decyzją. Suma wszystkich pakietów: 681 kredytów / 73 zużyte, bez zmian. Regresje równoległości i odmowy zapisu przy rozbieżności nadal PASS. Ten sam zmieniony test uruchomiony najpierw na starym manifeście v8 poprawnie wykazał błąd 108 zamiast 75 prezentów. Brak nowych banerów i wiadomości. Aplikacja i migracja pozostają niezmienione; Vitest/build nie powtarzano dla samych list SQL i dokumentacji.
+
+Logi lokalne: `1FMK2026/outputs/review-grants-v9-before-fix.log` (oczekiwany FAIL na v8) i `review-grants-v9-sql.log` (PASS na v9). **Produkcja nadal bez zmian: nie wykonywano migracji, zapisu historii, przyznań ani deployu.** Dalsza kolejność z runbooka: świeży odczyt A → kopia → migracja → kontrola → deploy → B → test. Sekcje v8 i starsze poniżej dokumentują wcześniejsze propozycje, nie zastępują tej decyzji.
 
 Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v8 = manifest z odczytu produkcji po kontroli Codexa (`KONTROLA_CODEX_2026-09-27_PRODUKCJA_PRZED_KREDYTAMI.md`); niżej v7 (zabezpieczenie części B), v6, v5 i odpowiedzi na review v3, v2, v1. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
 
-## v8 — manifest z odczytu produkcji (108 / 123 / 5)
+## v8 — wcześniejszy manifest z odczytu produkcji (108 / 123 / 5, zastąpiony przez v9)
 
 Kontrola Codexa na produkcji (27.09 18:46, cała tabela `packages`, 240 wierszy) wykazała 35 bezpłatnych pakietów poza manifestem z archiwum: 33 × std_5/5/cena 0/bez referencji (33 firmy spoza archiwum, 14.07–21.09) i 2 × std_1/cena 0/bez referencji (12.08). Archiwum 23.09 obejmowało tylko 93 firmy z rekompensatą — nie całą tabelę.
 

@@ -130,9 +130,14 @@ try {
   const liveFile = arch + "kredyty-produkcja-odczyt-2026-09-27.json", archFile = arch + "kredyty-preconnect-po-2026-09-23.json";
   if (fs.existsSync(liveFile) || fs.existsSync(archFile)) {
     const po = fs.existsSync(liveFile) ? JSON.parse(fs.readFileSync(liveFile, "utf8")).packages : JSON.parse(fs.readFileSync(archFile, "utf8")).data.packages_after;
-    const isReg = (p) => p.plan === "std_5" && Number(p.qty_total) === 5 && Number(p.price_paid) === 0 && !p.payment_ref;
+    // Artur confirmed only the original 75 registration gifts. The additional
+    // 33 std_5 packages have an unconfirmed reason and must stay neutral.
+    const confirmedRegistration = new Set(JSON.parse(fs.readFileSync(archFile, "utf8")).data.packages_after
+      .filter((p) => p.plan === "std_5" && Number(p.qty_total) === 5 && Number(p.price_paid) === 0 && !p.payment_ref)
+      .map((p) => p.id));
+    const isReg = (p) => confirmedRegistration.has(p.id);
     const isComp = (p) => String(p.payment_ref || "").startsWith("compensation:fm2026:");
-    const isLeg = (p) => p.plan === "std_1" && Number(p.price_paid) === 0 && !p.payment_ref;
+    const isLeg = (p) => !isReg(p) && Number(p.price_paid) === 0 && !p.payment_ref;
     const EXP = { reg: po.filter(isReg).length, comp: po.filter(isComp).length, leg: po.filter(isLeg).length };
     EXP.marked = EXP.reg + EXP.comp + EXP.leg;
     console.log("fixture:", fs.existsSync(liveFile) ? "odczyt produkcji 27.09" : "archiwum 23.09", po.length, "pakietów; oczekiwane", JSON.stringify(EXP));
@@ -159,6 +164,19 @@ try {
       const byL = Object.fromEntries(ctrl.map((x) => [x.lista, x]));
       ok(Number(byL.rejestracja.pakietow) === EXP.reg && byL.rejestracja.source === "grant" && byL.rejestracja.grant_reason === "registration" && byL.rejestracja.historyczne && byL.rejestracja.bez_banera
         && Number(byL.rekompensata.pakietow) === EXP.comp && byL.rekompensata.grant_reason === "compensation" && Number(byL.nieustalone.pakietow) === EXP.leg && byL.nieustalone.source === "legacy", "zapis B po migracji: " + EXP.reg + " rejestracja / " + EXP.comp + " rekompensata / " + EXP.leg + " nieustalone, bez banera");
+      const actualPackages = (await d2.query("select id, source, grant_reason, grant_historical, grant_seen_at, qty_total, qty_used, expires_at::text from packages order by id")).rows;
+      const beforeById = new Map(po.map((p) => [p.id, p]));
+      const unconfirmedFive = po.filter((p) => isLeg(p) && p.plan === "std_5");
+      ok(unconfirmedFive.length === (fs.existsSync(liveFile) ? 33 : 0), "fixture zawiera 33 dodatkowe pakiety std_5 bez potwierdzonego powodu");
+      ok(actualPackages.every((p) => {
+        const previous = beforeById.get(p.id);
+        const expectedSource = isReg(previous) || isComp(previous) ? "grant" : isLeg(previous) ? "legacy" : "purchase";
+        const expectedReason = isReg(previous) ? "registration" : isComp(previous) ? "compensation" : null;
+        return p.source === expectedSource && p.grant_reason === expectedReason
+          && p.qty_total === Number(previous.qty_total) && p.qty_used === Number(previous.qty_used)
+          && p.expires_at === String(previous.expires_at).slice(0, 10)
+          && (expectedSource !== "grant" || (p.grant_historical && p.grant_seen_at));
+      }), "każdy ID: 33 dodatkowe std_5 neutralne, 75 prezentów i 123 rekompensaty zachowane; salda, zużycie i terminy bez zmian, brak nowego banera");
       const sums = await d2.query("select sum(qty_total)::int t, sum(qty_used)::int u from public.packages");
       const expT = po.reduce((a, p) => a + Number(p.qty_total), 0), expU = po.reduce((a, p) => a + Number(p.qty_used), 0);
       ok(sums.rows[0].t === expT && sums.rows[0].u === expU, "zapis B nie zmienia sald ani zużycia (" + expT + "/" + expU + ")");
