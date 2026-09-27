@@ -69,6 +69,7 @@ select pg_temp.fails($q$select public.admin_grant_free_credits(array[(select v f
 select pg_temp.denied($q$insert into public.package_grant_batches(idempotency_key,created_by,qty,reason,expires_at,company_ids,company_count) values ('x-00000001',(select v from ids where k='supplier'),1,'gift',current_date+1,array[(select v from ids where k='co')],1)$q$);
 select pg_temp.denied($q$select public.charge_legacy_send_first_seen((select v from ids where k='send1'),(select v from ids where k='co'))$q$);
 select pg_temp.denied($q$select public.mark_legacy_send_seen((select v from ids where k='send1'),(select v from ids where k='co'),'app_list')$q$);
+select pg_temp.denied($q$select public.mark_legacy_sends_supplier_notified(array[990001]::bigint[],'app_list',1)$q$);
 reset role;
 
 -- ── admin: walidacje ──
@@ -193,6 +194,23 @@ select pg_temp.ok((select (r->>'skipped')::boolean and r->>'reason'='status_reje
 select pg_temp.ok((select status='rejected' and data='{}'::jsonb from public.legacy_sends where legacy_id=990203),'skipped nie dotyka wiersza');
 select pg_temp.fails($q$select public.mark_legacy_send_seen(gen_random_uuid(),(select v from ids where k='co2'),'app_list')$q$,'P0002','nieistniejąca wysyłka (mark)');
 
+-- ── mark_legacy_sends_supplier_notified: tylko 3 pola, na aktualnym wierszu, idempotentnie ──
+-- 990201 jest rozliczony (charged, read, emailOpenedAt) — znacznik powiadomienia nie może niczego zdjąć
+create temp table sn1 as select public.mark_legacy_sends_supplier_notified(array[990201,990202,990203]::bigint[],'app_list',2,'2026-09-27T09:30:00Z') as r;
+select pg_temp.ok((select r=3 from sn1),'znacznik powiadomienia: 3 wiersze oznaczone');
+select pg_temp.ok((select data->>'supplierNotifiedAt'='2026-09-27T09:30:00.000Z' and data->>'supplierNotifiedVia'='app_list' and (data->>'supplierNotifiedBatchSize')::int=2
+   and data->>'billingStatus'='charged' and data->>'packageSource'='grant' and (data->>'chargeTxId') is not null and data->>'readAt'='2026-09-27T09:00:00.000Z'
+   and data->>'emailOpenedAt'='2026-09-27T09:05:00.000Z' and data->>'custom'='keep-me' and status='read' from public.legacy_sends where legacy_id=990201),'powiadomienie nie kasuje rozliczenia, odczytu ani reszty JSON-u');
+select pg_temp.ok((select data='{"supplierNotifiedAt":"2026-09-27T09:30:00.000Z","supplierNotifiedVia":"app_list","supplierNotifiedBatchSize":2}'::jsonb and status='rejected' from public.legacy_sends where legacy_id=990203),'na pustym JSON-ie tylko 3 pola; status nietknięty');
+select pg_temp.ok((select public.mark_legacy_sends_supplier_notified(array[990201]::bigint[],'email',1,'2026-09-27T10:00:00Z')=0),'powtórka: 0 wierszy (już powiadomione)');
+select pg_temp.ok((select data->>'supplierNotifiedAt'='2026-09-27T09:30:00.000Z' and data->>'supplierNotifiedVia'='app_list' from public.legacy_sends where legacy_id=990201),'powtórka nie zmienia pierwotnego znacznika');
+select pg_temp.ok((select public.mark_legacy_sends_supplier_notified(array[]::bigint[],'email',1)=0 and public.mark_legacy_sends_supplier_notified(null,'email',1)=0),'pusta lista = 0');
+-- rozliczenie PO powiadomieniu nadal działa (kolejność bez znaczenia): nowa wysyłka, najpierw powiadomienie, potem odczyt
+insert into public.legacy_sends(id,legacy_id,supplier_legacy_id,retailer_id,status,data) values (gen_random_uuid(),990204,'legacy-co-b',1,'sent','{}');
+select public.mark_legacy_sends_supplier_notified(array[990204]::bigint[],'app_list',1);
+update public.packages set qty_total = qty_total + 1 where company_id=pg_temp.id('co2') and source='grant';
+select pg_temp.ok((select (r->'billing'->>'charged')::boolean and (r->>'supplier_notified_before')::boolean and r->'data'->>'supplierNotifiedAt' is not null from (select public.mark_legacy_send_seen((select id from public.legacy_sends where legacy_id=990204),pg_temp.id('co2'),'app_list') as r) x),'odczyt po powiadomieniu: rozliczone, supplier_notified_before=true, znacznik powiadomienia zachowany');
+
 -- ── dostawca: widzi własne przyznanie bez notatki, zamyka powiadomienie tylko u siebie ──
 select pg_temp.login('supplier'); set local role authenticated;
 select pg_temp.ok((select count(*)=2 from public.packages where source='grant' and grant_seen_at is null),'dostawca A widzi swoje 2 nieprzeczytane przyznania');
@@ -219,5 +237,5 @@ select pg_temp.fails($q$select public.admin_grant_free_credits(array[(select v f
 select pg_temp.denied($q$select public.charge_legacy_send_first_seen((select v from ids where k='send1'),(select v from ids where k='co'))$q$);
 reset role;
 
-select 'PASS: free credit grants v3 — źródło/powód na pakiecie, notatka tylko w partii, dzień biznesowy, powtórka klucza zgodna/niezgodna, RLS, pule, atomowe rozliczenie, mark_legacy_send_seen scala tylko pola odczytu' result;
+select 'PASS: free credit grants v4 — źródło/powód na pakiecie, notatka tylko w partii, dzień biznesowy, powtórka klucza zgodna/niezgodna, RLS, pule, atomowe rozliczenie, mark_legacy_send_seen scala tylko pola odczytu, znacznik powiadomienia scala tylko 3 pola' result;
 rollback;

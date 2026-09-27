@@ -31,6 +31,10 @@
 --      tylko dozwolonych pól na AKTUALNYM wierszu pod blokadą. Funkcja Netlify nie
 --      zapisuje już JSON-u wysyłki, więc spóźniony zapis nie może skasować znacznika
 --      rozliczenia (review Codexa v2, P1).
+--   9. RPC `mark_legacy_sends_supplier_notified` — znacznik wysłanego powiadomienia
+--      dostawcy scalany z AKTUALNYM JSON-em (tylko supplierNotifiedAt/Via/BatchSize);
+--      notifier nie zapisuje już całego JSON-u ze snapshotu sprzed wysyłki maila
+--      (review Codexa v3, P1).
 --
 -- Stare wiersze `packages` dostają source = 'purchase' przez DEFAULT.
 -- NIE klasyfikujemy ich po cenie zero — ewentualne wcześniejsze rekompensaty
@@ -556,6 +560,47 @@ $$;
 
 revoke all on function public.mark_legacy_send_seen(uuid, uuid, text, timestamptz) from public, anon, authenticated;
 grant execute on function public.mark_legacy_send_seen(uuid, uuid, text, timestamptz) to service_role;
+
+-- ── 5c. RPC: znacznik powiadomienia dostawcy o odczycie ────────────────────
+-- Notifier (supplier-read-notify.js) czeka na odpowiedź poczty; w tym czasie inny
+-- odczyt może rozliczyć kredyt. Dotąd notifier zapisywał CAŁY JSON ze snapshotu
+-- sprzed maila i kasował znacznik rozliczenia. Tu: jedna instrukcja UPDATE scalająca
+-- wyłącznie trzy pola powiadomienia z aktualnym wierszem; idempotentna (tylko wiersze
+-- bez supplierNotifiedAt). Status, pola odczytu i rozliczenia nietknięte.
+create or replace function public.mark_legacy_sends_supplier_notified(
+  p_legacy_ids bigint[],
+  p_via text default null,
+  p_batch_size integer default null,
+  p_notified_at timestamptz default now()
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_rows integer;
+  v_at text := to_char(p_notified_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
+begin
+  if p_legacy_ids is null or array_length(p_legacy_ids, 1) is null then
+    return 0;
+  end if;
+  update public.legacy_sends
+     set data = coalesce(data, '{}'::jsonb) || jsonb_strip_nulls(jsonb_build_object(
+           'supplierNotifiedAt', v_at,
+           'supplierNotifiedVia', p_via,
+           'supplierNotifiedBatchSize', p_batch_size
+         )),
+         updated_at = now()
+   where legacy_id = any(p_legacy_ids)
+     and (data->>'supplierNotifiedAt') is null;
+  get diagnostics v_rows = row_count;
+  return v_rows;
+end;
+$$;
+
+revoke all on function public.mark_legacy_sends_supplier_notified(bigint[], text, integer, timestamptz) from public, anon, authenticated;
+grant execute on function public.mark_legacy_sends_supplier_notified(bigint[], text, integer, timestamptz) to service_role;
 
 -- ── 6. company_capacity: rozbicie na pule ───────────────────────────────────
 -- CREATE OR REPLACE VIEW pozwala tylko DOPISAĆ kolumny na końcu — istniejąca

@@ -75,7 +75,17 @@ try {
   const row = fin.rows[0];
   ok(row.status === "read" && row.data.status === "read" && row.data.readAt && row.data.emailOpenedAt && row.data.custom === "x", "równolegle app+email: status read (email nie cofa), readAt i emailOpenedAt oba zapisane, reszta JSON zachowana");
   ok(row.data.billingStatus === "charged" && row.used === 3 && row.tx === 3 && [m1, m2].filter((x) => x.billing.charged).length === 1, "równolegle app+email: dokładnie jedno pobranie, znacznik nienaruszony");
-  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK; concurrency (grant key, last credit, same send, app+email)");
+  // e) znacznik powiadomienia równolegle z rozliczeniem tego samego wiersza
+  await db.query(`update public.packages set qty_total = qty_total + 1 where company_id='${CO}' and source='grant'`);
+  await db.query(`insert into public.legacy_sends(id,legacy_id,supplier_legacy_id,retailer_id,status,data) values ('33333333-3333-4333-8333-333333333335',990105,'legacy-conc',1,'sent','{"custom":"y"}')`);
+  const [n1, s1] = await Promise.all([
+    c1.query(`select public.mark_legacy_sends_supplier_notified(array[990105]::bigint[],'app_list',1) as r`).then((r) => r.rows[0].r),
+    c2.query(`select public.mark_legacy_send_seen('33333333-3333-4333-8333-333333333335','${CO}','app_list') as r`).then((r) => r.rows[0].r),
+  ]);
+  const fin2 = await db.query(`select status, data from public.legacy_sends where legacy_id=990105`);
+  const r2 = fin2.rows[0];
+  ok(n1 === 1 && s1.billing.charged && r2.status === "read" && r2.data.billingStatus === "charged" && r2.data.chargeTxId && r2.data.supplierNotifiedAt && r2.data.readAt && r2.data.custom === "y", "równolegle powiadomienie + odczyt: oba znaczniki na wierszu, rozliczenie nienaruszone");
+  console.log("PASS all migrations from empty database; new migration twice; ROLLBACK; concurrency (grant key, last credit, same send, app+email, notify+charge)");
 } catch (e) { console.error(e); process.exitCode = 1; }
 finally {
   for (const c of clients) await c.end().catch(() => {});

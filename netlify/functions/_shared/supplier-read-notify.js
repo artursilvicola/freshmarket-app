@@ -191,27 +191,31 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       continue;
     }
 
+    // [feat/free-credit-grants v4] Znacznik powiadomienia scalany w bazie z AKTUALNYM
+    // JSON-em (tylko 3 pola). Wcześniejszy zapis całego snapshotu sprzed maila kasował
+    // znacznik rozliczenia zapisany w międzyczasie przez inny odczyt (review Codexa v3).
     const notifiedAt = new Date().toISOString();
-    for (const row of group.rows) {
-      const nextData = {
-        ...(row.data || {}),
-        supplierNotifiedAt: notifiedAt,
-        supplierNotifiedVia: openedVia,
-        supplierNotifiedBatchSize: group.rows.length,
-      };
-      await supaSvc
-        .from("legacy_sends")
-        .update({ data: nextData })
-        .eq("legacy_id", row.legacy_id);
+    const groupIds = group.rows.map((row) => Number(row.legacy_id));
+    const { data: markedCount, error: markErr } = await supaSvc.rpc("mark_legacy_sends_supplier_notified", {
+      p_legacy_ids: groupIds,
+      p_via: openedVia,
+      p_batch_size: group.rows.length,
+      p_notified_at: notifiedAt,
+    });
+    if (markErr) {
+      try { console.log("[notifySupplierOffersRead MARK_ERROR]", JSON.stringify({ legacy_ids: groupIds, reason: markErr.message })); } catch (e) {}
     }
 
     notifications.push({
-      ok: true,
+      ok: !markErr,
       status: "sent",
       message_id: sent.message_id,
       to: owner.email,
       offer_count: group.offers.length,
-      legacy_ids: group.rows.map((row) => row.legacy_id),
+      legacy_ids: groupIds,
+      marker_ok: !markErr,
+      marker_rows: markErr ? null : Number(markedCount ?? 0),
+      ...(markErr ? { marker_error: markErr.message } : {}),
     });
   }
 

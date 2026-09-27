@@ -1,6 +1,12 @@
-# Do review (v3) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
+# Do review (v4) — bezpłatne kredyty PreConnect przyznawane przez organizatora (27.09.2026)
 
-Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v3 = odpowiedź na review Codexa v2 (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY_V2.md`), niżej także pełna odpowiedź na review v1. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
+Gałąź `feat/free-credit-grants` od `main` 37e90c7 (= produkcja 792a4e9 + docs). v4 = odpowiedź na review Codexa v3 (`REVIEW_CODEX_2026-09-27_BEZPLATNE_KREDYTY_V3.md`); niżej odpowiedzi na review v2 i v1. **Nie wdrożone. Żadnych kredytów nie przyznano. Produkcja nietknięta.**
+
+## Odpowiedź na review Codexa v3
+
+| # | Ustalenie | Co zmieniono |
+|---|---|---|
+| P1 | Notifier odczytu (`supplier-read-notify.js`) zapisywał cały JSON ze snapshotu sprzed maila i kasował znacznik rozliczenia (odtworzone skryptem Codexa z prawdziwym notifierem) | Nowe RPC `mark_legacy_sends_supplier_notified(p_legacy_ids, p_via, p_batch_size, p_notified_at)` (service_role): jedna instrukcja UPDATE scalająca **wyłącznie** `supplierNotifiedAt`/`supplierNotifiedVia`/`supplierNotifiedBatchSize` z AKTUALNYM JSON-em, tylko na wierszach bez znacznika (idempotentne). Notifier woła RPC zamiast `update({ data })`; błąd RPC nie udaje sukcesu (`marker_ok: false`, `ok: false`, mail już wysłany). Testy: SQL (na rozliczonym i odczytanym wierszu powiadomienie nie zdejmuje niczego; na pustym JSON-ie tylko 3 pola; powtórka = 0 wierszy i pierwotny znacznik; odczyt PO powiadomieniu rozlicza i zwraca `supplier_notified_before`), runner równoległy **powiadomienie + odczyt na tym samym wierszu z dwóch połączeń** (oba znaczniki, rozliczenie nienaruszone), Vitest `tests/legacy-send-seen-notify.test.js` z **prawdziwym notifierem** i atrapą `fetch` odtwarzający dokładnie sekwencję Codexa (A czeka na pocztę → grant → B rozlicza → A kończy → C `already_charged`; jedno pobranie; zero `update()`; jeden mail; drugi odczyt nie wysyła maila). W funkcjach Netlify pozostaje jeden inny zapis `legacy_sends` — `send-retailer-batch.js` (ścieżka wysyłki, przed odczytem) — poza zakresem tej gałęzi, do przeglądu osobno. |
 
 ## Odpowiedź na review Codexa v2
 
@@ -36,7 +42,8 @@ Zapytanie tylko do odczytu: `docs/production/sql/KONTROLA_REKOMPENSAT_PRZED_MIGR
 - RPC `admin_grant_free_credits(p_company_ids, p_qty, p_reason, p_idempotency_key, p_message, p_note, p_expires_at)` — opis wyżej (p. 5). Domyślna ważność `current_date + 3 months` w bazie.
 - RPC `mark_credit_grant_seen(p_package_id)` — tylko własna firma lub admin.
 - RPC `charge_legacy_send_first_seen(p_send_id, p_company_id, p_now)` — tylko `service_role`; zwraca `charged/already_charged/no_package_available` z polami znacznika. Kwota informacyjna jak dotąd (`data.price` → `data.chargeAmount` → cena/kredyt), nienumeryczne wartości ignorowane.
-- RPC `mark_legacy_send_seen(p_send_id, p_company_id, p_channel, p_now)` — tylko `service_role`; jedyny zapis wiersza wysyłki ze ścieżki „odczytano” (patrz odpowiedź na review v2, P1).
+- RPC `mark_legacy_send_seen(p_send_id, p_company_id, p_channel, p_now)` — tylko `service_role`; zapis wiersza wysyłki ze ścieżki „odczytano” (patrz odpowiedź na review v2, P1).
+- RPC `mark_legacy_sends_supplier_notified(p_legacy_ids, p_via, p_batch_size, p_notified_at)` — tylko `service_role`; znacznik wysłanego powiadomienia scalany z aktualnym JSON-em (patrz odpowiedź na review v3).
 - `public.business_today(p_at)` — dzień biznesowy Europe/Warsaw dla ważności, kwalifikacji i salda.
 - `company_capacity` + `qty_remaining_free/paid`, `qty_total_free/paid`, `free_expiry`, `paid_expiry`; `security_invoker` i revoke z 054 ponowione.
 
@@ -49,8 +56,8 @@ Zapytanie tylko do odczytu: `docs/production/sql/KONTROLA_REKOMPENSAT_PRZED_MIGR
 
 ## Testy
 
-- **SQL** `supabase/tests/free_credit_grants_test.sql` + runner `scripts/free-credit-grants-sql-test.mjs` (embedded PG 17, 127.0.0.1:54329): wszystkie migracje od zera, nowa migracja dwa razy, test w ROLLBACK; faza 2 na dwóch osobnych połączeniach (równoległe przyznanie z tym samym kluczem, ostatni kredyt z dwóch odczytów, ta sama propozycja z dwóch sesji, **app + e-mail na tym samym wierszu**). **PASS 27.09 (v3)**.
-- **Vitest**: `tests/free-credit-pools.test.js` (pule, `byExpiry`, miesiące, dzień biznesowy, wrapper RPC — 10), `src/legacy/FreeCreditPools.test.jsx` (Finanse PL/EN, przypadek 3+3, dwa terminy, brak pul, pasek Wysyłek — 6), `tests/legacy-send-seen-rpc.test.js` (scenariusz P1 Codexa z atrapą bazy, e-mail po read, brak RPC = error, powiadomienia, mapowanie — 5), `tests/grant-form.test.js` (maszyna stanów formularza: edycja w toku ignorowana, retry z identycznym payloadem i kluczem, mismatch, walidacja — 4). Pełny przebieg 27.09 (v3): **71 plików, 554/554** bez zmiennych Supabase; `npm run build` PASS (27.09 v3).
+- **SQL** `supabase/tests/free_credit_grants_test.sql` + runner `scripts/free-credit-grants-sql-test.mjs` (embedded PG 17, 127.0.0.1:54329): wszystkie migracje od zera, nowa migracja dwa razy, test w ROLLBACK; faza 2 na dwóch osobnych połączeniach (równoległe przyznanie z tym samym kluczem, ostatni kredyt z dwóch odczytów, ta sama propozycja z dwóch sesji, **app + e-mail na tym samym wierszu**, **powiadomienie + odczyt na tym samym wierszu**). **PASS 27.09 (v4)**.
+- **Vitest**: `tests/free-credit-pools.test.js` (pule, `byExpiry`, miesiące, dzień biznesowy, wrapper RPC — 10), `src/legacy/FreeCreditPools.test.jsx` (Finanse PL/EN, przypadek 3+3, dwa terminy, brak pul, pasek Wysyłek — 6), `tests/legacy-send-seen-rpc.test.js` (scenariusz P1 Codexa z atrapą bazy, e-mail po read, brak RPC = error, powiadomienia, mapowanie — 5), `tests/grant-form.test.js` (maszyna stanów formularza: edycja w toku ignorowana, retry z identycznym payloadem i kluczem, mismatch, walidacja — 4), `tests/legacy-send-seen-notify.test.js` (prawdziwy notifier + atrapa fetch: reprodukcja Codexa v3, brak drugiego maila, błąd znacznika nie udaje sukcesu — 2). Pełny przebieg 27.09 (v4): **72 pliki, 556/556** bez zmiennych Supabase; `npm run build` PASS (27.09 v4).
 
 ## Wdrożenie (po akceptacji) — kolejność obowiązkowa
 
@@ -64,4 +71,4 @@ Zapytanie tylko do odczytu: `docs/production/sql/KONTROLA_REKOMPENSAT_PRZED_MIGR
 
 - Duża liczba „Kredyty PreConnect: N z M” dalej liczy rezerwacje z wysyłek (semantyka sprzed zmiany); kafelki pul liczą z `packages`. Obie liczby są teraz podpisane i wyjaśnione, ale to nadal dwa źródła. Ujednolicenie (rezerwacja liczona w bazie) = osobny temat.
 - Brak fallbacku: jeśli front i funkcje wejdą przed migracją, odczyty propozycji zwrócą `error` (nic nie zostanie rozliczone ani nadpisane) do czasu migracji. Dlatego kolejność migracja → deploy jest obowiązkowa, a między migracją a deployem nie przyznajemy kredytów.
-- `mark_legacy_send_seen` zastępuje jedyny zapis `legacy_sends` ze ścieżki odczytu; inne miejsca zapisujące ten wiersz (moderacja, zwroty, ręczne oznaczenia) nie były przedmiotem tej gałęzi i nadal piszą po swojemu — warto je przejrzeć pod kątem tego samego wzorca „przepisz cały JSON” w osobnym zadaniu.
+- Ścieżka odczytu (seen + powiadomienie) nie zapisuje już całego JSON-u. Poza nią `legacy_sends` pisze jeszcze `send-retailer-batch.js` (wysyłka, przed jakimkolwiek odczytem) oraz front/moderacja — nie były przedmiotem tej gałęzi; warto je przejrzeć pod kątem wzorca „przepisz cały JSON” w osobnym zadaniu.
