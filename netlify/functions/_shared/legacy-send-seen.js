@@ -23,6 +23,21 @@ async function findCompanyBySupplierKey(supaSvc, supplierKey) {
   return byId || null;
 }
 
+// [feat/free-credit-grants] Kolejność zużycia kredytów przy pierwszym odczycie:
+//   1. pakiety z wolnym kredytem (qty_used < qty_total),
+//   2. najpierw bezpłatne przyznania (source = 'grant'), potem kupione,
+//   3. wewnątrz puli najbliższa data ważności (brak daty = na końcu),
+//   4. remis: najstarszy zakup/przyznanie.
+// Wejście = wiersze z zapytania (już bez wygasłych). Czysta funkcja — testowana osobno.
+export function pickPackageForCharge(packages) {
+  const rank = (p) => (String(p?.source || "purchase") === "grant" ? 0 : 1);
+  const exp = (p) => (p?.expires_at ? String(p.expires_at).slice(0, 10) : "9999-12-31");
+  const bought = (p) => String(p?.purchased_at || "");
+  return (packages || [])
+    .filter((p) => Number(p?.qty_used || 0) < Number(p?.qty_total || 0))
+    .sort((a, b) => rank(a) - rank(b) || exp(a).localeCompare(exp(b)) || bought(a).localeCompare(bought(b)))[0] || null;
+}
+
 function getChargeMarker(row) {
   const data = row?.data || {};
   return row?.charged_at || data.chargeAt || data.chargedAt || data.chargeTxId || data.billingStatus === "charged";
@@ -60,13 +75,13 @@ async function chargeFirstSeen({ supaSvc, row, company, nowIso }) {
   const today = nowIso.slice(0, 10);
   const { data: packages, error: pkgErr } = await supaSvc
     .from("packages")
-    .select("id, plan, qty_total, qty_used, price_paid, currency, purchased_at, expires_at")
+    .select("id, plan, qty_total, qty_used, price_paid, currency, purchased_at, expires_at, source")
     .eq("company_id", company.id)
     .or(`expires_at.is.null,expires_at.gte.${today}`)
     .order("purchased_at", { ascending: true });
   if (pkgErr) throw pkgErr;
 
-  const pkg = (packages || []).find((p) => Number(p.qty_used || 0) < Number(p.qty_total || 0));
+  const pkg = pickPackageForCharge(packages);
   if (!pkg) {
     return { charged: false, billingStatus: "no_package_available" };
   }
@@ -99,6 +114,7 @@ async function chargeFirstSeen({ supaSvc, row, company, nowIso }) {
         supplier_legacy_id: row.supplier_legacy_id,
         package_id: pkg.id,
         package_plan: pkg.plan,
+        package_source: pkg.source || "purchase",
         amount_eur: chargeAmount,
         billing_model: "package_credit",
       },
@@ -112,6 +128,7 @@ async function chargeFirstSeen({ supaSvc, row, company, nowIso }) {
     billingStatus: "charged",
     chargeAt: nowIso,
     packageId: pkg.id,
+    packageSource: pkg.source || "purchase",
     chargeTxId: tx?.id || null,
     chargeAmount,
     currency,
@@ -175,6 +192,7 @@ export async function markLegacySendsSeen({
       if (billing.billingStatus === "charged") {
         nextData.chargeAt = billing.chargeAt || existingData.chargeAt || nowIso;
         nextData.packageId = billing.packageId || existingData.packageId || null;
+        nextData.packageSource = billing.packageSource || existingData.packageSource || null;
         nextData.chargeTxId = billing.chargeTxId || existingData.chargeTxId || null;
         nextData.chargeAmount = billing.chargeAmount || existingData.chargeAmount || 0;
         nextData.chargeCurrency = billing.currency || existingData.chargeCurrency || "EUR";

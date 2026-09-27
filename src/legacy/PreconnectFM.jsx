@@ -9,7 +9,7 @@ import {
   Package, ExternalLink, Sparkles, RefreshCw, Eye, Upload, ShieldCheck,
   Filter, Globe, Star, TrendingUp, CreditCard, ChevronDown, ChevronUp,
   RotateCcw, GripVertical, Heart, Wallet, Bell, Activity, Settings, Lock, Unlock,
-  MessageCircle, MessageSquare, Send as SendIcon, Download
+  MessageCircle, MessageSquare, Send as SendIcon, Download, Gift
 } from "lucide-react";
 import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
@@ -70,6 +70,8 @@ import {
   getPayuOrdersAdmin as dbGetPayuOrdersAdmin,
   // [followups / Lany #7] realna historia pakietów kredytów (status wygasłe)
   getPackages as dbGetPackages,
+  // [feat/free-credit-grants] bezpłatne kredyty od organizatora: przyznanie (admin), potwierdzenie (dostawca), pule
+  adminGrantFreeCredits as dbAdminGrantFreeCredits, markCreditGrantSeen as dbMarkCreditGrantSeen, summarizeCreditPools,
   // [B2B Round prod-rollout / branding] Brand logo upload (admin)
   getBrandSettings as dbGetBrandSettings, uploadBrandLogo as dbUploadBrandLogo,
   // [feat/admin-instructions-announcements] treści sterowane z Brandingu
@@ -780,6 +782,8 @@ const packagePluralSuffix = (qty) => (i18n.language || "pl").startsWith("en")
   ? (Number(qty) === 1 ? "_one" : "_other")
   : pluralSuffixPL(Number(qty));
 function getPlanLabel(id, { withPerSend = true } = {}) {
+  // [feat/free-credit-grants] wiersze przyznań mają plan = 'grant' (nieaktywny w katalogu)
+  if (id === "grant") return i18n.t("legacy:supplier.finance.pools.history_grant_label");
   const p = getPlanById(id);
   if (!p) return id || "";
   const tier = p.tier === "PREMIUM" ? "premium" : "standard";
@@ -3033,6 +3037,25 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       return additions.length ? [...additions, ...(prev || [])] : prev;
     });
   }, [account.role, refundedSendsForWallet, mySupplierKey]);
+  // [feat/free-credit-grants] Pule kredytów dostawcy (bezpłatne od organizatora / kupione)
+  // liczone z wierszy packages — to samo źródło co company_capacity. Baner o przyznaniu
+  // pokazujemy, dopóki dostawca nie kliknie "Rozumiem" (mark_credit_grant_seen). Bez e-maili.
+  const [myPackages, setMyPackages] = useState([]);
+  const myPackagesCompanyId = account.role === "supplier" ? (co?.id || currentUser?.company_id || null) : null;
+  const refreshMyPackages = useCallback(async () => {
+    if (!myPackagesCompanyId) { setMyPackages([]); return; }
+    try { setMyPackages((await dbGetPackages(myPackagesCompanyId)) || []); } catch (e) { console.warn("[my packages]", e); }
+  }, [myPackagesCompanyId]);
+  useEffect(() => { refreshMyPackages(); }, [refreshMyPackages, dbCapacity]);
+  const creditPools = useMemo(() => summarizeCreditPools(myPackages), [myPackages]);
+  const unseenGrants = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return (myPackages || []).filter(p => p?.source === "grant" && !p?.grant_seen_at && (!p?.expires_at || String(p.expires_at).slice(0, 10) >= today));
+  }, [myPackages]);
+  async function dismissGrant(pkgId) {
+    setMyPackages(prev => prev.map(p => p.id === pkgId ? { ...p, grant_seen_at: new Date().toISOString() } : p));
+    try { await dbMarkCreditGrantSeen(pkgId); } catch (e) { console.warn("[grant seen]", e); }
+  }
   // UI-only state stays in localStorage:
   useEffect(() => {
     try {
@@ -3691,12 +3714,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="dashboard" && role==="admin") return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers} retailers={retailers} hiddenRetailers={companyHiddenRetailers} setHiddenRetailers={setCompanyHiddenRetailers}/>;
-    if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} pkgPlan={pkgPlan} rem={rem} wallet={wallet} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
+    if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} pkgPlan={pkgPlan} rem={rem} wallet={wallet} creditPools={creditPools} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
     if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey} setOffers={setOffers} fl={fl} co={co}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+t("supplier.offer_form.copy_suffix"),product:(src.product||"")+t("supplier.offer_form.copy_suffix"),internalTitle:src.internalTitle?src.internalTitle+t("supplier.offer_form.copy_suffix"):undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
-    if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} pkgPlan={pkgPlan} retailers={retailers} accountId={mySupplierKey}/>;
+    if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} pkgPlan={pkgPlan} creditPools={creditPools} retailers={retailers} accountId={mySupplierKey}/>;
     if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl} readOnly={viewingOtherAccount} onSaved={(patch) => setAccount(prev => ({ ...prev, personName: patch.name, phone: patch.phone, position: patch.position }))}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
@@ -4014,6 +4037,20 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               </button>
             </div>;
           })()}
+          {account.role==="supplier"&&pg!=="fm-sched"&&unseenGrants.map(g=>(
+            <div key={g.id} style={{ background:"#ecfdf5",border:"1.5px solid #6ee7b7",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
+              <Gift size={16} color="#059669" style={{ flexShrink:0,marginTop:2 }}/>
+              <div style={{ flex:1,fontSize:13,color:"#065f46" }}>
+                <strong>{t("shell.grants.banner_title"+pluralSuffixPL(Number(g.qty_total||0))+"_format",{ count:Number(g.qty_total||0) })}</strong>
+                {g.grant_message&&<div style={{ marginTop:4,whiteSpace:"pre-line" }}>{g.grant_message}</div>}
+                <div style={{ marginTop:4,fontSize:12,color:"#047857" }}>{t("shell.grants.banner_valid_format",{ date: fmtDateDMY(g.expires_at) })}</div>
+              </div>
+              <div style={{ display:"flex",gap:6,flexShrink:0 }}>
+                <Btn sm onClick={()=>{dismissGrant(g.id);nav("wysylki");}} style={{ background:"#059669",color:"white",border:"none" }}><Send size={10}/> {t("shell.grants.banner_use_btn")}</Btn>
+                <Btn sm outline onClick={()=>dismissGrant(g.id)}>{t("shell.grants.banner_dismiss_btn")}</Btn>
+              </div>
+            </div>
+          ))}
           {account.role==="supplier"&&pg!=="fm-sched"&&activeRefunds.map(n=>(
             <div key={n.id} style={{ background:"#fffbeb",border:"1.5px solid #fbbf24",borderRadius:10,padding:"12px 16px",marginBottom:14,display:"flex",gap:10,alignItems:"flex-start" }}>
               <RotateCcw size={16} color="#d97706" style={{ flexShrink:0,marginTop:2 }}/>
@@ -4731,7 +4768,7 @@ function HelpStripDashboard() {
 
 
 /* ── Wysyłki: unified hub (replaces Retail Chains + Preconnect + Send) ──── */
-export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies }) {
+export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies, creditPools }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -4820,7 +4857,7 @@ export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wall
           </div>
         </div>
         {CREDITS_UI_SUPPLIER
-          ? <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><CreditCard size={12}/>{t("supplier.finance.credits.bar_format", { rem: Math.max(0, rem), max: pkgMax })}</div>
+          ? <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><CreditCard size={12}/>{t("supplier.finance.credits.bar_format", { rem: Math.max(0, rem), max: pkgMax })}{creditPools?.free?.remaining>0&&<span style={{ opacity:0.85 }}>· {t("supplier.finance.credits.bar_free_format", { free: creditPools.free.remaining })}</span>}</div>
           : (wallet.balance > 0 && <div style={{ fontSize:12,color:"rgba(255,255,255,0.55)",display:"flex",gap:5,alignItems:"center" }}><Wallet size={12}/>{t("supplier.wysylki.pkg_bar.wallet_balance_format", { balance: wallet.balance })}</div>)}
         {rem <= 0
           ? <span style={{ fontSize:11,background:"rgba(239,68,68,0.2)",color:"#fca5a5",padding:"3px 10px",borderRadius:8 }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.no_credits") : t("supplier.wysylki.pkg_bar.no_credits_badge")}</span>
@@ -6577,7 +6614,7 @@ export function PageOfferForm({ offer, saveOffer, nav, co }) {
 }
 
 /* ── Finanse: tabs Saldo / Historia / Pakiety ─────────────────────────── */
-function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, orders, pkgMax, pkgUsed, pkgPlan, retailers, accountId }) {
+export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, orders, pkgMax, pkgUsed, pkgPlan, retailers, accountId, creditPools }) {
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -6667,29 +6704,30 @@ function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, or
           ))}
         </div>
 
-        <Card title={t("supplier.finance.active_pkg.card_title")} icon={CreditCard}>
-          <div style={{ display:"flex",gap:14,alignItems:"center",flexWrap:"wrap" }}>
-            <div style={{ padding:"12px 20px",background:"linear-gradient(135deg,#1e3a5f,#2563eb)",borderRadius:10,color:"white",flexShrink:0 }}>
-              <div style={{ fontSize:10,opacity:0.6,marginBottom:2 }}>{t("supplier.finance.active_pkg.pkg_badge")}</div>
-              <div style={{ fontSize:14,fontWeight:700 }}>{getPlanLabel(pkgOpt.id, { withPerSend:false })}</div>
-              {!CREDITS_UI_SUPPLIER && <div style={{ fontSize:11,opacity:0.6,marginTop:2 }}>{t("supplier.finance.active_pkg.per_send_format", { perSend: pkgOpt.perSend })}</div>}
-            </div>
-            <div style={{ flex:1,minWidth:200 }}>
-              <div style={{ display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:5 }}>
-                <span style={{ color:"#64748b" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.used_format", { used: activePkgUsed, max: activePkgMax }) : t("supplier.finance.active_pkg.used_format", { used: activePkgUsed, max: activePkgMax })}</span>
-                <span style={{ fontWeight:600,color:pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>{pct}%</span>
+        {/* [feat/free-credit-grants] Zamiast jednego "Aktywnego pakietu": dwie pule —
+            bezpłatne od organizatora i kupione — z datą ważności każdej. Liczby z packages
+            (creditPools w App), kolejność zużycia opisana pod kafelkami. */}
+        <Card title={t("supplier.finance.pools.card_title")} icon={CreditCard}>
+          {(() => {
+            const pools = creditPools || summarizeCreditPools([]);
+            const tile = (key, pool, color, bg, Icon) => (
+              <div key={key} data-pool={key} style={{ flex:1,minWidth:200,padding:"14px 16px",background:bg,border:`1px solid ${color}33`,borderRadius:10 }}>
+                <div style={{ display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:0.6,color }}>{Icon&&<Icon size={13}/>}{t(`supplier.finance.pools.${key}_label`)}</div>
+                <div style={{ fontSize:26,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1 }}>{pool.remaining}<span style={{ fontSize:12,fontWeight:500,color:"#64748b",marginLeft:6 }}>{t("supplier.finance.pools.remaining_unit")}</span></div>
+                <div style={{ fontSize:12,color:"#64748b",marginTop:6 }}>{pool.total>0 ? t("supplier.finance.pools.remaining_format",{ remaining:pool.remaining,total:pool.total }) : t("supplier.finance.pools.none")}{pool.expiry ? ` · ${t("supplier.finance.pools.valid_until_format",{ date: fmtDateDMY(pool.expiry) })}` : ""}</div>
               </div>
-              {CREDITS_UI_SUPPLIER && <div style={{ fontSize:10,color:"#94a3b8",marginBottom:6 }}>{t("supplier.finance.credits.used_hint")}</div>}
-              <div style={{ background:"#e2e8f0",borderRadius:4,height:8,overflow:"hidden" }}><div style={{ height:"100%",background:pct>=90?"#dc2626":pct>=70?"#d97706":"#0d9488",borderRadius:4,width:`${pct}%` }}/></div>
-              <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10 }}>
-                {[
-                  [t("supplier.finance.active_pkg.price_label"), t("supplier.finance.active_pkg.price_value_format", { price: pkgOpt.price })],
-                  [t("supplier.finance.active_pkg.valid_until_label"), CREDITS_VALIDITY_UI ? fmtDateDMY(co.pkgExpiry) : (co.pkgExpiry||"2026-12-31")],
-                ].map(([l,v])=><div key={l} style={{ padding:"7px 10px",background:"#f8fafc",borderRadius:7,border:"1px solid #e2e8f0" }}><div style={{ fontSize:10,color:"#94a3b8" }}>{l}</div><div style={{ fontWeight:600,fontSize:12 }}>{v}</div></div>)}
-              </div>
-            </div>
-          </div>
-          <div style={{ marginTop:14 }}><Btn outline sm onClick={()=>setTab("pakiety")}><CreditCard size={12}/> {t("supplier.finance.active_pkg.change_btn")}</Btn></div>
+            );
+            return (
+              <>
+                <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
+                  {tile("free", pools.free, "#059669", "#f0fdf4", Gift)}
+                  {tile("paid", pools.paid, "#2563eb", "#eff6ff", CreditCard)}
+                </div>
+                <div style={{ fontSize:12,color:"#64748b",marginTop:12,lineHeight:1.5 }}>{t("supplier.finance.pools.order_hint")}</div>
+                <div style={{ marginTop:12 }}><Btn outline sm onClick={()=>setTab("pakiety")}><CreditCard size={12}/> {t("supplier.finance.pools.buy_btn")}</Btn></div>
+              </>
+            );
+          })()}
         </Card>
 
         {expired.length>0&&<Card title={t("supplier.finance.refunds_done.card_title")} icon={RotateCcw} style={{ borderLeft:"3px solid #059669" }}>
@@ -7225,13 +7263,16 @@ function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax,
             const expired = pkg.expires_at && String(pkg.expires_at).slice(0,10) < _todayISO;
             const remaining = Math.max(0, Number(pkg.qty_total||0) - Number(pkg.qty_used||0));
             const isPrem = String(pkg.plan||"").startsWith("prem");
+            const isGrant = pkg.source === "grant";
+            const grantReason = ["promotion","compensation","gift","other"].includes(pkg.grant_reason) ? pkg.grant_reason : "other";
             return (
               <div key={pkg.id} style={{ display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"center",opacity:expired?0.7:1 }}>
-                <div style={{ width:36,height:36,borderRadius:8,background:expired?"#f1f5f9":(isPrem?"#fef3c7":"#eff6ff"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
-                  <CreditCard size={15} color={expired?"#94a3b8":(isPrem?"#d97706":"#2563eb")}/>
+                <div style={{ width:36,height:36,borderRadius:8,background:expired?"#f1f5f9":(isGrant?"#f0fdf4":isPrem?"#fef3c7":"#eff6ff"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>
+                  {isGrant ? <Gift size={15} color={expired?"#94a3b8":"#059669"}/> : <CreditCard size={15} color={expired?"#94a3b8":(isPrem?"#d97706":"#2563eb")}/>}
                 </div>
                 <div style={{ flex:1,minWidth:0 }}>
-                  <div style={{ fontWeight:600,fontSize:13 }}>{getPlanLabel(pkg.plan, { withPerSend:false })}</div>
+                  <div style={{ fontWeight:600,fontSize:13 }}>{isGrant ? `${t("supplier.finance.pools.history_grant_label")} · ${t("supplier.finance.pools.reason_"+grantReason)}` : getPlanLabel(pkg.plan, { withPerSend:false })}</div>
+                  {isGrant&&pkg.grant_message&&<div style={{ fontSize:12,color:"#475569",marginTop:2,whiteSpace:"pre-line" }}>{pkg.grant_message}</div>}
                   <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
                     {fmtDateDMY(pkg.purchased_at)} · {expired
                       ? t("supplier.finance.pakiety.credit_history.expired_on_format", { date: fmtDateDMY(pkg.expires_at) })
@@ -10895,6 +10936,92 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
   const [savingStatusId, setSavingStatusId] = useState(null);
   const [packageDrafts, setPackageDrafts] = useState({});
   const [savingPackageId, setSavingPackageId] = useState(null);
+  // [feat/free-credit-grants] Formularz przyznania bezpłatnych kredytów. Klucz idempotencji
+  // powstaje przy OTWARCIU formularza: retry / dwuklik z tym samym kluczem nie przyzna drugi raz.
+  const [grantModal, setGrantModal] = useState(null);
+  const [grantBusy, setGrantBusy] = useState(false);
+  const [grantSearch, setGrantSearch] = useState("");
+  function openGrantModal(firmCo) {
+    const d = new Date(); d.setMonth(d.getMonth() + 3);
+    setGrantSearch("");
+    setGrantModal({
+      key: (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `grant-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      companyIds: firmCo?.id ? [String(firmCo.id)] : [],
+      qty: 1, reason: "compensation", message: "", note: "", expiresAt: d.toISOString().slice(0, 10),
+    });
+  }
+  async function submitGrant() {
+    if (!grantModal || grantBusy) return;
+    setGrantBusy(true);
+    try {
+      const res = await dbAdminGrantFreeCredits({
+        companyIds: grantModal.companyIds, qty: grantModal.qty, reason: grantModal.reason,
+        message: grantModal.message, note: grantModal.note, expiresAt: grantModal.expiresAt, idempotencyKey: grantModal.key,
+      });
+      if (res?.already_done) fl(t("admin.firmy.grant_toast_already"), "warning");
+      else fl(t("admin.firmy.grant_toast_done_format", { qty: Number(grantModal.qty), count: res?.company_count ?? grantModal.companyIds.length, date: fmtDateDMY(res?.expires_at || grantModal.expiresAt) }));
+      setGrantModal(null);
+      refreshCapacity?.();
+    } catch (e) {
+      console.warn("[adminGrantFreeCredits]", e);
+      fl(e?.message || t("admin.firmy.grant_toast_error"), "warning");
+    } finally {
+      setGrantBusy(false);
+    }
+  }
+  const grantModalJsx = grantModal && (
+    <Modal title={t("admin.firmy.grant_modal_title")} onClose={()=>{ if (!grantBusy) setGrantModal(null); }}>
+      {(() => {
+        const gm = grantModal;
+        const up = (patch) => setGrantModal(m => (m ? { ...m, ...patch } : m));
+        const byId = (id) => (companies||[]).find(c => String(c.id) === String(id)) || (dbCapacity||[]).find(c => String(c.id) === String(id));
+        const q = grantSearch.trim().toLowerCase();
+        const candidates = q ? (dbCapacity||[]).filter(c => !gm.companyIds.includes(String(c.id)) && String(c.name||"").toLowerCase().includes(q)).slice(0, 8) : [];
+        const qtyNum = Number.parseInt(String(gm.qty), 10);
+        const qtyOk = Number.isFinite(qtyNum) && qtyNum >= 1 && qtyNum <= 100;
+        const total = (qtyOk ? qtyNum : 0) * gm.companyIds.length;
+        const inp = { width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:7,fontSize:13,fontFamily:"inherit",boxSizing:"border-box" };
+        const lbl = { fontSize:11,fontWeight:600,color:"#64748b",display:"block",marginBottom:4 };
+        const hint = { fontSize:11,color:"#94a3b8",marginTop:3 };
+        return (
+          <div style={{ display:"grid",gap:12 }}>
+            <Alrt type="info">{t("admin.firmy.grant_intro")}</Alrt>
+            <div>
+              <label style={lbl}>{t("admin.firmy.grant_companies_label", { count: gm.companyIds.length })}</label>
+              <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:6 }}>
+                {gm.companyIds.map(id => (
+                  <span key={id} style={{ display:"inline-flex",alignItems:"center",gap:6,padding:"4px 10px",background:"#f1f5f9",borderRadius:14,fontSize:12 }}>
+                    {byId(id)?.name || id}
+                    <button type="button" onClick={()=>up({ companyIds: gm.companyIds.filter(x => x !== id) })} title={t("admin.firmy.grant_remove_company")} style={{ border:"none",background:"none",cursor:"pointer",color:"#64748b",padding:0,lineHeight:1 }}><X size={12}/></button>
+                  </span>
+                ))}
+              </div>
+              <input value={grantSearch} onChange={e=>setGrantSearch(e.target.value)} placeholder={t("admin.firmy.grant_add_company_placeholder")} style={inp}/>
+              {candidates.length>0 && (
+                <div style={{ border:"1px solid #e2e8f0",borderRadius:7,marginTop:4,overflow:"hidden" }}>
+                  {candidates.map(c => <div key={c.id} onClick={()=>{ up({ companyIds: [...gm.companyIds, String(c.id)] }); setGrantSearch(""); }} style={{ padding:"7px 10px",fontSize:13,cursor:"pointer",borderBottom:"1px solid #f1f5f9" }}>{c.name}</div>)}
+                </div>
+              )}
+            </div>
+            <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10 }}>
+              <div><label style={lbl}>{t("admin.firmy.grant_qty_label")}</label><input type="number" min={1} max={100} value={gm.qty} onChange={e=>up({ qty: e.target.value })} style={inp}/></div>
+              <div><label style={lbl}>{t("admin.firmy.grant_reason_label")}</label><select value={gm.reason} onChange={e=>up({ reason: e.target.value })} style={inp}>{["promotion","compensation","gift","other"].map(r => <option key={r} value={r}>{t(`admin.firmy.grant_reason_${r}`)}</option>)}</select></div>
+              <div><label style={lbl}>{t("admin.firmy.grant_expires_label")}</label><input type="date" value={gm.expiresAt} onChange={e=>up({ expiresAt: e.target.value })} style={inp}/><div style={hint}>{t("admin.firmy.grant_expires_hint")}</div></div>
+            </div>
+            <div><label style={lbl}>{t("admin.firmy.grant_message_label")}</label><textarea rows={3} value={gm.message} onChange={e=>up({ message: e.target.value })} placeholder={t("admin.firmy.grant_message_placeholder")} style={{ ...inp,resize:"vertical" }}/><div style={hint}>{t("admin.firmy.grant_message_hint")}</div></div>
+            <div><label style={lbl}>{t("admin.firmy.grant_note_label")}</label><textarea rows={2} value={gm.note} onChange={e=>up({ note: e.target.value })} style={{ ...inp,resize:"vertical" }}/><div style={hint}>{t("admin.firmy.grant_note_hint")}</div></div>
+            <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap" }}>
+              <div style={{ fontSize:12,color:"#475569" }}>{t("admin.firmy.grant_summary_format", { qty: qtyOk ? qtyNum : 0, count: gm.companyIds.length, total, date: fmtDateDMY(gm.expiresAt) })}</div>
+              <div style={{ display:"flex",gap:8 }}>
+                <Btn outline sm onClick={()=>setGrantModal(null)} disabled={grantBusy}>{t("admin.firmy.grant_cancel")}</Btn>
+                <Btn primary sm onClick={submitGrant} disabled={grantBusy || gm.companyIds.length===0 || !qtyOk || !gm.expiresAt}><Gift size={12}/> {grantBusy ? t("admin.firmy.grant_submitting") : t("admin.firmy.grant_submit")}</Btn>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </Modal>
+  );
   // [B2B Round adaptive-company-profile-ai] Per-company state dla edytora
   // opisów AI: trwająca regeneracja, edycja inline, podgląd profilu kupca.
   const [aiLoadingId, setAiLoadingId] = useState(null);
@@ -11466,10 +11593,24 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
           <div style={{ fontSize:11,color:isPackageDirty?"#d97706":"#94a3b8" }}>
             {isPackageDirty ? t("admin.firmy.pkg_unsaved_hint") : ""}
           </div>
-          <Btn sm primary onClick={()=>savePackageDraft(lim)} disabled={!isPackageDirty || isSavingPackage}>
-            {isSavingPackage ? t("admin.firmy.pkg_saving_btn") : t("admin.firmy.pkg_save_btn")}
-          </Btn>
+          <div style={{ display:"flex",gap:6,alignItems:"center",flexWrap:"wrap" }}>
+            <Btn sm outline onClick={()=>openGrantModal(firmCo?.id ? firmCo : { id: lim.id, name: lim.name })}><Gift size={11}/> {t("admin.firmy.grant_btn")}</Btn>
+            <Btn sm primary onClick={()=>savePackageDraft(lim)} disabled={!isPackageDirty || isSavingPackage}>
+              {isSavingPackage ? t("admin.firmy.pkg_saving_btn") : t("admin.firmy.pkg_save_btn")}
+            </Btn>
+          </div>
         </div>
+        {/* [feat/free-credit-grants] pule firmy z company_capacity (bezpłatne / kupione, najbliższa ważność) */}
+        {(() => {
+          const cap = (dbCapacity||[]).find(c => String(c.id) === String(lim.id));
+          if (!cap || cap.qty_remaining_free == null) return null;
+          return (
+            <div style={{ display:"flex",gap:8,flexWrap:"wrap",margin:"-4px 0 12px" }}>
+              <Badge color="#059669" bg="#f0fdf4">{t("admin.firmy.pools_free_format", { free: cap.qty_remaining_free })}{cap.free_expiry ? ` · ${fmtDateDMY(cap.free_expiry)}` : ""}</Badge>
+              <Badge color="#2563eb" bg="#eff6ff">{t("admin.firmy.pools_paid_format", { paid: cap.qty_remaining_paid })}{cap.paid_expiry ? ` · ${fmtDateDMY(cap.paid_expiry)}` : ""}</Badge>
+            </div>
+          );
+        })()}
         {/* [B2B Round adaptive-company-profile-ai] AI review block ─ */}
         {firmCo?.name && setCompanies && (() => {
           const status = firmCo.ai_review_status || "pending";
@@ -11827,7 +11968,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
             </div>
           );
         })}
-        {previewCompany && (
+        {grantModalJsx}{previewCompany && (
           <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" accountProfiles={profiles} onOpenChat={onOpenAdminChat} onClose={()=>setPreviewCompany(null)}/>
         )}
         {/* [Admin Companies 2.0 / Branch 2 — Commit 1] Drawer skeleton.
@@ -12328,7 +12469,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
           </div>
         );
       })}
-      {previewCompany && (
+      {grantModalJsx}{previewCompany && (
         <CompanyPreviewModal co={previewCompany} offers={offers} role="admin" accountProfiles={profiles} onOpenChat={onOpenAdminChat} onClose={()=>setPreviewCompany(null)}/>
       )}
     </div>

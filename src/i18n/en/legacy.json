@@ -877,12 +877,31 @@
       }
     },
     "finance": {
+      "pools": {
+        "card_title": "Your PreConnect credits",
+        "free_label": "Free from the organiser",
+        "paid_label": "Purchased",
+        "remaining_format": "{{remaining}} of {{total}}",
+        "remaining_unit": "remaining",
+        "valid_until_format": "valid until {{date}}",
+        "none": "none",
+        "order_hint": "Free credits are used first, then purchased ones. A credit is charged only when a retailer reads your proposal — an unread proposal does not use a credit.",
+        "buy_btn": "Buy more credits",
+        "granted_on_format": "granted {{date}}",
+        "reason_promotion": "promotion",
+        "reason_compensation": "compensation",
+        "reason_gift": "gift",
+        "reason_other": "from the organiser",
+        "history_grant_label": "Free credits from the organiser",
+        "history_purchase_label": "Purchased"
+      },
       "tabs": {
         "saldo": "Balance and package",
         "historia": "Submission history",
         "pakiety": "Pricing and packages"
       },
       "credits": {
+        "bar_free_format": "including {{free}} free from the organiser",
         "balance_label": "PreConnect Credits",
         "amount_one_format": "{{count}} credit",
         "amount_few_format": "{{count}} credits",
@@ -1950,6 +1969,34 @@
       "toast_duplicate_buyer_fallback": "buyer"
     },
     "firmy": {
+      "grant_btn": "Grant free credits",
+      "grant_modal_title": "Free PreConnect credits from the organiser",
+      "grant_intro": "Credits reach the selected companies immediately, without payment. The supplier sees them separately as “Free from the organiser” together with your message. No e-mail is sent.",
+      "grant_companies_label": "Companies ({{count}})",
+      "grant_add_company_placeholder": "Add another company — type a name",
+      "grant_remove_company": "Remove",
+      "grant_qty_label": "Credits per company",
+      "grant_reason_label": "Reason",
+      "grant_reason_promotion": "Promotion",
+      "grant_reason_compensation": "Compensation",
+      "grant_reason_gift": "Gift",
+      "grant_reason_other": "Other",
+      "grant_expires_label": "Valid until",
+      "grant_expires_hint": "Defaults to 3 months from today. Purchased credits are not affected.",
+      "grant_message_label": "Message for the recipient",
+      "grant_message_hint": "The supplier sees it in their panel next to the credits.",
+      "grant_message_placeholder": "e.g. Compensation for cancelled meetings. You can use the credits for any retailer in PreConnect.",
+      "grant_note_label": "Internal note",
+      "grant_note_hint": "Visible to administrators only.",
+      "grant_submit": "Grant credits",
+      "grant_submitting": "Granting…",
+      "grant_cancel": "Cancel",
+      "grant_summary_format": "{{qty}} × {{count}} companies = {{total}} credits, valid until {{date}}",
+      "grant_toast_done_format": "Granted {{qty}} free credits to {{count}} companies, valid until {{date}}.",
+      "grant_toast_already": "This batch was already granted earlier — nothing was added.",
+      "grant_toast_error": "Could not grant credits.",
+      "pools_free_format": "free {{free}}",
+      "pools_paid_format": "purchased {{paid}}",
       "status_labels": {
         "pending_review": "Pending approval",
         "active": "✓ Active",
@@ -3084,6 +3131,10 @@
   },
   "errors": {
     "db": {
+      "grant_companies_required": "Select at least one company.",
+      "grant_qty_invalid": "The number of credits must be between 1 and 100.",
+      "grant_reason_invalid": "Choose a reason for the grant.",
+      "grant_key_missing": "Missing operation key — close and reopen the form.",
       "buyer_profile_id_required": "updateOwnBuyerProfile requires id",
       "buyer_profile_name_required": "Full name is required.",
       "password_current_required": "Enter your current password.",
@@ -3131,6 +3182,15 @@
     }
   },
   "shell": {
+    "grants": {
+      "banner_title_one_format": "You have received {{count}} free PreConnect credit from the organiser",
+      "banner_title_few_format": "You have received {{count}} free PreConnect credits from the organiser",
+      "banner_title_many_format": "You have received {{count}} free PreConnect credits from the organiser",
+      "banner_title_other_format": "You have received {{count}} free PreConnect credits from the organiser",
+      "banner_valid_format": "Valid until {{date}}. Use them at no extra charge — free credits are used first.",
+      "banner_use_btn": "Send a proposal",
+      "banner_dismiss_btn": "Got it"
+    },
     "account_switcher": {
       "role_admin": "Admin",
       "role_supplier": "Supplier",

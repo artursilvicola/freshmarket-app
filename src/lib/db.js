@@ -2383,3 +2383,68 @@ export async function setSuperAdmin(userId, enabled) {
   if (error) return { ok: false, error: error.message };
   return { ok: true, profile: data };
 }
+
+// [feat/free-credit-grants] Bezpłatne kredyty PreConnect przyznawane przez admina.
+// Jedyna droga zapisu = RPC admin_grant_free_credits (security definer, is_admin()).
+// idempotencyKey generuje front przy OTWARCIU formularza — ponowne wysłanie tego
+// samego formularza (retry po błędzie sieci, dwuklik) nie przyzna kredytów drugi raz.
+export async function adminGrantFreeCredits({ companyIds, qty, reason, message, note, expiresAt, idempotencyKey }) {
+  const ids = [...new Set((companyIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) throw new Error(i18n.t("legacy:errors.db.grant_companies_required"));
+  const nextQty = Number.parseInt(String(qty), 10);
+  if (!Number.isFinite(nextQty) || nextQty < 1 || nextQty > 100) throw new Error(i18n.t("legacy:errors.db.grant_qty_invalid"));
+  if (!["promotion", "compensation", "gift", "other"].includes(reason)) throw new Error(i18n.t("legacy:errors.db.grant_reason_invalid"));
+  if (!idempotencyKey || String(idempotencyKey).length < 8) throw new Error(i18n.t("legacy:errors.db.grant_key_missing"));
+  const { data, error } = await supabase.rpc("admin_grant_free_credits", {
+    p_company_ids: ids,
+    p_qty: nextQty,
+    p_reason: reason,
+    p_idempotency_key: String(idempotencyKey),
+    p_message: normalizeText(message) || null,
+    p_note: normalizeText(note) || null,
+    p_expires_at: expiresAt ? String(expiresAt).slice(0, 10) : null,
+  });
+  if (error) throw error;
+  return data || null;
+}
+
+// Dostawca zamyka baner o przyznaniu (grant_seen_at). Zwraca true, gdy wiersz był jego.
+export async function markCreditGrantSeen(packageId) {
+  if (!packageId) return false;
+  const { data, error } = await supabase.rpc("mark_credit_grant_seen", { p_package_id: packageId });
+  if (error) throw error;
+  return !!data;
+}
+
+// Historia partii przyznań (tylko admin — RLS). Najnowsze pierwsze.
+export async function adminListGrantBatches(limit = 50) {
+  const { data, error } = await supabase
+    .from("package_grant_batches")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
+// Pule kredytów firmy liczone z wierszy packages (to samo źródło co company_capacity):
+// osobno bezpłatne (source = grant) i kupione, tylko niewygasłe, z najbliższą datą ważności puli.
+export function summarizeCreditPools(packages, todayISO = new Date().toISOString().slice(0, 10)) {
+  const pools = {
+    free: { total: 0, used: 0, remaining: 0, expiry: null, rows: [] },
+    paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [] },
+  };
+  for (const p of packages || []) {
+    const exp = p?.expires_at ? String(p.expires_at).slice(0, 10) : null;
+    if (exp && exp < todayISO) continue;
+    const pool = String(p?.source || "purchase") === "grant" ? pools.free : pools.paid;
+    const total = Number(p?.qty_total || 0);
+    const used = Math.min(total, Number(p?.qty_used || 0));
+    pool.total += total;
+    pool.used += used;
+    pool.remaining += Math.max(0, total - used);
+    pool.rows.push(p);
+    if (total - used > 0 && exp && (!pool.expiry || exp < pool.expiry)) pool.expiry = exp;
+  }
+  return pools;
+}

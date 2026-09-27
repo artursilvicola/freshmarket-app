@@ -877,12 +877,31 @@
       }
     },
     "finance": {
+      "pools": {
+        "card_title": "Twoje kredyty PreConnect",
+        "free_label": "Bezpłatne od organizatora",
+        "paid_label": "Kupione",
+        "remaining_format": "{{remaining}} z {{total}}",
+        "remaining_unit": "pozostało",
+        "valid_until_format": "ważne do {{date}}",
+        "none": "brak",
+        "order_hint": "Najpierw wykorzystujemy kredyty bezpłatne, potem kupione. Kredyt jest pobierany dopiero wtedy, gdy sieć odczyta Twoją propozycję — nieodczytana propozycja nie zużywa kredytu.",
+        "buy_btn": "Dokup kredyty",
+        "granted_on_format": "przyznane {{date}}",
+        "reason_promotion": "promocja",
+        "reason_compensation": "rekompensata",
+        "reason_gift": "prezent",
+        "reason_other": "od organizatora",
+        "history_grant_label": "Bezpłatne kredyty od organizatora",
+        "history_purchase_label": "Kupione"
+      },
       "tabs": {
         "saldo": "Saldo i pakiet",
         "historia": "Historia wysyłek",
         "pakiety": "Cennik i pakiety"
       },
       "credits": {
+        "bar_free_format": "w tym {{free}} bezpłatnych od organizatora",
         "balance_label": "Kredyty PreConnect",
         "amount_one_format": "{{count}} kredyt",
         "amount_few_format": "{{count}} kredyty",
@@ -1950,6 +1969,34 @@
       "toast_duplicate_buyer_fallback": "kupiec"
     },
     "firmy": {
+      "grant_btn": "Przyznaj bezpłatne kredyty",
+      "grant_modal_title": "Bezpłatne kredyty PreConnect od organizatora",
+      "grant_intro": "Kredyty trafią do wybranych firm od razu, bez płatności. Dostawca zobaczy je osobno jako „Bezpłatne od organizatora” razem z Twoją wiadomością. E-mail nie jest wysyłany.",
+      "grant_companies_label": "Firmy ({{count}})",
+      "grant_add_company_placeholder": "Dodaj kolejną firmę — wpisz nazwę",
+      "grant_remove_company": "Usuń",
+      "grant_qty_label": "Liczba kredytów dla każdej firmy",
+      "grant_reason_label": "Powód",
+      "grant_reason_promotion": "Promocja",
+      "grant_reason_compensation": "Rekompensata",
+      "grant_reason_gift": "Prezent",
+      "grant_reason_other": "Inny",
+      "grant_expires_label": "Ważne do",
+      "grant_expires_hint": "Domyślnie 3 miesiące od dziś. Kupionych kredytów to nie zmienia.",
+      "grant_message_label": "Wiadomość dla odbiorcy",
+      "grant_message_hint": "Dostawca zobaczy ją w panelu przy kredytach.",
+      "grant_message_placeholder": "np. Rekompensata za odwołane spotkania. Kredyty możesz wykorzystać do dowolnej sieci w PreConnect.",
+      "grant_note_label": "Notatka wewnętrzna",
+      "grant_note_hint": "Widzą tylko administratorzy.",
+      "grant_submit": "Przyznaj kredyty",
+      "grant_submitting": "Przyznaję…",
+      "grant_cancel": "Anuluj",
+      "grant_summary_format": "{{qty}} × {{count}} firm = {{total}} kredytów, ważne do {{date}}",
+      "grant_toast_done_format": "Przyznano {{qty}} bezpłatnych kredytów: {{count}} firm, ważne do {{date}}.",
+      "grant_toast_already": "Ta partia była już przyznana wcześniej — nic nie dopisano.",
+      "grant_toast_error": "Nie udało się przyznać kredytów.",
+      "pools_free_format": "bezpłatne {{free}}",
+      "pools_paid_format": "kupione {{paid}}",
       "status_labels": {
         "pending_review": "Czeka na zatwierdzenie",
         "active": "✓ Aktywne",
@@ -3084,6 +3131,10 @@
   },
   "errors": {
     "db": {
+      "grant_companies_required": "Wybierz co najmniej jedną firmę.",
+      "grant_qty_invalid": "Liczba kredytów musi być od 1 do 100.",
+      "grant_reason_invalid": "Wybierz powód przyznania.",
+      "grant_key_missing": "Brak klucza operacji — zamknij i otwórz formularz ponownie.",
       "buyer_profile_id_required": "updateOwnBuyerProfile wymaga id",
       "buyer_profile_name_required": "Imię i nazwisko są wymagane.",
       "password_current_required": "Wpisz aktualne hasło.",
@@ -3131,6 +3182,15 @@
     }
   },
   "shell": {
+    "grants": {
+      "banner_title_one_format": "Otrzymujesz {{count}} bezpłatny kredyt PreConnect od organizatora",
+      "banner_title_few_format": "Otrzymujesz {{count}} bezpłatne kredyty PreConnect od organizatora",
+      "banner_title_many_format": "Otrzymujesz {{count}} bezpłatnych kredytów PreConnect od organizatora",
+      "banner_title_other_format": "Otrzymujesz {{count}} bezpłatnych kredytów PreConnect od organizatora",
+      "banner_valid_format": "Ważne do {{date}}. Wykorzystasz je bez dodatkowych opłat — najpierw zużywane są kredyty bezpłatne.",
+      "banner_use_btn": "Wyślij propozycję",
+      "banner_dismiss_btn": "Rozumiem"
+    },
     "account_switcher": {
       "role_admin": "Admin",
       "role_supplier": "Dostawca",
