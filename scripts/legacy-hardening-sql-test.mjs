@@ -1,4 +1,4 @@
-// [audyt 28.09, v2 po review Codexa] Test migracji 20260928120000_reminder_job_lockdown i
+// [audyt 28.09, v2 po review Codexa; v3 po review podsumowania dnia] Test migracji 20260928120000_reminder_job_lockdown i
 // 20260928120100_scraper_articles_write_lockdown na lokalnym embedded PostgreSQL (127.0.0.1:54329).
 // Obiekty scrapera i crona NIE istnieją w migracjach tego repo → runner:
 //   A) pusta baza: wszystkie migracje od zera z `app.allow_missing=on` (obie migracje = tylko NOTICE);
@@ -9,7 +9,10 @@
 //      - article_prices: BEZ publicznego odczytu (tylko ALL dla service_role? nie — bez żadnej: odczyt NIE może zostać dodany),
 //      - fm_14d_reminder_job(): SECURITY DEFINER, EXECUTE dla PUBLIC + bezpośrednio anon/authenticated/service_role;
 //      dziura potwierdzona → obie migracje dwukrotnie → wszystkie 8 uprawnień tabel per rola (w tym MAINTAIN),
-//      widoczność wierszy (nie tylko „SELECT się wykonał”), service_role pisze, postgres/service_role wykonują funkcję.
+//      widoczność wierszy (nie tylko „SELECT się wykonał”), service_role pisze, postgres/service_role wykonują funkcję;
+//   C) OSOBNA baza (tylko shim + migracja tabel) z atrapami z review Codexa: articles = ALL TO authenticated USING (id=1)
+//      (odczyt ograniczony rolą I wierszami → po migracji anon 42501, authenticated widzi DOKŁADNIE 1 wiersz, nie 2),
+//      article_facts = ALL TO anon, service_role (odczyt tylko anon → authenticated 42501), article_prices bez odczytu.
 // Nigdy nie kieruj tego na produkcję.
 import { readFileSync, readdirSync } from "node:fs";
 import pg from "pg";
@@ -76,7 +79,9 @@ try {
   ok(write.every((r) => r.roles === "{service_role}") && Object.values(perTable).every((n) => n >= 1) && perTable.articles === 1 && perTable.article_facts === 1, "polityki zapisu: wszystkie {service_role}; istniejąca polityka service_role (article_prices) zachowana obok nowej");
   const sel = Object.fromEntries(["articles", "article_facts", "article_prices"].map((t) => [t, pols.rows.filter((r) => r.tablename === t && r.cmd === "SELECT").map((r) => r.policyname)]));
   ok(sel.articles.length === 1 && sel.articles[0] === "anon_read_articles", "articles: istniejąca polityka SELECT zachowana bez zmian");
-  ok(sel.article_facts.length === 1 && sel.article_facts[0] === "anon_read_article_facts", "article_facts: odczyt był tylko przez ALL → odtworzony jako anon_read_article_facts");
+  ok(sel.article_facts.length === 1 && sel.article_facts[0] === "restored_read_article_facts_1", "article_facts: odczyt był tylko przez ALL (PUBLIC, true) → odtworzony 1:1 jako restored_read_article_facts_1");
+  const rf = pols.rows.find((r) => r.policyname === "restored_read_article_facts_1");
+  ok(rf.roles === "{public}", "restored_read_article_facts_1: TO public (jak usunięta polityka ALL)");
   ok(sel.article_prices.length === 0, "article_prices: nie miała publicznego odczytu → żadna polityka SELECT NIE została dodana");
 
   for (const role of ["anon", "authenticated"]) {
@@ -102,6 +107,56 @@ try {
   ok((await db.query("select count(*)::int c from public.reminder_calls")).rows[0].c === before + 1, "postgres (pg_cron): fm_14d_reminder_job wykonywalna");
   const fp = await db.query(`select has_function_privilege('anon','public.fm_14d_reminder_job()','execute') a, has_function_privilege('authenticated','public.fm_14d_reminder_job()','execute') b, has_function_privilege('service_role','public.fm_14d_reminder_job()','execute') s`);
   ok(fp.rows[0].a === false && fp.rows[0].b === false && fp.rows[0].s === true, "has_function_privilege: anon=f, authenticated=f (także przez PUBLIC), service_role=t");
-  console.log("PASS legacy hardening v2: strict mode, full ACL incl. MAINTAIN revoked, exact read scope preserved (kept / recreated / not added), rows visible, service_role writes, reminder job locked for client roles");
+  // ── C) osobna baza: odczyt ograniczony rolą i wierszami musi zostać zachowany 1:1 (review Codexa) ──
+  const name2 = name + "_c";
+  await root.query("create database " + name2);
+  const c = new pg.Client({ ...opts, database: name2 }); await c.connect();
+  try {
+    await c.query(read("supabase/tests/000_supabase_shim.sql"));
+    await c.query(`
+      create table public.articles (id bigserial primary key, title text);
+      create table public.article_facts (id bigserial primary key, fact text);
+      create table public.article_prices (id bigserial primary key, price numeric);
+      alter table public.articles enable row level security;
+      alter table public.article_facts enable row level security;
+      alter table public.article_prices enable row level security;
+      create policy "auth_row1_all" on public.articles for all to authenticated using (id = 1) with check (true);
+      create policy "anon_and_service_all" on public.article_facts for all to anon, service_role using (true) with check (true);
+      grant all on public.articles, public.article_facts, public.article_prices to anon, authenticated, service_role;
+      grant usage, select on all sequences in schema public to anon, authenticated, service_role;
+      insert into public.articles(title) values ('jeden'), ('dwa');
+      insert into public.article_facts(fact) values ('f1'), ('f2');
+      insert into public.article_prices(price) values (1), (2);
+    `);
+    await asRole(c, "anon");
+    ok((await tryq(c, "select count(*)::int c from public.articles")).rows[0].c === 0, "C) przed: anon widzi 0 wierszy articles (brak polityki dla anon)");
+    await asRole(c, "authenticated");
+    ok((await tryq(c, "select count(*)::int c from public.articles")).rows[0].c === 1, "C) przed: authenticated widzi 1 wiersz articles (id = 1)");
+    ok((await tryq(c, "insert into public.articles(title) values ('x')")).res === "ok", "C) przed: authenticated wstawia (dziura)");
+    await c.query("reset role");
+    for (const m of [M2, M2]) await c.query(read(m));
+    const pc = await c.query(`select tablename, policyname, cmd, roles::text as roles, qual from pg_policies where schemaname='public' and tablename in ('articles','article_facts','article_prices') order by 1,2`);
+    const ra = pc.rows.find((r) => r.tablename === "articles" && r.cmd === "SELECT");
+    ok(ra && ra.policyname === "restored_read_articles_1" && ra.roles === "{authenticated}" && /id = 1/.test(ra.qual), "C) articles: SELECT odtworzony 1:1 — TO authenticated, USING (id = 1) (nie PUBLIC/true)");
+    const rfc = pc.rows.find((r) => r.tablename === "article_facts" && r.cmd === "SELECT");
+    ok(rfc && rfc.roles === "{anon}", "C) article_facts: SELECT tylko dla anon (service_role pominięty, authenticated NIE dodany)");
+    ok(!pc.rows.some((r) => r.tablename === "article_prices" && r.cmd === "SELECT"), "C) article_prices: żadnej polityki SELECT");
+    ok(pc.rows.filter((r) => r.cmd !== "SELECT").every((r) => r.roles === "{service_role}"), "C) polityki zapisu tylko {service_role}");
+    await asRole(c, "anon");
+    ok((await tryq(c, "select count(*) from public.articles")).res === "42501", "C) po: anon articles 42501 (bez GRANT SELECT — nie poszerzono odczytu)");
+    ok((await tryq(c, "select count(*)::int c from public.article_facts")).rows[0].c === 2, "C) po: anon nadal widzi 2 wiersze article_facts");
+    ok((await privs(c, "anon", "articles")) === "" && (await privs(c, "anon", "article_facts")) === "SELECT" && (await privs(c, "anon", "article_prices")) === "", "C) anon ACL: articles nic, article_facts SELECT, article_prices nic");
+    await asRole(c, "authenticated");
+    ok((await tryq(c, "select count(*)::int c from public.articles")).rows[0].c === 1, "C) po: authenticated widzi DOKŁADNIE 1 wiersz articles (predykat zachowany, nie 2)");
+    ok((await tryq(c, "select count(*) from public.article_facts")).res === "42501", "C) po: authenticated article_facts 42501 (nie miał odczytu)");
+    ok((await tryq(c, "insert into public.articles(title) values ('y')")).res === "42501" && (await tryq(c, "update public.articles set title='z'")).res === "42501", "C) po: authenticated nie pisze");
+    ok((await privs(c, "authenticated", "articles")) === "SELECT" && (await privs(c, "authenticated", "article_facts")) === "" && (await privs(c, "authenticated", "article_prices")) === "", "C) authenticated ACL: articles SELECT, reszta nic");
+    await asRole(c, "service_role");
+    ok((await tryq(c, "insert into public.articles(title) values ('scraper')")).res === "ok" && (await tryq(c, "select count(*)::int c from public.article_prices")).rows[0].c === 2, "C) service_role pisze i czyta");
+    await c.query("reset role");
+  } finally { await c.end(); await root.query("drop database " + name2 + " with (force)"); }
+  ok(true, "C) osobna baza sprzątnięta");
+  console.log("PASS legacy hardening v3: strict mode, shim allow_missing, MAINTAIN revoked, read scope copied 1:1 (roles + predicate; kept / restored / not added; row-restricted authenticated preserved), rows visible, service_role writes, reminder job locked");
+  console.log("(v2 line) PASS legacy hardening v2: strict mode, full ACL incl. MAINTAIN revoked, exact read scope preserved (kept / recreated / not added), rows visible, service_role writes, reminder job locked for client roles");
 } catch (e) { console.error(e); process.exitCode = 1; }
 finally { await db?.end(); if (created) await root.query("drop database " + name + " with (force)"); await root.end(); }

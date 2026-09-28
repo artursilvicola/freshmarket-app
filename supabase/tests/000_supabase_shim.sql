@@ -68,3 +68,11 @@ CREATE OR REPLACE FUNCTION storage.foldername(name text) RETURNS text[] LANGUAGE
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN CREATE PUBLICATION supabase_realtime; END IF;
 END $$;
+
+-- [28.09 review Codexa] Migracje utwardzające (20260928120000_reminder_job_lockdown,
+-- 20260928120100_scraper_articles_write_lockdown) są w TRYBIE ŚCISŁYM: brak obiektu
+-- (funkcji crona / tabel scrapera, których to repo nie tworzy) = BŁĄD. W pustej bazie
+-- testowej te obiekty nie istnieją, więc shim — ładowany przez każdy runner przed
+-- odtworzeniem migracji od zera — przełącza je w tryb „pomiń z NOTICE”. Ustawienie jest
+-- sesyjne (SET), dotyczy wyłącznie połączeń testowych; produkcja nigdy nie ładuje shimu.
+SET app.allow_missing = 'on';
