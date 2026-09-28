@@ -35,8 +35,8 @@ describe("PageFinanse — pule kredytów", () => {
     expect(out).toContain("5 z 5");
     expect(out).toContain("5 kredytów wygasa 27.09.2027");
     expect(out).toContain("Dostępne do nowych wysyłek: 5");
-    expect(out).toContain("oczekuje na odczyt sieci: 0");
-    expect(out).toContain("rezerwuje kredyt");
+    expect(out).toContain("kredyty zarezerwowane przez propozycje: 0");
+    expect(out).toContain("rezerwują kredyty");
     expect(out).not.toContain("Aktywny pakiet");
     act(() => tree.unmount());
   });
@@ -46,7 +46,7 @@ describe("PageFinanse — pule kredytów", () => {
     const tree = render(<PageFinanse {...base} sends={sends} pkgMax={3} pkgUsed={3} creditPools={p} />);
     const out = text(tree);
     expect(out).toContain("Dostępne do nowych wysyłek: 0");
-    expect(out).toContain("oczekuje na odczyt sieci: 3");
+    expect(out).toContain("kredyty zarezerwowane przez propozycje: 3");
     expect(out).toContain("3 z 3");
     expect(out).toContain("3 kredyty wygasają 27.12.2026");
     expect(out).not.toContain("w tym 3 bezpłatnych");
@@ -120,7 +120,7 @@ describe("PageWysylki — pasek kredytów", () => {
     const tree = render(<PageWysylki sends={sends} offers={[]} pkgUsed={3} pkgMax={3} pkgPlan="std_5" rem={0} wallet={{ balance: 0, transactions: [] }} sendToChain={() => {}} nav={() => {}} sid={null} accountId="s1" co={{ id: "co1" }} retailers={[]} companies={[]} creditPools={p} />);
     const out = text(tree);
     expect(out).toContain("Kredyty PreConnect: 0 z 3");
-    expect(out).toContain("nierozliczone w pulach: bezpłatne 3, kupione 0 · oczekuje na odczyt: 3");
+    expect(out).toContain("nierozliczone w pulach: bezpłatne 3, kupione 0 · zarezerwowane przez propozycje: 3");
     expect(out).not.toContain("w tym 3 bezpłatnych");
     expect(out).not.toContain("nieustalone");
     act(() => tree.unmount());
@@ -132,5 +132,20 @@ describe("PageWysylki — pasek kredytów", () => {
     act(() => tree2.unmount());
     return;
     act(() => tree.unmount());
+  });
+});
+
+import { countUsedCreditSlots } from "../lib/preconnect-credit-usage.js";
+describe("live smoke regression: expired proposals", () => {
+  it("11 total, one read, two in moderation, four expired = 8 available and 2 reserved", () => {
+    const sends = ["read", "pending_moderation", "pending_moderation", ...Array(4).fill("unread_expired"), "rejected"].map((status,i)=>({id:i,supplierId:"s1",status}));
+    const used = countUsedCreditSlots(sends,"s1");
+    expect(used).toBe(3);
+    const p = summarizeCreditPools([{source:"grant",qty_total:8,qty_used:1,expires_at:"2026-12-31"},{source:"purchase",qty_total:3,qty_used:0,expires_at:"2027-08-22"}],"2026-09-28");
+    const tree = render(<PageFinanse {...base} sends={sends} pkgMax={11} pkgUsed={used} creditPools={p}/>);
+    expect(text(tree)).toContain("Dostępne do nowych wysyłek: 8");
+    expect(text(tree)).toContain("kredyty zarezerwowane przez propozycje: 2");
+    expect(p.free.remaining + p.paid.remaining).toBe(10);
+    act(()=>tree.unmount());
   });
 });

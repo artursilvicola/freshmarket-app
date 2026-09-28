@@ -159,8 +159,8 @@ try {
       for (const cid of new Set(po.map((p) => p.company_id))) await client.query("insert into public.companies(id,name) values($1,'ARCHIVE FIXTURE') on conflict do nothing", [cid]);
       for (const p of po) await client.query("insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at,payment_ref) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", [p.id, p.company_id, p.plan, Number(p.qty_total), Number(p.qty_used), Number(p.price_paid), p.currency, p.purchased_at, p.expires_at, p.payment_ref || null]);
       await client.query(`insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data)
-        values ('${ADMIN}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','artur.stasiak@freshmarket.eu','',now(),now(),now(),'{"role":"admin"}','{}')`);
-      await client.query(`update public.profiles set role='admin', email='artur.stasiak@freshmarket.eu' where id='${ADMIN}'`).catch(async () => { await client.query(`update public.profiles set role='admin' where id='${ADMIN}'`); });
+        values ('${ADMIN}','00000000-0000-0000-0000-000000000000','authenticated','authenticated','artur@kjow.pl','',now(),now(),now(),'{"role":"admin"}','{}')`);
+      await client.query(`update public.profiles set role='admin', email='artur@kjow.pl' where id='${ADMIN}'`).catch(async () => { await client.query(`update public.profiles set role='admin' where id='${ADMIN}'`); });
     };
     const rowsOf = (res, col) => (Array.isArray(res) ? res : [res]).filter((r) => r.rows?.length && col in r.rows[0]).map((r) => r.rows);
     // 4a. czysty przebieg

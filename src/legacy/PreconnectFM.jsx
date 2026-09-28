@@ -1,3 +1,4 @@
+import { usesPreconnectCredit, countUsedCreditSlots } from "../lib/preconnect-credit-usage.js";
 import { offerEnumLabel, offerEnumOptions } from "../lib/offer-enums.js";
 import { openGrantForm, editGrantForm, addCompany as grantAddCompany, removeCompany as grantRemoveCompany, submitStart as grantSubmitStart, submitFailed as grantSubmitFailed, canSubmit as grantCanSubmit, closeNeedsWarning as grantCloseNeedsWarning, isEditable as grantIsEditable, GRANT_REASONS } from "../lib/grant-form.js";
 import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Suspense } from "react";
@@ -3098,7 +3099,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // But UI filters historically used account.id (company UUID). Without this
   // alias, freshly saved offers/sends are invisible to their own creator.
   // For non-supplier roles legacySupplierId is null → falls back to account.id.
-  const pkgUsed = sends.filter(s=>s.supplierId===mySupplierKey&&!["rejected","refunded","queued"].includes(s.status)).length;
+  const pkgUsed = countUsedCreditSlots(sends, mySupplierKey);
   const pkgMax  = Number(myLimit.max || 0);
   const pkgPlan = myLimit.pkg || co?.pkg || "std_5";
   const rem     = Math.max(0, pkgMax - pkgUsed);
@@ -4771,7 +4772,7 @@ function HelpStripDashboard() {
 /* ── Wysyłki: unified hub (replaces Retail Chains + Preconnect + Send) ──── */
 export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies, creditPools }) {
   // [feat/free-credit-grants] wysłane, nieodczytane propozycje = rezerwacja poza pulami
-  const awaitingRead = (sends||[]).filter(s => (!s.supplierId||s.supplierId===accountId) && !isSeenOrCharged(s) && ["sent","opened"].includes(s.status)).length;
+  const awaitingRead = (sends||[]).filter(s => (!s.supplierId||s.supplierId===accountId) && !isSeenOrCharged(s) && usesPreconnectCredit(s)).length;
   const { t } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -6631,7 +6632,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
   const refundedExpired = expired;
   const pendingRefunds = allExpired.filter(s => !hasRefundMarker(s));
   // [feat/free-credit-grants] wysłane, jeszcze nieodczytane: rezerwują kredyt, ale nie należą do żadnej puli
-  const awaitingRead = allSent.filter(s => !isSeenOrCharged(s) && s.status !== "unread_expired" && s.status !== "refunded").length;
+  const awaitingRead = (sends || []).filter(s => (!s.supplierId || s.supplierId === accountId) && usesPreconnectCredit(s) && !isSeenOrCharged(s)).length;
   const pkgOpt=PKG_OPTS.find(p=>p.id===(pkgPlan || co.pkg))||PKG_OPTS[2];
   const activePkgMax = Number(pkgMax || pkgOpt.max || 0);
   const activePkgUsed = Number(pkgUsed || 0);

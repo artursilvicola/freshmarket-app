@@ -880,7 +880,7 @@
       "pools": {
         "card_title": "Twoje kredyty PreConnect",
         "available_format": "Dostępne do nowych wysyłek: {{count}}",
-        "awaiting_format": "oczekuje na odczyt sieci: {{count}}",
+        "awaiting_format": "kredyty zarezerwowane przez propozycje: {{count}}",
         "nearest_expiry_one_format": "{{count}} kredyt wygasa {{date}}",
         "nearest_expiry_few_format": "{{count}} kredyty wygasają {{date}}",
         "nearest_expiry_many_format": "{{count}} kredytów wygasa {{date}}",
@@ -893,7 +893,7 @@
         "remaining_unit": "pozostało",
         "valid_until_format": "ważne do {{date}}",
         "none": "brak",
-        "order_hint": "Kredyt jest pobierany z puli dopiero wtedy, gdy sieć odczyta Twoją propozycję — najpierw z bezpłatnych, potem z kupionych. Wysłana, jeszcze nieodczytana propozycja rezerwuje kredyt do czasu odczytu albo zwrotu po 14 dniach bez odczytu.",
+        "order_hint": "Kredyt jest pobierany z puli dopiero wtedy, gdy sieć odczyta Twoją propozycję — najpierw z bezpłatnych, potem z kupionych. Propozycje oczekujące na moderację, wysyłkę lub odczyt rezerwują kredyty. Odrzucenie albo wygaśnięcie bez odczytu zwalnia rezerwację.",
         "buy_btn": "Dokup kredyty",
         "granted_on_format": "przyznane {{date}}",
         "reason_promotion": "promocja",
@@ -920,7 +920,7 @@
         "pakiety": "Cennik i pakiety"
       },
       "credits": {
-        "bar_free_format": "nierozliczone w pulach: bezpłatne {{free}}, kupione {{paid}} · oczekuje na odczyt: {{awaiting}}",
+        "bar_free_format": "nierozliczone w pulach: bezpłatne {{free}}, kupione {{paid}} · zarezerwowane przez propozycje: {{awaiting}}",
         "bar_legacy_format": "nieustalone {{legacy}}",
         "balance_label": "Kredyty PreConnect",
         "amount_one_format": "{{count}} kredyt",

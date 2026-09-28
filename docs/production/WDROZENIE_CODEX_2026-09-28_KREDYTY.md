@@ -1,6 +1,6 @@
 # Wdrożenie kredytów PreConnect — 28.09.2026
 
-Status: migracja i kontrola ukończone; deploy kodu oraz odnotowanie historii w toku. Zgoda Artura: „robimy?” oraz „spróbuj jeszcze raz”. Bez zgody na maile; żadnych nie wysłano.
+Status: migracja, deploy kodu i odnotowanie historii ukończone; końcowa kontrola UI wykryła stary błąd licznika wygasłych propozycji, poprawka z testem jest przygotowana do deployu. Zgoda Artura: „robimy?” oraz „spróbuj jeszcze raz”. Bez zgody na maile; żadnych nie wysłano.
 
 ## Kontrola i kopia
 
@@ -19,3 +19,25 @@ Supabase Security Advisor zgłasza także wcześniejsze problemy spoza tej zmian
 ## Dalsze kroki
 
 Fast-forward main, potwierdzenie opublikowanej wersji; dopiero potem zapis B z blokadą i 75/123/38. Test bez e-maili na firmie testowej. Rekompenstat nowych: zero. Po oznaczeniu historii nie cofać backendu do 37e90c7 (brak grant-first i atomowości).
+
+## Wdrożenie i historia
+
+Kod 9855ba5d5c61c2cc534319b407e150ae16c00b08 opublikowany przez Netlify, deploy 6aba06bc3a41160008f6e381 ready, 28.09 o 08:19 CEST. version.json i produkcyjny bundle potwierdzone.
+
+Część B wykonana dopiero po publikacji kodu: 75 prezentów za rejestrację, 123 pakiety rekompensat, 38 neutralnych. Cztery zakupy pozostają zakupami. Skorygowano jedynie identyfikator wykonującego admina: w skrypcie był nieistniejący e-mail; rzeczywisty aktywny profil Artura to b12f618e-2f8e-40b8-a243-df020ab40dcb, artur@kjow.pl. Zmieniono także fixture runnera i runbook; runner przeszedł ponownie.
+
+236 pakietów odnotowanych, 3 historyczne partie, 236 wpisów audytu o kwocie zero. Brak nowego salda, banerów o dawnych przyznaniach i maili. Suma 681/73/608 niezmieniona; pozostałe kredyty: 438 bezpłatne, 13 kupione, 157 nieustalone. Odciski pięciu tabel po starych kolumnach niezmienione (wallet_tx porównany bez nowych zerowych wpisów historical_grant_record).
+
+## Test produkcyjny bez poczty
+
+Jedna transakcja z ROLLBACK, wyłącznie firma TEST 09e52206-bd29-4d8a-9ef8-0063abd75b51 i nieaktywna sieć TEST 990901. Przyznanie 1 kredytu: ważność 28.12.2026. Powtórka klucza idempotentna, zmieniona treść odrzucona. Pierwszy odczyt pobiera z grant; drugi (kanał email, bez wysyłania e-maila) nie pobiera ponownie, zachowuje oba czasy i status read. PASS. Po ROLLBACK zero testowych pakietów, partii i wysyłek. Trigger wysyłkowy uruchamia HTTP tylko przy INSERT pending_moderation; test używał INSERT sent, więc poczta nie była wywoływana. Plik testu i wyniki w katalogu kopii.
+
+## Poprawka wykryta w smoke UI
+
+Agrocenter: w pulach 7 bezpłatnych + 3 kupione; stary licznik pokazywał tylko 4 dostępne, bo nadal odejmował 4 unread_expired. Jedna propozycja była read, dwie pending_moderation. Nowy wspólny licznik zwalnia slot po unread_expired; nadal zachowuje rezerwacje moderacji/wysyłki. Wynik: 8 dostępnych, 2 zarezerwowane, 10 nierozliczonych w pulach. Opisy PL/EN obejmują też moderację, żeby rezerwacja nie wyglądała na brakujące kredyty. Nie zmieniono żadnych sald w bazie. Test regresyjny odtwarza dokładnie ten zestaw statusów.
+
+Vitest: 566/566 w 74 plikach; pominięty wyłącznie lokalny, nieskomitowany tests/review-historical-grants-v5.test.js, który oczekuje dawnego błędnego zachowania. Build OK. SQL od zera + współbieżność + manifest A/B + bezpośrednie granty anon: PASS.
+
+## Ograniczenia i rollback
+
+Nie wykonywano mailowego testu end-to-end ani nowych realnych przyznań. Po zapisaniu historii nie cofać backendu do 37e90c7: stara wersja nie zna grant-first i atomowych RPC. Przed chwilowym wyłączeniem przyznań użyć procedury revoke z runbooka.

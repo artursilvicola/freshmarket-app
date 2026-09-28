@@ -297,13 +297,13 @@ end $$;
 -- 2. odnotowanie (p_recorded_by = profil admina wykonującego)
 select public.admin_record_historical_grants('registration', (select array_agg(id) from hist_manifest where lista = 'rejestracja'),
   'hist-registration-2026-09-27', 'Prezent rejestracyjny FM 2026 — odnotowanie historii wg archiwum 23.09, uzgodnione z odczytem produkcji 27.09 (75 pakietów)',
-  (select id from public.profiles where email = 'artur.stasiak@freshmarket.eu' and role = 'admin')) as rejestracja;
+  (select id from public.profiles where email = 'artur@kjow.pl' and role = 'admin')) as rejestracja;
 select public.admin_record_historical_grants('compensation', (select array_agg(id) from hist_manifest where lista = 'rekompensata'),
   'hist-compensation-2026-09-27', 'Rekompensata za nieobecne sieci (Biedronka 46, Mega Image 52, Stokrotka 25) — wykonana 23.09 11:52, odnotowanie historii',
-  (select id from public.profiles where email = 'artur.stasiak@freshmarket.eu' and role = 'admin')) as rekompensata;
+  (select id from public.profiles where email = 'artur@kjow.pl' and role = 'admin')) as rekompensata;
 select public.admin_record_historical_grants('legacy', (select array_agg(id) from hist_manifest where lista = 'nieustalone'),
   'hist-legacy-2026-09-27', 'Pakiety historyczne: 33 std_5 i 5 std_1 — źródło nieustalone, opis neutralny zgodnie z decyzją Artura 27.09.2026',
-  (select id from public.profiles where email = 'artur.stasiak@freshmarket.eu' and role = 'admin')) as nieustalone;
+  (select id from public.profiles where email = 'artur@kjow.pl' and role = 'admin')) as nieustalone;
 
 -- 3. kontrola po zapisie, wciąż pod blokadą (OCZEKIWANE: rejestracja 75 grant/registration, rekompensata 123 grant/compensation,
 --    nieustalone 38 legacy; sumy kredytów/zużycia identyczne jak w A5) → wyjątek, gdy nie

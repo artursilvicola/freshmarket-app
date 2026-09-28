@@ -880,7 +880,7 @@
       "pools": {
         "card_title": "Your PreConnect credits",
         "available_format": "Available for new submissions: {{count}}",
-        "awaiting_format": "awaiting retailer read: {{count}}",
+        "awaiting_format": "credits reserved by proposals: {{count}}",
         "nearest_expiry_one_format": "{{count}} credit expires {{date}}",
         "nearest_expiry_few_format": "{{count}} credits expire {{date}}",
         "nearest_expiry_many_format": "{{count}} credits expire {{date}}",
@@ -893,7 +893,7 @@
         "remaining_unit": "remaining",
         "valid_until_format": "valid until {{date}}",
         "none": "none",
-        "order_hint": "A credit is taken from a pool only when a retailer reads your proposal — free credits first, then purchased ones. A sent but unread proposal reserves a credit until it is read or refunded after 14 days without a read.",
+        "order_hint": "A credit is taken from a pool only when a retailer reads your proposal — free credits first, then purchased ones. Proposals awaiting moderation, sending or a read reserve credits. Rejection or expiry without a read releases the reservation.",
         "buy_btn": "Buy more credits",
         "granted_on_format": "granted {{date}}",
         "reason_promotion": "promotion",
@@ -920,7 +920,7 @@
         "pakiety": "Pricing and packages"
       },
       "credits": {
-        "bar_free_format": "unsettled in pools: free {{free}}, purchased {{paid}} · awaiting read: {{awaiting}}",
+        "bar_free_format": "unsettled in pools: free {{free}}, purchased {{paid}} · reserved by proposals: {{awaiting}}",
         "bar_legacy_format": "not determined {{legacy}}",
         "balance_label": "PreConnect Credits",
         "amount_one_format": "{{count}} credit",
