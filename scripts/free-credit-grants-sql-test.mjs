@@ -20,8 +20,20 @@ try {
   db = new pg.Client({ ...opts, database: name }); await db.connect();
   await db.query(read("supabase/tests/000_supabase_shim.sql"));
   const files = readdirSync(new URL("../supabase/migrations", import.meta.url)).filter((f) => f.endsWith(".sql")).sort();
-  for (const f of files) await db.query("begin;" + read("supabase/migrations/" + f) + ";commit;");
+  for (const f of files) {
+    if (f === "20260927120000_free_credit_grants.sql") {
+      // Production has direct default EXECUTE grants to anon, unlike the shim.
+      await db.query("alter default privileges in schema public grant execute on functions to anon");
+    }
+    await db.query("begin;" + read("supabase/migrations/" + f) + ";commit;");
+    if (f === "20260927120000_free_credit_grants.sql") {
+      const acl = await db.query("select has_function_privilege('anon','public.admin_grant_free_credits(uuid[],integer,text,text,text,text,date)','execute') as allowed");
+      ok(acl.rows[0].allowed, "regresja odtwarza produkcyjne domyślne uprawnienie anon przed poprawką ACL");
+    }
+  }
   await db.query(read("supabase/migrations/20260927120000_free_credit_grants.sql"));
+  await db.query(read("supabase/migrations/20260928061542_free_credit_grants_acl.sql"));
+  await db.query(read("supabase/migrations/20260928061542_free_credit_grants_acl.sql"));
   const res = await db.query(read("supabase/tests/free_credit_grants_test.sql"));
   console.log(res.map((r) => r.rows?.[0]?.result).filter(Boolean).join("\n"));
 
@@ -143,7 +155,7 @@ try {
     console.log("fixture:", fs.existsSync(liveFile) ? "odczyt produkcji 27.09" : "archiwum 23.09", po.length, "pakietów; oczekiwane", JSON.stringify(EXP));
     const setup = async (client) => {
       await client.query(read("supabase/tests/000_supabase_shim.sql"));
-      for (const f of files.filter((f) => f !== "20260927120000_free_credit_grants.sql")) await client.query("begin;" + read("supabase/migrations/" + f) + ";commit;");
+      for (const f of files.filter((f) => f < "20260927120000_free_credit_grants.sql")) await client.query("begin;" + read("supabase/migrations/" + f) + ";commit;");
       for (const cid of new Set(po.map((p) => p.company_id))) await client.query("insert into public.companies(id,name) values($1,'ARCHIVE FIXTURE') on conflict do nothing", [cid]);
       for (const p of po) await client.query("insert into public.packages(id,company_id,plan,qty_total,qty_used,price_paid,currency,purchased_at,expires_at,payment_ref) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)", [p.id, p.company_id, p.plan, Number(p.qty_total), Number(p.qty_used), Number(p.price_paid), p.currency, p.purchased_at, p.expires_at, p.payment_ref || null]);
       await client.query(`insert into auth.users(id,instance_id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data)

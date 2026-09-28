@@ -43,6 +43,10 @@ update public.profiles set role='supplier',company_id=pg_temp.id('co') where id=
 update public.profiles set role='supplier',company_id=pg_temp.id('co2') where id=pg_temp.id('supplier2');
 
 -- ── schemat ──
+select pg_temp.ok(not has_function_privilege('anon', 'public.admin_grant_free_credits(uuid[],integer,text,text,text,text,date)', 'execute'), 'anon nie ma EXECUTE przyznania mimo domyślnych grantów produkcji');
+select pg_temp.ok(not has_function_privilege('anon', 'public.mark_credit_grant_seen(uuid)', 'execute'), 'anon nie ma EXECUTE potwierdzenia banera');
+select pg_temp.ok(has_function_privilege('authenticated', 'public.admin_grant_free_credits(uuid[],integer,text,text,text,text,date)', 'execute'), 'zalogowany admin zachowuje dostęp do RPC');
+select pg_temp.ok((select proconfig @> array['search_path=pg_catalog'] from pg_proc where oid='public.business_today(timestamptz)'::regprocedure), 'dzień biznesowy ma stały search_path');
 select pg_temp.ok((select count(*)=10 from information_schema.columns where table_schema='public' and table_name='packages'
   and column_name in ('source','grant_reason','grant_message','granted_by','granted_at','grant_batch_id','grant_seen_at','grant_historical','grant_recorded_by','grant_recorded_at')),'packages ma kolumny przyznania (+historyczne)');
 select pg_temp.ok((select count(*)=0 from information_schema.columns where table_schema='public' and table_name='packages' and column_name='grant_note'),'packages NIE ma kolumny notatki (P1 Codex)');
