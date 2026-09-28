@@ -1,8 +1,21 @@
-# Utwardzenie dwóch starszych mechanizmów we wspólnej bazie — pakiet v2 (28.09.2026)
+# Utwardzenie dwóch starszych mechanizmów we wspólnej bazie — pakiet v3 (28.09.2026)
 
 Źródło: `AUDYT_CODEX_2026-09-28_STARSZE_OSTRZEZENIA_SUPABASE.md` (P1 artykuły scrapera, P1 stary cron przypomnień). v2 = odpowiedź na `REVIEW_CODEX_2026-09-28_UTWARDZENIE_WSPOLNEJ_BAZY.md`. **Nic nie zostało wykonane na produkcji.** Gałąź `fix/legacy-shared-db-hardening` w repo B2B; gałąź `chore/verify-supabase-key-role` w repo scrapera.
 
-## Odpowiedź na review Codexa
+## v3 — odpowiedź na review podsumowania dnia (`ODPOWIEDZ_CODEX_2026-09-28_PODSUMOWANIE_DNIA.md`, sekcja C)
+
+| Uwaga Codexa | Co zmieniono (B2B c008aff, scraper b2f7dcf) |
+|---|---|
+| [P2] migracja mogła poszerzyć odczyt ograniczony rolą lub wierszami (`FOR ALL TO authenticated USING (id=1)` → `SELECT USING (true)` dla PUBLIC) | Odczyt z każdej usuwanej polityki ALL jest kopiowany **1:1**: te same role (`TO authenticated`, `TO anon`, `TO public`…) i ten sam predykat (`pg_policies.qual`) jako `restored_read_<tabela>_<n>`; bez duplikatu, gdy identyczna polityka SELECT (role + predykat) już istnieje. `GRANT SELECT` tylko rolom klienckim, które po zmianie mają jakąkolwiek politykę SELECT (PUBLIC = anon + authenticated). Reprodukcja Codexa w runnerze (faza C, osobna baza): przed — anon 0, authenticated 1; po — anon 42501 (bez grantu), authenticated **dokładnie 1** wiersz; `article_facts` z `ALL TO anon, service_role` → SELECT tylko dla anon, authenticated 42501; `article_prices` bez odczytu → nic nie dodane. |
+| [P2] `effective_key` opisywał format, nie działający klucz (`sb_secret_invalid_placeholder` → ok:true; `project_matches_url=None` przechodził) | Rozdzielone trzy fakty: `url_valid` (ref z SUPABASE_URL), `accepted_by_project` (GET `/rest/v1/` = 2xx), `service_role_confirmed` (GET `/auth/v1/admin/users?per_page=1` = 2xx — endpoint akceptuje wyłącznie service_role; treść nieczytana). `ok` = wszystkie trzy ∧ kind ∈ {jwt, sb_secret} ∧ (dla JWT: rola=service_role i ref = projekt z URL). Dla nieprzezroczystego `sb_secret_` `project_matches_url = null`, projekt potwierdza akceptacja przez API. Health: `ready_for_lockdown = supabase=='ok' && effective_key.ok` — `error_401` nigdy nie współistnieje z „gotowe”. Workflow v3: te same trzy fakty przez urllib, błąd przy braku URL/klucza, atrapie, anon, innym projekcie. Testy offline: 10 przypadków (healthcheck) + 7 (logika workflow), klucz nigdy w wyniku, logu ani URL. |
+| [P2] tryb ścisły przerywał istniejące runnery od zera (`preconnect-followups-sql-test` P0001) | `supabase/tests/000_supabase_shim.sql` ustawia `SET app.allow_missing = 'on'` (sesyjnie; każdy z 12 runnerów ładuje shim przed odtworzeniem migracji; produkcja nigdy nie ładuje shimu). Kontrola produkcyjna bez zmian — bez shimu migracje nadal rzucają. Sprawdzone: `legacy-hardening-sql-test` (A/B/C) PASS, `preconnect-followups-sql-test` PASS, `free-credit-grants-sql-test` PASS. |
+| Etap 1 dziś — pozytywna opinia | Bez zmian w migracji crona. Kontrola = ACL (`has_function_privilege`), **nie** wywołanie funkcji. Przed: kopia ACL + sygnatura/właściciel. |
+| C3: workflow i Health razem | Tak — jedna gałąź scrapera `chore/verify-supabase-key-role` b2f7dcf (workflow v3 + healthcheck v3 + test). Health nadal za `x-admin-token`. |
+| C4: pięć pozostałych tabel | Osobna, pilna migracja po Etapie 2; dla `drafts` (treści wewnętrzne) najpierw jawna decyzja o publicznym odczycie. |
+
+Runbook Etapu 2 (pkt 1–2) czyta się teraz tak: workflow musi wypisać `SUPABASE_KEY: … verified=True`, a Health `effective_key.ok = true` i `ready_for_lockdown = true`. Same `role=service_role` / `kind=sb_secret` nie wystarczają.
+
+## Odpowiedź na review Codexa (v2)
 
 | # | Ustalenie | Co zmieniono |
 |---|---|---|
