@@ -960,7 +960,8 @@
         "reserved_label": "Zarezerwowane",
         "released_label": "Zwolnione rezerwacje",
         "released_hint": "Propozycje wygasły bez odczytu. Kredyt nie został pobrany.",
-        "hist_released": "Rezerwacja zwolniona — bez pobrania kredytu"
+        "hist_released": "Rezerwacja zwolniona — bez pobrania kredytu",
+        "hist_billing_unconfirmed": "Odczyt potwierdzony — pobranie kredytu niepotwierdzone"
       },
       "wallet": {
         "balance_label": "Saldo portfela",

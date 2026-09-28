@@ -960,7 +960,8 @@
         "reserved_label": "Reserved",
         "released_label": "Released reservations",
         "released_hint": "Submissions expired unread. No credit was charged.",
-        "hist_released": "Reservation released — no credit charged"
+        "hist_released": "Reservation released — no credit charged",
+        "hist_billing_unconfirmed": "Read confirmed — credit charge unconfirmed"
       },
       "wallet": {
         "balance_label": "Wallet balance",

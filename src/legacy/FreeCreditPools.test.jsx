@@ -115,7 +115,7 @@ describe("PageFinanse — pakiety o nieustalonym źródle", () => {
 
 describe("PageWysylki — pasek kredytów", () => {
   it("PL i EN oddzielają pobrane od rezerwacji; Finanse nie oczekują zwrotu za nigdy niepobrany kredyt", () => {
-    const sends = [{id:1,supplierId:'s1',status:'read',billingStatus:'charged'}, {id:2,supplierId:'s1',status:'pending_moderation'}, {id:3,supplierId:'s1',status:'sent'}, {id:4,supplierId:'s1',status:'unread_expired'}];
+    const sends = [{id:1,supplierId:'s1',status:'read',billingStatus:'charged'}, {id:2,supplierId:'s1',status:'pending_moderation'}, {id:3,supplierId:'s1',status:'sent'}, {id:4,supplierId:'s1',status:'unread_expired'}, {id:5,supplierId:'s1',status:'read',billingStatus:'no_package_available'}];
     for (const lng of ['pl','en']) {
       let tree=render(<PageWysylki {...base} sends={sends} pkgUsed={3} creditPools={pools} sendToChain={()=>{}} companies={[]} />,lng);
       expect(text(tree)).toContain(lng==='pl'?'Wykorzystane: 1 · Zarezerwowane: 2':'Used: 1 · Reserved: 2');
@@ -127,6 +127,7 @@ describe("PageWysylki — pasek kredytów", () => {
       const history=tree.root.findAllByType('button').find(b=>b.children.includes(label));
       expect(history).toBeTruthy();act(()=>history.props.onClick());
       expect(text(tree)).toContain(lng==='pl'?'Rezerwacja zwolniona — bez pobrania kredytu':'Reservation released — no credit charged');
+      expect(text(tree)).toContain(lng==='pl'?'Odczyt potwierdzony — pobranie kredytu niepotwierdzone':'Read confirmed — credit charge unconfirmed');
       act(()=>tree.unmount());
     }
   });
