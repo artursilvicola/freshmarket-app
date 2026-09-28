@@ -39,6 +39,19 @@ describe("PageWysylki — Sieci handlowe: tylko własne wysyłki dostawcy", () =
     expect(out).not.toContain("3/4");
     act(() => tree.unmount());
   });
+  it("[review Codexa] wiersz bez supplierId NIE jest własny; brak accountId = zero wysyłek", () => {
+    const orphan = { ...own, id: "x1", supplierId: undefined };
+    const tree = render(<PageWysylki {...wysylkiProps} sends={[own, orphan]} />);
+    const out = text(tree);
+    expect(out).toContain("1 wysłanych · 0 przeczytanych");
+    expect(out).toContain("0/1 propozycji przeczytanych");
+    expect(out).not.toContain("2 wysłanych");
+    act(() => tree.unmount());
+    const tree2 = render(<PageWysylki {...wysylkiProps} accountId={undefined} sends={[own, orphan]} />);
+    expect(text(tree2)).toContain("0 wysłanych · 0 przeczytanych");
+    expect(text(tree2)).not.toContain("wysł.");
+    act(() => tree2.unmount());
+  });
   it("bez własnych wysyłek do sieci: brak badge i brak licznika, mimo wysyłek innych firm", () => {
     const tree = render(<PageWysylki {...wysylkiProps} sends={others} />);
     const out = text(tree);
@@ -55,7 +68,7 @@ describe("PageDashboard — reguła 14 dni od daty mailingu", () => {
   it("propozycja z 21.09 (mailing 06.10 jeszcze nie ruszył): e-mail 06.10.2026, termin odczytu 20.10.2026", () => {
     const tree = render(<PageDashboard {...dashProps} sends={[own]} />);
     const out = text(tree);
-    expect(out).toContain("e-mail do kupca 06.10.2026 (pierwszy wtorek miesiąca) · czeka na otwarcie do 20.10.2026 — 14 dni od wysyłki e-maila");
+    expect(out).toContain("planowany e-mail do kupca 06.10.2026 (pierwszy wtorek miesiąca) · czeka na otwarcie do 20.10.2026 — 14 dni od wysyłki e-maila");
     expect(out).not.toContain("max 14 dni");
     act(() => tree.unmount());
   });
@@ -67,7 +80,43 @@ describe("PageDashboard — reguła 14 dni od daty mailingu", () => {
   });
   it("EN: ta sama reguła", () => {
     const tree = render(<PageDashboard {...dashProps} sends={[own]} />, "en");
-    expect(text(tree)).toContain("e-mail to the buyer on 06.10.2026 (first Tuesday of the month) · awaiting open until 20.10.2026 — 14 days from the e-mail");
+    expect(text(tree)).toContain("planned e-mail to the buyer on 06.10.2026 (first Tuesday of the month) · awaiting open until 20.10.2026 — 14 days from the e-mail");
+    act(() => tree.unmount());
+  });
+  it("[review Codexa] po upływie planowanego wtorku BEZ znacznika: „czeka na potwierdzenie wysyłki”, nie „14 dni od wysyłki”", () => {
+    vi.setSystemTime(new Date("2026-10-07T10:00:00"));
+    try {
+      const tree = render(<PageDashboard {...dashProps} sends={[own]} />);
+      const out = text(tree);
+      expect(out).toContain("mailing planowany na 06.10.2026 — czeka na potwierdzenie wysyłki e-maila · przewidywany termin odczytu 20.10.2026 (14 dni od mailingu)");
+      expect(out).not.toContain("14 dni od wysyłki e-maila do kupca");
+      act(() => tree.unmount());
+    } finally { vi.setSystemTime(new Date("2026-09-28T10:00:00")); }
+  });
+  it("[review Codexa] znacznik YYYY-MM-DD nie cofa się o dzień w strefie na zachód od UTC", () => {
+    const orig = process.env.TZ; process.env.TZ = "America/New_York";
+    try {
+      expect(new Date("2026-09-22").getDate()).toBe(21); // środowisko honoruje TZ: północ UTC = 21.09 w Nowym Jorku
+      const sent = { ...own, id: "a3", sendDate: "2026-09-15", mailingSentAt: "2026-09-22" };
+      const tree = render(<PageDashboard {...dashProps} sends={[sent]} />);
+      expect(text(tree)).toContain("czeka na otwarcie do 06.10.2026 — 14 dni od wysyłki e-maila do kupca (22.09.2026)");
+      act(() => tree.unmount());
+    } finally { if (orig === undefined) delete process.env.TZ; else process.env.TZ = orig; }
+  });
+  it("[review Codexa] zmiana miesiąca i koniec czasu letniego: 24.10 + 14 dni = 07.11", () => {
+    const sent = { ...own, id: "a4", sendDate: "2026-10-20", createdAt: "2026-10-20T10:00:00", mailingSentAt: "2026-10-24" };
+    vi.setSystemTime(new Date("2026-10-26T10:00:00"));
+    try {
+      const tree = render(<PageDashboard {...dashProps} sends={[sent]} />);
+      expect(text(tree)).toContain("czeka na otwarcie do 07.11.2026 — 14 dni od wysyłki e-maila do kupca (24.10.2026)");
+      act(() => tree.unmount());
+    } finally { vi.setSystemTime(new Date("2026-09-28T10:00:00")); }
+  });
+  it("[review Codexa] brak sendDate: kotwica sentAt jak w RPC (nie „dziś”)", () => {
+    const sent = { ...own, id: "a5", sendDate: undefined, sentAt: "2026-08-20T10:00:00Z", createdAt: "2026-09-20T10:00:00" };
+    const tree = render(<PageDashboard {...dashProps} sends={[sent]} />);
+    // 20.08 → pierwszy wtorek września = 01.09 (już minął, bez znacznika) → czeka na potwierdzenie, termin 15.09
+    expect(text(tree)).toContain("mailing planowany na 01.09.2026 — czeka na potwierdzenie wysyłki e-maila · przewidywany termin odczytu 15.09.2026");
     act(() => tree.unmount());
   });
   it("aktywność dashboardu liczy tylko własne wysyłki (30 dni)", () => {

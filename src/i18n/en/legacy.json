@@ -225,7 +225,8 @@
           "body_no_title": "<strong>Submitted</strong> a product proposal",
           "sub": "awaiting open (max 14 days)",
           "sub_deadline_format": "awaiting open until {{deadline}} — 14 days from the e-mail to the buyer ({{mailing}})",
-          "sub_planned_format": "e-mail to the buyer on {{mailing}} (first Tuesday of the month) · awaiting open until {{deadline}} — 14 days from the e-mail"
+          "sub_planned_format": "planned e-mail to the buyer on {{mailing}} (first Tuesday of the month) · awaiting open until {{deadline}} — 14 days from the e-mail",
+          "sub_awaiting_confirmation_format": "mailing planned for {{mailing}} — awaiting confirmation that the e-mail was sent · expected read deadline {{deadline}} (14 days from mailing)"
         },
         "expired": {
           "body_with_title": "<strong>Product proposal expired</strong> <em>“{{title}}”</em>",
@@ -895,7 +896,7 @@
         "remaining_unit": "remaining",
         "valid_until_format": "valid until {{date}}",
         "none": "none",
-        "order_hint": "A credit is taken from a pool only when a retailer reads your proposal — free credits first, then purchased ones. Proposals awaiting moderation, sending or a read reserve credits. Rejection or expiry without a read releases the reservation.",
+        "order_hint": "A credit is taken from a pool only when a retailer reads your proposal — credits granted by the organiser first, then purchased and historical packages by the nearest expiry date. Proposals awaiting moderation, sending or a read reserve credits. Rejection or expiry without a read releases the reservation.",
         "buy_btn": "Buy more credits",
         "granted_on_format": "granted {{date}}",
         "reason_promotion": "promotion",

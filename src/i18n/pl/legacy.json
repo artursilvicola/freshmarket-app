@@ -225,7 +225,8 @@
           "body_no_title": "<strong>Wysłano</strong> propozycję",
           "sub": "czeka na otwarcie (max 14 dni)",
           "sub_deadline_format": "czeka na otwarcie do {{deadline}} — 14 dni od wysyłki e-maila do kupca ({{mailing}})",
-          "sub_planned_format": "e-mail do kupca {{mailing}} (pierwszy wtorek miesiąca) · czeka na otwarcie do {{deadline}} — 14 dni od wysyłki e-maila"
+          "sub_planned_format": "planowany e-mail do kupca {{mailing}} (pierwszy wtorek miesiąca) · czeka na otwarcie do {{deadline}} — 14 dni od wysyłki e-maila",
+          "sub_awaiting_confirmation_format": "mailing planowany na {{mailing}} — czeka na potwierdzenie wysyłki e-maila · przewidywany termin odczytu {{deadline}} (14 dni od mailingu)"
         },
         "expired": {
           "body_with_title": "<strong>Wysyłka wygasła</strong> <em>„{{title}}\"</em>",
@@ -895,7 +896,7 @@
         "remaining_unit": "pozostało",
         "valid_until_format": "ważne do {{date}}",
         "none": "brak",
-        "order_hint": "Kredyt jest pobierany z puli dopiero wtedy, gdy sieć odczyta Twoją propozycję — najpierw z bezpłatnych, potem z kupionych. Propozycje oczekujące na moderację, wysyłkę lub odczyt rezerwują kredyty. Odrzucenie albo wygaśnięcie bez odczytu zwalnia rezerwację.",
+        "order_hint": "Kredyt jest pobierany z puli dopiero wtedy, gdy sieć odczyta Twoją propozycję — najpierw z kredytów przyznanych przez organizatora, potem z kupionych i pakietów historycznych według najbliższego terminu ważności. Propozycje oczekujące na moderację, wysyłkę lub odczyt rezerwują kredyty. Odrzucenie albo wygaśnięcie bez odczytu zwalnia rezerwację.",
         "buy_btn": "Dokup kredyty",
         "granted_on_format": "przyznane {{date}}",
         "reason_promotion": "promocja",

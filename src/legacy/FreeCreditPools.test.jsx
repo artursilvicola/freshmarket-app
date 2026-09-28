@@ -70,7 +70,7 @@ describe("PageFinanse — pule kredytów", () => {
     expect(out).toContain("Free from the organiser");
     expect(out).toContain("Purchased");
     expect(out).toContain("Available for new submissions: 5");
-    expect(out).toContain("free credits first");
+    expect(out).toContain("credits granted by the organiser first, then purchased and historical packages by the nearest expiry date");
     expect(out).not.toContain("Bezpłatne");
     act(() => tree.unmount());
   });
