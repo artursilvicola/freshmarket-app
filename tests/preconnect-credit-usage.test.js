@@ -16,5 +16,6 @@ describe('actual charges versus reservations',()=>{
  it('does not call a previously charged expiration a free release',()=>{
   expect(isReleasedUnreadReservation({status:'unread_expired',data:{chargeTxId:'charge'}})).toBe(false);
   expect(describeCreditUsage([{status:'read',billingStatus:'no_package_available'}],'a',0).used).toBe(0);
+  expect(isReleasedUnreadReservation({status:'unread_expired',refundTxId:'legacy-refund'})).toBe(false);
  });
 });

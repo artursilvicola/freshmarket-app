@@ -15,7 +15,11 @@ export function hasCreditCharge(send) {
 }
 
 export function isReleasedUnreadReservation(send) {
-  return send?.status === "unread_expired" && !hasCreditCharge(send);
+  const d = send?.data || {};
+  // Preserve historical refunds even if their older rows have no charge marker.
+  const refunded = send?.refundAt || send?.refundTxId || send?.refundAmount
+    || d.refundAt || d.refundTxId || d.refundAmount;
+  return send?.status === "unread_expired" && !hasCreditCharge(send) && !refunded;
 }
 
 // The package ledger is authoritative for consumed credits. A read without a
