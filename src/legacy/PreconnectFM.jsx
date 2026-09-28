@@ -671,6 +671,14 @@ function isMailingActive(send) {
   return today >= md;
 }
 
+// [28.09] Termin odczytu = data mailingu (pierwszy wtorek miesiąca lub realny stempel)
+// + 14 dni — lustro RPC expire_legacy_sends_14d (migracja 044). Zwraca Date (północ).
+function sendReadDeadline(send) {
+  const d = new Date(sendMailingDate(send)); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 14);
+  return d;
+}
+
 // Format DD.MM.RRRR dla etykiety "Zaplanowane do mailingu — DD.MM.RRRR".
 function fmtMailingDateDMY(d) {
   const dt = (d instanceof Date) ? d : new Date(d);
@@ -4173,7 +4181,7 @@ function pickSupplierDashState({ co, fmSettings }) {
 
 // ── KOMPONENT GŁÓWNY ────────────────────────────────────────────────────────
 
-function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed, creditUsage }) {
+export function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed, creditUsage }) {
   // [Krok P2-3b] Bilingual via supplier.dashboard.next_step_variants/activity/refunds_strip/kpi_section
   const { t } = useTranslation("legacy");
   const dashState = pickSupplierDashState({ co, fmSettings });
@@ -4265,7 +4273,10 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     if (["opened", "read", "read_manual"].includes(s.status)) {
       events.push({ ts, dot: "#059669", type: "buyer_viewed", title: ofTitle, sub: t("supplier.dashboard.activity.buyer_viewed.sub") });
     } else if (s.status === "sent") {
-      events.push({ ts, dot: "#2563eb", type: "sent", title: ofTitle, sub: t("supplier.dashboard.activity.sent.sub") });
+      // [28.09] Reguła 14 dni liczy się od daty mailingu (pierwszy wtorek miesiąca), nie od wysłania propozycji.
+      const mailing = fmtMailingDateDMY(sendMailingDate(s)), deadline = fmtMailingDateDMY(sendReadDeadline(s));
+      const planned = PRECONNECT_MAILING_DATE_LOGIC && !isMailingActive(s);
+      events.push({ ts, dot: "#2563eb", type: "sent", title: ofTitle, sub: t(planned ? "supplier.dashboard.activity.sent.sub_planned_format" : "supplier.dashboard.activity.sent.sub_deadline_format", { mailing, deadline }) });
     } else if (["unread_expired", "refunded"].includes(s.status)) {
       events.push({ ts, dot: "#94a3b8", type: "expired", title: ofTitle, sub: t("supplier.dashboard.activity.expired.sub") });
     }
@@ -4884,8 +4895,9 @@ export function PageWysylki({ sends, offers, pkgUsed, creditUsage, pkgMax, pkgPl
             <div style={{ display:"flex",gap:8,marginLeft:"auto",alignItems:"center" }}>
               <span style={{ fontSize:12,color:"#64748b",background:"#f8fafc",padding:"5px 12px",borderRadius:8,border:"1px solid #e2e8f0" }}>
                 {t("supplier.wysylki.sieci.stats_format", {
-                  sent: sends.filter(s=>["sent","opened","read","read_manual"].includes(s.status)).length,
-                  read: sends.filter(s=>["opened","read","read_manual"].includes(s.status)).length,
+                  // [28.09] tylko własne wysyłki dostawcy — nie liczniki wszystkich firm
+                  sent: mySends.filter(s=>["sent","opened","read","read_manual"].includes(s.status)).length,
+                  read: mySends.filter(s=>["opened","read","read_manual"].includes(s.status)).length,
                 })}
               </span>
               <input
@@ -4897,7 +4909,7 @@ export function PageWysylki({ sends, offers, pkgUsed, creditUsage, pkgMax, pkgPl
           </div>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12 }}>
             {filteredRetailers.map(r => {
-              const rSends = sends.filter(s => s.retailerId === r.id && !["queued","pending_moderation","rejected"].includes(s.status));
+              const rSends = mySends.filter(s => s.retailerId === r.id && !["queued","pending_moderation","rejected"].includes(s.status)); // [28.09] tylko własne
               const rRead  = rSends.filter(s => ["opened","read","read_manual"].includes(s.status)).length;
               const hasSent = rSends.length > 0;
               return (
@@ -5052,7 +5064,7 @@ export function PageWysylki({ sends, offers, pkgUsed, creditUsage, pkgMax, pkgPl
                   </div>
                 </div>
                 {scheduled ? (
-                  <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge>
+                  <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)), deadline: fmtMailingDateDMY(sendReadDeadline(s)) })}</Badge>
                 ) : (
                   <span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
                     <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
@@ -6817,7 +6829,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
                         (status sent, ale mailing jeszcze nie ruszył) pokazujemy dostawcy
                         "Zaplanowane do mailingu — DD.MM.RRRR" zamiast statusu odczytu. */}
                     {PRECONNECT_MAILING_DATE_LOGIC && s.status==="sent" && !isMailingActive(s) ? (
-                      <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge>
+                      <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)), deadline: fmtMailingDateDMY(sendReadDeadline(s)) })}</Badge>
                     ) : (
                       <span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
                         <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
@@ -10017,7 +10029,7 @@ export function PageAdminPipeline({ sends, setSends, onRetailerEmailSent, offers
                     nie pokazujemy aktywnego countdownu 14 dni — tylko "Zaplanowane
                     do mailingu — DD.MM.RRRR". */}
                 {s.status==="sent" && PRECONNECT_MAILING_DATE_LOGIC && !isMailingActive(s) ? (
-                  <div style={{ marginTop:5 }}><Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge></div>
+                  <div style={{ marginTop:5 }}><Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)), deadline: fmtMailingDateDMY(sendReadDeadline(s)) })}</Badge></div>
                 ) : s.status==="sent" ? (<div style={{ marginTop:5 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>{t("admin.pipeline.track_tracking_label")}</span><span style={{ color:s.daysLeft<=3?"#dc2626":"#f59e0b" }}>{t("admin.pipeline.track_days_left_format", { count: s.daysLeft })}</span></div>
                   <div style={{ background:"#e2e8f0",borderRadius:3,height:4,overflow:"hidden" }}><div style={{ height:"100%",background:s.daysLeft<=3?"#dc2626":"#f59e0b",width:`${((14-s.daysLeft)/14)*100}%` }}/></div>

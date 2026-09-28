@@ -223,7 +223,9 @@
         "sent": {
           "body_with_title": "<strong>Wysłano</strong> propozycję <em>„{{title}}\"</em>",
           "body_no_title": "<strong>Wysłano</strong> propozycję",
-          "sub": "czeka na otwarcie (max 14 dni)"
+          "sub": "czeka na otwarcie (max 14 dni)",
+          "sub_deadline_format": "czeka na otwarcie do {{deadline}} — 14 dni od wysyłki e-maila do kupca ({{mailing}})",
+          "sub_planned_format": "e-mail do kupca {{mailing}} (pierwszy wtorek miesiąca) · czeka na otwarcie do {{deadline}} — 14 dni od wysyłki e-maila"
         },
         "expired": {
           "body_with_title": "<strong>Wysyłka wygasła</strong> <em>„{{title}}\"</em>",
@@ -1029,7 +1031,7 @@
         "refund_pending": "zwrot w toku",
         "awaiting": "oczekuje",
         "empty": "Brak wysyłek.",
-        "scheduled_mailing_format": "Zaplanowane do mailingu — {{date}}"
+        "scheduled_mailing_format": "Zaplanowane do mailingu — {{date}} · termin odczytu {{deadline}} (14 dni od mailingu)"
       },
       "pakiety": {
         "payment_modal": {

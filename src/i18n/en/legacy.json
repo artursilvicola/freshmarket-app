@@ -223,7 +223,9 @@
         "sent": {
           "body_with_title": "<strong>Submitted</strong> <em>“{{title}}”</em>",
           "body_no_title": "<strong>Submitted</strong> a product proposal",
-          "sub": "awaiting open (max 14 days)"
+          "sub": "awaiting open (max 14 days)",
+          "sub_deadline_format": "awaiting open until {{deadline}} — 14 days from the e-mail to the buyer ({{mailing}})",
+          "sub_planned_format": "e-mail to the buyer on {{mailing}} (first Tuesday of the month) · awaiting open until {{deadline}} — 14 days from the e-mail"
         },
         "expired": {
           "body_with_title": "<strong>Product proposal expired</strong> <em>“{{title}}”</em>",
@@ -1029,7 +1031,7 @@
         "refund_pending": "refund in progress",
         "awaiting": "pending",
         "empty": "No submissions.",
-        "scheduled_mailing_format": "Scheduled for mailing — {{date}}"
+        "scheduled_mailing_format": "Scheduled for mailing — {{date}} · read deadline {{deadline}} (14 days from mailing)"
       },
       "pakiety": {
         "payment_modal": {
