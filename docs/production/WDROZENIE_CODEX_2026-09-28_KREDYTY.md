@@ -1,6 +1,6 @@
 # Wdrożenie kredytów PreConnect — 28.09.2026
 
-Status: migracja, deploy kodu i odnotowanie historii ukończone; końcowa kontrola UI wykryła stary błąd licznika wygasłych propozycji, poprawka z testem jest przygotowana do deployu. Zgoda Artura: „robimy?” oraz „spróbuj jeszcze raz”. Bez zgody na maile; żadnych nie wysłano.
+Status: WDROŻONE. Migracja, kod, zapis historii oraz końcowy smoke test SQL i UI PL/EN ukończone. Poprawka licznika wygasłych propozycji również na produkcji. Zgoda Artura: „robimy?” oraz „spróbuj jeszcze raz”. Bez zgody na maile; żadnych nie wysłano.
 
 ## Kontrola i kopia
 
@@ -41,3 +41,15 @@ Vitest: 566/566 w 74 plikach; pominięty wyłącznie lokalny, nieskomitowany tes
 ## Ograniczenia i rollback
 
 Nie wykonywano mailowego testu end-to-end ani nowych realnych przyznań. Po zapisaniu historii nie cofać backendu do 37e90c7: stara wersja nie zna grant-first i atomowych RPC. Przed chwilowym wyłączeniem przyznań użyć procedury revoke z runbooka.
+
+## Ostateczny wynik kontroli UI
+
+Poprawka licznika: commit 3c9c0d2797f4a7871a385cb61a208c4ca8549005, deploy 6aba0a9d3abadf0007739a3f ready, opublikowany 28.09.2026 o 08:35:32 CEST; version.json = 3c9c0d2797f4.
+
+Na produkcji potwierdzono PL/EN dla Agrocenter (7 free + 3 paid, 8 available + 2 reserved), historię 3 rekompensat i wcześniejszego prezentu 5 kredytów z oryginalnymi datami; ACONFEX ma osobną pulę historyczną neutralną (4 remaining), bez błędnej etykiety „Kupione”. Zrzuty: `C:/Users/Artur/OneDrive/Dokumenty/1FMK2026/outputs/credits-deploy-ui-20260928/kredyty-produkcja-pl.png`, `kredyty-produkcja-en.png`, `kredyty-produkcja-neutralne.png`.
+
+Panel admina → Firmy → rozwiń ▼ przy firmie → Przyznaj bezpłatne kredyty: formularz otwiera się, ma powód, wiadomość, notatkę tylko dla admina i datę domyślną 28.12.2026. Zamknięto Anuluj, bez realnego przyznania. Panel pozostawiony na liście firm w koncie Artura, język PL.
+
+Końcowe odciski i brak śladów testu: `kontrola-po-historii-i-rollback-test.json` w katalogu kopii. Uzgodnione salda i dawna ważność bez zmian. Żadnych maili nie wysłano; 123 rekompensat nie przyznawano ponownie.
+
+Do osobnego uporządkowania redakcyjnego: odziedziczone kafelki „użyte” obejmują też rezerwacje, a blok „zwroty w toku” opisuje brak znacznika historycznego zwrotu także przy propozycji, która nigdy nie obciążyła pakietu. Poprawiony licznik dostępności już ich nie odejmuje. Te wcześniejsze podpisy nie zmieniają salda ani atomowego rozliczania.
