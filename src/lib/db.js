@@ -2433,7 +2433,7 @@ export async function adminListGrantBatches(limit = 50) {
 // żeby UI nie sugerowało, że cała pula wygasa w najbliższym terminie (review Codexa, p. 6).
 export function summarizeCreditPools(packages, todayISO = businessTodayISO()) {
   // Trzy pule, zgodne 1:1 z company_capacity: free (source = grant), paid (source = purchase),
-  // legacy (source = legacy — pakiet historyczny o nieustalonym źródle; NIGDY nie liczony jako kupiony).
+  // legacy (source = legacy — pakiet historyczny, pokazywany jako bezpłatny od organizatora; NIGDY nie liczony jako kupiony).
   const pools = {
     free: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [], historical: 0 },
     paid: { total: 0, used: 0, remaining: 0, expiry: null, rows: [], byExpiry: [] },

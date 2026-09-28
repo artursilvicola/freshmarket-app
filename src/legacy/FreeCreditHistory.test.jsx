@@ -1,5 +1,5 @@
 // [feat/free-credit-grants v5] Historia pakietów dostawcy: historyczne przyznania („przyznano wcześniej”),
-// pakiet o nieustalonym źródle (opis neutralny, nie „Kupione”), zwykłe przyznanie i zakup.
+// pakiet historyczny (bezpłatny od organizatora, nie „Kupione”), zwykłe przyznanie i zakup.
 import React from "react";
 import { act, create } from "react-test-renderer";
 import { describe, it, expect, vi } from "vitest";
@@ -30,7 +30,7 @@ async function render(lng) {
 const text = (tree) => JSON.stringify(tree.toJSON());
 
 describe("historia pakietów — historyczne przyznania", () => {
-  it("PL: rejestracja = „przyznano wcześniej 5 kredytów”, rekompensata historyczna, nieustalone = opis neutralny, nowe przyznanie z wiadomością, zakup jak dotąd", async () => {
+  it("PL: rejestracja = „przyznano wcześniej 5 kredytów”, rekompensata historyczna, historyczny = bezpłatny od organizatora, nowe przyznanie z wiadomością, zakup jak dotąd", async () => {
     const tree = await render("pl");
     const out = text(tree);
     expect(out).toContain("Prezent za rejestrację na Fresh Market — przyznano wcześniej 5 kredytów");

@@ -83,8 +83,8 @@ describe("PageFinanse — pule kredytów", () => {
   });
 });
 
-describe("PageFinanse — pakiety o nieustalonym źródle", () => {
-  it("sam pakiet nieustalony: Kupione 0, osobny kafel „Pakiety historyczne (źródło nieustalone)” z 1; mieszanka: te same liczby co w widoku SQL", () => {
+describe("PageFinanse — pakiety historyczne (bezpłatne od organizatora)", () => {
+  it("sam pakiet historyczny: Kupione 0, osobny kafel „Pakiety historyczne (Bezpłatne od organizatora)” z 1; mieszanka: te same liczby co w widoku SQL", () => {
     const only = summarizeCreditPools([{ id: "l1", source: "legacy", qty_total: 1, qty_used: 0, expires_at: "2026-12-31" }], "2026-09-27");
     let tree = render(<PageFinanse {...base} pkgMax={1} pkgUsed={0} creditPools={only} />);
     let out = text(tree);
@@ -106,7 +106,7 @@ describe("PageFinanse — pakiety o nieustalonym źródle", () => {
     expect(tileJson(out, "free")).toContain('"children":["2",');
     act(() => tree.unmount());
   });
-  it("bez pakietów nieustalonych kafel nie pojawia się", () => {
+  it("bez pakietów historycznych kafel nie pojawia się", () => {
     const tree = render(<PageFinanse {...base} creditPools={pools} />);
     expect(text(tree)).not.toContain("Pakiety historyczne");
     act(() => tree.unmount());

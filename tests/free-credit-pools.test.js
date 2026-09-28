@@ -33,7 +33,7 @@ describe("summarizeCreditPools", () => {
     expect(pools.free.expiry).toBe("2026-10-15");
     expect(pools.paid.byExpiry).toEqual([{ expiry: "2027-01-31", remaining: 4 }, { expiry: null, remaining: 2 }]);
   });
-  it("legacy (źródło nieustalone) = osobna pula, nie kupione; historyczny prezent do bezpłatnych", () => {
+  it("legacy (historyczne, bezpłatne od organizatora) = osobna pula, nie kupione; historyczny prezent do bezpłatnych", () => {
     const pools = summarizeCreditPools([
       { source: "grant", grant_historical: true, qty_total: 5, qty_used: 3, expires_at: "2026-12-31" },
       { source: "legacy", qty_total: 1, qty_used: 0, expires_at: "2026-12-31" },
@@ -43,7 +43,7 @@ describe("summarizeCreditPools", () => {
     expect(pools.paid).toMatchObject({ remaining: 4, total: 5 });            // tylko purchase — jak company_capacity.qty_remaining_paid
     expect(pools.legacy).toMatchObject({ remaining: 1, total: 1, byExpiry: [{ expiry: "2026-12-31", remaining: 1 }] });
     const only = summarizeCreditPools([{ source: "legacy", qty_total: 1, qty_used: 0, expires_at: "2026-12-31" }], T);
-    expect(only.paid.remaining).toBe(0);                                   // sam pakiet nieustalony NIE jest „kupiony”
+    expect(only.paid.remaining).toBe(0);                                   // sam pakiet historyczny NIE jest „kupiony”
     expect(only.legacy.remaining).toBe(1);
   });
   it("puste wejście → zera, bez dat", () => {
