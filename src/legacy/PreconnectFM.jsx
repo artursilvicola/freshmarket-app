@@ -1,4 +1,4 @@
-import { usesPreconnectCredit, countUsedCreditSlots } from "../lib/preconnect-credit-usage.js";
+import { usesPreconnectCredit, countUsedCreditSlots, describeCreditUsage, isReleasedUnreadReservation } from "../lib/preconnect-credit-usage.js";
 import { offerEnumLabel, offerEnumOptions } from "../lib/offer-enums.js";
 import { openGrantForm, editGrantForm, addCompany as grantAddCompany, removeCompany as grantRemoveCompany, submitStart as grantSubmitStart, submitFailed as grantSubmitFailed, canSubmit as grantCanSubmit, closeNeedsWarning as grantCloseNeedsWarning, isEditable as grantIsEditable, GRANT_REASONS } from "../lib/grant-form.js";
 import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Suspense } from "react";
@@ -2235,6 +2235,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     return () => { canceled = true; };
   }, []);
 
+  const refreshSendsAfterEmail = useCallback(async () => {
+    _setSendsRaw(await loadLegacySends());
+  }, []);
+
   // [B2B Round prod-rollout / email-open-tracking] Deep-link z mailem:
   // ?send=<legacy_id> w URL → po załadowaniu sends otwórz PageBuyerDetail
   // dla tej konkretnej oferty. To zamyka pętlę email→app→read tracking.
@@ -3100,6 +3104,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // alias, freshly saved offers/sends are invisible to their own creator.
   // For non-supplier roles legacySupplierId is null → falls back to account.id.
   const pkgUsed = countUsedCreditSlots(sends, mySupplierKey);
+  const creditUsage = describeCreditUsage(sends, mySupplierKey, supplierCapacity ? myLimit.used : undefined);
   const pkgMax  = Number(myLimit.max || 0);
   const pkgPlan = myLimit.pkg || co?.pkg || "std_5";
   const rem     = Math.max(0, pkgMax - pkgUsed);
@@ -3714,14 +3719,14 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     // pg==="dashboard" (stary stan / nieaktualny nav), NIE pokazuj dashboardu
     // dostawcy — renderuj PageAdminDash. Supplier/buyer bez zmian.
     if(pg==="dashboard" && role==="admin") return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
-    if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed}/>;
+    if(pg==="dashboard")    return <PageDashboard offers={offers} sends={sends} nav={nav} rem={rem} wallet={wallet} refundNotifs={refundNotifs} dismissRefund={dismissRefund} fmSettings={fmSettings} accountId={mySupplierKey} co={co} pkgMax={pkgMax} pkgUsed={pkgUsed} creditUsage={creditUsage}/>;
     if(pg==="company")      return <PageCompany co={co} companyId={account.id} setCo={setCo} fl={fl} aiModal={aiModal} setAiModal={setAiModal} aiLoad={aiLoad} runAI={runAI} offers={offers} retailers={retailers} hiddenRetailers={companyHiddenRetailers} setHiddenRetailers={setCompanyHiddenRetailers}/>;
-    if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} pkgMax={pkgMax} pkgPlan={pkgPlan} rem={rem} wallet={wallet} creditPools={creditPools} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
+    if(pg==="wysylki")      return <PageWysylki sends={sends} offers={offers} pkgUsed={pkgUsed} creditUsage={creditUsage} pkgMax={pkgMax} pkgPlan={pkgPlan} rem={rem} wallet={wallet} creditPools={creditPools} sendToChain={sendToChain} nav={nav} sid={sid} accountId={mySupplierKey} co={co} retailers={retailers} companies={companies}/>;
     if(pg==="offers")       return <PageOffers offers={offers} sends={sends} nav={nav} accountId={mySupplierKey} setOffers={setOffers} fl={fl} co={co}/>;
     if(pg==="offer-create") return <PageOfferForm offer={null} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-edit")   return <PageOfferForm offer={offers.find(o=>o.id===sid)} saveOffer={saveOffer} nav={nav} co={co}/>;
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+t("supplier.offer_form.copy_suffix"),product:(src.product||"")+t("supplier.offer_form.copy_suffix"),internalTitle:src.internalTitle?src.internalTitle+t("supplier.offer_form.copy_suffix"):undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
-    if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} pkgPlan={pkgPlan} creditPools={creditPools} retailers={retailers} accountId={mySupplierKey}/>;
+    if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} creditUsage={creditUsage} pkgPlan={pkgPlan} creditPools={creditPools} retailers={retailers} accountId={mySupplierKey}/>;
     if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl} readOnly={viewingOtherAccount} onSaved={(patch) => setAccount(prev => ({ ...prev, personName: patch.name, phone: patch.phone, position: patch.position }))}/>;
     if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
@@ -3731,7 +3736,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="instructions") return <PageInstructions role={role} fmSettings={fmSettings}/>;
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offersForBuyer} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
-    if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
+    if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} onRetailerEmailSent={refreshSendsAfterEmail} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers} fl={fl}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} onPaymentDateSaved={saved => _setCompaniesRaw(prev => applyPaymentDate(prev, saved))} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
     if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity} sends={sends} offers={offers}/>;
@@ -4168,7 +4173,7 @@ function pickSupplierDashState({ co, fmSettings }) {
 
 // ── KOMPONENT GŁÓWNY ────────────────────────────────────────────────────────
 
-function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed }) {
+function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed, creditUsage }) {
   // [Krok P2-3b] Bilingual via supplier.dashboard.next_step_variants/activity/refunds_strip/kpi_section
   const { t } = useTranslation("legacy");
   const dashState = pickSupplierDashState({ co, fmSettings });
@@ -4231,7 +4236,7 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     nextStepGoto = "wysylki";
   } else if (pkgMax > 0 && pkgUsed / pkgMax > 0.8) {
     nextStepVariant = "package_low";
-    nextStepVars = { used: pkgUsed, max: pkgMax, pct: Math.round(pkgUsed / pkgMax * 100) };
+    nextStepVars = { used: creditUsage?.used ?? pkgUsed, reserved: creditUsage?.reserved ?? 0, remaining: rem };
     nextStepGoto = "finanse";
   } else {
     nextStepVariant = "default";
@@ -4330,7 +4335,7 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
       <NextStepCard nextStep={nextStep} nav={nav} />
 
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
-        <PkgCard pkgMax={pkgMax} pkgUsed={pkgUsed} rem={rem} nav={nav} />
+        <PkgCard pkgMax={pkgMax} pkgUsed={pkgUsed} creditUsage={creditUsage} rem={rem} nav={nav} />
         <NextWindowCard window={nextWindow} days={daysToWindow} nav={nav} />
       </div>
 
@@ -4407,11 +4412,12 @@ function NextStepCard({ nextStep, nav }) {
   );
 }
 
-function PkgCard({ pkgMax, pkgUsed, rem, nav, placeholder }) {
+function PkgCard({ pkgMax, pkgUsed, creditUsage, rem, nav, placeholder }) {
   // [Krok P2-3a] Bilingual via supplier.dashboard.pkg_card.*
   const { t } = useTranslation("legacy");
   const max = pkgMax || 0;
-  const used = pkgUsed || 0;
+  const used = creditUsage?.used ?? pkgUsed ?? 0;
+  const reserved = creditUsage?.reserved ?? 0;
   const remaining = rem != null ? rem : (max - used);
   const pct = max > 0 ? Math.round((used / max) * 100) : 0;
   return (
@@ -4429,7 +4435,7 @@ function PkgCard({ pkgMax, pkgUsed, rem, nav, placeholder }) {
         <div style={{ height:"100%", background: pct > 80 ? "#d97706" : "#0d9488", width:`${pct}%`, borderRadius:99 }} />
       </div>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10, fontSize:11, color:"#64748b" }}>
-        <div>{placeholder ? t("supplier.dashboard.pkg_card.placeholder_hint") : t("supplier.dashboard.pkg_card.usage_format", { used, remaining })}</div>
+        <div>{placeholder ? t("supplier.dashboard.pkg_card.placeholder_hint") : t("supplier.finance.credits.usage_split", { used, reserved })}</div>
         <button onClick={() => nav("finanse")} style={{ background:"none", border:"none", color:"#0d9488", fontSize:11.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline", padding:0 }}>
           {placeholder ? t("supplier.dashboard.pkg_card.see_pricing") : t("supplier.dashboard.pkg_card.buy_package")}
         </button>
@@ -4770,10 +4776,12 @@ function HelpStripDashboard() {
 
 
 /* ── Wysyłki: unified hub (replaces Retail Chains + Preconnect + Send) ──── */
-export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies, creditPools }) {
+export function PageWysylki({ sends, offers, pkgUsed, creditUsage, pkgMax, pkgPlan, rem, wallet, sendToChain, nav, sid, accountId, co, retailers, companies, creditPools }) {
   // [feat/free-credit-grants] wysłane, nieodczytane propozycje = rezerwacja poza pulami
   const awaitingRead = (sends||[]).filter(s => (!s.supplierId||s.supplierId===accountId) && !isSeenOrCharged(s) && usesPreconnectCredit(s)).length;
   const { t } = useTranslation("legacy");
+  creditUsage = creditUsage || describeCreditUsage(sends, accountId, creditPools
+    ? [creditPools.free, creditPools.paid, creditPools.legacy].reduce((n,p) => n + Number(p?.used || 0), 0) : undefined);
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -4857,7 +4865,7 @@ export function PageWysylki({ sends, offers, pkgUsed, pkgMax, pkgPlan, rem, wall
             <div style={{ flex:1,background:"rgba(255,255,255,0.12)",borderRadius:3,height:6,overflow:"hidden",maxWidth:180 }}>
               <div style={{ height:"100%",borderRadius:3,width:`${pct}%`,background:pct>=90?"#f59e0b":"#0d9488" }}/>
             </div>
-            <span style={{ fontSize:12,color:"rgba(255,255,255,0.6)" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.usage_format", { used: pkgUsed, max: pkgMax }) : t("supplier.wysylki.pkg_bar.usage_format", { used: pkgUsed, max: pkgMax })}</span>
+            <span style={{ fontSize:12,color:"rgba(255,255,255,0.6)" }}>{CREDITS_UI_SUPPLIER ? t("supplier.finance.credits.usage_split", { used: creditUsage.used, reserved: creditUsage.reserved }) : t("supplier.wysylki.pkg_bar.usage_format", { used: pkgUsed, max: pkgMax })}</span>
           </div>
         </div>
         {CREDITS_UI_SUPPLIER
@@ -6618,8 +6626,10 @@ export function PageOfferForm({ offer, saveOffer, nav, co }) {
 }
 
 /* ── Finanse: tabs Saldo / Historia / Pakiety ─────────────────────────── */
-export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, orders, pkgMax, pkgUsed, pkgPlan, retailers, accountId, creditPools }) {
+export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPackage, orders, pkgMax, pkgUsed, creditUsage, pkgPlan, retailers, accountId, creditPools }) {
   const { t } = useTranslation("legacy");
+  creditUsage = creditUsage || describeCreditUsage(sends, accountId, creditPools
+    ? [creditPools.free, creditPools.paid, creditPools.legacy].reduce((n,p) => n + Number(p?.used || 0), 0) : undefined);
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
@@ -6628,14 +6638,15 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
   const allSent=sends.filter(s=>(!s.supplierId||s.supplierId===accountId)&&!["queued","pending_moderation","rejected"].includes(s.status));
   const confirmed=allSent.filter(isSeenOrCharged);
   const allExpired=allSent.filter(s=>s.status==="unread_expired");
-  const expired=allExpired.filter(hasRefundMarker);
+  const releasedUnread = allExpired.filter(isReleasedUnreadReservation);
+  const expired=allExpired.filter(s => hasRefundMarker(s) && !isReleasedUnreadReservation(s));
   const refundedExpired = expired;
-  const pendingRefunds = allExpired.filter(s => !hasRefundMarker(s));
+  const pendingRefunds = allExpired.filter(s => !hasRefundMarker(s) && hasChargeMarker(s));
   // [feat/free-credit-grants] wysłane, jeszcze nieodczytane: rezerwują kredyt, ale nie należą do żadnej puli
   const awaitingRead = (sends || []).filter(s => (!s.supplierId || s.supplierId === accountId) && usesPreconnectCredit(s) && !isSeenOrCharged(s)).length;
   const pkgOpt=PKG_OPTS.find(p=>p.id===(pkgPlan || co.pkg))||PKG_OPTS[2];
   const activePkgMax = Number(pkgMax || pkgOpt.max || 0);
-  const activePkgUsed = Number(pkgUsed || 0);
+  const activePkgUsed = creditUsage.used;
   const pct=activePkgMax>0?Math.min(100,Math.round(activePkgUsed/activePkgMax*100)):0;
   const totalEarned=confirmed.reduce((sum, s) => sum + getChargeAmount(s, pkgOpt.perSend), 0);
   const totalRefunds=refundedExpired.reduce((sum, s) => sum + getRefundAmount(s), 0);
@@ -6678,7 +6689,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
               CREDITS_UI_SUPPLIER
                 ? [t("supplier.finance.credits.stat_used_label"), activePkgUsed, t("supplier.finance.credits.stat_used_unit"), "rgba(255,255,255,0.07)", "white"]
                 : [t("supplier.finance.wallet.stats.total_sent_label"), allSent.length, t("supplier.finance.wallet.stats.total_sent_unit"), "rgba(255,255,255,0.07)", "white"],
-              [t("supplier.finance.wallet.stats.seen_label"), confirmed.length, t("supplier.finance.wallet.stats.seen_unit"), "rgba(5,150,105,0.22)", "#6ee7b7"],
+              [t("supplier.finance.credits.reserved_label"), creditUsage.reserved, t("supplier.finance.credits.stat_used_unit"), "rgba(5,150,105,0.22)", "#6ee7b7"],
               [t("supplier.finance.wallet.stats.refunds_label"), refundedExpired.length, t("supplier.finance.wallet.stats.refunds_unit"), "rgba(239,68,68,0.18)", "#fca5a5"],
             ].map(([l,v,u,bg,c])=>(
               <div key={l} style={{ padding:"12px 16px",background:bg,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",minWidth:100,textAlign:"center" }}>
@@ -6695,6 +6706,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
             // [credits-ui] "Efektywny koszt" (EUR) ukryty w panelu dostawcy gdy
             // flaga ON — przeniesiony do admin/księgowości (plan Etap 2/3).
             !CREDITS_UI_SUPPLIER && [t("supplier.finance.kpi.effective_cost_label"), t("supplier.finance.kpi.effective_cost_value_format", { amount: totalEarned-totalRefunds }), t("supplier.finance.kpi.effective_cost_sub"), "#7c3aed"],
+            CREDITS_UI_SUPPLIER && [t("supplier.finance.credits.released_label"), releasedUnread.length, t("supplier.finance.credits.released_hint"), "#059669"],
             // Zwroty: gdy flaga ON → liczba zwróconych kredytów (realny count,
             // plural), nie zawsze "+1". Sub: w toku → "kredyt wraca".
             CREDITS_UI_SUPPLIER
@@ -6814,8 +6826,8 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
                     )}
                   </td>
                   <td style={{ padding:"9px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:13 }}>{CREDITS_UI_SUPPLIER
-                    ? (s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.credits.hist_refund_done")}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.credits.hist_refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.credits.hist_used")}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.credits.hist_awaiting")}</span>)
-                    : (s.status==="unread_expired"?(hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.history.refund_done_format", { amount: getRefundAmount(s) })}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.history.refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.history.amount_eur_format", { amount })}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.history.awaiting")}</span>)}</td>
+                    ? (s.status==="unread_expired"?(isReleasedUnreadReservation(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.credits.hist_released")}</span>:hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.credits.hist_refund_done")}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.credits.hist_refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.credits.hist_used")}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.credits.hist_awaiting")}</span>)
+                    : (s.status==="unread_expired"?(isReleasedUnreadReservation(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.credits.hist_released")}</span>:hasRefundMarker(s)?<span style={{ color:"#059669" }}>{t("supplier.finance.history.refund_done_format", { amount: getRefundAmount(s) })}</span>:<span style={{ color:"#d97706" }}>{t("supplier.finance.history.refund_pending")}</span>):isConf?<span style={{ color:"#1e293b" }}>{t("supplier.finance.history.amount_eur_format", { amount })}</span>:<span style={{ color:"#94a3b8" }}>{t("supplier.finance.history.awaiting")}</span>)}</td>
                 </tr>
               );})}
               {allSent.length===0&&<tr><td colSpan={6} style={{ padding:24,textAlign:"center",color:"#94a3b8" }}>{t("supplier.finance.history.empty")}</td></tr>}
@@ -6824,7 +6836,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
         </div>
       </Card>}
 
-      {tab==="pakiety"&&<PageFinansePakiety co={co} setCo={setCo} fl={fl} buyPackage={buyPackage} orders={orders} wallet={wallet} pkgMax={pkgMax} pkgUsed={pkgUsed}/>}
+      {tab==="pakiety"&&<PageFinansePakiety co={co} setCo={setCo} fl={fl} buyPackage={buyPackage} orders={orders} wallet={wallet} pkgMax={pkgMax} pkgUsed={pkgUsed} creditUsage={creditUsage}/>}
     </div>
   );
 }
@@ -6842,7 +6854,7 @@ function downloadHtmlDocument(filename, html) {
   } catch { /* no-op */ }
 }
 
-export function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax, pkgUsed }) {
+export function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, pkgMax, pkgUsed, creditUsage }) {
   const { t } = useTranslation("legacy");
   const [selected, setSelected] = useState(co.pkg||"std_5");
   const [showModal, setShowModal] = useState(false);
@@ -7107,10 +7119,11 @@ export function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, 
       )}
 
       {/* Current package status */}
-      <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20 }}>
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:20 }}>
         {[
           [`${pkgMax}`, t("supplier.finance.pakiety.pkg_stats.total_label"), t("supplier.finance.pakiety.pkg_stats.unit"), "#0d9488"],
-          [`${pkgUsed}`, t("supplier.finance.pakiety.pkg_stats.used_label"), t("supplier.finance.pakiety.pkg_stats.unit"), "#3b82f6"],
+          [`${creditUsage?.used ?? pkgUsed}`, t("supplier.finance.pakiety.pkg_stats.used_label"), t("supplier.finance.pakiety.pkg_stats.unit"), "#3b82f6"],
+          [`${creditUsage?.reserved ?? 0}`, t("supplier.finance.credits.reserved_label"), t("supplier.finance.pakiety.pkg_stats.unit"), "#d97706"],
           [`${rem}`, t("supplier.finance.pakiety.pkg_stats.remaining_label"), t("supplier.finance.pakiety.pkg_stats.unit"), rem>0?"#059669":"#dc2626"],
         ].map(([v,l,sub,c])=>(
           <div key={l} style={{ padding:"14px 16px",background:"white",border:"1px solid #e2e8f0",borderRadius:10,borderTop:`3px solid ${c}` }}>
@@ -9476,6 +9489,7 @@ function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onTo
   // Status rozliczenia/zwrotu pojedynczej propozycji (BEZ kwot — finanse w Rozliczeniach).
   const settleLabel = (s) => {
     if (s.status === "refunded") return t("admin.pipeline_split.prop_settle_refunded");
+    if (s.status === "unread_expired" && isReleasedUnreadReservation(s)) return t("supplier.finance.credits.hist_released");
     if (s.status === "unread_expired") return hasRefundMarker(s) ? t("admin.pipeline_split.prop_settle_refunded") : t("admin.pipeline_split.prop_settle_awaiting_refund");
     if (["sent", "opened", "read", "read_manual"].includes(s.status)) return hasChargeMarker(s) ? t("admin.pipeline_split.prop_settle_settled") : t("admin.pipeline_split.prop_settle_awaiting");
     return t("admin.pipeline_split.date_none");
@@ -9527,7 +9541,7 @@ function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onTo
         lastEmail: maxDate(ss.map(emailDate).filter(Boolean)),
         readDeadline: deadlines.length ? deadlines.reduce((a, d) => d < a ? d : a) : null,
         read: ss.filter(s => READ.includes(s.status)).length,
-        awaiting: ss.filter(s => (["sent", "opened", "read", "read_manual"].includes(s.status) && !hasChargeMarker(s)) || (s.status === "unread_expired" && !hasRefundMarker(s))).length,
+        awaiting: ss.filter(s => (["sent", "opened", "read", "read_manual"].includes(s.status) && !hasChargeMarker(s)) || (s.status === "unread_expired" && hasChargeMarker(s) && !hasRefundMarker(s))).length,
         proposals,
       };
     }).sort((a, b) => b.inPanel - a.inPanel);
@@ -9630,7 +9644,7 @@ function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onTo
   );
 }
 
-function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies, dbCapacity, onSendSupplierMessage }) {
+export function PageAdminPipeline({ sends, setSends, onRetailerEmailSent, offers, moderate, sendApproved, updateSendDate, updateSendPos, confirmManual, undoConfirm, fl, retailers, companies, dbCapacity, onSendSupplierMessage }) {
   const { t, i18n } = useTranslation("legacy");
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
@@ -9678,39 +9692,10 @@ function PageAdminPipeline({ sends, setSends, offers, moderate, sendApproved, up
     );
     setEmailPreview({ retailer, sends: basketSends });
   }
-  // [mailing-basket] Wspólny onSent dla obu ścieżek (stary widok + tabela).
-  // Po wysyłce: status="sent" + emailSentAt (osobny stan od panelu) ORAZ
-  // wyczyść marker koszyka (inEmailBasket=false), bo propozycja już wysłana —
-  // nie powinna dłużej wisieć w koszyku. setSends zsync'uje DB (backend i tak
-  // już zapisał status/markery).
-  function handleEmailSent(markedIds, sentAt, result) {
-    if (!markedIds || !markedIds.length) return;
-    const idSet = new Set(markedIds.map(Number));
-    setSends?.(prev => prev.map(s => idSet.has(Number(s.id))
-      ? {
-          ...s,
-          status: "sent",
-          sentAt: s.sentAt || sentAt,
-          daysLeft: s.daysLeft || 14,
-          emailSentAt: sentAt,
-          // [feat/preconnect-first-tuesday-mailing-logic] Stempel realnej daty
-          // mailingu przy faktycznym wysłaniu e-maila. To kotwica statusu/14 dni
-          // dla nowej logiki (za flagą). Bez flagi pole po prostu nie powstaje.
-          ...(PRECONNECT_MAILING_DATE_LOGIC ? { mailingSentAt: s.mailingSentAt || sentAt } : {}),
-          inEmailBasket: false,
-          resendBuyerEmails: result?.buyers_succeeded || s.resendBuyerEmails || [],
-          data: {
-            ...(s.data || {}),
-            status: "sent",
-            sentAt: s.sentAt || sentAt,
-            daysLeft: s.daysLeft || 14,
-            emailSentAt: sentAt,
-            ...(PRECONNECT_MAILING_DATE_LOGIC ? { mailingSentAt: s.data?.mailingSentAt || sentAt } : {}),
-            resendBuyerEmails: result?.buyers_succeeded || s.data?.resendBuyerEmails || [],
-          },
-        }
-      : s
-    ));
+  // Backend owns the delivery state. A local setSends would persist a stale
+  // full JSON snapshot and undo a simultaneous read/charge.
+  async function handleEmailSent(markedIds) {
+    if (markedIds?.length) await onRetailerEmailSent?.();
   }
 
     // otworzył maila przez Resend webhook (ale jeszcze nie kliknął w aplikacji).
@@ -12610,6 +12595,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
   }
 
   async function doSend() {
+    if (sendResult?.delivery_uncertain) return;
     setSendingState("sending");
     setSendResult(null);
     try {
@@ -12621,7 +12607,12 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
       if (result.ok) {
         setSendingState("success");
         const sentAt = new Date().toISOString().slice(0, 10);
-        onSent?.(result.send_ids_marked || [], sentAt, result);
+        try { await onSent?.(result.send_ids_marked || [], sentAt, result); }
+        catch (error) {
+          // Delivery succeeded; a refresh failure must never turn it into a retry.
+          fl?.(t("admin.pipeline.delivery_refresh_failed"), "warning");
+          return;
+        }
         const failedCount = (result.buyers_failed || []).length;
         if (failedCount > 0) {
           fl?.(t("admin.pipeline.toast_send_partial_format", { succeeded: result.buyer_count - failedCount, total: result.buyer_count, count: result.send_ids_marked?.length || 0, failed: failedCount }), "warning");
@@ -12654,7 +12645,7 @@ function EmailNewsletterModal({ retailer, sends, offers, companies, fl, onClose,
             ? <span style={{ background:"#10b981",color:"white",fontSize:12,fontWeight:700,padding:"6px 12px",borderRadius:7 }}>{t("admin.pipeline.email_btn_sent")}</span>
             : <>
                 <Btn sm onClick={onClose} disabled={sendingState === "sending"} style={{ background:"rgba(255,255,255,0.1)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.2)" }}>{t("admin.pipeline.email_btn_cancel")}</Btn>
-                <Btn sm onClick={doSend} disabled={sendingState === "sending" || offerCount === 0} style={{ background:offerCount === 0 ? "#94a3b8" : "#10b981",color:"white",border:"none",fontWeight:700 }}>
+                <Btn sm onClick={doSend} disabled={sendingState === "sending" || offerCount === 0 || sendResult?.delivery_uncertain} style={{ background:offerCount === 0 ? "#94a3b8" : "#10b981",color:"white",border:"none",fontWeight:700 }}>
                   {sendingState === "sending"
                     ? <><RefreshCw size={12} style={{ animation:"spin 1s linear infinite" }}/> {t("admin.pipeline.email_btn_sending")}</>
                     : <><Send size={12}/> {t("admin.pipeline.email_btn_send_format", { count: offerCount })}</>

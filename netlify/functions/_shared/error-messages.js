@@ -31,6 +31,7 @@ export function pickErrLocale(input) {
 
 const MESSAGES = {
   pl: {
+    retailer_delivery_unconfirmed: "Poczta przyjęła wiadomość, ale zapis wysyłki nie został potwierdzony. Nie wysyłaj ponownie — najpierw sprawdź doręczenie z administratorem.",
     // ── Auth / token ──
     no_auth_header: "Brak nagłówka Authorization",
     no_auth_token: "Brak tokenu autoryzacji",
@@ -137,6 +138,7 @@ const MESSAGES = {
     method_not_allowed: "Method Not Allowed",
   },
   en: {
+    retailer_delivery_unconfirmed: "The email provider accepted the message, but its delivery record is unconfirmed. Do not resend; check delivery with the administrator first.",
     // ── Auth / token ──
     no_auth_header: "Authorization header missing",
     no_auth_token: "Authorization token missing",

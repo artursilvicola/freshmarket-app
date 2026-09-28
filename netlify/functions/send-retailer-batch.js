@@ -1,33 +1,6 @@
-/**
- * Netlify Function: send-retailer-batch
- * POST /.netlify/functions/send-retailer-batch
- * Body: { retailer_id: number, send_ids: number[], dry_run?: boolean }
- *
- * [B2B Round pipeline-retailer-email-mvp]
- *
- * Wysyła ZBIORCZY mail do jednej sieci handlowej z listą zatwierdzonych
- * ofert. Endpoint:
- *   1. Auth: tylko admin (sprawdzane przez profile.role).
- *   2. Wczytuje legacy_sends WHERE retailer_id = X AND legacy_id IN (...)
- *      I status = 'approved'. Każdy inny status (sent / rejected / queued
- *      bez moderacji / pending_moderation) jest odrzucany — to bramka
- *      anti-duplicate.
- *   3. Wczytuje legacy_offers po offer_legacy_id i companies po
- *      legacy_supplier_id (bo to jest klucz w jsonb data.supplierId).
- *   4. Wczytuje retailer + buyers (active + email + role='buyer').
- *   5. Renderuje HTML mail (shared/render-retailer-email.js).
- *   6. Wysyła ten sam mail do każdego aktywnego kupca przez Resend
- *      (każdy buyer = osobne wywołanie Resend, ale ta sama treść).
- *   7. Po sukcesie aktualizuje legacy_sends.status='sent' oraz
- *      data.status='sent' + data.sentAt. Robi to atomowo per send_id —
- *      jeśli choć jeden Resend się powiódł, marker idzie. Jeśli żaden,
- *      status zostaje 'approved' i admin może spróbować ponownie.
- *   8. Zwraca {ok, sent_count, buyer_count, send_ids_marked, errors[]}.
- *
- * dry_run=true zwraca tylko podgląd (ile sendsów, ilu kupców, subject,
- * pierwsze ~3KB HTMLa) bez wysyłki — przydatne do preview po stronie UI
- * jeśli kiedyś chcemy mieć render server-side. MVP używa client-side
- * preview, ale endpoint jest ready.
+/** Admin-triggered retailer mailing. Delivery metadata is merged in SQL
+ * against current rows; reads, billing and notification markers are preserved.
+ * approved/sent rows without an email marker are eligible. No automatic send.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -97,12 +70,12 @@ async function buildMagicLinksByLegacyId({ supaSvc, buyer, sends, appUrl }) {
   return links;
 }
 
-export const handler = async (event) => {
+export default async function handler(request) {
   // [P2-backend-mails C3] adminFacing locale (caller = admin).
-  const acceptLang = event.headers["accept-language"] || event.headers["Accept-Language"];
+  const acceptLang = request.headers.get("accept-language");
   let adminLocale = resolveLocale({ acceptLanguage: acceptLang });
-  if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
-  if (event.httpMethod !== "POST") return json(405, { error: errLoc(adminLocale, "method_not_allowed") });
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+  if (request.method !== "POST") return json(405, { error: errLoc(adminLocale, "method_not_allowed") });
 
   const env = resolveEnvConfig();
   const required = ["supabaseUrl", "supabaseAnonKey", "supabaseServiceRoleKey", "resendApiKey"];
@@ -110,7 +83,7 @@ export const handler = async (event) => {
   if (missing.length) return json(500, envErrorPayload("send-retailer-batch", missing));
 
   // ── Auth: admin only ─────────────────────────────────────────────────
-  const authHeader = event.headers.authorization || event.headers.Authorization;
+  const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return json(401, { error: errLoc(adminLocale, "no_auth_header") });
   const token = authHeader.slice(7);
 
@@ -124,11 +97,11 @@ export const handler = async (event) => {
   // [P2-backend-mails C3] Pull admin `locale` for error messages.
   const { data: caller, error: callerErr } = await supaSvc
     .from("profiles")
-    .select("id, role, name, email, locale")
+    .select("id, role, name, email, locale, active")
     .eq("id", userData.user.id)
     .maybeSingle();
   if (callerErr || !caller) return json(403, { error: errLoc(adminLocale, "profile_not_found") });
-  if (caller.role !== "admin") {
+  if (caller.role !== "admin" || caller.active === false) {
     return json(403, { error: errLoc(adminLocale, "only_admin_send_batch") });
   }
   adminLocale = resolveLocale({ profileLocale: caller.locale, acceptLanguage: acceptLang });
@@ -136,7 +109,7 @@ export const handler = async (event) => {
   // ── Body ─────────────────────────────────────────────────────────────
   let body;
   try {
-    body = JSON.parse(event.body || "{}");
+    body = await request.json();
   } catch {
     return json(400, { error: errLoc(adminLocale, "invalid_json") });
   }
@@ -320,7 +293,7 @@ export const handler = async (event) => {
         resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: res.status, detail });
       } else {
         const r = await res.json().catch(() => ({}));
-        resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: true, message_id: r.id || null });
+        resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: Boolean(r.id), message_id: r.id || null });
       }
     } catch (e) {
       resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: 0, detail: e?.message || String(e) });
@@ -339,36 +312,26 @@ export const handler = async (event) => {
   const successfulMessageIds = resendResults
     .filter((r) => r.ok && r.message_id)
     .map((r) => r.message_id);
-  const firstSuccessfulMessageId = successfulMessageIds[0] || null;
 
   if (anySent) {
     const sentAtIso = new Date().toISOString();
     const sentAtDate = sentAtIso.slice(0, 10);
-    // Update jeden po drugim — kolizji nie ma (legacy_id unique).
-    for (const s of eligible) {
-      const newData = {
-        ...(s.data || {}),
-        status: "sent",
-        sentAt: sentAtDate,
-        sent_at: sentAtIso,
-        emailSentAt: sentAtIso,
-        email_sent_at: sentAtIso,
-        daysLeft: 14,
-        resendMessageIds: successfulMessageIds,
-        // [fix/security-hotfix] bez adresów kupców w wierszu widocznym dla dostawcy
-        resendBuyerEmails: undefined,
-        resendBuyerCount: resendResults.filter((r) => r.ok).length,
-      };
-      const updatePayload = { status: "sent", data: newData };
-      if (firstSuccessfulMessageId) {
-        updatePayload.resend_message_id = firstSuccessfulMessageId;
-      }
-      const { error: upErr } = await supaSvc
-        .from("legacy_sends")
-        .update(updatePayload)
-        .eq("legacy_id", s.legacy_id);
-      if (!upErr) markedSendIds.push(s.legacy_id);
+    let persisted;
+    try {
+      persisted = await supaSvc.rpc("mark_legacy_sends_retailer_emailed", {
+        p_send_ids: eligible.map(s => s.legacy_id), p_retailer_id: retailerId,
+        p_message_ids: successfulMessageIds,
+        p_buyer_count: resendResults.filter(r => r.ok).length, p_sent_at: sentAtIso,
+      });
+    } catch (error) { persisted = { error }; }
+    if (persisted.error || !Array.isArray(persisted.data) || persisted.data.length !== eligible.length) {
+      // Mail may have left. Never report success or encourage a blind resend.
+      return json(502, {
+        ok: false, delivery_uncertain: true, send_ids_marked: [],
+        error: errLoc(adminLocale, "retailer_delivery_unconfirmed"),
+      });
     }
+    markedSendIds = persisted.data;
 
     // [B2B Round supplier-onboarding-access-and-communication]
     // Email F — powiadom dostawcę zbiorczo per sieć/batch, żeby przy kilku
@@ -459,7 +422,7 @@ export const handler = async (event) => {
   const firstRendered = renderedByLocale.values().next().value || pickRender("pl");
   return json(200, {
     ok: anySent,
-    sent_count: eligible.length,
+    sent_count: markedSendIds.length,
     buyer_count: activeBuyers.length,
     buyers_succeeded: resendResults.filter((r) => r.ok).map((r) => r.buyer),
     buyers_failed: resendResults.filter((r) => !r.ok),
@@ -480,9 +443,7 @@ function monthLabel(locale = "pl") {
 }
 
 function json(statusCode, payload) {
-  return {
-    statusCode,
-    headers: { ...cors, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  };
+  return new Response(JSON.stringify(payload), {
+    status: statusCode, headers: { ...cors, "Content-Type": "application/json" },
+  });
 }

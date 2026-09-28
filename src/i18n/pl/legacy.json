@@ -205,7 +205,7 @@
         },
         "package_low": {
           "title": "Pakiet kończy się — kup uzupełnienie",
-          "desc": "Wykorzystałeś {{used}} z {{max}} kredytów ({{pct}}%). Bez nowego pakietu nie wyślesz w najbliższym oknie.",
+          "desc": "Wykorzystane: {{used}}, zarezerwowane: {{reserved}}. Do nowych wysyłek pozostało {{remaining}} kredytów.",
           "cta": "Kup pakiet"
         },
         "default": {
@@ -849,7 +849,7 @@
         "pending_review": "Konto czeka na zatwierdzenie przez administratora. Po aktywacji odblokujemy wysyłkę ofert.",
         "account_inactive": "Konto jest aktualnie nieaktywne. Skontaktuj się z newsletter@freshmarket.eu.",
         "preconnect_disabled": "PreConnect nie jest jeszcze aktywny dla Twojej firmy. Administrator włącza moduł indywidualnie.",
-        "no_credits_format": "Brak dostępnych kredytów w pakiecie ({{used}}/{{max}} wykorzystanych). Doładuj pakiet w „Finanse\".",
+        "no_credits_format": "Brak wolnych kredytów: {{used}} z {{max}} wykorzystane lub zarezerwowane.",
         "send_error_format": "Błąd wysyłki: {{message}}",
         "send_error_fallback": "spróbuj ponownie",
         "queued_success": "Propozycja dodana do kolejki moderacji."
@@ -901,8 +901,8 @@
         "reason_gift": "prezent",
         "reason_other": "od organizatora",
         "history_grant_label": "Bezpłatne kredyty od organizatora",
-        "history_purchase_label": "Kupione"
-        ,"history_legacy_label": "Pakiet historyczny — źródło nieustalone",
+        "history_purchase_label": "Kupione",
+        "history_legacy_label": "Pakiet historyczny — źródło nieustalone",
         "history_prior_registration_one_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredyt",
         "history_prior_registration_few_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredyty",
         "history_prior_registration_many_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredytów",
@@ -955,7 +955,12 @@
         "refund_alert_one_html": "<strong>Zwrot +{{count}} kredyt</strong> — propozycja nie została odczytana, kredyt wrócił na konto. Możesz go wykorzystać na wysyłki do innych sieci.",
         "refund_alert_few_html": "<strong>Zwrot +{{count}} kredyty</strong> — propozycje nie zostały odczytane, kredyty wróciły na konto. Możesz je wykorzystać na wysyłki do innych sieci.",
         "refund_alert_many_html": "<strong>Zwrot +{{count}} kredytów</strong> — propozycje nie zostały odczytane, kredyty wróciły na konto. Możesz je wykorzystać na wysyłki do innych sieci.",
-        "refund_alert_other_html": "<strong>Zwrot +{{count}} kredytów</strong> — propozycje nie zostały odczytane, kredyty wróciły na konto. Możesz je wykorzystać na wysyłki do innych sieci."
+        "refund_alert_other_html": "<strong>Zwrot +{{count}} kredytów</strong> — propozycje nie zostały odczytane, kredyty wróciły na konto. Możesz je wykorzystać na wysyłki do innych sieci.",
+        "usage_split": "Wykorzystane: {{used}} · Zarezerwowane: {{reserved}}",
+        "reserved_label": "Zarezerwowane",
+        "released_label": "Zwolnione rezerwacje",
+        "released_hint": "Propozycje wygasły bez odczytu. Kredyt nie został pobrany.",
+        "hist_released": "Rezerwacja zwolniona — bez pobrania kredytu"
       },
       "wallet": {
         "balance_label": "Saldo portfela",
@@ -2527,7 +2532,8 @@
       "toast_send_failed_default": "Wysyłka nie powiodła się.",
       "toast_send_unknown_error": "Nie udało się wysłać maila.",
       "toast_send_partial_format": "Wysłano do {{succeeded}}/{{total}} kupców · {{count}} ofert oznaczonych jako wysłane. {{failed}} buyer(ów) nie udało się.",
-      "toast_send_success_format": "Wysłano! {{buyers}} kupiec(ów) · {{count}} ofert oznaczonych jako wysłane."
+      "toast_send_success_format": "Wysłano! {{buyers}} kupiec(ów) · {{count}} ofert oznaczonych jako wysłane.",
+      "delivery_refresh_failed": "Wysyłka została zapisana. Nie udało się odświeżyć listy — odśwież stronę, nie wysyłaj ponownie."
     },
     "branding": {
       "page_title": "Branding",

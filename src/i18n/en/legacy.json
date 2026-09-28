@@ -205,7 +205,7 @@
         },
         "package_low": {
           "title": "Package running low — buy a top-up",
-          "desc": "You've used {{used}} of {{max}} credits ({{pct}}%). Without a new package you won't be able to submit in the next window.",
+          "desc": "Used: {{used}}, reserved: {{reserved}}. {{remaining}} credits remain available for new submissions.",
           "cta": "Buy package"
         },
         "default": {
@@ -849,7 +849,7 @@
         "pending_review": "Account is awaiting admin approval. Once activated, we'll unlock proposal submissions.",
         "account_inactive": "The account is currently inactive. Please contact newsletter@freshmarket.eu.",
         "preconnect_disabled": "PreConnect is not yet active for your company. The admin enables the module individually.",
-        "no_credits_format": "No credits available in the package ({{used}}/{{max}} used). Top up the package in “Finance”.",
+        "no_credits_format": "No available credits: {{used}} of {{max}} used or reserved.",
         "send_error_format": "Submission error: {{message}}",
         "send_error_fallback": "please try again",
         "queued_success": "Proposal added to the moderation queue."
@@ -901,8 +901,8 @@
         "reason_gift": "gift",
         "reason_other": "from the organiser",
         "history_grant_label": "Free credits from the organiser",
-        "history_purchase_label": "Purchased"
-        ,"history_legacy_label": "Historical package — source not determined",
+        "history_purchase_label": "Purchased",
+        "history_legacy_label": "Historical package — source not determined",
         "history_prior_registration_one_format": "Fresh Market registration gift — {{count}} credit granted previously",
         "history_prior_registration_few_format": "Fresh Market registration gift — {{count}} credits granted previously",
         "history_prior_registration_many_format": "Fresh Market registration gift — {{count}} credits granted previously",
@@ -955,7 +955,12 @@
         "refund_alert_one_html": "<strong>Refund +{{count}} credit</strong> — the proposal wasn't read, the credit returned to your account. You can use it for submissions to other retailers.",
         "refund_alert_few_html": "<strong>Refund +{{count}} credits</strong> — the proposals weren't read, the credits returned to your account. You can use them for submissions to other retailers.",
         "refund_alert_many_html": "<strong>Refund +{{count}} credits</strong> — the proposals weren't read, the credits returned to your account. You can use them for submissions to other retailers.",
-        "refund_alert_other_html": "<strong>Refund +{{count}} credits</strong> — the proposals weren't read, the credits returned to your account. You can use them for submissions to other retailers."
+        "refund_alert_other_html": "<strong>Refund +{{count}} credits</strong> — the proposals weren't read, the credits returned to your account. You can use them for submissions to other retailers.",
+        "usage_split": "Used: {{used}} · Reserved: {{reserved}}",
+        "reserved_label": "Reserved",
+        "released_label": "Released reservations",
+        "released_hint": "Submissions expired unread. No credit was charged.",
+        "hist_released": "Reservation released — no credit charged"
       },
       "wallet": {
         "balance_label": "Wallet balance",
@@ -2527,7 +2532,8 @@
       "toast_send_failed_default": "Sending failed.",
       "toast_send_unknown_error": "Failed to send email.",
       "toast_send_partial_format": "Sent to {{succeeded}}/{{total}} buyers · {{count}} proposals marked as sent. {{failed}} buyer(s) failed.",
-      "toast_send_success_format": "Sent! {{buyers}} buyer(s) · {{count}} proposals marked as sent."
+      "toast_send_success_format": "Sent! {{buyers}} buyer(s) · {{count}} proposals marked as sent.",
+      "delivery_refresh_failed": "Delivery was recorded. The list could not be refreshed — reload the page, do not resend."
     },
     "branding": {
       "page_title": "Branding",

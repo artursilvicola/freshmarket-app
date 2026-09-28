@@ -114,6 +114,22 @@ describe("PageFinanse — pakiety o nieustalonym źródle", () => {
 });
 
 describe("PageWysylki — pasek kredytów", () => {
+  it("PL i EN oddzielają pobrane od rezerwacji; Finanse nie oczekują zwrotu za nigdy niepobrany kredyt", () => {
+    const sends = [{id:1,supplierId:'s1',status:'read',billingStatus:'charged'}, {id:2,supplierId:'s1',status:'pending_moderation'}, {id:3,supplierId:'s1',status:'sent'}, {id:4,supplierId:'s1',status:'unread_expired'}];
+    for (const lng of ['pl','en']) {
+      let tree=render(<PageWysylki {...base} sends={sends} pkgUsed={3} creditPools={pools} sendToChain={()=>{}} companies={[]} />,lng);
+      expect(text(tree)).toContain(lng==='pl'?'Wykorzystane: 1 · Zarezerwowane: 2':'Used: 1 · Reserved: 2');
+      act(()=>tree.unmount());
+      tree=render(<PageFinanse {...base} sends={sends} pkgUsed={3} creditPools={pools} />,lng);
+      expect(text(tree)).toContain(lng==='pl'?'Zwolnione rezerwacje':'Released reservations');
+      expect(text(tree)).not.toContain(lng==='pl'?'Zwroty w toku':'Refunds in progress');
+      const label=lng==='pl'?'Historia wysyłek':'Submission history';
+      const history=tree.root.findAllByType('button').find(b=>b.children.includes(label));
+      expect(history).toBeTruthy();act(()=>history.props.onClick());
+      expect(text(tree)).toContain(lng==='pl'?'Rezerwacja zwolniona — bez pobrania kredytu':'Reservation released — no credit charged');
+      act(()=>tree.unmount());
+    }
+  });
   it("dostępne osobno od pul i oczekujących: 0 dostępnych nie stoi obok „w tym 3 bezpłatnych”", () => {
     const sends = [1, 2, 3].map((i) => ({ id: "s" + i, supplierId: "s1", status: "sent", offerId: "o", retailerId: 1 }));
     const p = summarizeCreditPools([{ id: "g1", source: "grant", qty_total: 3, qty_used: 0, expires_at: "2026-12-27" }], "2026-09-27");
