@@ -88,7 +88,7 @@ describe("PageFinanse — pakiety o nieustalonym źródle", () => {
     const only = summarizeCreditPools([{ id: "l1", source: "legacy", qty_total: 1, qty_used: 0, expires_at: "2026-12-31" }], "2026-09-27");
     let tree = render(<PageFinanse {...base} pkgMax={1} pkgUsed={0} creditPools={only} />);
     let out = text(tree);
-    expect(out).toContain("Pakiety historyczne (źródło nieustalone)");
+    expect(out).toContain("Pakiety historyczne (Bezpłatne od organizatora)");
     expect(tileJson(out, "legacy")).toContain('"children":["1",');
     expect(tileJson(out, "paid")).toContain('"children":["0",');
     act(() => tree.unmount());
@@ -100,7 +100,7 @@ describe("PageFinanse — pakiety o nieustalonym źródle", () => {
     expect([mix.free.remaining, mix.paid.remaining, mix.legacy.remaining]).toEqual([2, 4, 1]);   // = qty_remaining_free/paid/legacy
     tree = render(<PageFinanse {...base} pkgMax={11} pkgUsed={4} creditPools={mix} />, "en");
     out = text(tree);
-    expect(out).toContain("Historical packages (source not determined)");
+    expect(out).toContain("Historical packages (Free from the organiser)");
     expect(tileJson(out, "paid")).toContain('"children":["4",');
     expect(tileJson(out, "legacy")).toContain('"children":["1",');
     expect(tileJson(out, "free")).toContain('"children":["2",');
@@ -108,7 +108,7 @@ describe("PageFinanse — pakiety o nieustalonym źródle", () => {
   });
   it("bez pakietów nieustalonych kafel nie pojawia się", () => {
     const tree = render(<PageFinanse {...base} creditPools={pools} />);
-    expect(text(tree)).not.toContain("nieustalone");
+    expect(text(tree)).not.toContain("Pakiety historyczne");
     act(() => tree.unmount());
   });
 });
@@ -139,13 +139,13 @@ describe("PageWysylki — pasek kredytów", () => {
     expect(out).toContain("Kredyty PreConnect: 0 z 3");
     expect(out).toContain("nierozliczone w pulach: bezpłatne 3, kupione 0 · zarezerwowane przez propozycje: 3");
     expect(out).not.toContain("w tym 3 bezpłatnych");
-    expect(out).not.toContain("nieustalone");
+    expect(out).not.toContain("historyczne");
     act(() => tree.unmount());
     const withLegacy = summarizeCreditPools([{ id: "g1", source: "grant", qty_total: 3, qty_used: 0, expires_at: "2026-12-27" }, { id: "l1", source: "legacy", qty_total: 2, qty_used: 0, expires_at: "2026-12-31" }], "2026-09-27");
     const tree2 = render(<PageWysylki sends={sends} offers={[]} pkgUsed={3} pkgMax={5} pkgPlan="std_5" rem={2} wallet={{ balance: 0, transactions: [] }} sendToChain={() => {}} nav={() => {}} sid={null} accountId="s1" co={{ id: "co1" }} retailers={[]} companies={[]} creditPools={withLegacy} />);
     const out2 = text(tree2);
     expect(out2).toContain("kupione 0");
-    expect(out2).toContain("nieustalone 2");
+    expect(out2).toContain("historyczne 2");
     act(() => tree2.unmount());
     return;
     act(() => tree.unmount());

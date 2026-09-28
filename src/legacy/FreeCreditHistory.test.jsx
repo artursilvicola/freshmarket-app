@@ -36,7 +36,7 @@ describe("historia pakietów — historyczne przyznania", () => {
     expect(out).toContain("Prezent za rejestrację na Fresh Market — przyznano wcześniej 5 kredytów");
     expect(out).toContain("2/5 kredytów");                                   // pozostało 2 z 5 (zużycie zachowane)
     expect(out).toContain("Bezpłatne kredyty od organizatora (rekompensata) — przyznano wcześniej 1 kredyt");
-    expect(out).toContain("Pakiet historyczny — źródło nieustalone");
+    expect(out).toContain("Pakiet historyczny — bezpłatny od organizatora");
     expect(out).toContain("Bezpłatne kredyty od organizatora · prezent");
     expect(out).toContain("Miłego testu");
     expect(out).not.toContain("Kupione · ");                                 // legacy nie jest opisany jako zakup
@@ -47,7 +47,7 @@ describe("historia pakietów — historyczne przyznania", () => {
     const out = text(tree);
     expect(out).toContain("Fresh Market registration gift — 5 credits granted previously");
     expect(out).toContain("Free credits from the organiser (compensation) — 1 credit granted previously");
-    expect(out).toContain("Historical package — source not determined");
+    expect(out).toContain("Historical package — free from the organiser");
     expect(out).not.toContain("przyznano");
     act(() => tree.unmount());
   });

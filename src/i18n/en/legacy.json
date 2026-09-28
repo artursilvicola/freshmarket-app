@@ -888,7 +888,7 @@
         "no_expiry_format": "{{count}} without expiry",
         "free_label": "Free from the organiser",
         "paid_label": "Purchased",
-        "legacy_label": "Historical packages (source not determined)",
+        "legacy_label": "Historical packages (Free from the organiser)",
         "remaining_format": "{{remaining}} of {{total}}",
         "remaining_unit": "remaining",
         "valid_until_format": "valid until {{date}}",
@@ -902,7 +902,7 @@
         "reason_other": "from the organiser",
         "history_grant_label": "Free credits from the organiser",
         "history_purchase_label": "Purchased",
-        "history_legacy_label": "Historical package — source not determined",
+        "history_legacy_label": "Historical package — free from the organiser",
         "history_prior_registration_one_format": "Fresh Market registration gift — {{count}} credit granted previously",
         "history_prior_registration_few_format": "Fresh Market registration gift — {{count}} credits granted previously",
         "history_prior_registration_many_format": "Fresh Market registration gift — {{count}} credits granted previously",
@@ -912,7 +912,7 @@
         "history_prior_other_many_format": "Free credits from the organiser ({{reason}}) — {{count}} credits granted previously",
         "history_prior_other_other_format": "Free credits from the organiser ({{reason}}) — {{count}} credits granted previously",
         "reason_registration": "registration gift",
-        "legacy_note_format": "including {{count}} from historical packages (source not determined)"
+        "legacy_note_format": "including {{count}} from historical packages (free from the organiser)"
       },
       "tabs": {
         "saldo": "Balance and package",
@@ -921,7 +921,7 @@
       },
       "credits": {
         "bar_free_format": "unsettled in pools: free {{free}}, purchased {{paid}} · reserved by proposals: {{awaiting}}",
-        "bar_legacy_format": "not determined {{legacy}}",
+        "bar_legacy_format": "historical {{legacy}}",
         "balance_label": "PreConnect Credits",
         "amount_one_format": "{{count}} credit",
         "amount_few_format": "{{count}} credits",

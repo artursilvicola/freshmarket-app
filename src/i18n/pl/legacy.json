@@ -888,7 +888,7 @@
         "no_expiry_format": "{{count}} bez terminu",
         "free_label": "Bezpłatne od organizatora",
         "paid_label": "Kupione",
-        "legacy_label": "Pakiety historyczne (źródło nieustalone)",
+        "legacy_label": "Pakiety historyczne (Bezpłatne od organizatora)",
         "remaining_format": "{{remaining}} z {{total}}",
         "remaining_unit": "pozostało",
         "valid_until_format": "ważne do {{date}}",
@@ -902,7 +902,7 @@
         "reason_other": "od organizatora",
         "history_grant_label": "Bezpłatne kredyty od organizatora",
         "history_purchase_label": "Kupione",
-        "history_legacy_label": "Pakiet historyczny — źródło nieustalone",
+        "history_legacy_label": "Pakiet historyczny — bezpłatny od organizatora",
         "history_prior_registration_one_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredyt",
         "history_prior_registration_few_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredyty",
         "history_prior_registration_many_format": "Prezent za rejestrację na Fresh Market — przyznano wcześniej {{count}} kredytów",
@@ -912,7 +912,7 @@
         "history_prior_other_many_format": "Bezpłatne kredyty od organizatora ({{reason}}) — przyznano wcześniej {{count}} kredytów",
         "history_prior_other_other_format": "Bezpłatne kredyty od organizatora ({{reason}}) — przyznano wcześniej {{count}} kredytów",
         "reason_registration": "prezent za rejestrację",
-        "legacy_note_format": "w tym {{count}} z pakietów historycznych (źródło nieustalone)"
+        "legacy_note_format": "w tym {{count}} z pakietów historycznych (bezpłatnych od organizatora)"
       },
       "tabs": {
         "saldo": "Saldo i pakiet",
@@ -921,7 +921,7 @@
       },
       "credits": {
         "bar_free_format": "nierozliczone w pulach: bezpłatne {{free}}, kupione {{paid}} · zarezerwowane przez propozycje: {{awaiting}}",
-        "bar_legacy_format": "nieustalone {{legacy}}",
+        "bar_legacy_format": "historyczne {{legacy}}",
         "balance_label": "Kredyty PreConnect",
         "amount_one_format": "{{count}} kredyt",
         "amount_few_format": "{{count}} kredyty",
