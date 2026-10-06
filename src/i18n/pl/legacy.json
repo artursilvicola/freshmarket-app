@@ -1698,6 +1698,7 @@
       },
       "cta": {
         "section_label": "Możliwe działania",
+        "email_missing": "Brak adresu e-mail do kontaktu handlowego. Dostępne dane kontaktowe znajdziesz w sekcji Kontakt z dostawcą.",
         "section_intro": "Skontaktuj się z dostawcą — możesz poprosić o próbkę, zapytać o aktualną cenę, poprosić o specyfikację lub umówić rozmowę.",
         "subject_fallback": "Preconnect – zapytanie",
         "subjects": {
@@ -1725,6 +1726,7 @@
       },
       "contact_card": {
         "title": "Kontakt z dostawcą",
+        "empty": "Brak dostępnych danych do kontaktu handlowego.",
         "notice": "Możesz kontaktować się bezpośrednio"
       }
     }

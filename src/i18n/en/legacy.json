@@ -1698,6 +1698,7 @@
       },
       "cta": {
         "section_label": "Possible actions",
+        "email_missing": "No commercial contact email is available. Any available contact details are listed under Contact the supplier.",
         "section_intro": "Contact the supplier — you can request a sample, ask about the current price, request a specification, or schedule a call.",
         "subject_fallback": "PreConnect – inquiry",
         "subjects": {
@@ -1725,6 +1726,7 @@
       },
       "contact_card": {
         "title": "Contact the supplier",
+        "empty": "No commercial contact details are available.",
         "notice": "You can contact them directly"
       }
     }

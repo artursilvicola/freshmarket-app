@@ -86,6 +86,7 @@ import {
   getProfilesForAdminChat as dbGetProfilesForAdminChat,
 } from "../lib/db";
 import { retailerContact } from "../lib/retailer-contacts.js";
+import { commercialContacts } from "../lib/commercial-contacts.js";
 import { countActiveBuyers, countsAsActiveBuyer, createRetailerWithBuyer, retailerSaveConfirmed } from "../lib/retailer-buyers.js";
 import { isFmInputsLockedError } from "../lib/fm-input-lock.js";
 import { createSerialSaver } from "../lib/serial-save.js";
@@ -8028,6 +8029,8 @@ export function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, comp
   // czeka na P2-2d osobno.
   const { t } = useTranslation("legacy");
   const supplierCo = getSupplierCo(send, offers, companies) || co || COMPANY_INIT;
+  const contacts = commercialContacts(supplierCo === COMPANY_INIT ? null : supplierCo);
+  const supplierEmail = contacts.find(contact => contact.email)?.email || "";
   const [showCoModal, setShowCoModal] = useState(false);
   // [B2B Round 5.3] First time buyer opens this detail: flip status sent -> read
   // via SECURITY DEFINER RPC (markSendOpened in App). Pass the WHOLE send
@@ -8259,21 +8262,19 @@ export function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, comp
             </Sec>
           )}
 
-          {/* CTA — możliwe akcje kupca (zawsze widoczne, pełna lista CTA_MAP) */}
+          {/* Email actions require an available commercial recipient. */}
           <div style={{ padding:16,background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"1px solid #bbf7d0",borderRadius:10,marginBottom:12 }}>
             <div style={{ fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:"#047857",marginBottom:6 }}>{t("buyer.detail.cta.section_label")}</div>
-            <div style={{ fontSize:12,color:"#475569",marginBottom:10 }}>{t("buyer.detail.cta.section_intro")}</div>
+            <div style={{ fontSize:12,color:"#475569",marginBottom:10 }}>{t(supplierEmail ? "buyer.detail.cta.section_intro" : "buyer.detail.cta.email_missing")}</div>
             <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
-              {Object.keys(CTA_MAP).map((key,i)=>{
+              {supplierEmail && Object.keys(CTA_MAP).map((key,i)=>{
                 // [P2-2c] CTA label przez common.cta_map.* (P2-1), subject/body
                 // przez buyer.detail.cta.subjects/bodies.* z interpolacją {{product}}.
-                // mailto encodeURIComponent + sklejanie zostawione bez zmian.
                 const productName = o.title || o.product;
                 const ctaLabel = t(`common.cta_map.${key}`);
-                const supplierEmail=(supplierCo?.contacts?.[0]?.email)||"";
                 const subject = t(`buyer.detail.cta.subjects.${key}`, { product: productName, defaultValue: t("buyer.detail.cta.subject_fallback") });
                 const body = t(`buyer.detail.cta.bodies.${key}`, { product: productName, defaultValue: "" });
-                const mailto=`mailto:${supplierEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                const mailto=`mailto:${encodeURIComponent(supplierEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                 return (
                   <a key={key} href={mailto} style={{ background:i===0?"#0d9488":"white",color:i===0?"white":"#0d9488",border:i===0?"none":"2px solid #0d9488",padding:"9px 20px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6 }}>
                     <Mail size={13}/>{ctaLabel}
@@ -8311,13 +8312,13 @@ export function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, comp
             })()}
           </Card>
           <Card title={t("buyer.detail.contact_card.title")} icon={Phone}>
-            <div style={{ marginBottom:8,padding:"6px 10px",background:"#f0fdf4",borderRadius:6,fontSize:11,color:"#047857",border:"1px solid #bbf7d0" }}>{t("buyer.detail.contact_card.notice")}</div>
-            {(supplierCo.contacts||[]).map((ct,i)=>(
+            <div style={{ marginBottom:8,padding:"6px 10px",background:contacts.length?"#f0fdf4":"#f8fafc",borderRadius:6,fontSize:11,color:contacts.length?"#047857":"#475569",border:"1px solid #e2e8f0" }}>{t(contacts.length ? "buyer.detail.contact_card.notice" : "buyer.detail.contact_card.empty")}</div>
+            {contacts.map((ct,i)=>(
               <div key={i} style={{ padding:"9px 12px",background:"#f8fafc",borderRadius:8,marginBottom:6,border:"1px solid #e2e8f0" }}>
                 <div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{ct.name}</div>
                 <div style={{ fontSize:11,color:"#64748b",marginBottom:5 }}>{ct.position}</div>
-                <a href={`tel:${ct.phone}`} style={{ fontSize:12,color:"#1e293b",textDecoration:"none",display:"flex",gap:5,alignItems:"center",marginBottom:3 }}><Phone size={12} color="#0d9488"/>{ct.phone}</a>
-                <a href={`mailto:${ct.email}`} style={{ fontSize:12,color:"#2563eb",textDecoration:"none",display:"flex",gap:5,alignItems:"center" }}><Mail size={12} color="#2563eb"/>{ct.email}</a>
+                {ct.phone && <a href={`tel:${encodeURIComponent(ct.phone)}`} style={{ fontSize:12,color:"#1e293b",textDecoration:"none",display:"flex",gap:5,alignItems:"center",marginBottom:3 }}><Phone size={12} color="#0d9488"/>{ct.phone}</a>}
+                {ct.email && <a href={`mailto:${encodeURIComponent(ct.email)}`} style={{ fontSize:12,color:"#2563eb",textDecoration:"none",display:"flex",gap:5,alignItems:"center",overflowWrap:"anywhere" }}><Mail size={12} color="#2563eb"/>{ct.email}</a>}
               </div>
             ))}
           </Card>
