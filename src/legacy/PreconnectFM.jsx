@@ -10050,7 +10050,9 @@ export function PageAdminPipeline({ sends, setSends, onRetailerEmailSent, offers
 }
 
 /* ── Admin: Sieci ─────────────────────────────────────────────────────── */
-function PageAdminRetailers({ retailers, setRetailers, fl }) {
+// [fix/retailer-create-with-buyer] eksport dla testu: montujemy PRAWDZIWY komponent,
+// zamiast wycinac go ze zrodla po offsetach (kruche przy kazdej edycji pliku).
+export function PageAdminRetailers({ retailers, setRetailers, fl }) {
   const { t } = useTranslation("legacy");
   // [P2-admin] CAT_OPTS — wartości (klucze) PL zachowane jako historyczne
   // dane DB, labelki idą przez t() z admin.retailers.cat_options.*
