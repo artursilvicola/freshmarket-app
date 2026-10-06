@@ -6,14 +6,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { markLegacySendsSeen } from "../netlify/functions/_shared/legacy-send-seen.js";
 
-function fakeDb({ credits = 0 } = {}) {
+function fakeDb({ credits = 0, locale = 'pl' } = {}) {
   const state = { credits, charges: 0, updates: 0, notifyRpc: 0, row: { id: "send-1", legacy_id: 1, supplier_legacy_id: "supplier-1", retailer_id: 1, offer_legacy_id: 77, status: "sent", data: {} } };
   const supa = {
     from(table) {
       return {
         select() { return this; }, eq() { return this; }, order() { return this; }, limit() { return this; },
         in() { return Promise.resolve({ data: table === "legacy_sends" ? [structuredClone(state.row)] : table === "retailers" ? [{ id: 1, name: "Test retailer" }] : table === "legacy_offers" ? [{ legacy_id: 77, data: { title: "Avocado" } }] : [], error: null }); },
-        maybeSingle() { return Promise.resolve({ data: table === "profiles" ? { name: "Test", email: "nobody@example.invalid", active: true, locale: "pl" } : { id: "company-1", name: "Test company", legacy_supplier_id: "supplier-1" }, error: null }); },
+        maybeSingle() { return Promise.resolve({ data: table === "profiles" ? { name: "Test", email: "nobody@example.invalid", active: true, locale } : { id: "company-1", name: "Test company", legacy_supplier_id: "supplier-1" }, error: null }); },
         update() { state.updates += 1; return { eq: async () => ({ error: null }) }; },
       };
     },
@@ -45,6 +45,22 @@ describe("markLegacySendsSeen + prawdziwy notifier (fetch = atrapa)", () => {
   let realFetch, fetchCalls;
   beforeEach(() => { realFetch = globalThis.fetch; fetchCalls = []; });
   afterEach(() => { globalThis.fetch = realFetch; });
+
+  it.each([
+    ['pl','pl','zobaczyła'],
+    ['en','en','saw your submission'],
+    [null,'pl','zobaczyła'],
+  ])('keeps the read notification in supplier profile locale %s',async (locale, lang, subject) => {
+    const {supa} = fakeDb({credits:1,locale});
+    globalThis.fetch = vi.fn(async () => ({ok:true,json:async () => ({id:'mock-mail'})}));
+    const result = await call(supa,true);
+    expect(result.notificationSummary.status).toBe('sent');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const mail = JSON.parse(globalThis.fetch.mock.calls[0][1].body);
+    expect(mail.to).toEqual(['nobody@example.invalid']);
+    expect(mail.html).toContain(`<html lang="${lang}">`);
+    expect(mail.subject).toContain(subject);
+  });
 
   it("reprodukcja Codexa v3: powiadomienie kończące się po rozliczeniu B nie kasuje znacznika; C = already_charged; jedno pobranie", async () => {
     const { supa, state } = fakeDb({ credits: 0 });

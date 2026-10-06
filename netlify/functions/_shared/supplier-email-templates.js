@@ -13,7 +13,7 @@
  *   C2. account_suspended       — admin zawiesił aktywne konto
  *   D. offer_to_moderation      — supplier wysłał ofertę → admin moderuje
  *   E. offer_approved           — admin zaakceptował ofertę
- *   F. offer_sent_to_retailer   — admin wysłał maila zbiorczego do sieci
+ *   F. offer_sent_to_retailer   — retired; no supplier mail after retailer mailing
  *   G. offer_expired            — oferta wygasła (14 dni bez odczytu)
  */
 
@@ -318,7 +318,7 @@ function tplOfferApprovedPL({ companyName, offerTitle, retailerName, appUrl }) {
 <tr><td style="padding:24px 32px 8px;">
   ${pBlock("Dzień dobry,")}
   ${pBlock(`Twoja oferta <strong>${esc(offerTitle)}</strong>${retailerName ? ` dla sieci <strong>${esc(retailerName)}</strong>` : ""} została zatwierdzona przez administratora.`)}
-  ${pBlock("Oferta jest gotowa do wysyłki w najbliższym mailu zbiorczym do tej sieci. Otrzymasz potwierdzenie, gdy wiadomość zostanie wysłana.")}
+  ${pBlock("Status propozycji i jej odczytu przez kupca sprawdzisz w panelu dostawcy.")}
   ${ctaButton("Otwórz panel dostawcy", `${appUrl}/dostawca`, "#059669")}
 </td></tr>`;
   return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "pl" }) };
@@ -330,13 +330,12 @@ function tplOfferApprovedEN({ companyName, offerTitle, retailerName, appUrl }) {
 <tr><td style="padding:24px 32px 8px;">
   ${pBlock("Hello,")}
   ${pBlock(`your submission <strong>${esc(offerTitle)}</strong>${retailerName ? ` for <strong>${esc(retailerName)}</strong>` : ""} has been approved by the administrator.`)}
-  ${pBlock("The submission is ready to be sent in the next batch email to that retailer. You'll get a confirmation once the message goes out.")}
+  ${pBlock("You can check the submission's status and whether the buyer has viewed it in your supplier panel.")}
   ${ctaButton("Open supplier panel", `${appUrl}/dostawca`, "#059669")}
 </td></tr>`;
   return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "en" }) };
 }
 
-// ── F. Offer sent to retailer ────────────────────────────────────────────
 function offerItemsList(offers = [], locale = "pl") {
   const items = (offers || []).filter(Boolean);
   if (!items.length) return "";
@@ -348,73 +347,6 @@ function offerItemsList(offers = [], locale = "pl") {
     ${visible.map((o) => `<li><strong>${esc(o.title || o.offerTitle || o.product || fallbackTitle)}</strong></li>`).join("")}
     ${extra > 0 ? `<li>${moreLabel}</li>` : ""}
   </ul>`;
-}
-
-function pluralOffersPL(count) {
-  const n = Math.abs(Number(count || 0));
-  if (n === 1) return "ofertę";
-  const last = n % 10;
-  const lastTwo = n % 100;
-  if (last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)) return "oferty";
-  return "ofert";
-}
-
-function pluralOffersEN(count) {
-  return Number(count) === 1 ? "submission" : "submissions";
-}
-
-export function tplOffersSentToRetailer({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl, locale }) {
-  const lng = pickLocale(locale);
-  if (lng === "en") return tplOffersSentToRetailerEN({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl });
-  return tplOffersSentToRetailerPL({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl });
-}
-
-function tplOffersSentToRetailerPL({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl }) {
-  const count = Number(offerCount || (offers || []).length || 1);
-  const subject = count === 1
-    ? `Fresh Market – oferta została wysłana do ${retailerName || "sieci"}`
-    : `Fresh Market – wysłaliśmy ${count} ${pluralOffersPL(count)} do ${retailerName || "sieci"}`;
-  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }], "pl");
-  const intro = count === 1
-    ? `Twoja oferta została wysłana do sieci <strong>${esc(retailerName || "")}</strong>${sentAt ? ` w dniu ${esc(sentAt)}` : ""}.`
-    : `Wysłaliśmy do sieci <strong>${esc(retailerName || "")}</strong> <strong>${count} ${pluralOffersPL(count)}</strong>${sentAt ? ` w dniu ${esc(sentAt)}` : ""}.`;
-  const body = `
-<tr><td style="padding:24px 32px 8px;">
-  ${pBlock("Dzień dobry,")}
-  ${pBlock(intro)}
-  ${list}
-  ${pBlock("Kupiec otrzymał zbiorczy mail Fresh Market PreConnect. Gdy otworzy mail albo wejdzie na listę ofert w panelu, oznaczymy wysyłkę jako dostarczoną i pokażemy rozliczenie w panelu.")}
-  ${ctaButton("Zobacz w panelu", `${appUrl}/dostawca`, "#059669")}
-</td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "pl" }) };
-}
-
-function tplOffersSentToRetailerEN({ companyName, offerTitle, offers, offerCount, retailerName, sentAt, appUrl }) {
-  const count = Number(offerCount || (offers || []).length || 1);
-  const subject = count === 1
-    ? `Fresh Market – submission sent to ${retailerName || "retailer"}`
-    : `Fresh Market – ${count} ${pluralOffersEN(count)} sent to ${retailerName || "retailer"}`;
-  const list = offerItemsList(offers?.length ? offers : [{ title: offerTitle }], "en");
-  const intro = count === 1
-    ? `Your submission has been sent to <strong>${esc(retailerName || "")}</strong>${sentAt ? ` on ${esc(sentAt)}` : ""}.`
-    : `We sent <strong>${count} ${pluralOffersEN(count)}</strong> to <strong>${esc(retailerName || "")}</strong>${sentAt ? ` on ${esc(sentAt)}` : ""}.`;
-  const body = `
-<tr><td style="padding:24px 32px 8px;">
-  ${pBlock("Hello,")}
-  ${pBlock(intro)}
-  ${list}
-  ${pBlock("The buyer received the Fresh Market PreConnect batch email. When they open the email or visit the offer list in the panel, we'll mark the submission as delivered and show the billing in your panel.")}
-  ${ctaButton("View in panel", `${appUrl}/dostawca`, "#059669")}
-</td></tr>`;
-  return { subject, html: shell({ title: subject, accent: "#059669", body, appUrl, locale: "en" }) };
-}
-
-export function tplOfferSentToRetailer(payload) {
-  return tplOffersSentToRetailer({
-    ...payload,
-    offers: payload?.offers || [{ title: payload?.offerTitle }],
-    offerCount: payload?.offerCount || 1,
-  });
 }
 
 // ── H. Offer read by buyer ────────────────────────────────────────────────
@@ -551,8 +483,6 @@ export function pickTemplate(name, payload) {
     case "account_suspended":      return tplAccountSuspended(payload);
     case "offer_to_moderation":    return tplOfferToModeration(payload);
     case "offer_approved":         return tplOfferApproved(payload);
-    case "offer_sent_to_retailer": return tplOfferSentToRetailer(payload);
-    case "offers_sent_to_retailer": return tplOffersSentToRetailer(payload);
     case "offer_read_by_buyer":    return tplOfferReadByBuyer(payload);
     case "offers_read_by_buyer":   return tplOffersReadByBuyer(payload);
     case "offer_expired":          return tplOfferExpired(payload);

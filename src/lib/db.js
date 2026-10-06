@@ -2016,7 +2016,7 @@ export async function getPendingSupplierCount() {
 // Wywołuje zewnętrzny Netlify endpoint do wysłania maila transakcyjnego
 // dostawcy. Templates: A registration_accepted, B account_activated,
 // C account_rejected/suspended, D offer_to_moderation, E offer_approved,
-// F offer_sent_to_retailer, G offer_expired.
+// G offer_expired. The former F (retailer mailing notice) is retired.
 // Fire-and-forget — nie blokujemy UI gdy email padnie. Loguje warning
 // w konsoli i wraca z {ok:false} bez throwa.
 export async function notifySupplier({ template, company_id, payload }) {

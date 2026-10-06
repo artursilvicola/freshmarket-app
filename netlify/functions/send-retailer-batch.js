@@ -5,8 +5,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
-import { renderRetailerEmail, buildSubject } from "./_shared/render-retailer-email.js";
-import { tplOffersSentToRetailer } from "./_shared/supplier-email-templates.js";
+import { renderRetailerEmail } from "./_shared/render-retailer-email.js";
 import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
@@ -315,7 +314,6 @@ export default async function handler(request) {
 
   if (anySent) {
     const sentAtIso = new Date().toISOString();
-    const sentAtDate = sentAtIso.slice(0, 10);
     let persisted;
     try {
       persisted = await supaSvc.rpc("mark_legacy_sends_retailer_emailed", {
@@ -333,82 +331,7 @@ export default async function handler(request) {
     }
     markedSendIds = persisted.data;
 
-    // [B2B Round supplier-onboarding-access-and-communication]
-    // Email F — powiadom dostawcę zbiorczo per sieć/batch, żeby przy kilku
-    // ofertach nie wysyłać kilku niemal identycznych maili.
-    const supplierEmailsByCompanyId = new Map();
-    const supplierIdToCompanyId = new Map();
-    for (const co of companiesMap.values()) {
-      if (co?.id && !supplierEmailsByCompanyId.has(co.id)) {
-        supplierEmailsByCompanyId.set(co.id, null);
-        supplierIdToCompanyId.set(co.legacy_supplier_id, co.id);
-        supplierIdToCompanyId.set(co.id, co.id);
-      }
-    }
-    if (supplierEmailsByCompanyId.size) {
-      const companyIds = [...supplierEmailsByCompanyId.keys()];
-      // [P2-backend-mails C2] Pull supplier `locale` so notification mail
-      // (offers_sent_to_retailer) renders in supplier's language.
-      const { data: ownerProfiles } = await supaSvc
-        .from("profiles")
-        .select("name, email, role, active, company_id, locale")
-        .in("company_id", companyIds)
-        .eq("role", "supplier");
-      for (const p of ownerProfiles || []) {
-        if (p.active && p.email && !supplierEmailsByCompanyId.get(p.company_id)) {
-          supplierEmailsByCompanyId.set(p.company_id, p);
-        }
-      }
-      const groupsByCompanyId = new Map();
-      for (const s of eligible) {
-        const supplierKey = (s.data || {}).supplierId;
-        const companyId = supplierIdToCompanyId.get(supplierKey);
-        const owner = companyId ? supplierEmailsByCompanyId.get(companyId) : null;
-        if (!owner?.email) continue;
-        const offer = offersMap.get((s.data || {}).offerId) || {};
-        const co = companiesMap.get(supplierKey) || companiesMap.get(companyId) || {};
-        if (!groupsByCompanyId.has(companyId)) {
-          groupsByCompanyId.set(companyId, {
-            owner,
-            company: co,
-            offers: [],
-          });
-        }
-        groupsByCompanyId.get(companyId).offers.push({
-          title: offer.title || offer.product || `Oferta`,
-        });
-      }
-
-      for (const group of groupsByCompanyId.values()) {
-        const tpl = tplOffersSentToRetailer({
-          companyName: group.company?.name || "",
-          contactName: group.owner.name || null,
-          offers: group.offers,
-          offerCount: group.offers.length,
-          retailerName: retailer.name || "",
-          sentAt: sentAtDate,
-          appUrl: env.b2bAppUrl,
-          // [P2-backend-mails C2] Supplier sees notification in their language.
-          locale: group.owner.locale || "pl",
-        });
-        try {
-          await fetch("https://api.resend.com/emails", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${env.resendApiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              from: "Fresh Market <newsletter@freshmarket.eu>",
-              to: [group.owner.email],
-              subject: tpl.subject,
-              html: tpl.html,
-            }),
-          });
-        } catch (e) {
-          // Logujemy ale nie blokujemy odpowiedzi — kupiec już dostał maila,
-          // status sends jest zapisany. Notyfikacja do supplera to nice-to-have.
-          console.warn("[email_supplier_offer_sent]", group.owner.email, e?.message || e);
-        }
-      }
-    }
+    // Supplier notification is tied to the buyer's read, not this optional mailing.
   }
 
   // [P2-backend-mails C3 fix] `subject` was undefined here after the per-locale

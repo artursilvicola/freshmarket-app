@@ -64,10 +64,12 @@ function pickLocale(input) {
   return ["pl", "en"].includes(raw) ? raw : "pl";
 }
 
-function pluralOfertaPL(n) {
-  if (n === 1) return "oferta";
-  if (n >= 2 && n <= 4) return "oferty";
-  return "ofert";
+function pluralPropozycjaPL(n) {
+  if (n === 1) return "propozycję";
+  const last = n % 10;
+  const lastTwo = n % 100;
+  if (last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)) return "propozycje";
+  return "propozycji";
 }
 
 function pluralKupiecPL(n) {
@@ -76,8 +78,8 @@ function pluralKupiecPL(n) {
 }
 
 // [P2-final-qa C3] Terminologia v1.1: "submission(s)" zamiast "offer(s)" —
-// consistent z resztą EN templates supplier-side (tplOffersSentToRetailer,
-// tplOffersReadByBuyer, tplOfferExpired) gdzie używamy Submission.
+// consistent z resztą EN templates supplier-side (tplOffersReadByBuyer,
+// tplOfferExpired) gdzie używamy Submission.
 // Per Codex non-blocker notatka na P2-backend-mails C3 review.
 function pluralOfferEN(n) {
   return n === 1 ? "submission" : "submissions";
@@ -133,7 +135,7 @@ export function renderRetailerEmail({ retailer, sends, offers, companies, buyerC
     headerSubtitleFormat: (m) => `Propozycje od dostawców – ${esc(m)}`,
     headerMailingFor: (name) => `Skierowane do sieci <strong style="color:rgba(255,255,255,0.9);">${esc(name)}</strong>`,
     introGreet: "Szanowni Państwo,",
-    introBody: (count, retName) => `poniżej znajdą Państwo <strong>${count} ${pluralOfertaPL(count)}</strong> od dostawców skierowanych do sieci <strong>${esc(retName)}</strong>. To nie jest zamknięta selekcja: wszystkie aktualne propozycje, profile dostawców oraz dane kontaktowe firm są dostępne w aplikacji Fresh Market B2B.`,
+    introBody: (count, retName) => `poniżej znajdą Państwo <strong>${count} ${pluralPropozycjaPL(count)}</strong> od dostawców dla sieci <strong>${esc(retName)}</strong>. To nie jest zamknięta selekcja: wszystkie aktualne propozycje, profile dostawców oraz dane kontaktowe firm są dostępne w aplikacji Fresh Market B2B.`,
     introHint: "Kliknij przycisk przy propozycji, aby bezpiecznie zalogować się magic linkiem i przejść bezpośrednio do tej propozycji w aplikacji.",
     buyerLine: (count, retName) => `Trafia do ${count} ${pluralKupiecPL(count)} z sieci ${esc(retName)}`,
     footerAddress: "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska",
