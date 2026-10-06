@@ -86,6 +86,7 @@ import {
   getProfilesForAdminChat as dbGetProfilesForAdminChat,
 } from "../lib/db";
 import { retailerContact } from "../lib/retailer-contacts.js";
+import { countActiveBuyers, countsAsActiveBuyer, createRetailerWithBuyer } from "../lib/retailer-buyers.js";
 import { isFmInputsLockedError } from "../lib/fm-input-lock.js";
 import { createSerialSaver } from "../lib/serial-save.js";
 import { registerPendingWork } from "../lib/pending-work.js";
@@ -2500,6 +2501,9 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 isManaged: true,
               }));
             // [fix/security-hotfix] kontakt awaryjny z retailer_contacts (tylko admin)
+            // [fix/retailer-create-with-buyer] isPlaceholder: to NIE jest konto kupca,
+            // tylko zastępczy wiersz dla sieci bez profilu. Pusty (bez e-maila) nie może
+            // uchodzić za aktywnego kupca — patrz src/lib/retailer-buyers.js.
             const contact = retailerContact(r);
             const fallbackBuyers = profileBuyers.length ? profileBuyers : [{
               id: r.id + "_b1",
@@ -2509,6 +2513,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               position: "",
               cats: r.cats || [],
               active: true,
+              isPlaceholder: true,
               fm26Active: !!(r.fm26_active ?? RETAILER_TO_CHAIN[r.id]),
               isManaged: false,
             }];
@@ -10067,6 +10072,8 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
   const [savedIds, setSavedIds]     = useState({});
   const [saveError, setSaveError]   = useState({});
   const [savingId, setSavingId]     = useState(null);
+  // [fix/retailer-create-with-buyer] blokada na czas tworzenia sieci + kupca
+  const [addingRetailer, setAddingRetailer] = useState(false);
   const [saveMeta, setSaveMeta]     = useState({});
 
   function updateRetailer(id, changes) { setRetailers(prev=>prev.map(r=>r.id===id?{...r,...changes}:r)); }
@@ -10165,9 +10172,12 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
     }
     return null;
   }
-  async function saveRetailer(id) {
-    const retailer = retailers.find(r => r.id === id);
-    if (!retailer) return;
+  // [fix/retailer-create-with-buyer] retailerOverride: „Dodaj sieć” woła ten sam
+  // zapis zaraz po utworzeniu sieci, zanim nowy wiersz wejdzie do `retailers`
+  // w tym renderze. Zwraca true/false, żeby wołający wiedział, czy kupiec powstał.
+  async function saveRetailer(id, retailerOverride = null) {
+    const retailer = retailerOverride || retailers.find(r => r.id === id);
+    if (!retailer) return false;
     const errs = {};
     if(!retailer.name?.trim()) errs[id] = t("admin.retailers.toast_save_name_required");
     const buyers = (retailer.buyers||[]).map((b) => ({
@@ -10178,7 +10188,8 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
       position: String(b.position || "").trim(),
       cats: [...new Set((b.cats || []).filter(Boolean))],
     }));
-    const activeBuyers = buyers.filter((b) => b.active !== false);
+    // [fix/retailer-create-with-buyer] pusty wiersz zastępczy nie jest kupcem
+    const activeBuyers = buyers.filter(countsAsActiveBuyer);
     if (retailer.active !== false && activeBuyers.length === 0) errs[id] = t("admin.retailers.toast_save_active_needs_buyer");
     if (retailer.fm26Active && !activeBuyers.some((b) => b.fm26Active)) errs[id] = t("admin.retailers.toast_save_fm26_needs_fm_buyer");
     const seenEmails = new Set();
@@ -10195,7 +10206,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
       if ((b.cats||[]).length === 0) { errs[id] = t("admin.retailers.toast_save_buyer_cats_required"); break; }
     }
     if (retailer.fm26Active && !retailer.fm26ChainId) errs[id] = t("admin.retailers.toast_save_fm26_id_required");
-    if (Object.keys(errs).length) { setSaveError(prev => ({ ...prev, ...errs })); fl?.(Object.values(errs)[0], "warning"); return; }
+    if (Object.keys(errs).length) { setSaveError(prev => ({ ...prev, ...errs })); fl?.(Object.values(errs)[0], "warning"); return false; }
 
     setSavingId(id);
     setSaveError(prev => ({ ...prev, [id]: null }));
@@ -10267,9 +10278,11 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
       setSavedIds(prev=>({...prev,[id]:true}));
       setTimeout(()=>setSavedIds(prev=>{const n={...prev};delete n[id];return n;}),2500);
       fl?.(t("admin.retailers.toast_saved_full"), "success");
+      return true;
     } catch (e) {
       setSaveError(prev => ({ ...prev, [id]: e?.message || t("admin.retailers.toast_save_failed_full_default") }));
       fl?.(e?.message || t("admin.retailers.toast_save_failed_full_default"), "error");
+      return false;
     } finally {
       setSavingId(null);
     }
@@ -10277,7 +10290,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
   function toggleNewBuyerCat(cat) {
     setNewR(prev=>{const buyers=[...prev.buyers];const b={...buyers[0]};b.cats=(b.cats||[]).includes(cat)?(b.cats||[]).filter(c=>c!==cat):[...(b.cats||[]),cat];buyers[0]=b;return{...prev,buyers};});
   }
-  function addRetailer() {
+  async function addRetailer() {
     const errs={};
     if(!newR.name.trim()) errs.name=t("admin.retailers.form_err_required");
     if(!newR.country) errs.country=t("admin.retailers.form_err_country_required");
@@ -10293,9 +10306,32 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
     const initials=newR.name.split(" ").map(w=>w[0]).join("").slice(0,3).toUpperCase();
     const newId=Math.max(...retailers.map(r=>r.id),120)+1;
     const entry={...newR,id:newId,initials:initials||newR.name.slice(0,3).toUpperCase(),buyers:newR.buyers.map((b,i)=>({...b,id:`${newId}_b${i+1}`,isNew:true}))};
-    setRetailers(prev=>[...prev,entry]);
+    // [fix/retailer-create-with-buyer] Sieć bez konta kupca jest bezużyteczna:
+    // mailing odmawia wysyłki, a panel i tak pokazuje zastępczy wiersz jako
+    // „1 aktywny kupiec". Dlatego tworzymy OBIE rzeczy i dopiero potem mówimy
+    // o sukcesie. Konto kupca zakłada ta sama ścieżka co „Zapisz zmiany”
+    // (saveRetailer), żeby nie dublować logiki magic linków i błędów.
+    setAddingRetailer(true);
+    const result = await createRetailerWithBuyer({
+      entry,
+      upsertRetailers: bulkUpsertRetailers,
+      saveBuyer: (rid, override) => {
+        // Sieć istnieje w bazie. Od tej chwili ponowienie NIE może stworzyć drugiej —
+        // dlatego formularz zamykamy, a kartę zostawiamy otwartą do poprawki.
+        setRetailers(prev => prev.some(r => r.id === rid) ? prev : [...prev, override]);
+        setFormError({}); setShowForm(false); setExpandedId(rid);
+        return saveRetailer(rid, override);
+      },
+    });
+    setAddingRetailer(false);
+    if (!result.retailerCreated) {
+      const msg = result.error?.message || t("admin.retailers.toast_save_failed_full_default");
+      setFormError({ name: msg });
+      fl?.(msg, "error");
+      return;
+    }
+    if (!result.buyerCreated) return;   // komunikat pokazał już saveRetailer; karta czeka na „Zapisz zmiany”
     setNewR({...EMPTY_RETAILER,buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]});
-    setFormError({});setShowForm(false);setExpandedId(newId);
   }
   const filtered=retailers.filter(r=>{
     if(search&&!r.name.toLowerCase().includes(search.toLowerCase())&&!(getCountryName(r.country)).toLowerCase().includes(search.toLowerCase())) return false;
@@ -10312,7 +10348,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
         <div>
           <div style={{fontWeight:700,fontSize:15,marginBottom:2}}>{t("admin.retailers.header_title")}</div>
-          <div style={{fontSize:12,color:"#64748b"}}>{t("admin.retailers.header_stats_format", { active: retailers.filter(r=>r.active!==false).length, inactive: retailers.filter(r=>r.active===false).length, buyers: retailers.reduce((a,r)=>(a+(r.buyers||[]).length),0) })}</div>
+          <div style={{fontSize:12,color:"#64748b"}}>{t("admin.retailers.header_stats_format", { active: retailers.filter(r=>r.active!==false).length, inactive: retailers.filter(r=>r.active===false).length, buyers: retailers.reduce((a,r)=>(a+countActiveBuyers(r.buyers)),0) })}</div>
         </div>
         <Btn dark onClick={()=>setShowForm(!showForm)}><Plus size={13}/> {showForm?t("admin.retailers.header_cancel_btn"):t("admin.retailers.header_add_btn")}</Btn>
       </div>
@@ -10418,7 +10454,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
             </div>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <Btn primary onClick={addRetailer}><Plus size={13}/> {t("admin.retailers.form_add_btn")}</Btn>
+            <Btn primary onClick={addRetailer} disabled={addingRetailer}><Plus size={13}/> {t("admin.retailers.form_add_btn")}</Btn>
             <Btn outline onClick={()=>{setShowForm(false);setFormError({});setNewR({...EMPTY_RETAILER,buyers:[{id:"new_b1",name:"",email:"",phone:"",position:"",cats:[],active:true,fm26Active:false,isNew:true}]});}}>{t("admin.retailers.form_cancel_btn")}</Btn>
           </div>
         </div>
