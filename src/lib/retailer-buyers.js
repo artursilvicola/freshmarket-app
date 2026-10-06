@@ -48,11 +48,23 @@ export function retailerHasUsableBuyer(retailer) {
 // Zwraca { retailerCreated, buyerCreated }. Wołający pokazuje sukces dopiero gdy
 // oba są true; przy buyerCreated=false zostawia kartę otwartą do ponowienia i NIE
 // tworzy drugiej sieci (ta już istnieje).
+// bulkUpsertRetailers NIE rzuca przy błędzie — loguje i zwraca []. Sam brak wyjątku
+// niczego więc nie dowodzi. Potwierdzeniem jest dopiero zwrócony wiersz o tym id.
+export function retailerSaveConfirmed(rows, id) {
+  return Array.isArray(rows) && rows.some((r) => r && String(r.id) === String(id));
+}
+
 export async function createRetailerWithBuyer({ entry, upsertRetailers, saveBuyer }) {
+  let rows;
   try {
-    await upsertRetailers([entry]);
+    rows = await upsertRetailers([entry]);
   } catch (error) {
     return { retailerCreated: false, buyerCreated: false, error };
+  }
+  if (!retailerSaveConfirmed(rows, entry.id)) {
+    // Zapis cicho nie przeszedł. Nie wolno zakładać konta kupca — wskazywałoby
+    // na sieć, której nie ma.
+    return { retailerCreated: false, buyerCreated: false, error: null };
   }
   const buyerCreated = Boolean(await saveBuyer(entry.id, entry));
   return { retailerCreated: true, buyerCreated };

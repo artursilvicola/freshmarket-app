@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   countsAsActiveBuyer, countActiveBuyers, retailerHasUsableBuyer,
-  isPlaceholderBuyer, createRetailerWithBuyer,
+  isPlaceholderBuyer, createRetailerWithBuyer, retailerSaveConfirmed,
 } from "./retailer-buyers.js";
 
 const realny = (p = {}) => ({ id: "uuid-1", name: "Anna Kowalska", email: "a@siec.pl", active: true, ...p });
@@ -45,8 +45,37 @@ describe("kto liczy się jako aktywny kupiec", () => {
 describe("tworzenie sieci razem z kupcem", () => {
   const entry = { id: 990910, name: "ZZZ TEST", buyers: [{ name: "Test Kupiec", email: "k@test.pl" }] };
 
+  // [review Codexa 6a987f5] bulkUpsertRetailers NIE rzuca przy błędzie — loguje
+  // i zwraca []. Pierwsza wersja sprawdzała tylko wyjątek, więc cichy błąd zapisu
+  // sieci uchodził za sukces i szła próba założenia kupca.
+  it("zapis sieci zwrócił pustą listę → to NIE jest sukces i kupca nie tykamy", async () => {
+    const saveBuyer = vi.fn(async () => true);
+    const r = await createRetailerWithBuyer({
+      entry, upsertRetailers: vi.fn(async () => []), saveBuyer,
+    });
+    expect(r.retailerCreated).toBe(false);
+    expect(r.buyerCreated).toBe(false);
+    expect(saveBuyer).not.toHaveBeenCalled();
+  });
+
+  it("zapis zwrócił wiersz o INNYM id → też nie jest potwierdzeniem", async () => {
+    const saveBuyer = vi.fn(async () => true);
+    const r = await createRetailerWithBuyer({
+      entry, upsertRetailers: vi.fn(async () => [{ id: 123456 }]), saveBuyer,
+    });
+    expect(r.retailerCreated).toBe(false);
+    expect(saveBuyer).not.toHaveBeenCalled();
+  });
+
+  it("potwierdzeniem jest wiersz o tym id (także gdy baza zwróci id jako tekst)", () => {
+    expect(retailerSaveConfirmed([{ id: 990910 }], 990910)).toBe(true);
+    expect(retailerSaveConfirmed([{ id: "990910" }], 990910)).toBe(true);
+    expect(retailerSaveConfirmed([], 990910)).toBe(false);
+    expect(retailerSaveConfirmed(null, 990910)).toBe(false);
+  });
+
   it("obie operacje OK → sukces", async () => {
-    const upsertRetailers = vi.fn(async () => {});
+    const upsertRetailers = vi.fn(async () => [{ id: 990910 }]);
     const saveBuyer = vi.fn(async () => true);
     const r = await createRetailerWithBuyer({ entry, upsertRetailers, saveBuyer });
     expect(r).toEqual({ retailerCreated: true, buyerCreated: true });
@@ -68,13 +97,13 @@ describe("tworzenie sieci razem z kupcem", () => {
 
   it("sieć OK, kupiec padł → to NIE jest sukces, ale sieć zostaje", async () => {
     const r = await createRetailerWithBuyer({
-      entry, upsertRetailers: vi.fn(async () => {}), saveBuyer: vi.fn(async () => false),
+      entry, upsertRetailers: vi.fn(async () => [{ id: 990910 }]), saveBuyer: vi.fn(async () => false),
     });
     expect(r).toEqual({ retailerCreated: true, buyerCreated: false });
   });
 
   it("ponowienie nie tworzy drugiej sieci — wołający powtarza sam zapis kupca", async () => {
-    const upsertRetailers = vi.fn(async () => {});
+    const upsertRetailers = vi.fn(async () => [{ id: 990910 }]);
     let proba = 0;
     const saveBuyer = vi.fn(async () => (++proba > 1));
     const pierwsza = await createRetailerWithBuyer({ entry, upsertRetailers, saveBuyer });

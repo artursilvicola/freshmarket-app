@@ -86,7 +86,7 @@ import {
   getProfilesForAdminChat as dbGetProfilesForAdminChat,
 } from "../lib/db";
 import { retailerContact } from "../lib/retailer-contacts.js";
-import { countActiveBuyers, countsAsActiveBuyer, createRetailerWithBuyer } from "../lib/retailer-buyers.js";
+import { countActiveBuyers, countsAsActiveBuyer, createRetailerWithBuyer, retailerSaveConfirmed } from "../lib/retailer-buyers.js";
 import { isFmInputsLockedError } from "../lib/fm-input-lock.js";
 import { createSerialSaver } from "../lib/serial-save.js";
 import { registerPendingWork } from "../lib/pending-work.js";
@@ -10215,7 +10215,12 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
       // kategoriami kupców. Dostawca czyta retailers.cats (profili kupców nie
       // widzi przez RLS) — bez tego "Kupiec kategorii" było puste w panelu dostawcy.
       const retailerCats = [...new Set(buyers.flatMap(b => b.cats || []))];
-      await bulkUpsertRetailers([{ ...retailer, cats: retailerCats }]);
+      // [fix/retailer-create-with-buyer] bulkUpsertRetailers połyka błąd i zwraca [] —
+      // brak wyjątku to nie dowód zapisu. Bez potwierdzenia nie tykamy kont kupców.
+      const savedRows = await bulkUpsertRetailers([{ ...retailer, cats: retailerCats }]);
+      if (!retailerSaveConfirmed(savedRows, id)) {
+        throw new Error(t("admin.retailers.toast_save_failed_full_default"));
+      }
       const links = [];
       const nextBuyers = [];
       for (const b of buyers) {
@@ -10474,7 +10479,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
                   <span style={{fontSize:12,color:"#64748b"}}>{FLAGS[r.country]||"🌐"} {getCountryName(r.country)}</span>
                   {allCats.map(c=><Badge key={c} color="#0d9488">{CEMOJI[c]} {c}</Badge>)}
                 </div>
-                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{t("admin.retailers.list_buyers_count_format", { count: (r.buyers||[]).filter(b=>b.active!==false).length, date: effectiveNextSend(r.nextSend) })}</div>
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{t("admin.retailers.list_buyers_count_format", { count: countActiveBuyers(r.buyers), date: effectiveNextSend(r.nextSend) })}</div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
                 {isSaved&&<span style={{fontSize:11,color:"#059669",fontWeight:600}}>{t("admin.retailers.list_saved_indicator")}</span>}
