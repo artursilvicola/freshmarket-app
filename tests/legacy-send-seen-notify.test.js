@@ -100,11 +100,36 @@ describe("markLegacySendsSeen + prawdziwy notifier (fetch = atrapa)", () => {
     expect(r2.notificationSummary).toBeNull();
     expect(state.notifyRpc).toBe(1);
 
+    // [fix/supplier-read-notify-once] Znacznik jest ZAJMOWANY PRZED wysyłką. Gdy RPC
+    // znacznika padnie, nie wiemy czy usiadł — więc maila NIE wysyłamy. Wcześniej mail
+    // szedł mimo błędu znacznika i kolejny odczyt wysyłał go po raz drugi.
     const { supa: supa2 } = fakeDb({ credits: 1 });
     const origRpc = supa2.rpc.bind(supa2);
     supa2.rpc = async (name, args) => (name === "mark_legacy_sends_supplier_notified" ? { data: null, error: { message: "boom" } } : origRpc(name, args));
+    const wyslane = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
+    globalThis.fetch = wyslane;
     const r3 = await call(supa2, true);
     const n = r3.notificationSummary.notifications[0];
-    expect(n).toMatchObject({ status: "sent", ok: false, marker_ok: false, marker_error: "boom" });
+    expect(n).toMatchObject({ ok: false, status: "error", reason: "marker_failed", marker_error: "boom" });
+    expect(wyslane).not.toHaveBeenCalled();
+  });
+
+  // Odczyt wyzwalają dwie niezależne ścieżki: webhook Resend (email.opened) i panel
+  // kupca. Przy kolejności „sprawdź → wyślij → oznacz" obie widziały pusty znacznik
+  // i dostawca dostawał DWA maile o jednym odczycie.
+  it("dwie ścieżki odczytu naraz → dostawca dostaje DOKŁADNIE jeden mail", async () => {
+    const { supa, state } = fakeDb({ credits: 1 });
+    const wyslane = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
+    globalThis.fetch = wyslane;
+
+    const [a, b] = await Promise.all([call(supa, true), call(supa, true)]);
+
+    expect(wyslane).toHaveBeenCalledTimes(1);
+    const statusy = [a, b]
+      .map(r => r.notificationSummary?.notifications?.[0]?.status ?? r.results[0].notification?.status ?? null);
+    // jedna ścieżka wysyła, druga widzi zajęty znacznik — i to NIE jest błąd
+    expect(statusy.filter(x => x === "sent")).toHaveLength(1);
+    expect([a, b].every(r => (r.notificationSummary?.notifications || []).every(n => n.ok !== false))).toBe(true);
+    expect(state.charges).toBe(1);   // rozliczenie też tylko raz
   });
 });

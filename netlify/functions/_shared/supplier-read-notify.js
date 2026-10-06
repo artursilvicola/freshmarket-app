@@ -158,7 +158,6 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       });
       continue;
     }
-    try { console.log("[notifySupplierOffersRead OWNER]", JSON.stringify({ company_id: group.company.id, owner_email: owner.email, offer_count: group.offers.length })); } catch (e) {}
 
     const openedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
     const tpl = pickTemplate("offers_read_by_buyer", {
@@ -178,22 +177,13 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       continue;
     }
 
-    const sent = await sendResendEmail({ env, to: owner.email, subject: tpl.subject, html: tpl.html });
-    try { console.log("[notifySupplierOffersRead RESEND]", JSON.stringify({ to: owner.email, subject: tpl.subject, ok: sent.ok, reason: sent.reason, message_id: sent.message_id })); } catch (e) {}
-    if (!sent.ok) {
-      notifications.push({
-        ok: false,
-        status: "error",
-        reason: sent.reason,
-        to: owner.email,
-        legacy_ids: group.rows.map((row) => row.legacy_id),
-      });
-      continue;
-    }
-
-    // [feat/free-credit-grants v4] Znacznik powiadomienia scalany w bazie z AKTUALNYM
-    // JSON-em (tylko 3 pola). Wcześniejszy zapis całego snapshotu sprzed maila kasował
-    // znacznik rozliczenia zapisany w międzyczasie przez inny odczyt (review Codexa v3).
+    // [fix/supplier-read-notify-once] NAJPIERW zajmij znacznik, DOPIERO POTEM wyślij.
+    // Odczyt wyzwalają dwie niezależne ścieżki — webhook Resend (email.opened) i panel
+    // kupca — i potrafią trafić w tę samą chwilę. Przy kolejności „sprawdź → wyślij →
+    // oznacz" obie widziały pusty znacznik i dostawca dostawał DWA maile o jednym
+    // odczycie. RPC jest warunkowy (`and (data->>'supplierNotifiedAt') is null`)
+    // i zwraca liczbę wierszy, które faktycznie zajął — więc tylko jedna ścieżka
+    // dostaje > 0 i tylko ona wysyła.
     const notifiedAt = new Date().toISOString();
     const groupIds = group.rows.map((row) => Number(row.legacy_id));
     const { data: markedCount, error: markErr } = await supaSvc.rpc("mark_legacy_sends_supplier_notified", {
@@ -203,25 +193,65 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       p_notified_at: notifiedAt,
     });
     if (markErr) {
-      try { console.log("[notifySupplierOffersRead MARK_ERROR]", JSON.stringify({ legacy_ids: groupIds, reason: markErr.message })); } catch (e) {}
+      // Nie wiemy, czy znacznik usiadł — wysyłka mogłaby się zdublować. Nie wysyłamy.
+      notifications.push({
+        ok: false,
+        status: "error",
+        reason: "marker_failed",
+        to: owner.email,
+        legacy_ids: groupIds,
+        marker_error: markErr.message,
+      });
+      continue;
+    }
+    const claimed = Number(markedCount ?? 0);
+    if (!claimed) {
+      // Druga ścieżka zajęła te wiersze wcześniej i to ona wysyła. Nie jest to błąd.
+      notifications.push({
+        ok: true,
+        status: "already_notified",
+        to: owner.email,
+        legacy_ids: groupIds,
+      });
+      continue;
+    }
+
+    const sent = await sendResendEmail({ env, to: owner.email, subject: tpl.subject, html: tpl.html });
+    if (!sent.ok) {
+      // Znacznik został zajęty, a mail nie poszedł: dostawca traci JEDNO powiadomienie.
+      // Świadomy wybór — lepsze niż ryzyko dubla przy zdejmowaniu znacznika i wyścigu
+      // z drugą ścieżką. Zdarzenie jest raportowane, nie milczy.
+      notifications.push({
+        ok: false,
+        status: "error",
+        reason: sent.reason,
+        to: owner.email,
+        legacy_ids: groupIds,
+        marker_claimed: true,
+      });
+      continue;
     }
 
     notifications.push({
-      ok: !markErr,
+      ok: true,
       status: "sent",
       message_id: sent.message_id,
       to: owner.email,
       offer_count: group.offers.length,
       legacy_ids: groupIds,
-      marker_ok: !markErr,
-      marker_rows: markErr ? null : Number(markedCount ?? 0),
-      ...(markErr ? { marker_error: markErr.message } : {}),
+      marker_ok: true,
+      marker_rows: claimed,
     });
   }
 
   const sentCount = notifications.filter((n) => n.status === "sent").length;
-  // [TEMP DEBUG] usunąć po diagnostyce - widoczne w Netlify Functions log
-  try { console.log("[notifySupplierOffersRead DONE]", JSON.stringify({ openedVia, sentCount, total: notifications.length, notifications })); } catch (e) {}
+  // Podsumowanie bez adresów i tematów — do logu trafiają tylko liczby i statusy.
+  try {
+    console.log("[notifySupplierOffersRead]", JSON.stringify({
+      openedVia, sent: sentCount, total: notifications.length,
+      statuses: notifications.reduce((a, n) => ({ ...a, [n.status]: (a[n.status] || 0) + 1 }), {}),
+    }));
+  } catch (e) {}
   return {
     ok: notifications.every((n) => n.ok),
     status: sentCount ? "sent" : "error",
