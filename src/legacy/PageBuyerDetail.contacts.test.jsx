@@ -55,19 +55,36 @@ describe("buyer detail commercial contact actions", () => {
     expect(emailLinks()).toHaveLength(0);
     const phones = tree.root.findAllByType("a").filter(node => node.props.href?.startsWith("tel:"));
     expect(phones).toHaveLength(1);
-    expect(decodeURIComponent(phones[0].props.href)).toBe("tel:+48 123456789");
+    expect(phones[0].props.href).toBe("tel:+48123456789");
   });
   it.each(["pl", "en"])("uses the first usable commercial email, with all six localized actions in %s", async lang => {
     state.language = lang;
     await mount([{ email: "wrong" }, { email: " sales+fruit@example.com " }, { email: "other@example.com" }]);
     expect(actions()).toHaveLength(6);
     for (const link of actions()) {
-      expect(decodeURIComponent(link.props.href.split("?")[0])).toBe("mailto:sales+fruit@example.com");
+      expect(link.props.href.split("?")[0]).toBe("mailto:sales+fruit@example.com");
       const query = new URLSearchParams(link.props.href.split("?")[1]);
       expect(query.get("subject")).toContain("Apples & pears");
       expect(query.get("body")).toContain(lang === "pl" ? "Dzień dobry" : "Hello");
     }
+    expect(emailLinks().filter(link => !link.props.href.includes("?subject=")).map(link => link.props.href)).toEqual([
+      "mailto:sales+fruit@example.com", "mailto:other@example.com",
+    ]);
     expect(tree.root.findAllByType("a").some(node => node.props.href?.startsWith("tel:"))).toBe(false);
+  });
+  it("keeps a literal international prefix and removes ordinary and nonbreaking spaces only in the phone href", async () => {
+    const phone = "+48\u00a0603 424\t346";
+    await mount([{ phone }]);
+    const link = tree.root.findAllByType("a").find(node => node.props.href?.startsWith("tel:"));
+    expect(link.props.href).toBe("tel:+48603424346");
+    expect(link.children).toContain(phone);
+  });
+  it("still escapes percent signs and URI delimiters in the mail recipient", async () => {
+    await mount([{ email: "sales%3Fbcc=team/example@example.com" }]);
+    const recipient = "mailto:sales%253Fbcc%3Dteam%2Fexample@example.com";
+    expect(actions()).toHaveLength(6);
+    expect(actions().every(link => link.props.href.startsWith(`${recipient}?subject=`))).toBe(true);
+    expect(emailLinks().find(link => !link.props.href.includes("?subject="))?.props.href).toBe(recipient);
   });
   it("updates when contacts are loaded later", async () => {
     await mount(undefined);

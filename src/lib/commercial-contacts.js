@@ -5,6 +5,17 @@ export function commercialEmail(value) {
   return /^[^\s@?#&,;<>]+@[^\s@?#&,;<>]+\.[^\s@?#&,;<>]+$/.test(email) ? email : "";
 }
 
+export function commercialEmailHref(value) {
+  const email = commercialEmail(value);
+  // Preserve address separators, but encode literal '%' and URI delimiters once.
+  return email ? `mailto:${encodeURIComponent(email).replace(/%40/g, "@").replace(/%2B/g, "+")}` : "";
+}
+
+export function commercialPhoneHref(value) {
+  const phone = text(value).replace(/\s+/g, "");
+  return /\d/.test(phone) ? `tel:${encodeURIComponent(phone).replace(/^%2B/, "+")}` : "";
+}
+
 // Only public commercial contacts; never substitute an account operator.
 export function commercialContacts(company) {
   return (Array.isArray(company?.contacts) ? company.contacts : [])

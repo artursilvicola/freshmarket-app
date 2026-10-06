@@ -86,7 +86,7 @@ import {
   getProfilesForAdminChat as dbGetProfilesForAdminChat,
 } from "../lib/db";
 import { retailerContact } from "../lib/retailer-contacts.js";
-import { commercialContacts } from "../lib/commercial-contacts.js";
+import { commercialContacts, commercialEmailHref, commercialPhoneHref } from "../lib/commercial-contacts.js";
 import { countActiveBuyers, countsAsActiveBuyer, createRetailerWithBuyer, retailerSaveConfirmed } from "../lib/retailer-buyers.js";
 import { isFmInputsLockedError } from "../lib/fm-input-lock.js";
 import { createSerialSaver } from "../lib/serial-save.js";
@@ -8274,7 +8274,7 @@ export function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, comp
                 const ctaLabel = t(`common.cta_map.${key}`);
                 const subject = t(`buyer.detail.cta.subjects.${key}`, { product: productName, defaultValue: t("buyer.detail.cta.subject_fallback") });
                 const body = t(`buyer.detail.cta.bodies.${key}`, { product: productName, defaultValue: "" });
-                const mailto=`mailto:${encodeURIComponent(supplierEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                const mailto=`${commercialEmailHref(supplierEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
                 return (
                   <a key={key} href={mailto} style={{ background:i===0?"#0d9488":"white",color:i===0?"white":"#0d9488",border:i===0?"none":"2px solid #0d9488",padding:"9px 20px",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6 }}>
                     <Mail size={13}/>{ctaLabel}
@@ -8317,8 +8317,8 @@ export function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, comp
               <div key={i} style={{ padding:"9px 12px",background:"#f8fafc",borderRadius:8,marginBottom:6,border:"1px solid #e2e8f0" }}>
                 <div style={{ fontWeight:600,fontSize:13,marginBottom:2 }}>{ct.name}</div>
                 <div style={{ fontSize:11,color:"#64748b",marginBottom:5 }}>{ct.position}</div>
-                {ct.phone && <a href={`tel:${encodeURIComponent(ct.phone)}`} style={{ fontSize:12,color:"#1e293b",textDecoration:"none",display:"flex",gap:5,alignItems:"center",marginBottom:3 }}><Phone size={12} color="#0d9488"/>{ct.phone}</a>}
-                {ct.email && <a href={`mailto:${encodeURIComponent(ct.email)}`} style={{ fontSize:12,color:"#2563eb",textDecoration:"none",display:"flex",gap:5,alignItems:"center",overflowWrap:"anywhere" }}><Mail size={12} color="#2563eb"/>{ct.email}</a>}
+                {ct.phone && <a href={commercialPhoneHref(ct.phone)} style={{ fontSize:12,color:"#1e293b",textDecoration:"none",display:"flex",gap:5,alignItems:"center",marginBottom:3 }}><Phone size={12} color="#0d9488"/>{ct.phone}</a>}
+                {ct.email && <a href={commercialEmailHref(ct.email)} style={{ fontSize:12,color:"#2563eb",textDecoration:"none",display:"flex",gap:5,alignItems:"center",overflowWrap:"anywhere" }}><Mail size={12} color="#2563eb"/>{ct.email}</a>}
               </div>
             ))}
           </Card>

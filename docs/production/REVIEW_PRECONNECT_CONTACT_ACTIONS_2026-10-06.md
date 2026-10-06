@@ -25,7 +25,7 @@ callback and backend accounting are unchanged.
 
 ## Verification
 
-- `npx vitest run`: 80 files, 639/639 tests passed (20 added).
+- `npx vitest run`: 80 files, 649/649 tests passed (30 added versus baseline).
 - `npm run build`: passed; existing large-chunk warning remains.
 - `git diff --check`: passed.
 - Tests import the real `PageBuyerDetail` with the database boundary mocked.
@@ -33,13 +33,40 @@ callback and backend accounting are unchanged.
   addresses, the second contact supplying the address, plus aliases,
   delayed contacts, unavailable supplier, operator privacy, and unchanged
   read callback behavior on contact hydration.
-- Local browser fixture: Polish empty state; English six valid email
+- Original browser fixture on `f2a2f87`: Polish empty state; English six valid email
   actions and phone contact; DOM check: six email actions, zero empty links.
   The fixture used a stub Supabase client, synthetic data and no backend.
   No email client or actual delivery was invoked. Temporary fixture removed.
 - Live buyer RLS access to existing commercial contacts was not tested.
   After approval/deploy, verify one known populated supplier and one empty
   supplier from the test buyer account, without sending a contact message.
+
+## Follow-up: raw contact URIs
+
+Claude correctly identified over-encoding of the leading telephone `+` and
+the weakness of assertions that decoded the URI before checking it.
+Telephone links now remove whitespace (including nonbreaking spaces) and
+preserve the leading `+`: `tel:+48603424346`. The visible formatted phone
+number is unchanged; no country code is inferred and leading zeros remain.
+
+Email links preserve literal `@` and alias `+`, for example
+`mailto:sales+fruit@example.com`. Encoding is not removed wholesale: literal
+percent signs, `=` and `/` are still escaped exactly once. The email regex
+does not exclude all characters requiring URI encoding. Subject and body
+encoding are unchanged. References: RFC 3966 sections 3 and 5.1.1
+(https://www.rfc-editor.org/rfc/rfc3966) and RFC 6068 section 2
+(https://www.rfc-editor.org/rfc/rfc6068).
+
+The component tests now assert raw `href` values for both the six actions
+and direct contact links. Five component cases failed against `f2a2f87`
+before this fix. After the fix, all 30 focused contact tests pass, including
+whitespace in phone numbers and literal percent sequences in email addresses.
+The full suite and build listed above were rerun after this follow-up.
+Actual mail clients and telephone dialers were not launched; the previous
+browser fixture is not evidence of this raw-URI correction.
+
+Filtering of name/position-only records, commercial-contact privacy rules,
+database data and production behavior have not otherwise been changed.
 
 ## Administrator contact list
 
