@@ -10074,6 +10074,14 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
   const [savingId, setSavingId]     = useState(null);
   // [fix/retailer-create-with-buyer] blokada na czas tworzenia sieci + kupca
   const [addingRetailer, setAddingRetailer] = useState(false);
+  // Rygiel na ponowne wejscie do saveRetailer. Stan Reacta sie nie nadaje: aktualizuje
+  // sie asynchronicznie, wiec klikniecie w trakcie zapisu zdazy przejsc obok savingId
+  // i wyslac DRUGIE zadanie utworzenia tego samego konta (409 „e-mail zajety” mimo
+  // poprawnego utworzenia przez pierwsze). Sam `disabled` na przycisku to za malo.
+  // useState z inicjalizatorem, nie useRef: ten sam efekt (stabilny przez cale zycie
+  // komponentu, mutacja nie przerysowuje), a dziala takze w harnessie review Codexa,
+  // ktory wstrzykuje tylko useState.
+  const [savingLock] = useState(() => new Set());
   const [saveMeta, setSaveMeta]     = useState({});
 
   function updateRetailer(id, changes) { setRetailers(prev=>prev.map(r=>r.id===id?{...r,...changes}:r)); }
@@ -10176,6 +10184,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
   // zapis zaraz po utworzeniu sieci, zanim nowy wiersz wejdzie do `retailers`
   // w tym renderze. Zwraca true/false, żeby wołający wiedział, czy kupiec powstał.
   async function saveRetailer(id, retailerOverride = null) {
+    if (savingLock.has(id)) return false;   // zapis tej sieci juz trwa
     const retailer = retailerOverride || retailers.find(r => r.id === id);
     if (!retailer) return false;
     const errs = {};
@@ -10208,6 +10217,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
     if (retailer.fm26Active && !retailer.fm26ChainId) errs[id] = t("admin.retailers.toast_save_fm26_id_required");
     if (Object.keys(errs).length) { setSaveError(prev => ({ ...prev, ...errs })); fl?.(Object.values(errs)[0], "warning"); return false; }
 
+    savingLock.add(id);
     setSavingId(id);
     setSaveError(prev => ({ ...prev, [id]: null }));
     try {
@@ -10289,6 +10299,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
       fl?.(e?.message || t("admin.retailers.toast_save_failed_full_default"), "error");
       return false;
     } finally {
+      savingLock.delete(id);
       setSavingId(null);
     }
   }
@@ -10618,7 +10629,7 @@ function PageAdminRetailers({ retailers, setRetailers, fl }) {
                   </div>
                 )}
                 <div style={{display:"flex",gap:8,marginTop:14,paddingTop:12,borderTop:"1px solid #f1f5f9"}}>
-                  <Btn primary onClick={()=>saveRetailer(r.id)}>{savingId===r.id ? t("admin.retailers.saving") : t("admin.retailers.save_btn")}</Btn>
+                  <Btn primary onClick={()=>saveRetailer(r.id)} disabled={savingId===r.id || addingRetailer}>{savingId===r.id ? t("admin.retailers.saving") : t("admin.retailers.save_btn")}</Btn>
                   <Btn outline onClick={()=>setExpandedId(null)}>{t("admin.retailers.collapse_btn")}</Btn>
                 </div>
               </div>
