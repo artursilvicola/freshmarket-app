@@ -23,6 +23,7 @@ describe("saved delivery metadata reaches admin history", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].stamp).toBeNull();
     expect(entries[0].buyerCount).toBe(1);
+    expect(entries[0].buyerCountIsMinimum).toBe(true);
     expect(entries[0].incomplete).toBe(false);
   });
 
@@ -33,6 +34,7 @@ describe("saved delivery metadata reaches admin history", () => {
     const rows = await loadLegacySends();
     expect(rows[0]).toMatchObject(data);
     expect(buildRetailerMailingHistory(rows, 42)[0].buyerCount).toBe(2);
+    expect(buildRetailerMailingHistory(rows, 42)[0].buyerCountIsMinimum).toBe(false);
     expect(data).not.toHaveProperty("resend_message_id");
   });
 

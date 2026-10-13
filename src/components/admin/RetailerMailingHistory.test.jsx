@@ -86,4 +86,12 @@ describe("admin mailing history", () => {
     expect(output()).toContain("Polish time (Europe/Warsaw)");
     expect(output()).not.toContain("admin.mailing_history");
   });
+
+  it("does not claim an exact buyer count when only the first successful message ID survived", async () => {
+    mount({ sends: [{ id: 1, retailerId: 1, resend_message_id: "first-only" }] });
+    toggle();
+    expect(output()).toContain("Wysłane e-maile do kupców: co najmniej 1");
+    await act(async () => { await i18n.changeLanguage("en"); });
+    expect(output()).toContain("Emails sent to buyers: at least 1");
+  });
 });

@@ -1750,6 +1750,7 @@
       "proposals": "Propozycje",
       "buyers": "Wysłane e-maile do kupców",
       "unknown_count": "brak danych",
+      "count_minimum": "co najmniej {{count}}",
       "unlinked": "Starszy zapis bez identyfikatora mailingu. Pokazujemy pojedynczą propozycję; nie można ustalić, które propozycje wysłano razem.",
       "proposal_id": "Propozycja #{{id}}",
       "unknown_supplier": "Brak danych dostawcy"

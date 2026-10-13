@@ -78,19 +78,22 @@ export function buildRetailerMailingHistory(sends, retailerId) {
     // Shared provider IDs identify a mailing, even when rows retain different subsets.
     // Without IDs, do not guess that two proposals on the same day were one mailing.
     const matching = groups.filter(g => ids.some(id => g.messageIds.has(id)));
-    const group = matching[0] || { key: rowKey, messageIds: new Set(), sends: [], stamps: [], buyerCount: null };
+    const group = matching[0] || { key: rowKey, messageIds: new Set(), sends: [], stamps: [], buyerCount: null, completeRecipientCount: false };
     if (!matching.length) groups.push(group);
     for (const other of matching.slice(1)) {
       other.messageIds.forEach(id => group.messageIds.add(id));
       group.sends.push(...other.sends);
       group.stamps.push(...other.stamps);
       group.buyerCount = Math.max(group.buyerCount || 0, other.buyerCount || 0) || null;
+      group.completeRecipientCount ||= other.completeRecipientCount;
       groups.splice(groups.indexOf(other), 1);
     }
     ids.forEach(id => group.messageIds.add(id));
     group.sends.push(send);
     if (stamp) group.stamps.push(stamp);
     group.buyerCount = Math.max(group.buyerCount || 0, count || 0) || null;
+    group.completeRecipientCount ||= !!count || [send.resendMessageIds, send.data?.resendMessageIds]
+      .some(list => Array.isArray(list) && list.some(id => typeof id === "string" && id.trim()));
   }
   return groups.map(g => {
     const stamps = [...new Map(g.stamps.map(s => [s.value, s])).values()];
@@ -103,6 +106,8 @@ export function buildRetailerMailingHistory(sends, retailerId) {
       conflictingDates: candidates.length > 1,
       incomplete: !g.messageIds.size,
       buyerCount: Math.max(g.messageIds.size, g.buyerCount || 0) || null,
+      // The oldest sender retained only the FIRST successful message ID.
+      buyerCountIsMinimum: g.messageIds.size > 0 && !g.completeRecipientCount,
     };
   }).sort((a, b) => newestStamp(a.stamp, b.stamp) || a.key.localeCompare(b.key));
 }

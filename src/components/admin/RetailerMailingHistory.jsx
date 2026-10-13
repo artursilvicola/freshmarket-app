@@ -50,7 +50,8 @@ export default function RetailerMailingHistory({ retailerId, retailerName, sends
             <div className="fm-mailing-history__entry-heading">
               <strong>{dateLabel(entry)}</strong>
               <span>{t(p + "proposals")}: {entry.sends.length}</span>
-              <span>{t(p + "buyers")}: {entry.buyerCount ?? t(p + "unknown_count")}</span>
+              <span>{t(p + "buyers")}: {entry.buyerCount == null ? t(p + "unknown_count")
+                : entry.buyerCountIsMinimum ? t(p + "count_minimum", { count: entry.buyerCount }) : entry.buyerCount}</span>
             </div>
             {entry.incomplete && <p className="fm-mailing-history__note">{t(p + "unlinked")}</p>}
             <ul className="fm-mailing-history__proposals">

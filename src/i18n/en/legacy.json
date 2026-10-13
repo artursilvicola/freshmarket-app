@@ -1750,6 +1750,7 @@
       "proposals": "Proposals",
       "buyers": "Emails sent to buyers",
       "unknown_count": "not recorded",
+      "count_minimum": "at least {{count}}",
       "unlinked": "Older record without a mailing ID. One proposal is shown; proposals sent together cannot be identified.",
       "proposal_id": "Proposal #{{id}}",
       "unknown_supplier": "Supplier details unavailable"
