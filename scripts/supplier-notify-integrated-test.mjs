@@ -112,8 +112,11 @@ const supa = {
 // jest nieco później niż u nas. To jest powód, dla którego nasze okno ponowień ma
 // GODZINĘ ZAPASU — sama kontrola przed wysyłką porównuje do NASZEGO zegara i tej
 // różnicy z definicji nie widzi.
-let utworzone, poKluczu, przesuniecieZegaraPoczty;
+let utworzone, poKluczu, przesuniecieZegaraPoczty, opoznienieZadania;
 globalThis.fetch = async (_url, init) => {
+  // lot żądania: czas płynie PO ostatniej kontroli terminu w aplikacji, ZANIM poczta
+  // oceni klucz — tego żadna kontrola po naszej stronie nie zobaczy (model Codexa)
+  teraz += opoznienieZadania;
   const key = init.headers["Idempotency-Key"];
   const body = JSON.parse(init.body);
   const odcisk = JSON.stringify([body.to, body.subject, body.html]);
@@ -134,7 +137,7 @@ const notify = (ids, via = "app_list") => notifySupplierOffersRead({ supaSvc: su
 
 const wyniki = [];
 async function test(nazwa, fn) {
-  utworzone = []; poKluczu = new Map(); opoznienieOdczytuTresci = 0; przesuniecieZegaraPoczty = 0; rozjazdZegaraAplikacji = 0;
+  utworzone = []; poKluczu = new Map(); opoznienieOdczytuTresci = 0; przesuniecieZegaraPoczty = 0; rozjazdZegaraAplikacji = 0; opoznienieZadania = 0;
   await db.exec("truncate public.legacy_sends; truncate public.legacy_send_notify_messages;");
   await db.exec("insert into public.legacy_sends(legacy_id) values (1), (2);");
   try { await fn(); wyniki.push(["OK", nazwa]); }
@@ -203,18 +206,28 @@ await test("po oknie rezerwacja w ogóle nie dochodzi do skutku (needs_review z 
   assert.equal(r.notifications[0].reason, "uncertain_outside_idempotency_window");
 });
 
-await test("okno ponowień jest KRÓTSZE niż ochrona poczty", async () => {
-  // To jest warunek na stałą, nie dowód z zachowania — i tak go nazywam.
-  //
-  // Kontrola przed wysyłką porównuje czas z bazy (supplierNotifyFirstClaimAt)
-  // z zegarem funkcji Netlify i wysyła żądanie, które dopiero leci do Resend.
-  // Rozjazdu tych trzech zegarów ani czasu lotu żądania nie da się odtworzyć
-  // w tym harnessie — stąd godzina zapasu. Ten warunek pilnuje, żeby ktoś jej
-  // później nie skasował, podnosząc okno do pełnej doby.
-  assert.ok(RETRY_WINDOW_SECONDS < 24 * 3600,
-    `okno ponowień (${RETRY_WINDOW_SECONDS} s) musi być krótsze niż 24 h ochrony Resend`);
-  assert.ok(RETRY_WINDOW_SECONDS >= 12 * 3600,
-    "zbyt krótkie okno zamieniłoby zwykłe opóźnienia w sprawy do ręcznego sprawdzenia");
+await test("zapas godziny: lot żądania po ostatniej kontroli nie tworzy drugiego maila", async () => {
+  // Model Codexa (tura 6). Ostatnia kontrola terminu przepuszcza sekundę przed końcem
+  // NASZEGO okna; żądanie leci do poczty dwie sekundy. Przy oknie 23 h poczta widzi
+  // klucz sprzed 23:00:01 — ochrona trwa, jeden mail. Przy oknie równym dobie
+  // widziałaby 24:00:01 — klucz wygasł, drugi mail. Ten test to rozróżnia.
+  teraz = Date.parse("2026-10-13T10:00:00Z");
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (u, i) => { await realFetch(u, i); throw new Error("ECONNRESET"); };
+  await notify([1]);
+  globalThis.fetch = realFetch;
+  assert.equal(utworzone.length, 1);
+
+  teraz += RETRY_WINDOW_SECONDS * 1000 - 1000;   // sekunda przed końcem okna
+  opoznienieZadania = 2000;                      // lot żądania do poczty
+  const r = await notify([1]);
+  assert.equal(utworzone.length, 1, "DRUGI mail pod tym samym kluczem — ochrona poczty wygasła w locie");
+  assert.equal(r.notifications[0].status, "sent");
+});
+
+await test("okno ponowień jest KRÓTSZE niż ochrona poczty (warunek na stałą)", async () => {
+  assert.ok(RETRY_WINDOW_SECONDS < 24 * 3600, `okno (${RETRY_WINDOW_SECONDS} s) musi być krótsze niż 24 h`);
+  assert.ok(RETRY_WINDOW_SECONDS >= 12 * 3600, "zbyt krótkie okno zamieniłoby zwykłe opóźnienia w sprawy do ręcznego sprawdzenia");
 });
 
 await test("409 o innej treści nie zapisuje powiadomienia", async () => {
