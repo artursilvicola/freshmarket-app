@@ -110,9 +110,13 @@ begin
     raise exception 'ensure_legacy_send_notify_message: p_message_id jest wymagany';
   end if;
 
+  -- ON CONFLICT (message_id) nie przechodzi: funkcja ma kolumnę wyniku o tej samej
+  -- nazwie, więc Postgres zgłasza 42702 „column reference message_id is ambiguous"
+  -- i ŻADNA wiadomość się nie zapisuje (znalezisko Codexa z uruchomienia w PGlite).
+  -- Wskazanie klucza po nazwie usuwa dwuznaczność.
   insert into public.legacy_send_notify_messages as m (message_id, to_email, subject, html, legacy_ids)
   values (p_message_id, p_to_email, p_subject, p_html, coalesce(p_legacy_ids, '{}'::bigint[]))
-  on conflict (message_id) do nothing;
+  on conflict on constraint legacy_send_notify_messages_pkey do nothing;
 
   return query
   select m.message_id, m.to_email, m.subject, m.html, m.legacy_ids, m.created_at

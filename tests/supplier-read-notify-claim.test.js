@@ -427,10 +427,11 @@ describe("powiadomienie dostawcy o odczycie — rezerwacja i tożsamość wiadom
     expect(state.rows.every((r) => r.data.supplierNotifiedAt)).toBe(true);
   });
 
-  it("409 z poczty NIE kasuje tożsamości i nie wysyła drugiej wiadomości", async () => {
+  // [review Codexa, tura 4] 409 ma DWA znaczenia i żadne nie znaczy „dostawca dostał mail".
+  it("409 typu ‚inna treść pod tym kluczem’: do wyjaśnienia, bez zapisu powiadomienia, bez resetu", async () => {
     const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
     const poczta = fakeResend({ now: () => state.now() });
-    // klucz już zajęty u poczty przez wiadomość o innej treści — dostawca ją dostał
+    // klucz zajęty u poczty przez wiadomość o INNEJ treści
     globalThis.fetch = vi.fn(async (url, init) => {
       const key = init.headers["Idempotency-Key"];
       poczta.poKluczu.set(key, { id: "mail-wczesniejszy", odcisk: "INNY", at: state.now() });
@@ -438,10 +439,28 @@ describe("powiadomienie dostawcy o odczycie — rezerwacja i tożsamość wiadom
     });
 
     const r = await notify(supa, [1]);
-    expect(poczta.wyslane).toHaveLength(0);                 // nic nowego nie powstało
-    expect(r.notifications[0]).toMatchObject({ status: "sent", duplicate_suppressed: true, confirm_ok: true });
-    expect(state.releases).toBe(0);                          // tożsamość NIEtknięta
-    expect(state.rows[0].data.supplierNotifiedAt).toBeTruthy();
+    expect(poczta.wyslane).toHaveLength(0);                       // nic nowego nie powstało
+    expect(r.notifications[0]).toMatchObject({
+      ok: false, status: "needs_review", reason: "idempotency_payload_conflict", delivery: "conflict",
+    });
+    expect(state.releases).toBe(0);                                // tożsamość NIEtknięta
+    expect(state.rows[0].data.supplierNotifiedAt).toBeUndefined(); // NIE zapisujemy „powiadomiono"
+    expect(state.rows[0].data.supplierNotifyMessageId).toBeTruthy();
+  });
+
+  it("409 typu ‚żądanie w toku’: ponawialne, też bez zapisu powiadomienia", async () => {
+    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    globalThis.fetch = vi.fn(async () => ({
+      ok: false, status: 409,
+      text: async () => JSON.stringify({ name: "concurrent_idempotent_requests", message: "request in progress" }),
+    }));
+
+    const r = await notify(supa, [1]);
+    expect(r.notifications[0]).toMatchObject({ ok: false, delivery: "in_flight", retryable: true });
+    expect(r.notifications[0].status).not.toBe("sent");
+    expect(state.releases).toBe(0);
+    expect(state.rows[0].data.supplierNotifiedAt).toBeUndefined();
+    expect(state.rows[0].data.supplierNotifyMessageId).toBeTruthy();
   });
 
   it("odrzucony ładunek (422) kasuje tożsamość, 500 jej nie rusza", async () => {
@@ -503,5 +522,121 @@ describe("powiadomienie dostawcy o odczycie — rezerwacja i tożsamość wiadom
     await Promise.all([notify(supa, [1], "resend_webhook"), notify(supa, [1], "app_list")]);
     expect(poczta.wyslane).toHaveLength(1);
     expect(state.rows[0].data.supplierNotifiedAt).toBeTruthy();
+  });
+
+  // ── znalezisko 7: niepowodzenie KOLEJNEJ próby nie dowodzi, że poprzedni mail nie poszedł
+  it("401 przy ponowieniu NIE kasuje tożsamości — poprzedni mail mógł pójść", async () => {
+    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    const poczta = fakeResend({ now: () => state.now() });
+    // próba 1: poczta przyjmuje mail, odpowiedź do nas ginie
+    globalThis.fetch = vi.fn(async (url, init) => { await poczta.fn(url, init); throw new Error("ECONNRESET"); });
+    await notify(supa, [1]);
+    expect(poczta.wyslane).toHaveLength(1);
+    const klucz = state.rows[0].data.supplierNotifyMessageId;
+    expect(klucz).toBeTruthy();
+
+    // próba 2 po wygaśnięciu dzierżawy: poczta odrzuca (401). To dotyczy TEJ próby,
+    // nie tamtego maila — kasowanie tożsamości otwierałoby drogę do dubla.
+    state.now = () => Date.now() + 16 * 60 * 1000;
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 401, text: async () => "zly klucz api" }));
+    const druga = await notify(supa, [1]);
+    expect(druga.notifications[0]).toMatchObject({ delivery: "no", claim_released: false, attempt: 2 });
+    expect(state.rows[0].data.supplierNotifyMessageId).toBe(klucz);
+    expect(state.rows[0].data.supplierNotifyFirstClaimAt).toBeTruthy();
+
+    // próba 3: poczta znowu działa → ten sam klucz i ładunek, więc mail nadal JEDEN
+    state.now = () => Date.now() + 32 * 60 * 1000;
+    globalThis.fetch = poczta.fn;
+    const trzecia = await notify(supa, [1]);
+    expect(poczta.wyslane).toHaveLength(1);
+    expect(trzecia.notifications[0]).toMatchObject({ status: "sent", message_id: klucz, confirm_ok: true });
+  });
+
+  it("nieudany odczyt treści przy ponowieniu też nie kasuje historii", async () => {
+    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    const poczta = fakeResend({ now: () => state.now() });
+    globalThis.fetch = vi.fn(async (url, init) => { await poczta.fn(url, init); throw new Error("ECONNRESET"); });
+    await notify(supa, [1]);
+    const klucz = state.rows[0].data.supplierNotifyMessageId;
+
+    state.now = () => Date.now() + 16 * 60 * 1000;
+    const origRpc = supa.rpc.bind(supa);
+    supa.rpc = async (name, args) =>
+      (name === "ensure_legacy_send_notify_message" ? { data: null, error: { message: "boom" } } : origRpc(name, args));
+    const druga = await notify(supa, [1]);
+    expect(druga.notifications[0]).toMatchObject({ reason: "message_store_failed", claim_released: false, attempt: 2 });
+    expect(state.rows[0].data.supplierNotifyMessageId).toBe(klucz);
+  });
+
+  it("przy PIERWSZEJ próbie odrzucony ładunek nadal czyści wszystko", async () => {
+    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 422, text: async () => "zly ladunek" }));
+    const r = await notify(supa, [1]);
+    expect(r.notifications[0]).toMatchObject({ delivery: "no", claim_released: true, attempt: 1 });
+    expect(state.rows[0].data).toEqual({});
+  });
+
+  // ── znalezisko 8: przerwanie procesu gubiło część paczki ──────────────────
+  it("wiadomość zapisana bez części paczki: brakującej propozycji NIE potwierdzamy", async () => {
+    const { supa, state } = fakeDb([
+      { legacy_id: 1, offer_legacy_id: 77, title: "Awokado" },
+      { legacy_id: 2, offer_legacy_id: 78, title: "Banany" },
+    ]);
+    const poczta = fakeResend({ now: () => state.now() });
+    globalThis.fetch = poczta.fn;
+
+    // Proces zarezerwował A+B i padł przed zapisem treści: oba wiersze mają wspólną
+    // tożsamość, ale wiadomości jeszcze nie ma.
+    const wspolny = "fmr-przerwany";
+    const dawno = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    for (const row of state.rows) {
+      row.data = { supplierNotifyClaimToken: "padl", supplierNotifyClaimedAt: dawno, supplierNotifyMessageId: wspolny, supplierNotifyFirstClaimAt: dawno, supplierNotifyAttempts: 1 };
+    }
+
+    // Następne zdarzenie dotyczy samego A → wiadomość zapisuje się TYLKO o A.
+    const pierwsza = await notify(supa, [1]);
+    expect(pierwsza.notifications[0]).toMatchObject({ status: "sent", legacy_ids: [1] });
+    expect(poczta.wyslane[0].html).toContain("Awokado");
+    expect(poczta.wyslane[0].html).not.toContain("Banany");
+
+    // Dopiero teraz wraca B. Zapisana wiadomość go NIE zawiera, więc nie wolno
+    // oznaczyć go jako powiadomionego — ma dostać własną wiadomość.
+    const druga = await notify(supa, [2]);
+    expect(state.rows[1].data.supplierNotifiedAt).toBeUndefined();
+    expect(druga.notifications[0]).toMatchObject({ ok: false, reason: "message_missing_offers", legacy_ids: [2] });
+    expect(state.rows[1].data.supplierNotifyMessageId).toBeUndefined();   // tożsamość zwolniona
+
+    // kolejne zdarzenie buduje B własną wiadomość
+    const trzecia = await notify(supa, [2]);
+    expect(trzecia.notifications[0]).toMatchObject({ status: "sent", legacy_ids: [2], confirm_ok: true });
+    expect(poczta.wyslane).toHaveLength(2);
+    expect(poczta.wyslane[1].html).toContain("Banany");
+    expect(poczta.wyslane[1].key).not.toBe(wspolny);
+  });
+
+  it("paczka częściowo objęta wiadomością: potwierdzamy tylko obecnych, resztę zwalniamy", async () => {
+    const { supa, state } = fakeDb([
+      { legacy_id: 1, offer_legacy_id: 77, title: "Awokado" },
+      { legacy_id: 2, offer_legacy_id: 78, title: "Banany" },
+    ]);
+    const poczta = fakeResend({ now: () => state.now() });
+    globalThis.fetch = poczta.fn;
+    const wspolny = "fmr-czesciowy";
+    const dawno = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    for (const row of state.rows) {
+      row.data = { supplierNotifyClaimToken: "padl", supplierNotifyClaimedAt: dawno, supplierNotifyMessageId: wspolny, supplierNotifyFirstClaimAt: dawno, supplierNotifyAttempts: 1 };
+    }
+    // treść zapisana wcześniej obejmuje tylko A
+    await supa.rpc("ensure_legacy_send_notify_message", {
+      p_message_id: wspolny, p_to_email: "nobody@example.invalid", p_subject: "T", p_html: "<p>Awokado</p>", p_legacy_ids: [1],
+    });
+
+    const r = await notify(supa, [1, 2]);
+    expect(r.notifications[0]).toMatchObject({
+      status: "sent", legacy_ids: [1], confirm_expected: 1, released_not_in_message: [2],
+    });
+    expect(state.rows[0].data.supplierNotifiedAt).toBeTruthy();
+    expect(state.rows[1].data.supplierNotifiedAt).toBeUndefined();
+    expect(r.ok).toBe(false);   // paczka nie została obsłużona w całości
   });
 });

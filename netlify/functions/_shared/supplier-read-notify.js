@@ -86,14 +86,15 @@ async function findCompanyBySupplierKey(supaSvc, supplierKey) {
 const RESEND_PAYLOAD_REJECTED = new Set([400, 401, 403, 404, 422]);
 
 // `delivered` rozstrzyga, co wolno zrobić z rezerwacją:
-//   "no"       — poczta ODRZUCIŁA ładunek. Zwalniamy rezerwację i tożsamość,
-//                kolejne zdarzenie zbuduje czystą wiadomość.
-//   "conflict" — 409: ten klucz już istnieje z INNYM ładunkiem, czyli wiadomość
-//                o tej tożsamości powstała wcześniej. Dostawca ją dostał — nie
-//                wysyłamy drugiej i NIE kasujemy tożsamości.
-//   "unknown"  — brak odpowiedzi albo błąd serwera poczty. Mail MÓGŁ pójść, więc
-//                rezerwacja i tożsamość zostają; ponowienie pójdzie tym samym
-//                kluczem i tym samym ładunkiem, więc Resend go zdeduplikuje.
+//   "no"        — poczta ODRZUCIŁA ładunek. Wiadomość nie powstała.
+//   "in_flight" — 409 „concurrent": żądanie z tym kluczem WŁAŚNIE trwa. To nie jest
+//                 potwierdzenie wysyłki ani jej brak — po prostu ponawiamy później.
+//   "conflict"  — 409 „different payload": pod tym kluczem leży INNA treść. Nie wiemy,
+//                 czy dostawca dostał to, co trzeba — sprawa do wyjaśnienia.
+//   "unknown"   — brak odpowiedzi albo błąd serwera poczty. Mail MÓGŁ pójść.
+//
+// ŻADEN z 409 nie oznacza „powiadomiono" (review Codexa, tura 4: wcześniej oba
+// warianty zapisywały sukces). Tożsamości nie kasujemy w żadnym z nich.
 async function sendResendEmail({ env, to, subject, html, idempotencyKey }) {
   if (!env.resendApiKey) return { ok: false, reason: "no_resend_key", delivered: "no" };
   let res;
@@ -121,9 +122,17 @@ async function sendResendEmail({ env, to, subject, html, idempotencyKey }) {
   }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    const delivered = res.status === 409
-      ? "conflict"
-      : (RESEND_PAYLOAD_REJECTED.has(res.status) ? "no" : "unknown");
+    let delivered;
+    if (res.status === 409) {
+      // Resend rozróżnia dwa 409: `concurrent_idempotent_requests` (poprzednie żądanie
+      // z tym kluczem jeszcze trwa) i `invalid_idempotent_request` (ten klucz niesie
+      // inną treść). Pierwszy wolno ponowić, drugi wymaga wyjaśnienia.
+      let name = "";
+      try { name = String(JSON.parse(detail)?.name || ""); } catch { name = ""; }
+      delivered = name.includes("concurrent") || /concurrent/i.test(detail) ? "in_flight" : "conflict";
+    } else {
+      delivered = RESEND_PAYLOAD_REJECTED.has(res.status) ? "no" : "unknown";
+    }
     return { ok: false, reason: `resend_${res.status}: ${detail}`, delivered, status: res.status };
   }
   const r = await res.json().catch(() => ({}));
@@ -306,14 +315,23 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
     const byMessage = new Map();
     for (const row of claimed) {
       const key = row.message_id || newMessageId;
-      if (!byMessage.has(key)) byMessage.set(key, []);
-      byMessage.get(key).push(row.legacy_id);
+      if (!byMessage.has(key)) byMessage.set(key, { ids: [], attempt: 0 });
+      const bucket = byMessage.get(key);
+      bucket.ids.push(row.legacy_id);
+      bucket.attempt = Math.max(bucket.attempt, row.attempt || 1);
     }
 
-    for (const [messageId, legacyIds] of byMessage) {
-      const releaseClaim = async () => {
+    for (const [messageId, bucket] of byMessage) {
+      const legacyIds = bucket.ids;
+      // [review Codexa, tura 4] Pełny reset tożsamości wolno zrobić TYLKO wtedy, gdy
+      // to pierwsza próba tej wiadomości. Przy kolejnych poprzedni mail mógł już pójść
+      // (odpowiedź zginęła), a niepowodzenie BIEŻĄCEJ próby — odczytu treści, 401,
+      // braku klucza poczty — niczego o tamtym nie dowodzi. Skasowanie historii
+      // otwierało wtedy drogę do drugiego maila.
+      const firstAttempt = (bucket.attempt || 1) <= 1;
+      const releaseClaim = async (ids = legacyIds) => {
         const { error } = await supaSvc.rpc("release_legacy_sends_supplier_notify_claim", {
-          p_legacy_ids: legacyIds,
+          p_legacy_ids: ids,
           p_claim_token: claimToken,
         });
         return error ? error.message : null;
@@ -326,6 +344,11 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
         });
         return error ? error.message : null;
       };
+      // Reset wolno zrobić tylko przy pierwszej próbie. Przy kolejnych zostawiamy
+      // tożsamość, treść i początek okna bezpieczeństwa, a sam fakt notujemy.
+      const abandonAttempt = async (reason) => (firstAttempt
+        ? { released: !(await releaseClaim()), note: null }
+        : { released: false, note: await markUncertain(reason) });
 
       // [review Codexa, tura 3] Treść wiadomości jest NIEZMIENNA. Resend wiąże
       // Idempotency-Key z konkretnym ładunkiem: ten sam klucz z inną treścią to
@@ -353,8 +376,8 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       });
       if (!tpl) {
         // Rezerwacja bez wysyłki blokowałaby powiadomienie do wygaśnięcia dzierżawy.
-        const releaseError = await releaseClaim();
-        notifications.push({ ok: false, status: "error", reason: "no_template", legacy_ids: legacyIds, message_id: messageId, claim_released: !releaseError, release_error: releaseError });
+        const { released, note } = await abandonAttempt("no_template");
+        notifications.push({ ok: false, status: "error", reason: "no_template", legacy_ids: legacyIds, message_id: messageId, attempt: bucket.attempt, claim_released: released, uncertain_error: note });
         continue;
       }
 
@@ -367,14 +390,37 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       });
       const stored = Array.isArray(storedRows) ? storedRows[0] : storedRows;
       if (storeErr || !stored) {
-        // Bez zapisanej treści ponowienie byłoby inną wiadomością pod tym samym
-        // kluczem. Nie wysyłamy; wynik nie jest niepewny, bo poczty nie dotykaliśmy.
-        const releaseError = await releaseClaim();
+        // Bez zapisanej treści ponowienie byłoby inną wiadomością pod tym samym kluczem.
+        // Przy kolejnej próbie NIE kasujemy historii: poprzedni mail mógł już pójść,
+        // a nieudany odczyt treści niczego o tym nie mówi (review Codexa, tura 4).
+        const { released, note } = await abandonAttempt(`message_store_failed: ${storeErr ? storeErr.message : "brak wiersza"}`);
         notifications.push({
           ok: false, status: "error", reason: "message_store_failed",
-          to: owner.email, legacy_ids: legacyIds, message_id: messageId,
+          to: owner.email, legacy_ids: legacyIds, message_id: messageId, attempt: bucket.attempt,
           store_error: storeErr ? storeErr.message : "brak zapisanej wiadomości",
-          claim_released: !releaseError, release_error: releaseError,
+          claim_released: released, uncertain_error: note,
+        });
+        continue;
+      }
+
+      // [review Codexa, tura 4] Zapisana wiadomość jest JEDYNYM źródłem prawdy o tym,
+      // co dostawca zobaczy. Proces mógł zarezerwować A+B i paść przed zapisem treści;
+      // kolejne zdarzenie dotyczące samego A zapisałoby wtedy wiadomość o A pod tą samą
+      // tożsamością. Potwierdzenie B na podstawie takiej wiadomości byłoby kłamstwem —
+      // B w mailu nie ma. Dlatego potwierdzamy WYŁĄCZNIE propozycje obecne w zapisanej
+      // treści, a resztę zwalniamy: nigdy nie były w żadnym wysłanym mailu, więc
+      // bezpiecznie zaczną własną wiadomość przy następnym zdarzeniu.
+      const messageIds = new Set((stored.legacy_ids || []).map(Number));
+      const covered = legacyIds.filter((id) => messageIds.has(id));
+      const uncovered = legacyIds.filter((id) => !messageIds.has(id));
+      let uncoveredReleaseError = null;
+      if (uncovered.length) uncoveredReleaseError = await releaseClaim(uncovered);
+      if (!covered.length) {
+        notifications.push({
+          ok: false, status: "error", reason: "message_missing_offers",
+          to: stored.to_email, legacy_ids: uncovered, message_id: messageId, attempt: bucket.attempt,
+          message_legacy_ids: stored.legacy_ids,
+          claim_released: !uncoveredReleaseError, release_error: uncoveredReleaseError,
         });
         continue;
       }
@@ -388,62 +434,67 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
         idempotencyKey: messageId,
       });
 
-      // 409 = wiadomość o tej tożsamości już u poczty istnieje. Dostawca ją dostał,
-      // więc traktujemy to jak wysłane: drugiej nie wysyłamy, tożsamości nie kasujemy.
-      const duplicateSuppressed = !sent.ok && sent.delivered === "conflict";
-      if (!sent.ok && !duplicateSuppressed) {
-        // „no" = poczta odrzuciła ładunek → wiadomość nie powstała, pełny reset.
-        // „unknown" = mail MÓGŁ pójść → rezerwacja i tożsamość zostają, a ponowienie
-        // pójdzie tym samym kluczem i tym samym ładunkiem, więc Resend je zdeduplikuje.
+      if (!sent.ok) {
+        // „no"        → poczta odrzuciła ładunek; wiadomość nie powstała.
+        // „in_flight" → 409: żądanie z tym kluczem właśnie trwa. Ani sukces, ani porażka.
+        // „conflict"  → 409: pod tym kluczem leży INNA treść. Do wyjaśnienia.
+        // „unknown"   → mail MÓGŁ pójść.
+        // Żaden z nich nie pozwala zapisać „powiadomiono". Tożsamość kasujemy wyłącznie
+        // przy odrzuconym ładunku i tylko przy PIERWSZEJ próbie.
         const payloadRejected = sent.delivered === "no";
-        const releaseError = payloadRejected ? await releaseClaim() : null;
-        const uncertainError = payloadRejected ? null : await markUncertain(sent.reason);
+        const { released, note } = payloadRejected
+          ? await abandonAttempt(sent.reason)
+          : { released: false, note: await markUncertain(sent.reason) };
         notifications.push({
           ok: false,
-          status: "error",
-          reason: sent.reason,
+          status: sent.delivered === "conflict" ? "needs_review" : "error",
+          reason: sent.delivered === "conflict" ? "idempotency_payload_conflict" : sent.reason,
+          detail: sent.delivered === "conflict" ? sent.reason : undefined,
+          retryable: sent.delivered === "in_flight" || sent.delivered === "unknown",
           to: stored.to_email,
-          legacy_ids: legacyIds,
+          legacy_ids: covered,
           message_id: messageId,
+          attempt: bucket.attempt,
           delivery: sent.delivered,
-          claim_released: payloadRejected && !releaseError,
-          release_error: releaseError,
-          uncertain_error: uncertainError,
+          claim_released: released,
+          uncertain_error: note,
         });
         continue;
       }
 
       const { data: confirmedCount, error: confirmErr } = await supaSvc.rpc("confirm_legacy_sends_supplier_notified", {
-        p_legacy_ids: legacyIds,
+        p_legacy_ids: covered,
         p_claim_token: claimToken,
         p_via: openedVia,
-        p_batch_size: legacyIds.length,
+        p_batch_size: covered.length,
         p_notified_at: new Date().toISOString(),
       });
       // Potwierdzenie CZĘŚCI wierszy to nie sukces: niepotwierdzone wrócą po
       // wygaśnięciu dzierżawy. Brak błędu bazy nie dowodzi, że zapis objął wszystko.
       const confirmed = confirmErr ? 0 : Number(confirmedCount ?? 0);
-      const confirmComplete = !confirmErr && confirmed === legacyIds.length;
+      const confirmComplete = !confirmErr && confirmed === covered.length;
       // Mail POSZEDŁ — to jest fakt i status go odzwierciedla. Niekompletny zapis
       // notujemy jako niepewny: ponowienie pójdzie tym samym kluczem i tą samą
       // treścią, więc dostawca nie dostanie drugiego maila, a ślad zostaje w raporcie.
       const confirmUncertainError = confirmComplete
         ? null
-        : await markUncertain(confirmErr ? `confirm_failed: ${confirmErr.message}` : `confirm_partial: ${confirmed}/${legacyIds.length}`);
+        : await markUncertain(confirmErr ? `confirm_failed: ${confirmErr.message}` : `confirm_partial: ${confirmed}/${covered.length}`);
 
       notifications.push({
-        ok: confirmComplete,
+        ok: confirmComplete && !uncovered.length,
         status: "sent",
         message_id: messageId,
         provider_message_id: sent.message_id ?? null,
-        duplicate_suppressed: duplicateSuppressed,
+        attempt: bucket.attempt,
         to: stored.to_email,
-        offer_count: offers.length,
-        legacy_ids: legacyIds,
+        offer_count: covered.length,
+        legacy_ids: covered,
         message_legacy_ids: stored.legacy_ids,
+        released_not_in_message: uncovered.length ? uncovered : undefined,
+        release_error: uncoveredReleaseError,
         confirm_ok: confirmComplete,
         confirm_rows: confirmed,
-        confirm_expected: legacyIds.length,
+        confirm_expected: covered.length,
         confirm_error: confirmErr ? confirmErr.message : undefined,
         uncertain_error: confirmUncertainError,
       });
