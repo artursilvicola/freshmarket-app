@@ -1,23 +1,30 @@
-// [fix/supplier-read-notify-once v2] Powiadomienie dostawcy o odczycie — rezerwacja.
+// [fix/supplier-read-notify-once v3] Powiadomienie dostawcy o odczycie.
 //
-// Dwa znaleziska z review Codexa 13.10, każde odtworzone osobno:
+// Cztery znaleziska z dwóch tur review Codexa (13.10), każde odtworzone osobno:
 //
 //  1. Powiadomienie przepadało: znacznik „powiadomiono" szedł PRZED mailem, więc
 //     odmowa poczty blokowała wysyłkę na zawsze.
 //  2. Mail mógł zawierać cudze propozycje: RPC zwracał samą LICZBĘ zajętych wierszy,
 //     a mail opisywał całą grupę. Odczyt A równolegle z paczką A+B dawał dwa maile,
 //     oba z A.
+//  3. Rezerwacja tylko ODSUWAŁA dubla: gdy poczta przyjęła wiadomość, a aplikacja
+//     nie zapisała potwierdzenia, po wygaśnięciu dzierżawy szedł drugi mail.
+//  4. Niekompletne potwierdzenie uchodziło za sukces: sprawdzany był brak błędu,
+//     nie liczba zapisanych wierszy.
 //
-// Atrapa bazy odwzorowuje warunki RPC z migracji 20261013090000 (rezerwacja z
-// dzierżawą, potwierdzenie i zwolnienie tylko po własnym tokenie). Zero sieci.
+// Atrapa bazy odwzorowuje warunki RPC z migracji 20261013090000 (rezerwacja
+// z dzierżawą, stałe messageId, okno idempotencji, potwierdzenie i zwolnienie
+// tylko po własnym tokenie). Atrapa poczty odwzorowuje Idempotency-Key Resend.
+// Zero ruchu sieciowego.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { notifySupplierOffersRead } from "../netlify/functions/_shared/supplier-read-notify.js";
 
 const LEASE_MS = 900 * 1000;
+const WINDOW_MS = 86400 * 1000;
 
 function fakeDb(sendDefs) {
   // sendDefs: [{ legacy_id, offer_legacy_id, title }] — jeden dostawca, jedna sieć,
-  // czyli wszystkie wiersze trafiają do tej samej grupy (jeden mail).
+  // czyli wszystkie wiersze trafiają do tej samej grupy.
   const rows = sendDefs.map((d) => ({
     legacy_id: d.legacy_id,
     supplier_legacy_id: "supplier-1",
@@ -26,8 +33,19 @@ function fakeDb(sendDefs) {
     status: "read",
     data: {},
   }));
-  const state = { rows, claims: 0, confirms: 0, releases: 0 };
+  const state = { rows, claims: 0, confirms: 0, releases: 0, uncertains: 0, now: () => Date.now() };
   const byId = (id) => rows.find((r) => Number(r.legacy_id) === Number(id));
+  const mine = (row, token) => row && row.data.supplierNotifyClaimToken === token && !row.data.supplierNotifiedAt;
+  const strip = (data, ...keys) => {
+    const out = { ...data };
+    for (const k of keys) delete out[k];
+    return out;
+  };
+  const WORK = [
+    "supplierNotifyClaimToken", "supplierNotifyClaimedAt", "supplierNotifyMessageId",
+    "supplierNotifyFirstClaimAt", "supplierNotifyAttempts",
+    "supplierNotifyUncertainAt", "supplierNotifyUncertainReason",
+  ];
 
   const supa = {
     from(table) {
@@ -50,30 +68,46 @@ function fakeDb(sendDefs) {
       };
     },
     async rpc(name, args) {
+      const now = state.now();
       if (name === "claim_legacy_sends_supplier_notify") {
         state.claims += 1;
-        const now = Date.now();
-        const claimed = [];
+        const out = [];
         for (const id of args.p_legacy_ids) {
           const row = byId(id);
-          if (!row || row.data.supplierNotifiedAt) continue;
-          const token = row.data.supplierNotifyClaimToken;
-          const at = row.data.supplierNotifyClaimedAt ? Date.parse(row.data.supplierNotifyClaimedAt) : null;
+          if (!row) continue;
+          const d = row.data;
+          const first = d.supplierNotifyFirstClaimAt ? Date.parse(d.supplierNotifyFirstClaimAt) : now;
+          const pozaOknem = !!d.supplierNotifyUncertainAt && first < now - WINDOW_MS;
+          if (d.supplierNotifiedAt) { out.push({ legacy_id: Number(id), state: "notified", message_id: d.supplierNotifyMessageId || null, attempt: Number(d.supplierNotifyAttempts || 0) }); continue; }
+          if (pozaOknem) { out.push({ legacy_id: Number(id), state: "needs_review", message_id: d.supplierNotifyMessageId || null, attempt: Number(d.supplierNotifyAttempts || 0) }); continue; }
+          const token = d.supplierNotifyClaimToken;
+          const at = d.supplierNotifyClaimedAt ? Date.parse(d.supplierNotifyClaimedAt) : null;
           const wolny = !token || at === null || token === args.p_claim_token || at < now - LEASE_MS;
-          if (!wolny) continue;
-          row.data = { ...row.data, supplierNotifyClaimToken: args.p_claim_token, supplierNotifyClaimedAt: new Date(now).toISOString() };
-          claimed.push(Number(row.legacy_id));
+          if (!wolny) { out.push({ legacy_id: Number(id), state: "busy", message_id: d.supplierNotifyMessageId || null, attempt: Number(d.supplierNotifyAttempts || 0) }); continue; }
+          row.data = {
+            ...d,
+            supplierNotifyClaimToken: args.p_claim_token,
+            supplierNotifyClaimedAt: new Date(now).toISOString(),
+            supplierNotifyMessageId: d.supplierNotifyMessageId || args.p_new_message_id,
+            supplierNotifyFirstClaimAt: d.supplierNotifyFirstClaimAt || new Date(now).toISOString(),
+            supplierNotifyAttempts: Number(d.supplierNotifyAttempts || 0) + 1,
+          };
+          out.push({ legacy_id: Number(id), state: "claimed", message_id: row.data.supplierNotifyMessageId, attempt: row.data.supplierNotifyAttempts });
         }
-        return { data: claimed, error: null };
+        return { data: out, error: null };
       }
       if (name === "confirm_legacy_sends_supplier_notified") {
         state.confirms += 1;
         let n = 0;
         for (const id of args.p_legacy_ids) {
           const row = byId(id);
-          if (!row || row.data.supplierNotifyClaimToken !== args.p_claim_token || row.data.supplierNotifiedAt) continue;
-          const { supplierNotifyClaimToken, supplierNotifyClaimedAt, ...reszta } = row.data;
-          row.data = { ...reszta, supplierNotifiedAt: args.p_notified_at, supplierNotifiedVia: args.p_via, supplierNotifiedBatchSize: args.p_batch_size };
+          if (!mine(row, args.p_claim_token)) continue;
+          row.data = {
+            ...strip(row.data, ...WORK.filter((k) => k !== "supplierNotifyMessageId")),
+            supplierNotifiedAt: args.p_notified_at,
+            supplierNotifiedVia: args.p_via,
+            supplierNotifiedBatchSize: args.p_batch_size,
+          };
           n += 1;
         }
         return { data: n, error: null };
@@ -83,9 +117,19 @@ function fakeDb(sendDefs) {
         let n = 0;
         for (const id of args.p_legacy_ids) {
           const row = byId(id);
-          if (!row || row.data.supplierNotifyClaimToken !== args.p_claim_token || row.data.supplierNotifiedAt) continue;
-          const { supplierNotifyClaimToken, supplierNotifyClaimedAt, ...reszta } = row.data;
-          row.data = reszta;
+          if (!mine(row, args.p_claim_token)) continue;
+          row.data = strip(row.data, ...WORK);
+          n += 1;
+        }
+        return { data: n, error: null };
+      }
+      if (name === "mark_legacy_sends_supplier_notify_uncertain") {
+        state.uncertains += 1;
+        let n = 0;
+        for (const id of args.p_legacy_ids) {
+          const row = byId(id);
+          if (!mine(row, args.p_claim_token)) continue;
+          row.data = { ...row.data, supplierNotifyUncertainAt: new Date(now).toISOString(), supplierNotifyUncertainReason: args.p_reason ?? null };
           n += 1;
         }
         return { data: n, error: null };
@@ -96,125 +140,64 @@ function fakeDb(sendDefs) {
   return { supa, state };
 }
 
+// Atrapa Resend z obsługą Idempotency-Key: powtórka z tym samym kluczem NIE tworzy
+// drugiej wiadomości, tylko oddaje pierwotną odpowiedź (tak działa Resend przez 24 h).
+function fakeResend() {
+  const wyslane = [];               // wiadomości faktycznie utworzone
+  const poKluczu = new Map();
+  const fn = vi.fn(async (_url, init) => {
+    const key = init.headers["Idempotency-Key"];
+    const body = JSON.parse(init.body);
+    if (key && poKluczu.has(key)) {
+      return { ok: true, json: async () => ({ id: poKluczu.get(key) }) };
+    }
+    const id = `mail-${wyslane.length + 1}`;
+    wyslane.push({ key, html: body.html, subject: body.subject, to: body.to });
+    if (key) poKluczu.set(key, id);
+    return { ok: true, json: async () => ({ id }) };
+  });
+  return { fn, wyslane };
+}
+
 const env = { resendApiKey: "fake-not-a-key", b2bAppUrl: "https://example.invalid" };
 const notify = (supa, legacyIds, openedVia = "app_list") =>
   notifySupplierOffersRead({ supaSvc: supa, env, legacyIds, openedVia });
-const mailBody = (mock, i = 0) => JSON.parse(mock.mock.calls[i][1].body);
 
-describe("powiadomienie dostawcy o odczycie — rezerwacja", () => {
+describe("powiadomienie dostawcy o odczycie — rezerwacja i tożsamość wiadomości", () => {
   let realFetch;
   beforeEach(() => { realFetch = globalThis.fetch; });
   afterEach(() => { globalThis.fetch = realFetch; });
 
-  // ── znalezisko 2 Codexa ───────────────────────────────────────────────────
+  // ── znalezisko 2 ──────────────────────────────────────────────────────────
   it("odczyt A równolegle z paczką A+B: DWA maile, ale A tylko w jednym z nich", async () => {
     const { supa, state } = fakeDb([
       { legacy_id: 1, offer_legacy_id: 77, title: "Awokado" },
       { legacy_id: 2, offer_legacy_id: 78, title: "Banany" },
     ]);
-    const poczta = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
-    globalThis.fetch = poczta;
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
 
-    // ścieżka 1: webhook o samym A; ścieżka 2: panel kupca o paczce A+B
     await Promise.all([notify(supa, [1], "resend_webhook"), notify(supa, [1, 2], "app_list")]);
 
-    expect(poczta).toHaveBeenCalledTimes(2);
-    const tresci = poczta.mock.calls.map((_, i) => mailBody(poczta, i).html);
-    expect(tresci.filter((h) => h.includes("Awokado"))).toHaveLength(1);
-    expect(tresci.filter((h) => h.includes("Banany"))).toHaveLength(1);
-    // oba wiersze oznaczone, każdy przez swoją ścieżkę
+    expect(poczta.wyslane).toHaveLength(2);
+    expect(poczta.wyslane.filter((m) => m.html.includes("Awokado"))).toHaveLength(1);
+    expect(poczta.wyslane.filter((m) => m.html.includes("Banany"))).toHaveLength(1);
     expect(state.rows.every((r) => r.data.supplierNotifiedAt)).toBe(true);
     expect(state.releases).toBe(0);
   });
 
   it("obie ścieżki o tej samej pojedynczej propozycji → dokładnie jeden mail", async () => {
     const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
-    const poczta = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
-    globalThis.fetch = poczta;
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
 
     const [a, b] = await Promise.all([notify(supa, [1], "resend_webhook"), notify(supa, [1], "app_list")]);
 
-    expect(poczta).toHaveBeenCalledTimes(1);
+    expect(poczta.wyslane).toHaveLength(1);
     const statusy = [a, b].map((r) => r.notifications[0]?.status ?? r.reason);
     expect(statusy.filter((s) => s === "sent")).toHaveLength(1);
-    // druga ścieżka nie zgłasza błędu — zajęty wiersz to normalny stan
     expect([a, b].every((r) => r.notifications.every((n) => n.ok !== false))).toBe(true);
     expect(state.rows[0].data.supplierNotifiedVia).toBeTruthy();
-  });
-
-  // ── znalezisko 1 Codexa ───────────────────────────────────────────────────
-  it("odmowa poczty zwalnia rezerwację i KOLEJNA próba wysyła — powiadomienie nie przepada", async () => {
-    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
-    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 422, text: async () => "odmowa" }));
-
-    const pierwsza = await notify(supa, [1]);
-    expect(pierwsza.notifications[0]).toMatchObject({ ok: false, status: "error", delivery: "no", claim_released: true });
-    expect(state.releases).toBe(1);
-    // wiersz czysty: ani znacznika wysłania, ani zawieszonej rezerwacji
-    expect(state.rows[0].data.supplierNotifiedAt).toBeUndefined();
-    expect(state.rows[0].data.supplierNotifyClaimToken).toBeUndefined();
-
-    const udana = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
-    globalThis.fetch = udana;
-    const druga = await notify(supa, [1]);
-    expect(druga.notifications[0]).toMatchObject({ status: "sent", confirm_ok: true, confirm_rows: 1 });
-    expect(udana).toHaveBeenCalledTimes(1);
-    expect(mailBody(udana).html).toContain("Awokado");
-  });
-
-  it("brak odpowiedzi poczty (sieć): rezerwacja ZOSTAJE, natychmiastowe ponowienie nie dokłada maila", async () => {
-    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
-    globalThis.fetch = vi.fn(async () => { throw new Error("ECONNRESET"); });
-
-    const pierwsza = await notify(supa, [1]);
-    expect(pierwsza.notifications[0]).toMatchObject({ ok: false, status: "error", delivery: "unknown", claim_released: false });
-    expect(state.releases).toBe(0);
-    expect(state.rows[0].data.supplierNotifyClaimToken).toBeTruthy();
-
-    // mail mógł pójść — do wygaśnięcia dzierżawy nie wysyłamy drugiego
-    const udana = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
-    globalThis.fetch = udana;
-    const druga = await notify(supa, [1]);
-    expect(udana).not.toHaveBeenCalled();
-    expect(druga.notifications[0]?.status ?? druga.reason).toBe("already_notified");
-  });
-
-  it("po wygaśnięciu dzierżawy porzucona rezerwacja wraca do obiegu", async () => {
-    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
-    state.rows[0].data = {
-      supplierNotifyClaimToken: "porzucony",
-      supplierNotifyClaimedAt: new Date(Date.now() - LEASE_MS - 60_000).toISOString(),
-    };
-    const udana = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
-    globalThis.fetch = udana;
-
-    const r = await notify(supa, [1]);
-    expect(udana).toHaveBeenCalledTimes(1);
-    expect(r.notifications[0]).toMatchObject({ status: "sent", confirm_ok: true });
-  });
-
-  it("błąd RPC rezerwacji: maila NIE wysyłamy", async () => {
-    const { supa } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
-    const origRpc = supa.rpc.bind(supa);
-    supa.rpc = async (name, args) =>
-      (name === "claim_legacy_sends_supplier_notify" ? { data: null, error: { message: "boom" } } : origRpc(name, args));
-    const poczta = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
-    globalThis.fetch = poczta;
-
-    const r = await notify(supa, [1]);
-    expect(r.notifications[0]).toMatchObject({ ok: false, status: "error", reason: "claim_failed", claim_error: "boom" });
-    expect(poczta).not.toHaveBeenCalled();
-  });
-
-  it("mail poszedł, potwierdzenie padło: status pozostaje sent, ale raport to odnotowuje", async () => {
-    const { supa } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
-    const origRpc = supa.rpc.bind(supa);
-    supa.rpc = async (name, args) =>
-      (name === "confirm_legacy_sends_supplier_notified" ? { data: null, error: { message: "boom" } } : origRpc(name, args));
-    globalThis.fetch = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
-
-    const r = await notify(supa, [1]);
-    expect(r.notifications[0]).toMatchObject({ status: "sent", ok: false, confirm_ok: false, confirm_error: "boom" });
   });
 
   it("mail opisuje tylko propozycje z WŁASNEJ rezerwacji, gdy część zajęła inna ścieżka", async () => {
@@ -222,16 +205,159 @@ describe("powiadomienie dostawcy o odczycie — rezerwacja", () => {
       { legacy_id: 1, offer_legacy_id: 77, title: "Awokado" },
       { legacy_id: 2, offer_legacy_id: 78, title: "Banany" },
     ]);
-    // A już zajęte przez cudzą, świeżą rezerwację
     state.rows[0].data = { supplierNotifyClaimToken: "cudzy", supplierNotifyClaimedAt: new Date().toISOString() };
-    const poczta = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
-    globalThis.fetch = poczta;
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
 
     const r = await notify(supa, [1, 2]);
-    expect(poczta).toHaveBeenCalledTimes(1);
-    const html = mailBody(poczta).html;
-    expect(html).toContain("Banany");
-    expect(html).not.toContain("Awokado");
+    expect(poczta.wyslane).toHaveLength(1);
+    expect(poczta.wyslane[0].html).toContain("Banany");
+    expect(poczta.wyslane[0].html).not.toContain("Awokado");
     expect(r.notifications[0]).toMatchObject({ status: "sent", legacy_ids: [2], offer_count: 1 });
+  });
+
+  // ── znalezisko 1 ──────────────────────────────────────────────────────────
+  it("jednoznaczna odmowa poczty zwalnia rezerwację i KOLEJNA próba wysyła", async () => {
+    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    globalThis.fetch = vi.fn(async () => ({ ok: false, status: 422, text: async () => "odmowa" }));
+
+    const pierwsza = await notify(supa, [1]);
+    expect(pierwsza.notifications[0]).toMatchObject({ ok: false, status: "error", delivery: "no", claim_released: true });
+    expect(state.releases).toBe(1);
+    // pełny reset: ani znacznika wysłania, ani rezerwacji, ani tożsamości wiadomości
+    expect(state.rows[0].data).toEqual({});
+
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
+    const druga = await notify(supa, [1]);
+    expect(druga.notifications[0]).toMatchObject({ status: "sent", confirm_ok: true, confirm_rows: 1, confirm_expected: 1 });
+    expect(poczta.wyslane).toHaveLength(1);
+    expect(poczta.wyslane[0].html).toContain("Awokado");
+  });
+
+  // ── znalezisko 3: sama rezerwacja tylko odsuwała dubla ────────────────────
+  it("brak odpowiedzi poczty + wygasła dzierżawa: ponowienie idzie TYM SAMYM kluczem, mail jeden", async () => {
+    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    const poczta = fakeResend();
+    // pierwsza próba: poczta PRZYJMUJE wiadomość, ale odpowiedź do nas nie wraca
+    globalThis.fetch = vi.fn(async (url, init) => {
+      await poczta.fn(url, init);
+      throw new Error("ECONNRESET");
+    });
+
+    const pierwsza = await notify(supa, [1]);
+    expect(pierwsza.notifications[0]).toMatchObject({ delivery: "unknown", claim_released: false });
+    expect(poczta.wyslane).toHaveLength(1);
+    const klucz = poczta.wyslane[0].key;
+    expect(state.rows[0].data.supplierNotifyUncertainAt).toBeTruthy();
+    expect(state.rows[0].data.supplierNotifyMessageId).toBe(klucz);
+
+    // 16 minut później — dzierżawa wygasła, okno idempotencji poczty jeszcze trwa
+    state.now = () => Date.now() + 16 * 60 * 1000;
+    globalThis.fetch = poczta.fn;
+    const druga = await notify(supa, [1]);
+
+    expect(poczta.fn).toHaveBeenCalledTimes(2);          // żądanie poszło drugi raz…
+    expect(poczta.wyslane).toHaveLength(1);              // …ale wiadomość powstała JEDNA
+    expect(poczta.wyslane[0].key).toBe(klucz);
+    expect(druga.notifications[0]).toMatchObject({ status: "sent", message_id: klucz, confirm_ok: true });
+    expect(state.rows[0].data.supplierNotifiedAt).toBeTruthy();
+  });
+
+  it("poza oknem idempotencji niepewny wynik NIE jest ponawiany — wraca jako needs_review", async () => {
+    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    const dawno = new Date(Date.now() - WINDOW_MS - 60_000).toISOString();
+    state.rows[0].data = {
+      supplierNotifyClaimToken: "stary",
+      supplierNotifyClaimedAt: dawno,
+      supplierNotifyMessageId: "fmr-stary",
+      supplierNotifyFirstClaimAt: dawno,
+      supplierNotifyAttempts: 1,
+      supplierNotifyUncertainAt: dawno,
+    };
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
+
+    const r = await notify(supa, [1]);
+    expect(poczta.fn).not.toHaveBeenCalled();
+    expect(r.notifications[0]).toMatchObject({
+      ok: false, status: "needs_review",
+      reason: "uncertain_outside_idempotency_window",
+      legacy_ids: [1], message_ids: ["fmr-stary"],
+    });
+  });
+
+  it("porzucona rezerwacja BEZ niepewnego wyniku wraca do obiegu po dzierżawie", async () => {
+    const { supa, state } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    const dawno = new Date(Date.now() - LEASE_MS - 60_000).toISOString();
+    state.rows[0].data = { supplierNotifyClaimToken: "porzucony", supplierNotifyClaimedAt: dawno, supplierNotifyMessageId: "fmr-porzucony", supplierNotifyFirstClaimAt: dawno };
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
+
+    const r = await notify(supa, [1]);
+    expect(poczta.wyslane).toHaveLength(1);
+    // ponowienie TEJ SAMEJ wiadomości, nie nowej
+    expect(poczta.wyslane[0].key).toBe("fmr-porzucony");
+    expect(r.notifications[0]).toMatchObject({ status: "sent", message_id: "fmr-porzucony", confirm_ok: true });
+  });
+
+  // ── znalezisko 4: niekompletne potwierdzenie ──────────────────────────────
+  it("potwierdzenie 1 z 2 wierszy NIE jest sukcesem i zostaje odnotowane jako niepewne", async () => {
+    const { supa, state } = fakeDb([
+      { legacy_id: 1, offer_legacy_id: 77, title: "Awokado" },
+      { legacy_id: 2, offer_legacy_id: 78, title: "Banany" },
+    ]);
+    const origRpc = supa.rpc.bind(supa);
+    supa.rpc = async (name, args) =>
+      (name === "confirm_legacy_sends_supplier_notified"
+        ? origRpc(name, { ...args, p_legacy_ids: args.p_legacy_ids.slice(0, 1) })   // baza zapisała tylko jeden
+        : origRpc(name, args));
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
+
+    const r = await notify(supa, [1, 2]);
+    expect(poczta.wyslane).toHaveLength(1);
+    expect(r.notifications[0]).toMatchObject({ status: "sent", ok: false, confirm_ok: false, confirm_rows: 1, confirm_expected: 2 });
+    expect(r.ok).toBe(false);
+    // niepotwierdzony wiersz ma ślad niepewności, więc ponowienie pójdzie tym samym kluczem
+    expect(state.rows[1].data.supplierNotifyUncertainAt).toBeTruthy();
+    expect(state.rows[1].data.supplierNotifyUncertainReason).toContain("confirm_partial: 1/2");
+  });
+
+  it("potwierdzenie 0 wierszy też nie jest sukcesem", async () => {
+    const { supa } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    const origRpc = supa.rpc.bind(supa);
+    supa.rpc = async (name, args) =>
+      (name === "confirm_legacy_sends_supplier_notified" ? { data: 0, error: null } : origRpc(name, args));
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
+
+    const r = await notify(supa, [1]);
+    expect(r.notifications[0]).toMatchObject({ status: "sent", ok: false, confirm_ok: false, confirm_rows: 0, confirm_expected: 1 });
+  });
+
+  it("błąd RPC potwierdzenia: mail poszedł, ale raport tego nie zamiata", async () => {
+    const { supa } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    const origRpc = supa.rpc.bind(supa);
+    supa.rpc = async (name, args) =>
+      (name === "confirm_legacy_sends_supplier_notified" ? { data: null, error: { message: "boom" } } : origRpc(name, args));
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
+
+    const r = await notify(supa, [1]);
+    expect(r.notifications[0]).toMatchObject({ status: "sent", ok: false, confirm_ok: false, confirm_error: "boom" });
+  });
+
+  it("błąd RPC rezerwacji: maila NIE wysyłamy", async () => {
+    const { supa } = fakeDb([{ legacy_id: 1, offer_legacy_id: 77, title: "Awokado" }]);
+    const origRpc = supa.rpc.bind(supa);
+    supa.rpc = async (name, args) =>
+      (name === "claim_legacy_sends_supplier_notify" ? { data: null, error: { message: "boom" } } : origRpc(name, args));
+    const poczta = fakeResend();
+    globalThis.fetch = poczta.fn;
+
+    const r = await notify(supa, [1]);
+    expect(r.notifications[0]).toMatchObject({ ok: false, status: "error", reason: "claim_failed", claim_error: "boom" });
+    expect(poczta.fn).not.toHaveBeenCalled();
   });
 });

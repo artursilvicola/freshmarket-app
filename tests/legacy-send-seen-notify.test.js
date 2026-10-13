@@ -24,11 +24,17 @@ function fakeDb({ credits = 0, locale = 'pl' } = {}) {
       // z AKTUALNYM wierszem, tak jak w bazie.
       if (name === "claim_legacy_sends_supplier_notify") {
         state.notifyRpc += 1;
-        if (row.data.supplierNotifiedAt) return { data: [], error: null };
+        const id = Number(row.legacy_id);
+        if (row.data.supplierNotifiedAt) return { data: [{ legacy_id: id, state: "notified", message_id: row.data.supplierNotifyMessageId ?? null, attempt: 0 }], error: null };
         const token = row.data.supplierNotifyClaimToken;
-        if (token && token !== args.p_claim_token) return { data: [], error: null };
-        row.data = { ...row.data, supplierNotifyClaimToken: args.p_claim_token, supplierNotifyClaimedAt: new Date().toISOString() };
-        return { data: [Number(row.legacy_id)], error: null };
+        if (token && token !== args.p_claim_token) return { data: [{ legacy_id: id, state: "busy", message_id: row.data.supplierNotifyMessageId ?? null, attempt: 0 }], error: null };
+        row.data = {
+          ...row.data,
+          supplierNotifyClaimToken: args.p_claim_token,
+          supplierNotifyClaimedAt: new Date().toISOString(),
+          supplierNotifyMessageId: row.data.supplierNotifyMessageId || args.p_new_message_id,
+        };
+        return { data: [{ legacy_id: id, state: "claimed", message_id: row.data.supplierNotifyMessageId, attempt: 1 }], error: null };
       }
       if (name === "confirm_legacy_sends_supplier_notified") {
         if (row.data.supplierNotifyClaimToken !== args.p_claim_token || row.data.supplierNotifiedAt) return { data: 0, error: null };

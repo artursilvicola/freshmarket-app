@@ -5,16 +5,50 @@
  * sees several offers in the same batch.
  *
  * Dwie niezależne ścieżki wyzwalają odczyt (webhook Resend `email.opened`
- * i panel kupca), więc powiadomienie idzie przez rezerwację:
+ * i panel kupca), więc powiadomienie idzie przez rezerwację ORAZ stałą
+ * tożsamość wiadomości:
  *
- *   claim   → zajmuje wiersze i zwraca ICH id; mail powstaje tylko z nich
- *   confirm → po udanej wysyłce stawia supplierNotifiedAt i zdejmuje rezerwację
- *   release → po odmowie poczty zdejmuje rezerwację, żeby ponowienie było możliwe
+ *   claim          zajmuje wiersze, nadaje/utrzymuje messageId i zwraca stan
+ *                  każdego z nich; mail powstaje tylko z zajętych
+ *   confirm        po udanej wysyłce stawia supplierNotifiedAt; wołający sprawdza
+ *                  KOMPLETNOŚĆ potwierdzenia, nie tylko brak błędu
+ *   release        po jednoznacznej odmowie poczty — mail nie powstał
+ *   mark_uncertain gdy wyniku nie znamy; rezerwacja i messageId zostają
+ *
+ * Rezerwacja pilnuje, by dwie ścieżki nie pisały naraz. Sama nie wystarcza:
+ * po jej wygaśnięciu ponowienie wysłałoby drugi mail. Dlatego każda wiadomość
+ * ma stały `supplierNotifyMessageId`, który jedzie do Resend jako
+ * `Idempotency-Key` (ważny 24 h). Po tym oknie niepewny wynik nie jest
+ * ponawiany automatycznie — wraca jako `needs_review`.
  *
  * Migracja 20261013090000_supplier_notify_claim.sql.
  */
 
 import { pickTemplate } from "./supplier-email-templates.js";
+
+function randomToken(prefix) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}${Math.random().toString(36).slice(2, 12)}`;
+}
+
+// `claim_legacy_sends_supplier_notify` zwraca tabelę (legacy_id, state, message_id,
+// attempt). PostgREST podaje ją jako listę obiektów; atrapy i starsze klienty potrafią
+// oddać samo id, więc obie postaci sprowadzamy do jednej.
+function normalizeClaimRows(rows) {
+  const list = Array.isArray(rows) ? rows : rows == null ? [] : [rows];
+  return list
+    .map((item) => {
+      if (item && typeof item === "object") {
+        return {
+          legacy_id: Number(item.legacy_id),
+          state: item.state || "claimed",
+          message_id: item.message_id || null,
+          attempt: Number(item.attempt ?? 0),
+        };
+      }
+      return { legacy_id: Number(item), state: "claimed", message_id: null, attempt: 0 };
+    })
+    .filter((row) => Number.isFinite(row.legacy_id));
+}
 
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ""));
@@ -45,7 +79,7 @@ async function findCompanyBySupplierKey(supaSvc, supplierKey) {
 //   "unknown" — żądanie nie dotarło do odpowiedzi (sieć, timeout). Mail MÓGŁ pójść,
 //               więc rezerwacji NIE zwalniamy od ręki — czekamy na wygaśnięcie
 //               dzierżawy, żeby nie wysłać drugiego maila o tym samym odczycie.
-async function sendResendEmail({ env, to, subject, html }) {
+async function sendResendEmail({ env, to, subject, html, idempotencyKey }) {
   if (!env.resendApiKey) return { ok: false, reason: "no_resend_key", delivered: "no" };
   let res;
   try {
@@ -54,6 +88,10 @@ async function sendResendEmail({ env, to, subject, html }) {
       headers: {
         Authorization: `Bearer ${env.resendApiKey}`,
         "Content-Type": "application/json",
+        // Ponowienie tej samej wiadomości nie tworzy drugiego maila: Resend trzyma
+        // klucz 24 h i na powtórkę oddaje pierwotną wysyłkę.
+        // https://resend.com/docs/dashboard/emails/idempotency-keys
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
       body: JSON.stringify({
         from: "Fresh Market <newsletter@freshmarket.eu>",
@@ -180,21 +218,26 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
     }
 
     const groupIds = group.rows.map((row) => row.legacy_id);
+    const titleById = new Map(group.rows.map((row) => [row.legacy_id, row.offerTitle]));
 
-    // [fix/supplier-read-notify-once v2] REZERWUJ → WYŚLIJ → POTWIERDŹ.
+    // [fix/supplier-read-notify-once v3] REZERWUJ → WYŚLIJ → POTWIERDŹ,
+    // z TOŻSAMOŚCIĄ WIADOMOŚCI stałą między próbami.
     //
     // Odczyt wyzwalają dwie niezależne ścieżki — webhook Resend (email.opened)
-    // i panel kupca — i potrafią trafić w tę samą chwilę. Rezerwacja rozstrzyga,
-    // która z nich pisze o których propozycjach.
+    // i panel kupca. Rezerwacja rozstrzyga, która z nich pisze o których
+    // propozycjach; `supplierNotifyMessageId` rozstrzyga, czy ponowienie jest
+    // TĄ SAMĄ wiadomością, czy nową. Pierwsze bez drugiego tylko odsuwało dubla
+    // o długość dzierżawy (review Codexa, tura 2).
     //
-    // RPC zwraca ID wierszy, które FAKTYCZNIE zajął, i mail powstaje wyłącznie
-    // z nich. Sama liczba zajętych nie wystarczy: gdy jedna ścieżka obsługuje
-    // propozycję A, a druga paczkę A+B, druga zajmie samo B — ale wysyłając mail
-    // o całej swojej grupie napisałaby też o A, o którym pisze już pierwsza.
-    const claimToken = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-    const { data: claimData, error: claimErr } = await supaSvc.rpc("claim_legacy_sends_supplier_notify", {
+    // RPC zwraca stan KAŻDEGO pytanego wiersza, nie samą liczbę zajętych: gdy
+    // jedna ścieżka obsługuje propozycję A, a druga paczkę A+B, druga zajmie
+    // samo B — i tylko o B wolno jej napisać.
+    const claimToken = randomToken("claim");
+    const newMessageId = randomToken("fmr");
+    const { data: claimRows, error: claimErr } = await supaSvc.rpc("claim_legacy_sends_supplier_notify", {
       p_legacy_ids: groupIds,
       p_claim_token: claimToken,
+      p_new_message_id: newMessageId,
     });
     if (claimErr) {
       // Nie wiemy, czy rezerwacja usiadła — wysyłka mogłaby się zdublować. Nie wysyłamy.
@@ -209,99 +252,146 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       continue;
     }
 
-    // RPC zwraca `setof bigint`; PostgREST podaje to jako listę liczb, a przy
-    // niektórych klientach jako listę obiektów — obsługujemy obie postaci.
-    const claimedIds = new Set(
-      (Array.isArray(claimData) ? claimData : claimData == null ? [] : [claimData])
-        .map((item) => Number(item && typeof item === "object" ? item.legacy_id ?? item.claim_legacy_sends_supplier_notify : item))
-        .filter((id) => Number.isFinite(id)),
-    );
-    const claimedRows = group.rows.filter((row) => claimedIds.has(row.legacy_id));
-    if (!claimedRows.length) {
-      // Druga ścieżka zajęła te wiersze wcześniej i to ona wysyła. Nie jest to błąd.
-      notifications.push({
-        ok: true,
-        status: "already_notified",
-        to: owner.email,
-        legacy_ids: groupIds,
-      });
-      continue;
-    }
-
-    const claimedLegacyIds = claimedRows.map((row) => row.legacy_id);
-    async function releaseClaim() {
-      const { error } = await supaSvc.rpc("release_legacy_sends_supplier_notify_claim", {
-        p_legacy_ids: claimedLegacyIds,
-        p_claim_token: claimToken,
-      });
-      return error ? error.message : null;
-    }
-
-    const openedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
-    const offers = claimedRows.map((row) => ({ title: row.offerTitle }));
-    const tpl = pickTemplate("offers_read_by_buyer", {
-      companyName: group.company.name || "",
-      contactName: owner.name || null,
-      offers,
-      offerCount: offers.length,
-      retailerName: group.retailer?.name || "",
-      openedVia,
-      openedAt,
-      appUrl: env.b2bAppUrl,
-      // [P2-backend-mails C2] locale → tplOffersReadByBuyer dispatcher.
-      locale: owner.locale || "pl",
-    });
-    if (!tpl) {
-      // Rezerwacja bez wysyłki zablokowałaby powiadomienie do wygaśnięcia dzierżawy.
-      const releaseError = await releaseClaim();
-      notifications.push({ ok: false, status: "error", reason: "no_template", legacy_ids: claimedLegacyIds, claim_released: !releaseError, release_error: releaseError });
-      continue;
-    }
-
-    const sent = await sendResendEmail({ env, to: owner.email, subject: tpl.subject, html: tpl.html });
-    if (!sent.ok) {
-      // Poczta odmówiła przyjęcia (delivered "no") → zwalniamy rezerwację i kolejne
-      // zdarzenie odczytu spróbuje jeszcze raz. Wcześniej znacznik zostawał na stałe
-      // i dostawca nie dostawał powiadomienia NIGDY.
-      // Gdy nie wiemy, czy mail poszedł (delivered "unknown"), rezerwacji nie ruszamy
-      // — wygaśnie sama, więc ewentualne ponowienie jest odsunięte w czasie zamiast
-      // natychmiast dokładać drugi mail o tym samym odczycie.
-      const canRetry = sent.delivered === "no";
-      const releaseError = canRetry ? await releaseClaim() : null;
+    const states = normalizeClaimRows(claimRows);
+    const claimed = states.filter((row) => row.state === "claimed");
+    // Niepewny wynik starszy niż okno idempotencji poczty. Mail mógł dotrzeć,
+    // a klucz już nie chroni — automatyczne ponowienie wysłałoby dubla. To jest
+    // sprawa do wyjaśnienia przez człowieka, nie do cichego powtórzenia.
+    const needsReview = states.filter((row) => row.state === "needs_review");
+    if (needsReview.length) {
       notifications.push({
         ok: false,
-        status: "error",
-        reason: sent.reason,
+        status: "needs_review",
+        reason: "uncertain_outside_idempotency_window",
         to: owner.email,
-        legacy_ids: claimedLegacyIds,
-        delivery: sent.delivered,
-        claim_released: canRetry && !releaseError,
-        release_error: releaseError,
+        legacy_ids: needsReview.map((row) => row.legacy_id),
+        message_ids: [...new Set(needsReview.map((row) => row.message_id).filter(Boolean))],
       });
+    }
+    if (!claimed.length) {
+      if (!needsReview.length) {
+        // Druga ścieżka zajęła te wiersze wcześniej i to ona wysyła. Nie jest to błąd.
+        notifications.push({
+          ok: true,
+          status: "already_notified",
+          to: owner.email,
+          legacy_ids: groupIds,
+        });
+      }
       continue;
     }
 
-    const { data: confirmedCount, error: confirmErr } = await supaSvc.rpc("confirm_legacy_sends_supplier_notified", {
-      p_legacy_ids: claimedLegacyIds,
-      p_claim_token: claimToken,
-      p_via: openedVia,
-      p_batch_size: claimedLegacyIds.length,
-      p_notified_at: new Date().toISOString(),
-    });
+    // Zajęte wiersze mogą należeć do RÓŻNYCH wiadomości: część to ponowienie
+    // wiadomości sprzed wygasłej dzierżawy (stare messageId), część zaczyna nową.
+    // Każda idzie osobnym mailem ze swoim kluczem.
+    const byMessage = new Map();
+    for (const row of claimed) {
+      const key = row.message_id || newMessageId;
+      if (!byMessage.has(key)) byMessage.set(key, []);
+      byMessage.get(key).push(row.legacy_id);
+    }
 
-    notifications.push({
-      ok: !confirmErr,
-      // Mail POSZEDŁ. Nieudane potwierdzenie to osobna sprawa: rezerwacja wygaśnie
-      // i dostawca może dostać powiadomienie ponownie — raportujemy to wprost.
-      status: "sent",
-      message_id: sent.message_id,
-      to: owner.email,
-      offer_count: offers.length,
-      legacy_ids: claimedLegacyIds,
-      confirm_ok: !confirmErr,
-      confirm_rows: confirmErr ? null : Number(confirmedCount ?? 0),
-      confirm_error: confirmErr ? confirmErr.message : undefined,
-    });
+    for (const [messageId, legacyIds] of byMessage) {
+      const releaseClaim = async () => {
+        const { error } = await supaSvc.rpc("release_legacy_sends_supplier_notify_claim", {
+          p_legacy_ids: legacyIds,
+          p_claim_token: claimToken,
+        });
+        return error ? error.message : null;
+      };
+      const markUncertain = async (reason) => {
+        const { error } = await supaSvc.rpc("mark_legacy_sends_supplier_notify_uncertain", {
+          p_legacy_ids: legacyIds,
+          p_claim_token: claimToken,
+          p_reason: reason,
+        });
+        return error ? error.message : null;
+      };
+
+      const openedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
+      const offers = legacyIds.map((id) => ({ title: titleById.get(id) }));
+      const tpl = pickTemplate("offers_read_by_buyer", {
+        companyName: group.company.name || "",
+        contactName: owner.name || null,
+        offers,
+        offerCount: offers.length,
+        retailerName: group.retailer?.name || "",
+        openedVia,
+        openedAt,
+        appUrl: env.b2bAppUrl,
+        // [P2-backend-mails C2] locale → tplOffersReadByBuyer dispatcher.
+        locale: owner.locale || "pl",
+      });
+      if (!tpl) {
+        // Rezerwacja bez wysyłki blokowałaby powiadomienie do wygaśnięcia dzierżawy.
+        const releaseError = await releaseClaim();
+        notifications.push({ ok: false, status: "error", reason: "no_template", legacy_ids: legacyIds, message_id: messageId, claim_released: !releaseError, release_error: releaseError });
+        continue;
+      }
+
+      const sent = await sendResendEmail({
+        env, to: owner.email, subject: tpl.subject, html: tpl.html,
+        idempotencyKey: messageId,
+      });
+      if (!sent.ok) {
+        // Poczta jednoznacznie odmówiła (delivered "no") → mail nie powstał,
+        // zwalniamy rezerwację i kolejne zdarzenie zacznie od czystej wiadomości.
+        // Wcześniej znacznik zostawał na stałe i dostawca nie dostawał nic NIGDY.
+        //
+        // Gdy wyniku nie znamy (delivered "unknown") → rezerwacja i messageId
+        // ZOSTAJĄ. Ponowienie po wygaśnięciu dzierżawy pójdzie tym samym
+        // Idempotency-Key, więc poczta nie utworzy drugiej wiadomości.
+        const definiteFailure = sent.delivered === "no";
+        const releaseError = definiteFailure ? await releaseClaim() : null;
+        const uncertainError = definiteFailure ? null : await markUncertain(sent.reason);
+        notifications.push({
+          ok: false,
+          status: "error",
+          reason: sent.reason,
+          to: owner.email,
+          legacy_ids: legacyIds,
+          message_id: messageId,
+          delivery: sent.delivered,
+          claim_released: definiteFailure && !releaseError,
+          release_error: releaseError,
+          uncertain_error: uncertainError,
+        });
+        continue;
+      }
+
+      const { data: confirmedCount, error: confirmErr } = await supaSvc.rpc("confirm_legacy_sends_supplier_notified", {
+        p_legacy_ids: legacyIds,
+        p_claim_token: claimToken,
+        p_via: openedVia,
+        p_batch_size: legacyIds.length,
+        p_notified_at: new Date().toISOString(),
+      });
+      // Potwierdzenie CZĘŚCI wierszy to nie sukces: niepotwierdzone wrócą po
+      // wygaśnięciu dzierżawy. Brak błędu bazy nie dowodzi, że zapis objął wszystko.
+      const confirmed = confirmErr ? 0 : Number(confirmedCount ?? 0);
+      const confirmComplete = !confirmErr && confirmed === legacyIds.length;
+      // Mail POSZEDŁ — to jest fakt i status go odzwierciedla. Niekompletny zapis
+      // notujemy jako niepewny: ponowienie pójdzie tym samym kluczem, więc dostawca
+      // nie dostanie drugiego maila, a ślad zostaje w raporcie.
+      const confirmUncertainError = confirmComplete
+        ? null
+        : await markUncertain(confirmErr ? `confirm_failed: ${confirmErr.message}` : `confirm_partial: ${confirmed}/${legacyIds.length}`);
+
+      notifications.push({
+        ok: confirmComplete,
+        status: "sent",
+        message_id: messageId,
+        provider_message_id: sent.message_id,
+        to: owner.email,
+        offer_count: offers.length,
+        legacy_ids: legacyIds,
+        confirm_ok: confirmComplete,
+        confirm_rows: confirmed,
+        confirm_expected: legacyIds.length,
+        confirm_error: confirmErr ? confirmErr.message : undefined,
+        uncertain_error: confirmUncertainError,
+      });
+    }
   }
 
   const sentCount = notifications.filter((n) => n.status === "sent").length;
