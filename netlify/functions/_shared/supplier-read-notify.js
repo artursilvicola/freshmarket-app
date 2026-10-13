@@ -10,16 +10,23 @@
  *
  *   claim          zajmuje wiersze, nadaje/utrzymuje messageId i zwraca stan
  *                  każdego z nich; mail powstaje tylko z zajętych
+ *   ensure_message zapisuje NIEZMIENNĄ treść wiadomości albo oddaje już zapisaną
  *   confirm        po udanej wysyłce stawia supplierNotifiedAt; wołający sprawdza
  *                  KOMPLETNOŚĆ potwierdzenia, nie tylko brak błędu
- *   release        po jednoznacznej odmowie poczty — mail nie powstał
+ *   release        gdy poczta odrzuciła ładunek — wiadomość nie powstała
  *   mark_uncertain gdy wyniku nie znamy; rezerwacja i messageId zostają
  *
  * Rezerwacja pilnuje, by dwie ścieżki nie pisały naraz. Sama nie wystarcza:
  * po jej wygaśnięciu ponowienie wysłałoby drugi mail. Dlatego każda wiadomość
  * ma stały `supplierNotifyMessageId`, który jedzie do Resend jako
- * `Idempotency-Key` (ważny 24 h). Po tym oknie niepewny wynik nie jest
- * ponawiany automatycznie — wraca jako `needs_review`.
+ * `Idempotency-Key`. Klucz wiąże się jednak z KONKRETNYM ładunkiem — ten sam
+ * klucz z inną treścią to 409, nie deduplikacja — więc treść zapisujemy raz
+ * w `legacy_send_notify_messages` i ponowienie wysyła dokładnie ją.
+ *
+ * Po bezpiecznym oknie (24 h = ochrona Resend) NIEPOTWIERDZONY wiersz nie jest
+ * ponawiany automatycznie i wraca jako `needs_review`. Blokada wynika z samego
+ * braku potwierdzenia, nie ze znacznika niepewności — inaczej awaria tego zapisu
+ * otwierałaby drogę do dubla.
  *
  * Migracja 20261013090000_supplier_notify_claim.sql.
  */
@@ -73,12 +80,20 @@ async function findCompanyBySupplierKey(supaSvc, supplierKey) {
   return byId || null;
 }
 
-// `delivered` rozstrzyga, czy wolno zwolnić rezerwację i ponowić:
-//   "no"      — wiemy, że poczta wiadomości NIE przyjęła (brak klucza, odpowiedź
-//               z błędem). Zwalniamy rezerwację, ponowienie jest bezpieczne.
-//   "unknown" — żądanie nie dotarło do odpowiedzi (sieć, timeout). Mail MÓGŁ pójść,
-//               więc rezerwacji NIE zwalniamy od ręki — czekamy na wygaśnięcie
-//               dzierżawy, żeby nie wysłać drugiego maila o tym samym odczycie.
+// Odpowiedzi poczty, przy których wiadomość NA PEWNO nie powstała i nie powstanie
+// w tej postaci: zły ładunek albo odmowa dostępu. Tylko one pozwalają skasować
+// tożsamość wiadomości i zacząć od nowa.
+const RESEND_PAYLOAD_REJECTED = new Set([400, 401, 403, 404, 422]);
+
+// `delivered` rozstrzyga, co wolno zrobić z rezerwacją:
+//   "no"       — poczta ODRZUCIŁA ładunek. Zwalniamy rezerwację i tożsamość,
+//                kolejne zdarzenie zbuduje czystą wiadomość.
+//   "conflict" — 409: ten klucz już istnieje z INNYM ładunkiem, czyli wiadomość
+//                o tej tożsamości powstała wcześniej. Dostawca ją dostał — nie
+//                wysyłamy drugiej i NIE kasujemy tożsamości.
+//   "unknown"  — brak odpowiedzi albo błąd serwera poczty. Mail MÓGŁ pójść, więc
+//                rezerwacja i tożsamość zostają; ponowienie pójdzie tym samym
+//                kluczem i tym samym ładunkiem, więc Resend go zdeduplikuje.
 async function sendResendEmail({ env, to, subject, html, idempotencyKey }) {
   if (!env.resendApiKey) return { ok: false, reason: "no_resend_key", delivered: "no" };
   let res;
@@ -88,8 +103,9 @@ async function sendResendEmail({ env, to, subject, html, idempotencyKey }) {
       headers: {
         Authorization: `Bearer ${env.resendApiKey}`,
         "Content-Type": "application/json",
-        // Ponowienie tej samej wiadomości nie tworzy drugiego maila: Resend trzyma
-        // klucz 24 h i na powtórkę oddaje pierwotną wysyłkę.
+        // Resend wiąże klucz z KONKRETNYM ładunkiem i trzyma go 24 h: ten sam klucz
+        // z tą samą treścią to deduplikacja, z inną treścią to błąd 409. Dlatego
+        // ponowienie wysyła zapisaną, niezmienną wiadomość, a nie składaną od nowa.
         // https://resend.com/docs/dashboard/emails/idempotency-keys
         ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
       },
@@ -105,7 +121,10 @@ async function sendResendEmail({ env, to, subject, html, idempotencyKey }) {
   }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    return { ok: false, reason: `resend_${res.status}: ${detail}`, delivered: "no" };
+    const delivered = res.status === 409
+      ? "conflict"
+      : (RESEND_PAYLOAD_REJECTED.has(res.status) ? "no" : "unknown");
+    return { ok: false, reason: `resend_${res.status}: ${detail}`, delivered, status: res.status };
   }
   const r = await res.json().catch(() => ({}));
   return { ok: true, message_id: r.id || null };
@@ -308,6 +327,16 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
         return error ? error.message : null;
       };
 
+      // [review Codexa, tura 3] Treść wiadomości jest NIEZMIENNA. Resend wiąże
+      // Idempotency-Key z konkretnym ładunkiem: ten sam klucz z inną treścią to
+      // błąd 409, nie cicha deduplikacja. Składanie maila od nowa przy każdej
+      // próbie zmieniało godzinę odczytu, a po częściowym potwierdzeniu paczki
+      // A+B zostawiało samo B — czyli za każdym razem inny ładunek.
+      //
+      // Dlatego wiadomość (adresat, temat, HTML, PEŁNA lista propozycji) ląduje
+      // raz w `legacy_send_notify_messages`, a ponowienie wysyła DOKŁADNIE ją.
+      // RPC „zapisz albo oddaj zapisaną" rozstrzyga też wyścig dwóch ścieżek:
+      // przegrany dostaje treść zwycięzcy, nie swoją.
       const openedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
       const offers = legacyIds.map((id) => ({ title: titleById.get(id) }));
       const tpl = pickTemplate("offers_read_by_buyer", {
@@ -329,30 +358,55 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
         continue;
       }
 
+      const { data: storedRows, error: storeErr } = await supaSvc.rpc("ensure_legacy_send_notify_message", {
+        p_message_id: messageId,
+        p_to_email: owner.email,
+        p_subject: tpl.subject,
+        p_html: tpl.html,
+        p_legacy_ids: legacyIds,
+      });
+      const stored = Array.isArray(storedRows) ? storedRows[0] : storedRows;
+      if (storeErr || !stored) {
+        // Bez zapisanej treści ponowienie byłoby inną wiadomością pod tym samym
+        // kluczem. Nie wysyłamy; wynik nie jest niepewny, bo poczty nie dotykaliśmy.
+        const releaseError = await releaseClaim();
+        notifications.push({
+          ok: false, status: "error", reason: "message_store_failed",
+          to: owner.email, legacy_ids: legacyIds, message_id: messageId,
+          store_error: storeErr ? storeErr.message : "brak zapisanej wiadomości",
+          claim_released: !releaseError, release_error: releaseError,
+        });
+        continue;
+      }
+
+      // Wysyłamy to, co zwróciła baza — nie to, co właśnie zbudowaliśmy.
       const sent = await sendResendEmail({
-        env, to: owner.email, subject: tpl.subject, html: tpl.html,
+        env,
+        to: stored.to_email,
+        subject: stored.subject,
+        html: stored.html,
         idempotencyKey: messageId,
       });
-      if (!sent.ok) {
-        // Poczta jednoznacznie odmówiła (delivered "no") → mail nie powstał,
-        // zwalniamy rezerwację i kolejne zdarzenie zacznie od czystej wiadomości.
-        // Wcześniej znacznik zostawał na stałe i dostawca nie dostawał nic NIGDY.
-        //
-        // Gdy wyniku nie znamy (delivered "unknown") → rezerwacja i messageId
-        // ZOSTAJĄ. Ponowienie po wygaśnięciu dzierżawy pójdzie tym samym
-        // Idempotency-Key, więc poczta nie utworzy drugiej wiadomości.
-        const definiteFailure = sent.delivered === "no";
-        const releaseError = definiteFailure ? await releaseClaim() : null;
-        const uncertainError = definiteFailure ? null : await markUncertain(sent.reason);
+
+      // 409 = wiadomość o tej tożsamości już u poczty istnieje. Dostawca ją dostał,
+      // więc traktujemy to jak wysłane: drugiej nie wysyłamy, tożsamości nie kasujemy.
+      const duplicateSuppressed = !sent.ok && sent.delivered === "conflict";
+      if (!sent.ok && !duplicateSuppressed) {
+        // „no" = poczta odrzuciła ładunek → wiadomość nie powstała, pełny reset.
+        // „unknown" = mail MÓGŁ pójść → rezerwacja i tożsamość zostają, a ponowienie
+        // pójdzie tym samym kluczem i tym samym ładunkiem, więc Resend je zdeduplikuje.
+        const payloadRejected = sent.delivered === "no";
+        const releaseError = payloadRejected ? await releaseClaim() : null;
+        const uncertainError = payloadRejected ? null : await markUncertain(sent.reason);
         notifications.push({
           ok: false,
           status: "error",
           reason: sent.reason,
-          to: owner.email,
+          to: stored.to_email,
           legacy_ids: legacyIds,
           message_id: messageId,
           delivery: sent.delivered,
-          claim_released: definiteFailure && !releaseError,
+          claim_released: payloadRejected && !releaseError,
           release_error: releaseError,
           uncertain_error: uncertainError,
         });
@@ -371,8 +425,8 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       const confirmed = confirmErr ? 0 : Number(confirmedCount ?? 0);
       const confirmComplete = !confirmErr && confirmed === legacyIds.length;
       // Mail POSZEDŁ — to jest fakt i status go odzwierciedla. Niekompletny zapis
-      // notujemy jako niepewny: ponowienie pójdzie tym samym kluczem, więc dostawca
-      // nie dostanie drugiego maila, a ślad zostaje w raporcie.
+      // notujemy jako niepewny: ponowienie pójdzie tym samym kluczem i tą samą
+      // treścią, więc dostawca nie dostanie drugiego maila, a ślad zostaje w raporcie.
       const confirmUncertainError = confirmComplete
         ? null
         : await markUncertain(confirmErr ? `confirm_failed: ${confirmErr.message}` : `confirm_partial: ${confirmed}/${legacyIds.length}`);
@@ -381,10 +435,12 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
         ok: confirmComplete,
         status: "sent",
         message_id: messageId,
-        provider_message_id: sent.message_id,
-        to: owner.email,
+        provider_message_id: sent.message_id ?? null,
+        duplicate_suppressed: duplicateSuppressed,
+        to: stored.to_email,
         offer_count: offers.length,
         legacy_ids: legacyIds,
+        message_legacy_ids: stored.legacy_ids,
         confirm_ok: confirmComplete,
         confirm_rows: confirmed,
         confirm_expected: legacyIds.length,

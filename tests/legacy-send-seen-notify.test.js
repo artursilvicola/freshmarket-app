@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { markLegacySendsSeen } from "../netlify/functions/_shared/legacy-send-seen.js";
 
 function fakeDb({ credits = 0, locale = 'pl' } = {}) {
-  const state = { credits, charges: 0, updates: 0, notifyRpc: 0, row: { id: "send-1", legacy_id: 1, supplier_legacy_id: "supplier-1", retailer_id: 1, offer_legacy_id: 77, status: "sent", data: {} } };
+  const state = { credits, charges: 0, updates: 0, notifyRpc: 0, messages: new Map(), row: { id: "send-1", legacy_id: 1, supplier_legacy_id: "supplier-1", retailer_id: 1, offer_legacy_id: 77, status: "sent", data: {} } };
   const supa = {
     from(table) {
       return {
@@ -22,6 +22,16 @@ function fakeDb({ credits = 0, locale = 'pl' } = {}) {
       // [fix/supplier-read-notify-once v2] rezerwacja → wysyłka → potwierdzenie
       // (migracja 20261013090000). Wszystkie trzy scalają tylko własne pola
       // z AKTUALNYM wierszem, tak jak w bazie.
+      if (name === "ensure_legacy_send_notify_message") {
+        // niezmienna treść wiadomości: zapisz albo oddaj już zapisaną
+        if (!state.messages.has(args.p_message_id)) {
+          state.messages.set(args.p_message_id, {
+            message_id: args.p_message_id, to_email: args.p_to_email, subject: args.p_subject,
+            html: args.p_html, legacy_ids: [...args.p_legacy_ids], created_at: new Date().toISOString(),
+          });
+        }
+        return { data: [state.messages.get(args.p_message_id)], error: null };
+      }
       if (name === "claim_legacy_sends_supplier_notify") {
         state.notifyRpc += 1;
         const id = Number(row.legacy_id);
