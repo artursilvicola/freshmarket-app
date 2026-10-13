@@ -19,11 +19,27 @@ function fakeDb({ credits = 0, locale = 'pl' } = {}) {
     },
     async rpc(name, args) {
       const row = state.row;
-      if (name === "mark_legacy_sends_supplier_notified") {
+      // [fix/supplier-read-notify-once v2] rezerwacja → wysyłka → potwierdzenie
+      // (migracja 20261013090000). Wszystkie trzy scalają tylko własne pola
+      // z AKTUALNYM wierszem, tak jak w bazie.
+      if (name === "claim_legacy_sends_supplier_notify") {
         state.notifyRpc += 1;
-        if (row.data.supplierNotifiedAt) return { data: 0, error: null };
-        // scalanie TYLKO 3 pól z AKTUALNYM wierszem (jak w bazie)
-        row.data = { ...row.data, supplierNotifiedAt: args.p_notified_at, supplierNotifiedVia: args.p_via, supplierNotifiedBatchSize: args.p_batch_size };
+        if (row.data.supplierNotifiedAt) return { data: [], error: null };
+        const token = row.data.supplierNotifyClaimToken;
+        if (token && token !== args.p_claim_token) return { data: [], error: null };
+        row.data = { ...row.data, supplierNotifyClaimToken: args.p_claim_token, supplierNotifyClaimedAt: new Date().toISOString() };
+        return { data: [Number(row.legacy_id)], error: null };
+      }
+      if (name === "confirm_legacy_sends_supplier_notified") {
+        if (row.data.supplierNotifyClaimToken !== args.p_claim_token || row.data.supplierNotifiedAt) return { data: 0, error: null };
+        const { supplierNotifyClaimToken, supplierNotifyClaimedAt, ...reszta } = row.data;
+        row.data = { ...reszta, supplierNotifiedAt: args.p_notified_at, supplierNotifiedVia: args.p_via, supplierNotifiedBatchSize: args.p_batch_size };
+        return { data: 1, error: null };
+      }
+      if (name === "release_legacy_sends_supplier_notify_claim") {
+        if (row.data.supplierNotifyClaimToken !== args.p_claim_token || row.data.supplierNotifiedAt) return { data: 0, error: null };
+        const { supplierNotifyClaimToken, supplierNotifyClaimedAt, ...reszta } = row.data;
+        row.data = reszta;
         return { data: 1, error: null };
       }
       if (name !== "mark_legacy_send_seen") return { data: null, error: { code: "PGRST202", message: "not found" } };
@@ -100,17 +116,17 @@ describe("markLegacySendsSeen + prawdziwy notifier (fetch = atrapa)", () => {
     expect(r2.notificationSummary).toBeNull();
     expect(state.notifyRpc).toBe(1);
 
-    // [fix/supplier-read-notify-once] Znacznik jest ZAJMOWANY PRZED wysyłką. Gdy RPC
-    // znacznika padnie, nie wiemy czy usiadł — więc maila NIE wysyłamy. Wcześniej mail
+    // [fix/supplier-read-notify-once] Wiersz jest REZERWOWANY PRZED wysyłką. Gdy RPC
+    // rezerwacji padnie, nie wiemy czy usiadła — więc maila NIE wysyłamy. Wcześniej mail
     // szedł mimo błędu znacznika i kolejny odczyt wysyłał go po raz drugi.
     const { supa: supa2 } = fakeDb({ credits: 1 });
     const origRpc = supa2.rpc.bind(supa2);
-    supa2.rpc = async (name, args) => (name === "mark_legacy_sends_supplier_notified" ? { data: null, error: { message: "boom" } } : origRpc(name, args));
+    supa2.rpc = async (name, args) => (name === "claim_legacy_sends_supplier_notify" ? { data: null, error: { message: "boom" } } : origRpc(name, args));
     const wyslane = vi.fn(async () => ({ ok: true, json: async () => ({ id: "mock-mail" }) }));
     globalThis.fetch = wyslane;
     const r3 = await call(supa2, true);
     const n = r3.notificationSummary.notifications[0];
-    expect(n).toMatchObject({ ok: false, status: "error", reason: "marker_failed", marker_error: "boom" });
+    expect(n).toMatchObject({ ok: false, status: "error", reason: "claim_failed", claim_error: "boom" });
     expect(wyslane).not.toHaveBeenCalled();
   });
 

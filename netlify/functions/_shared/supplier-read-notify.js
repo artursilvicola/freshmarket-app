@@ -2,8 +2,16 @@
  * Supplier notification when buyer sees PreConnect offers.
  *
  * One email is sent per supplier + retailer + seen event, even when a buyer
- * sees several offers in the same batch. Every legacy_send still gets its own
- * supplierNotifiedAt marker, so retries stay idempotent.
+ * sees several offers in the same batch.
+ *
+ * Dwie niezależne ścieżki wyzwalają odczyt (webhook Resend `email.opened`
+ * i panel kupca), więc powiadomienie idzie przez rezerwację:
+ *
+ *   claim   → zajmuje wiersze i zwraca ICH id; mail powstaje tylko z nich
+ *   confirm → po udanej wysyłce stawia supplierNotifiedAt i zdejmuje rezerwację
+ *   release → po odmowie poczty zdejmuje rezerwację, żeby ponowienie było możliwe
+ *
+ * Migracja 20261013090000_supplier_notify_claim.sql.
  */
 
 import { pickTemplate } from "./supplier-email-templates.js";
@@ -31,24 +39,35 @@ async function findCompanyBySupplierKey(supaSvc, supplierKey) {
   return byId || null;
 }
 
+// `delivered` rozstrzyga, czy wolno zwolnić rezerwację i ponowić:
+//   "no"      — wiemy, że poczta wiadomości NIE przyjęła (brak klucza, odpowiedź
+//               z błędem). Zwalniamy rezerwację, ponowienie jest bezpieczne.
+//   "unknown" — żądanie nie dotarło do odpowiedzi (sieć, timeout). Mail MÓGŁ pójść,
+//               więc rezerwacji NIE zwalniamy od ręki — czekamy na wygaśnięcie
+//               dzierżawy, żeby nie wysłać drugiego maila o tym samym odczycie.
 async function sendResendEmail({ env, to, subject, html }) {
-  if (!env.resendApiKey) return { ok: false, reason: "no_resend_key" };
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.resendApiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: "Fresh Market <newsletter@freshmarket.eu>",
-      to: [to],
-      subject,
-      html,
-    }),
-  });
+  if (!env.resendApiKey) return { ok: false, reason: "no_resend_key", delivered: "no" };
+  let res;
+  try {
+    res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "Fresh Market <newsletter@freshmarket.eu>",
+        to: [to],
+        subject,
+        html,
+      }),
+    });
+  } catch (e) {
+    return { ok: false, reason: `resend_unreachable: ${e?.message || e}`, delivered: "unknown" };
+  }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    return { ok: false, reason: `resend_${res.status}: ${detail}` };
+    return { ok: false, reason: `resend_${res.status}: ${detail}`, delivered: "no" };
   }
   const r = await res.json().catch(() => ({}));
   return { ok: true, message_id: r.id || null };
@@ -119,7 +138,6 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
           company,
           retailer: retailerMap.get(Number(row.retailer_id)) || null,
           rows: [],
-          offers: [],
         });
       }
 
@@ -127,8 +145,10 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       const offer = offerMap.get(String(offerId)) || {};
       const title = pickOfferTitle(offer, offerId || row.legacy_id);
       const group = groups.get(groupKey);
-      group.rows.push(row);
-      group.offers.push({ title });
+      // Tytuł trzymamy PRZY wierszu, nie w osobnej liście grupy. Mail powstaje
+      // dopiero z wierszy, które rezerwacja faktycznie zajęła — równoległa ścieżka
+      // mogła część z nich zabrać wcześniej i to ona o nich pisze.
+      group.rows.push({ legacy_id: Number(row.legacy_id), offerTitle: title });
     } catch (e) {
       errors.push({ legacy_id: row.legacy_id, ok: false, status: "error", reason: e?.message || String(e) });
     }
@@ -159,53 +179,45 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       continue;
     }
 
-    const openedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
-    const tpl = pickTemplate("offers_read_by_buyer", {
-      companyName: group.company.name || "",
-      contactName: owner.name || null,
-      offers: group.offers,
-      offerCount: group.offers.length,
-      retailerName: group.retailer?.name || "",
-      openedVia,
-      openedAt,
-      appUrl: env.b2bAppUrl,
-      // [P2-backend-mails C2] locale → tplOffersReadByBuyer dispatcher.
-      locale: owner.locale || "pl",
-    });
-    if (!tpl) {
-      notifications.push({ ok: false, status: "error", reason: "no_template" });
-      continue;
-    }
+    const groupIds = group.rows.map((row) => row.legacy_id);
 
-    // [fix/supplier-read-notify-once] NAJPIERW zajmij znacznik, DOPIERO POTEM wyślij.
-    // Odczyt wyzwalają dwie niezależne ścieżki — webhook Resend (email.opened) i panel
-    // kupca — i potrafią trafić w tę samą chwilę. Przy kolejności „sprawdź → wyślij →
-    // oznacz" obie widziały pusty znacznik i dostawca dostawał DWA maile o jednym
-    // odczycie. RPC jest warunkowy (`and (data->>'supplierNotifiedAt') is null`)
-    // i zwraca liczbę wierszy, które faktycznie zajął — więc tylko jedna ścieżka
-    // dostaje > 0 i tylko ona wysyła.
-    const notifiedAt = new Date().toISOString();
-    const groupIds = group.rows.map((row) => Number(row.legacy_id));
-    const { data: markedCount, error: markErr } = await supaSvc.rpc("mark_legacy_sends_supplier_notified", {
+    // [fix/supplier-read-notify-once v2] REZERWUJ → WYŚLIJ → POTWIERDŹ.
+    //
+    // Odczyt wyzwalają dwie niezależne ścieżki — webhook Resend (email.opened)
+    // i panel kupca — i potrafią trafić w tę samą chwilę. Rezerwacja rozstrzyga,
+    // która z nich pisze o których propozycjach.
+    //
+    // RPC zwraca ID wierszy, które FAKTYCZNIE zajął, i mail powstaje wyłącznie
+    // z nich. Sama liczba zajętych nie wystarczy: gdy jedna ścieżka obsługuje
+    // propozycję A, a druga paczkę A+B, druga zajmie samo B — ale wysyłając mail
+    // o całej swojej grupie napisałaby też o A, o którym pisze już pierwsza.
+    const claimToken = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    const { data: claimData, error: claimErr } = await supaSvc.rpc("claim_legacy_sends_supplier_notify", {
       p_legacy_ids: groupIds,
-      p_via: openedVia,
-      p_batch_size: group.rows.length,
-      p_notified_at: notifiedAt,
+      p_claim_token: claimToken,
     });
-    if (markErr) {
-      // Nie wiemy, czy znacznik usiadł — wysyłka mogłaby się zdublować. Nie wysyłamy.
+    if (claimErr) {
+      // Nie wiemy, czy rezerwacja usiadła — wysyłka mogłaby się zdublować. Nie wysyłamy.
       notifications.push({
         ok: false,
         status: "error",
-        reason: "marker_failed",
+        reason: "claim_failed",
         to: owner.email,
         legacy_ids: groupIds,
-        marker_error: markErr.message,
+        claim_error: claimErr.message,
       });
       continue;
     }
-    const claimed = Number(markedCount ?? 0);
-    if (!claimed) {
+
+    // RPC zwraca `setof bigint`; PostgREST podaje to jako listę liczb, a przy
+    // niektórych klientach jako listę obiektów — obsługujemy obie postaci.
+    const claimedIds = new Set(
+      (Array.isArray(claimData) ? claimData : claimData == null ? [] : [claimData])
+        .map((item) => Number(item && typeof item === "object" ? item.legacy_id ?? item.claim_legacy_sends_supplier_notify : item))
+        .filter((id) => Number.isFinite(id)),
+    );
+    const claimedRows = group.rows.filter((row) => claimedIds.has(row.legacy_id));
+    if (!claimedRows.length) {
       // Druga ścieżka zajęła te wiersze wcześniej i to ona wysyła. Nie jest to błąd.
       notifications.push({
         ok: true,
@@ -216,31 +228,79 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       continue;
     }
 
+    const claimedLegacyIds = claimedRows.map((row) => row.legacy_id);
+    async function releaseClaim() {
+      const { error } = await supaSvc.rpc("release_legacy_sends_supplier_notify_claim", {
+        p_legacy_ids: claimedLegacyIds,
+        p_claim_token: claimToken,
+      });
+      return error ? error.message : null;
+    }
+
+    const openedAt = new Date().toISOString().slice(0, 16).replace("T", " ");
+    const offers = claimedRows.map((row) => ({ title: row.offerTitle }));
+    const tpl = pickTemplate("offers_read_by_buyer", {
+      companyName: group.company.name || "",
+      contactName: owner.name || null,
+      offers,
+      offerCount: offers.length,
+      retailerName: group.retailer?.name || "",
+      openedVia,
+      openedAt,
+      appUrl: env.b2bAppUrl,
+      // [P2-backend-mails C2] locale → tplOffersReadByBuyer dispatcher.
+      locale: owner.locale || "pl",
+    });
+    if (!tpl) {
+      // Rezerwacja bez wysyłki zablokowałaby powiadomienie do wygaśnięcia dzierżawy.
+      const releaseError = await releaseClaim();
+      notifications.push({ ok: false, status: "error", reason: "no_template", legacy_ids: claimedLegacyIds, claim_released: !releaseError, release_error: releaseError });
+      continue;
+    }
+
     const sent = await sendResendEmail({ env, to: owner.email, subject: tpl.subject, html: tpl.html });
     if (!sent.ok) {
-      // Znacznik został zajęty, a mail nie poszedł: dostawca traci JEDNO powiadomienie.
-      // Świadomy wybór — lepsze niż ryzyko dubla przy zdejmowaniu znacznika i wyścigu
-      // z drugą ścieżką. Zdarzenie jest raportowane, nie milczy.
+      // Poczta odmówiła przyjęcia (delivered "no") → zwalniamy rezerwację i kolejne
+      // zdarzenie odczytu spróbuje jeszcze raz. Wcześniej znacznik zostawał na stałe
+      // i dostawca nie dostawał powiadomienia NIGDY.
+      // Gdy nie wiemy, czy mail poszedł (delivered "unknown"), rezerwacji nie ruszamy
+      // — wygaśnie sama, więc ewentualne ponowienie jest odsunięte w czasie zamiast
+      // natychmiast dokładać drugi mail o tym samym odczycie.
+      const canRetry = sent.delivered === "no";
+      const releaseError = canRetry ? await releaseClaim() : null;
       notifications.push({
         ok: false,
         status: "error",
         reason: sent.reason,
         to: owner.email,
-        legacy_ids: groupIds,
-        marker_claimed: true,
+        legacy_ids: claimedLegacyIds,
+        delivery: sent.delivered,
+        claim_released: canRetry && !releaseError,
+        release_error: releaseError,
       });
       continue;
     }
 
+    const { data: confirmedCount, error: confirmErr } = await supaSvc.rpc("confirm_legacy_sends_supplier_notified", {
+      p_legacy_ids: claimedLegacyIds,
+      p_claim_token: claimToken,
+      p_via: openedVia,
+      p_batch_size: claimedLegacyIds.length,
+      p_notified_at: new Date().toISOString(),
+    });
+
     notifications.push({
-      ok: true,
+      ok: !confirmErr,
+      // Mail POSZEDŁ. Nieudane potwierdzenie to osobna sprawa: rezerwacja wygaśnie
+      // i dostawca może dostać powiadomienie ponownie — raportujemy to wprost.
       status: "sent",
       message_id: sent.message_id,
       to: owner.email,
-      offer_count: group.offers.length,
-      legacy_ids: groupIds,
-      marker_ok: true,
-      marker_rows: claimed,
+      offer_count: offers.length,
+      legacy_ids: claimedLegacyIds,
+      confirm_ok: !confirmErr,
+      confirm_rows: confirmErr ? null : Number(confirmedCount ?? 0),
+      confirm_error: confirmErr ? confirmErr.message : undefined,
     });
   }
 
