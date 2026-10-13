@@ -149,3 +149,9 @@ Godziny kroków 0–6, wynik kontroli rekompensat, odciski przed/po, id deployu 
 ## Poza zakresem (osobne zadanie, z review Codexa v4)
 
 `netlify/functions/send-retailer-batch.js:181–183, 350–369` — ścieżka wysyłki do sieci kwalifikuje także wiersze `sent` bez znacznika maila i zapisuje cały snapshot po odpowiedzi poczty; równoległy odczyt jest możliwy. Zalecane utwardzenie ograniczonym scalaniem pól (jak `mark_legacy_sends_supplier_notified`) + test wysyłka/odczyt. Nie blokuje tego wdrożenia.
+
+## Nota 28.09 — etykieta pakietów historycznych (review Codexa, B1)
+
+Od 28.09.2026 (main 998c596, deploy 6aba3d54) użytkownik widzi historyczne pakiety o cenie zero jako „Pakiety historyczne (Bezpłatne od organizatora)”. **Jest to etykieta prezentacyjna, nie potwierdzenie powodu przyznania**: 38 pakietów, w tym 33 dodatkowe std_5, pozostaje `source = legacy` i bez `grant_reason`. Nie wolno na podstawie etykiety przepisywać ich na prezent rejestracyjny lub rekompensatę ani ponownie przyznawać kredytów. Cena zero potwierdza bezpłatność tych konkretnych wierszy, nie rejestrację.
+
+Kolejność zużycia (RPC `charge_legacy_send_first_seen`, bez zmian): najpierw `source = grant`, potem legacy i purchase razem według najbliższej ważności (`expires_at asc nulls last`, potem `purchased_at`, `id`). Legacy NIE ma pierwszeństwa przed zakupem — zakup z bliższą ważnością schodzi wcześniej niż legacy z dalszą. Komunikat w panelu dostawcy (klucz `supplier.finance.pools.order_hint`) doprecyzowany 28.09 na gałęzi `fix/supplier-sends-scope-read-deadline`: „najpierw z kredytów przyznanych przez organizatora, potem z kupionych i pakietów historycznych według najbliższego terminu ważności”. Ewentualna zmiana algorytmu (legacy przed purchase) = osobna decyzja Artura i osobna migracja.
