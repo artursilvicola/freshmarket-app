@@ -1475,13 +1475,16 @@ export async function deleteLegacyOffer(legacyId) {
 export async function loadLegacySends() {
   const { data, error } = await supabase
     .from("legacy_sends")
-    .select("data")
+    .select("data, resend_message_id")
     .order("legacy_id", { ascending: true });
   if (error) {
     console.warn("[loadLegacySends]", error.message);
     return null;
   }
-  return (data || []).map((r) => r.data);
+  // Older mailings only recorded confirmation in the dedicated column.
+  return (data || []).map((r) => r.resend_message_id
+    ? { ...r.data, resend_message_id: r.resend_message_id }
+    : r.data);
 }
 
 export async function upsertLegacySend(send) {

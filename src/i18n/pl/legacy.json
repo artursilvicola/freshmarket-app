@@ -1735,6 +1735,25 @@
     }
   },
   "admin": {
+    "mailing_history": {
+      "last": "Ostatni mailing",
+      "last_dated": "Ostatni mailing z zapisaną datą",
+      "title": "Historia wysyłek",
+      "toggle": "Historia wysyłek: {{retailer}}",
+      "none": "brak zapisanej wysyłki",
+      "empty": "Nie ma zapisanych wysyłek e-mail do tej sieci.",
+      "source_note": "Godziny: czas polski (Europe/Warsaw). Starsze daty bez godziny: według zapisu w systemie (UTC). Historia potwierdzeń wysyłki, nie odczytów; bez nieudanych prób i usuniętych rekordów. Nazwy propozycji i firm są bieżące.",
+      "unknown_date": "data nie została zapisana",
+      "unknown_time": "godzina nie została zapisana",
+      "conflicting_dates": "niezgodne daty w zapisach tego mailingu",
+      "incomplete_dates": "Część wysyłek nie ma jednoznacznej daty lub godziny. Nie można ustalić ich kolejności względem pozostałych.",
+      "proposals": "Propozycje",
+      "buyers": "Wysłane e-maile do kupców",
+      "unknown_count": "brak danych",
+      "unlinked": "Starszy zapis bez identyfikatora mailingu. Pokazujemy pojedynczą propozycję; nie można ustalić, które propozycje wysłano razem.",
+      "proposal_id": "Propozycja #{{id}}",
+      "unknown_supplier": "Brak danych dostawcy"
+    },
     "proformas": {
       "card_title": "Proformy oczekujące na płatność (przelew)",
       "mark_paid": "Oznacz opłaconą → aktywuj pakiet",
@@ -2334,7 +2353,7 @@
         "summary_waiting": "Czeka na rozliczenie",
         "summary_in_basket": "W koszyku e-mail",
         "next_mailing_label": "Następna wysyłka e-maili:",
-        "basket_groups_title": "Koszyk mailingu — per sieć",
+        "basket_groups_title": "Mailing sieci: koszyk i historia wysyłek",
         "basket_group_counts": "{{panel}} w panelu · {{basket}} w koszyku · {{emailed}} wysłane",
         "basket_send_email": "Wyślij e-mail do tej sieci",
         "basket_empty_hint": "Nie wybrano propozycji do e-maila. Możesz zaznaczyć je w tabeli Pipeline.",

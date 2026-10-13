@@ -1735,6 +1735,25 @@
     }
   },
   "admin": {
+    "mailing_history": {
+      "last": "Last mailing",
+      "last_dated": "Latest mailing with a recorded date",
+      "title": "Mailing history",
+      "toggle": "Mailing history: {{retailer}}",
+      "none": "no recorded mailing",
+      "empty": "There are no recorded email mailings to this retailer.",
+      "source_note": "Times: Polish time (Europe/Warsaw). Older dates without a time are shown as recorded (UTC). Sending confirmations, not reads; failed attempts and deleted records are not included. Proposal and company names are current.",
+      "unknown_date": "date not recorded",
+      "unknown_time": "time not recorded",
+      "conflicting_dates": "conflicting dates in this mailing's records",
+      "incomplete_dates": "Some mailings have no unambiguous date or time. Their order relative to other mailings cannot be established.",
+      "proposals": "Proposals",
+      "buyers": "Emails sent to buyers",
+      "unknown_count": "not recorded",
+      "unlinked": "Older record without a mailing ID. One proposal is shown; proposals sent together cannot be identified.",
+      "proposal_id": "Proposal #{{id}}",
+      "unknown_supplier": "Supplier details unavailable"
+    },
     "proformas": {
       "card_title": "Proformas awaiting payment (bank transfer)",
       "mark_paid": "Mark paid → activate package",
@@ -2334,7 +2353,7 @@
         "summary_waiting": "Awaiting settlement",
         "summary_in_basket": "In email basket",
         "next_mailing_label": "Next email send:",
-        "basket_groups_title": "Mailing basket — by retailer",
+        "basket_groups_title": "Retailer mailings: basket and history",
         "basket_group_counts": "{{panel}} in panel · {{basket}} in basket · {{emailed}} sent",
         "basket_send_email": "Send email to this retailer",
         "basket_empty_hint": "No proposals selected for email. You can check them in the Pipeline table.",

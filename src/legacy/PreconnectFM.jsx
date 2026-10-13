@@ -3,6 +3,8 @@ import { offerEnumLabel, offerEnumOptions } from "../lib/offer-enums.js";
 import { openGrantForm, editGrantForm, addCompany as grantAddCompany, removeCompany as grantRemoveCompany, submitStart as grantSubmitStart, submitFailed as grantSubmitFailed, canSubmit as grantCanSubmit, closeNeedsWarning as grantCloseNeedsWarning, isEditable as grantIsEditable, GRANT_REASONS } from "../lib/grant-form.js";
 import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Suspense } from "react";
 import AdminFmPaymentDate from "../components/AdminFmPaymentDate";
+import RetailerMailingHistory from "../components/admin/RetailerMailingHistory.jsx";
+import { retailerMailingStamp } from "../lib/retailer-mailing-history.js";
 import { applyPaymentDate } from "../lib/fm-payment-date";
 import {
   Home, Building2, Store, Send, Tag, Plus, Clock, Edit, CheckCircle, Receipt,
@@ -1179,6 +1181,7 @@ function hasRetailerEmailMarker(send) {
   // [fix/security-hotfix] od 054 funkcja zapisuje tylko liczbę adresatów
   const buyerCount = Number(send?.resendBuyerCount ?? data.resendBuyerCount ?? 0);
   return Boolean(
+    retailerMailingStamp(send) ||
     buyerCount > 0 ||
     send?.resendMessageId ||
     send?.resend_message_id ||
@@ -8682,7 +8685,7 @@ function normalizeModerationAiAnalysis(input = {}) {
   };
 }
 
-function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved, onAnalyzeModerationOffer, onSendModerationMessage, lockMode }) {
+export function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved, onAnalyzeModerationOffer, onSendModerationMessage, lockMode }) {
   const { t, i18n } = useTranslation("legacy");
 
   // [moderation-mode] Dwa tryby Pipeline:
@@ -8927,7 +8930,7 @@ function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onTo
       if (r.emailSent) g.emailed += 1;
     });
     // pokazuj tylko sieci, które mają cokolwiek w panelu lub w koszyku
-    return [...m.values()].filter(g => g.inPanel > 0 || g.inBasket > 0).sort((a, b) => b.inBasket - a.inBasket || a.name.localeCompare(b.name));
+    return [...m.values()].filter(g => g.inPanel > 0 || g.inBasket > 0 || g.emailed > 0).sort((a, b) => b.inBasket - a.inBasket || a.name.localeCompare(b.name));
   }, [allRows, basketOn]);
 
   // [admin-credits-settlement] Rozliczenie kredytów (qty) — totals + per firma.
@@ -9271,11 +9274,11 @@ function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onTo
 
       {/* [mailing-basket] Grupy per sieć: w panelu / w koszyku / wysłane + akcja */}
       {basketOn && !isMod && retailerGroups.length > 0 && (
-        <div style={{ border:"1px solid #e2e8f0", borderRadius:10, padding:"10px 12px", marginBottom:10, background:"white" }}>
+        <div style={{ borderTop:"1px solid #e2e8f0", borderBottom:"1px solid #e2e8f0", padding:"10px 0", marginBottom:10, background:"white" }}>
           <div style={{ fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:"0.04em", color:"#64748b", marginBottom:8 }}>{t("admin.pipeline.table.basket_groups_title")}</div>
           <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
             {retailerGroups.map(g => (
-              <div key={g.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", padding:"6px 8px", borderRadius:7, background:"#f8fafc" }}>
+              <div key={g.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, flexWrap:"wrap", padding:"10px 8px", borderBottom:"1px solid #e2e8f0" }}>
                 <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap", minWidth:0 }}>
                   <span style={{ fontWeight:700, fontSize:13, color:"#0f172a" }}>{g.name}</span>
                   <span style={{ fontSize:11, color:"#64748b" }}>{t("admin.pipeline.table.basket_group_counts", { panel: g.inPanel, basket: g.inBasket, emailed: g.emailed })}</span>
@@ -9283,6 +9286,7 @@ function PipelineTableV2({ sends, offers, retailers, companies, dbCapacity, onTo
                 <Btn sm outline onClick={() => onSendRetailerEmail?.(g.id)} disabled={g.inBasket === 0} title={g.inBasket === 0 ? t("admin.pipeline.table.basket_empty_hint") : undefined}>
                   <Mail size={11}/> {t("admin.pipeline.table.basket_send_email")}
                 </Btn>
+                <RetailerMailingHistory retailerId={g.id} retailerName={g.name} sends={sends} offers={offers} companies={companies}/>
               </div>
             ))}
           </div>
