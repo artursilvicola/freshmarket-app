@@ -648,9 +648,19 @@ function upcomingFirstTuesday(from = new Date()) {
 // pierwszym wtorku NIE była traktowana jak już po mailingu. Brak/niepoprawny
 // sendDate → najbliższy pierwszy wtorek od dziś.
 function plannedMailingDateForSend(send) {
-  const d = parseLocalDate(send?.sendDate || send?.data?.sendDate);
+  // [28.09 review Codexa] kolejność kotwic jak w RPC expire_legacy_sends_14d (044):
+  // sendDate → sentAt → updatedAt; „dziś” tylko gdy nie ma żadnej daty.
+  const d = parseLocalDate(send?.sendDate || send?.data?.sendDate)
+         || parseLocalDate(send?.sentAt || send?.data?.sentAt)
+         || parseLocalDate(send?.updatedAt || send?.updated_at || send?.data?.updatedAt);
   if (d) return firstTuesdayOnOrAfter(d);
   return upcomingFirstTuesday();
+}
+
+// [28.09 review Codexa] Czy mailing ma REALNY znacznik wysłania (mailingSentAt / emailSentAt).
+// Sam upływ planowanego wtorku NIE jest dowodem wysłania e-maila — UI odróżnia plan od stanu.
+function hasRealMailingStamp(send) {
+  return !!(send?.mailingSentAt || send?.data?.mailingSentAt || send?.emailSentAt || send?.data?.emailSentAt);
 }
 
 // Efektywna data mailingu: realna (mailingSentAt / emailSentAt — stempel przy
@@ -659,8 +669,11 @@ function sendMailingDate(send) {
   const real = send?.mailingSentAt || send?.data?.mailingSentAt
             || send?.emailSentAt || send?.data?.emailSentAt;
   if (real) {
-    const d = new Date(real);
-    if (!isNaN(d.getTime())) return d;
+    // [28.09 review Codexa] RPC zapisuje mailingSentAt jako YYYY-MM-DD; new Date("YYYY-MM-DD") = północ UTC,
+    // co w strefach na zachód od UTC cofało dzień. parseLocalDate bierze dzień kalendarzowy z tekstu
+    // (dla znaczników ISO z „Z” = dzień UTC, tak jak ::date w bazie) — wynik niezależny od strefy komputera.
+    const d = parseLocalDate(real);
+    if (d) return d;
   }
   return plannedMailingDateForSend(send);
 }
@@ -671,6 +684,14 @@ function isMailingActive(send) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const md = new Date(sendMailingDate(send)); md.setHours(0, 0, 0, 0);
   return today >= md;
+}
+
+// [28.09] Termin odczytu = data mailingu (pierwszy wtorek miesiąca lub realny stempel)
+// + 14 dni — lustro RPC expire_legacy_sends_14d (migracja 044). Zwraca Date (północ).
+function sendReadDeadline(send) {
+  const d = new Date(sendMailingDate(send)); d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 14);
+  return d;
 }
 
 // Format DD.MM.RRRR dla etykiety "Zaplanowane do mailingu — DD.MM.RRRR".
@@ -4179,7 +4200,7 @@ function pickSupplierDashState({ co, fmSettings }) {
 
 // ── KOMPONENT GŁÓWNY ────────────────────────────────────────────────────────
 
-function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed, creditUsage }) {
+export function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissRefund, fmSettings, accountId, co, pkgMax, pkgUsed, creditUsage }) {
   // [Krok P2-3b] Bilingual via supplier.dashboard.next_step_variants/activity/refunds_strip/kpi_section
   const { t } = useTranslation("legacy");
   const dashState = pickSupplierDashState({ co, fmSettings });
@@ -4190,7 +4211,9 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
   );
 
   // ── Statystyki 30d ──────────────────────────────────────────────────────
-  const mySends = (sends || []).filter(s => !s.supplierId || s.supplierId === accountId);
+  // [28.09 review Codexa] ścisłe dopasowanie: wiersz bez supplierId NIE jest „własny” (w podglądzie admina
+  // stawałby się własnością każdej firmy); brak accountId = brak wysyłek. Produkcja: 223/223 z supplierId.
+  const mySends = accountId ? (sends || []).filter(s => s.supplierId === accountId) : [];
   const cutoffMs = Date.now() - 30 * 24 * 60 * 60 * 1000;
   const recentSends = mySends.filter(s => {
     const ts = new Date(s.statusChangedAt || s.createdAt || s.created_at || s.sentAt || 0).getTime();
@@ -4271,7 +4294,14 @@ function PageDashboard({ offers, sends, nav, rem, wallet, refundNotifs, dismissR
     if (["opened", "read", "read_manual"].includes(s.status)) {
       events.push({ ts, dot: "#059669", type: "buyer_viewed", title: ofTitle, sub: t("supplier.dashboard.activity.buyer_viewed.sub") });
     } else if (s.status === "sent") {
-      events.push({ ts, dot: "#2563eb", type: "sent", title: ofTitle, sub: t("supplier.dashboard.activity.sent.sub") });
+      // [28.09] Reguła 14 dni liczy się od daty mailingu (pierwszy wtorek miesiąca), nie od wysłania propozycji.
+      const mailing = fmtMailingDateDMY(sendMailingDate(s)), deadline = fmtMailingDateDMY(sendReadDeadline(s));
+      // [28.09 review Codexa] tylko REALNY znacznik wysyłki daje wariant „14 dni od wysyłki e-maila”;
+      // bez znacznika: plan (przed planowanym wtorkiem) albo „czeka na potwierdzenie wysyłki” (po nim).
+      const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      const subKey = hasRealMailingStamp(s) ? "sub_deadline_format"
+        : (today0.getTime() > sendMailingDate(s).getTime() ? "sub_awaiting_confirmation_format" : "sub_planned_format");
+      events.push({ ts, dot: "#2563eb", type: "sent", title: ofTitle, sub: t("supplier.dashboard.activity.sent." + subKey, { mailing, deadline }) });
     } else if (["unread_expired", "refunded"].includes(s.status)) {
       events.push({ ts, dot: "#94a3b8", type: "expired", title: ofTitle, sub: t("supplier.dashboard.activity.expired.sub") });
     }
@@ -4791,7 +4821,7 @@ export function PageWysylki({ sends, offers, pkgUsed, creditUsage, pkgMax, pkgPl
   function getRetailerLive(id) {
     return (retailers||[]).find(r=>r.id===id) || null;
   }
-  const mySends = (sends||[]).filter(s=>!s.supplierId||s.supplierId===accountId);
+  const mySends = accountId ? (sends||[]).filter(s=>s.supplierId===accountId) : []; // [28.09 review Codexa] ścisłe dopasowanie
   const [view, setView] = useState(sid ? "new" : "sieci");  // "sieci" | "new" | "list"
   const [tab,  setTab]  = useState("all");
   const [so,   setSo]   = useState(sid ? String(sid) : "");
@@ -4890,8 +4920,9 @@ export function PageWysylki({ sends, offers, pkgUsed, creditUsage, pkgMax, pkgPl
             <div style={{ display:"flex",gap:8,marginLeft:"auto",alignItems:"center" }}>
               <span style={{ fontSize:12,color:"#64748b",background:"#f8fafc",padding:"5px 12px",borderRadius:8,border:"1px solid #e2e8f0" }}>
                 {t("supplier.wysylki.sieci.stats_format", {
-                  sent: sends.filter(s=>["sent","opened","read","read_manual"].includes(s.status)).length,
-                  read: sends.filter(s=>["opened","read","read_manual"].includes(s.status)).length,
+                  // [28.09] tylko własne wysyłki dostawcy — nie liczniki wszystkich firm
+                  sent: mySends.filter(s=>["sent","opened","read","read_manual"].includes(s.status)).length,
+                  read: mySends.filter(s=>["opened","read","read_manual"].includes(s.status)).length,
                 })}
               </span>
               <input
@@ -4903,7 +4934,7 @@ export function PageWysylki({ sends, offers, pkgUsed, creditUsage, pkgMax, pkgPl
           </div>
           <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12 }}>
             {filteredRetailers.map(r => {
-              const rSends = sends.filter(s => s.retailerId === r.id && !["queued","pending_moderation","rejected"].includes(s.status));
+              const rSends = mySends.filter(s => s.retailerId === r.id && !["queued","pending_moderation","rejected"].includes(s.status)); // [28.09] tylko własne
               const rRead  = rSends.filter(s => ["opened","read","read_manual"].includes(s.status)).length;
               const hasSent = rSends.length > 0;
               return (
@@ -5058,7 +5089,7 @@ export function PageWysylki({ sends, offers, pkgUsed, creditUsage, pkgMax, pkgPl
                   </div>
                 </div>
                 {scheduled ? (
-                  <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge>
+                  <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)), deadline: fmtMailingDateDMY(sendReadDeadline(s)) })}</Badge>
                 ) : (
                   <span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
                     <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
@@ -6823,7 +6854,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
                         (status sent, ale mailing jeszcze nie ruszył) pokazujemy dostawcy
                         "Zaplanowane do mailingu — DD.MM.RRRR" zamiast statusu odczytu. */}
                     {PRECONNECT_MAILING_DATE_LOGIC && s.status==="sent" && !isMailingActive(s) ? (
-                      <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge>
+                      <Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)), deadline: fmtMailingDateDMY(sendReadDeadline(s)) })}</Badge>
                     ) : (
                       <span title={STATUS_TIPS[s.status]||""} style={{cursor:"help",display:"inline-flex",alignItems:"center",gap:2}}>
                         <Badge color={sc?.[1]}>{sc?.[0]}</Badge>
@@ -10023,7 +10054,7 @@ export function PageAdminPipeline({ sends, setSends, onRetailerEmailSent, offers
                     nie pokazujemy aktywnego countdownu 14 dni — tylko "Zaplanowane
                     do mailingu — DD.MM.RRRR". */}
                 {s.status==="sent" && PRECONNECT_MAILING_DATE_LOGIC && !isMailingActive(s) ? (
-                  <div style={{ marginTop:5 }}><Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)) })}</Badge></div>
+                  <div style={{ marginTop:5 }}><Badge color="#0369a1" bg="#e0f2fe">{t("supplier.finance.history.scheduled_mailing_format", { date: fmtMailingDateDMY(sendMailingDate(s)), deadline: fmtMailingDateDMY(sendReadDeadline(s)) })}</Badge></div>
                 ) : s.status==="sent" ? (<div style={{ marginTop:5 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginBottom:2 }}><span>{t("admin.pipeline.track_tracking_label")}</span><span style={{ color:s.daysLeft<=3?"#dc2626":"#f59e0b" }}>{t("admin.pipeline.track_days_left_format", { count: s.daysLeft })}</span></div>
                   <div style={{ background:"#e2e8f0",borderRadius:3,height:4,overflow:"hidden" }}><div style={{ height:"100%",background:s.daysLeft<=3?"#dc2626":"#f59e0b",width:`${((14-s.daysLeft)/14)*100}%` }}/></div>
