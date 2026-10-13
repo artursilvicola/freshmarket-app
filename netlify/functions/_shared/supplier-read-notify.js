@@ -50,9 +50,10 @@ function normalizeClaimRows(rows) {
           state: item.state || "claimed",
           message_id: item.message_id || null,
           attempt: Number(item.attempt ?? 0),
+          first_claim_at: item.first_claim_at ? Date.parse(item.first_claim_at) : null,
         };
       }
-      return { legacy_id: Number(item), state: "claimed", message_id: null, attempt: 0 };
+      return { legacy_id: Number(item), state: "claimed", message_id: null, attempt: 0, first_claim_at: null };
     })
     .filter((row) => Number.isFinite(row.legacy_id));
 }
@@ -84,6 +85,13 @@ async function findCompanyBySupplierKey(supaSvc, supplierKey) {
 // w tej postaci: zły ładunek albo odmowa dostępu. Tylko one pozwalają skasować
 // tożsamość wiadomości i zacząć od nowa.
 const RESEND_PAYLOAD_REJECTED = new Set([400, 401, 403, 404, 422]);
+
+// Ochrona Resend trwa 24 h, ale my ponawiamy najwyżej przez 23 — godzina zapasu.
+// Bez niego próba rozpoczęta sekundę przed końcem doby mogła WYSŁAĆ już po jej
+// upływie (odczyt zapisanej treści też trwa) i Resend utworzyłby drugi mail mimo
+// identycznego klucza i ładunku (review Codexa, tura 5). Zapas nie wystarcza sam
+// z siebie — termin sprawdzamy jeszcze raz bezpośrednio przed wysyłką.
+export const RETRY_WINDOW_SECONDS = 23 * 60 * 60;
 
 // `delivered` rozstrzyga, co wolno zrobić z rezerwacją:
 //   "no"        — poczta ODRZUCIŁA ładunek. Wiadomość nie powstała.
@@ -266,6 +274,7 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
       p_legacy_ids: groupIds,
       p_claim_token: claimToken,
       p_new_message_id: newMessageId,
+      p_idempotency_window_seconds: RETRY_WINDOW_SECONDS,
     });
     if (claimErr) {
       // Nie wiemy, czy rezerwacja usiadła — wysyłka mogłaby się zdublować. Nie wysyłamy.
@@ -315,10 +324,14 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
     const byMessage = new Map();
     for (const row of claimed) {
       const key = row.message_id || newMessageId;
-      if (!byMessage.has(key)) byMessage.set(key, { ids: [], attempt: 0 });
+      if (!byMessage.has(key)) byMessage.set(key, { ids: [], attempt: 0, firstClaimAt: null });
       const bucket = byMessage.get(key);
       bucket.ids.push(row.legacy_id);
       bucket.attempt = Math.max(bucket.attempt, row.attempt || 1);
+      // najwcześniejszy początek okna w paczce = najkrótszy pozostały czas
+      if (row.first_claim_at && (bucket.firstClaimAt === null || row.first_claim_at < bucket.firstClaimAt)) {
+        bucket.firstClaimAt = row.first_claim_at;
+      }
     }
 
     for (const [messageId, bucket] of byMessage) {
@@ -421,6 +434,32 @@ export async function notifySupplierOffersRead({ supaSvc, env, legacyIds, opened
           to: stored.to_email, legacy_ids: uncovered, message_id: messageId, attempt: bucket.attempt,
           message_legacy_ids: stored.legacy_ids,
           claim_released: !uncoveredReleaseError, release_error: uncoveredReleaseError,
+        });
+        continue;
+      }
+
+      // [review Codexa, tura 5] Termin sprawdzamy PONOWNIE, bezpośrednio przed
+      // wysyłką. Rezerwacja mogła zdążyć przed końcem okna, a odczyt zapisanej
+      // treści trwa — wysyłka wypadałaby już po wygaśnięciu ochrony poczty i ten
+      // sam klucz z tym samym ładunkiem utworzyłby DRUGI mail.
+      // Historii nie kasujemy i nowego klucza nie nadajemy: sprawa idzie do
+      // sprawdzenia dokładnie w tym stanie, w jakim jest.
+      const deadline = bucket.firstClaimAt === null
+        ? null
+        : bucket.firstClaimAt + RETRY_WINDOW_SECONDS * 1000;
+      if (deadline !== null && Date.now() >= deadline) {
+        const note = await markUncertain("retry_window_elapsed_before_send");
+        notifications.push({
+          ok: false,
+          status: "needs_review",
+          reason: "retry_window_elapsed_before_send",
+          to: stored.to_email,
+          legacy_ids: covered,
+          message_id: messageId,
+          attempt: bucket.attempt,
+          first_claim_at: new Date(bucket.firstClaimAt).toISOString(),
+          claim_released: false,
+          uncertain_error: note,
         });
         continue;
       }

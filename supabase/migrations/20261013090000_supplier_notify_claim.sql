@@ -66,6 +66,7 @@ begin;
 -- Stare podpisy z wcześniejszych tur — sygnatury się zmieniały, więc trzeba je zdjąć,
 -- inaczej CREATE OR REPLACE zostawiłby obok dwie wersje funkcji.
 drop function if exists public.claim_legacy_sends_supplier_notify(bigint[], text, timestamptz, integer);
+drop function if exists public.claim_legacy_sends_supplier_notify(bigint[], text, text, timestamptz, integer, integer);
 drop function if exists public.confirm_legacy_sends_supplier_notified(bigint[], text, text, integer, timestamptz);
 
 -- ── 1. niezmienna treść wiadomości ──────────────────────────────────────────
@@ -152,9 +153,9 @@ create or replace function public.claim_legacy_sends_supplier_notify(
   p_new_message_id text,
   p_claimed_at timestamptz default now(),
   p_lease_seconds integer default 900,
-  p_idempotency_window_seconds integer default 86400
+  p_idempotency_window_seconds integer default 82800
 )
-returns table (legacy_id bigint, state text, message_id text, attempt integer)
+returns table (legacy_id bigint, state text, message_id text, attempt integer, first_claim_at timestamptz)
 language plpgsql
 security definer
 set search_path = public
@@ -162,7 +163,7 @@ as $$
 declare
   v_at text := to_char(p_claimed_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
   v_lease interval := make_interval(secs => greatest(coalesce(p_lease_seconds, 900), 1));
-  v_window interval := make_interval(secs => greatest(coalesce(p_idempotency_window_seconds, 86400), 1));
+  v_window interval := make_interval(secs => greatest(coalesce(p_idempotency_window_seconds, 82800), 1));
 begin
   if p_legacy_ids is null or array_length(p_legacy_ids, 1) is null then
     return;
@@ -201,7 +202,10 @@ begin
   select c.legacy_id,
          'claimed'::text,
          c.data->>'supplierNotifyMessageId',
-         coalesce((c.data->>'supplierNotifyAttempts')::integer, 1)
+         coalesce((c.data->>'supplierNotifyAttempts')::integer, 1),
+         -- wolajacy MUSI sprawdzic ten termin jeszcze raz TUZ PRZED wyslaniem:
+         -- miedzy rezerwacja a wysylka uplywa czas i okno moze sie domknac
+         (c.data->>'supplierNotifyFirstClaimAt')::timestamptz
     from claimed c
   union all
   -- Wiersze, których nie wzięliśmy — z powodem. CTE modyfikujące dane i ten SELECT
@@ -215,7 +219,8 @@ begin
            else 'busy'
          end,
          s.data->>'supplierNotifyMessageId',
-         coalesce((s.data->>'supplierNotifyAttempts')::integer, 0)
+         coalesce((s.data->>'supplierNotifyAttempts')::integer, 0),
+         (s.data->>'supplierNotifyFirstClaimAt')::timestamptz
     from public.legacy_sends s
    where s.legacy_id = any(p_legacy_ids)
      and s.legacy_id not in (select c2.legacy_id from claimed c2);
