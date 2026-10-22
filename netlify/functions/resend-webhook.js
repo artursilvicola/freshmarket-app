@@ -2,49 +2,46 @@
  * Netlify Function: resend-webhook
  * POST /.netlify/functions/resend-webhook
  *
- * Webhook od Resend — wywoływany po każdym evencie maila (sent, delivered,
- * opened, bounced, complained).
- * [B2B Round prod-rollout / email-open-tracking]
+ * Webhook od Resend (Svix) po każdym zdarzeniu maila: sent, delivered, opened,
+ * clicked, bounced, complained, delivery_delayed.
  *
- * Headers (Resend używa Svix):
- *   svix-id: unique id tej notyfikacji (dla idempotencji po stronie odbiorcy)
- *   svix-timestamp: unix epoch (sekundy)
- *   svix-signature: "v1,<base64-hmac>" (HMAC-SHA256 z `${svix-id}.${svix-timestamp}.${rawBody}`
- *                                       z kluczem RESEND_WEBHOOK_SECRET po `whsec_` prefiksie)
+ * Headers:
+ *   svix-id, svix-timestamp, svix-signature ("v1,<base64-hmac>" — HMAC-SHA256
+ *   z `${svix-id}.${svix-timestamp}.${rawBody}` kluczem RESEND_WEBHOOK_SECRET
+ *   po prefiksie `whsec_`).
  *
- * Body: {
- *   type: "email.opened" | "email.delivered" | "email.bounced" | "email.complained" | "email.sent",
- *   created_at: ISO timestamp,
- *   data: {
- *     email_id: "abc...",     // Resend message_id (mapujemy do legacy_sends.resend_message_id)
- *     from, to, subject, ...
- *   }
- * }
+ * Body: { type, created_at, data: { email_id, from, to, subject, ... } }
  *
- * Co robimy:
- *   - type=email.opened → znajdź legacy_sends po resend_message_id,
- *     jeśli status='sent' bump do 'opened' (kolor #7c3aed w STATUS_MAP),
- *     set email_opened_at = teraz (idempotent: nie nadpisuje istniejącej daty).
- *   - inne eventy: na razie tylko logujemy. W przyszłości można dodać
- *     bounce-handling (oznaczyć kupca jako niedostępnego).
+ * [feat/email-open-history] Kolejność: ZAPISZ zdarzenie → przetwórz → potwierdź.
+ *   1. Podpis + anty-replay (10 min). Zła sygnatura / stary event → 200 „ignored"
+ *      (ponowienie przez Svix niczego by nie naprawiło).
+ *   2. `ingest_legacy_send_email_event` — deduplikacja po svix-id. Jeśli zapis
+ *      do bazy padnie → 500, żeby Svix PONOWIŁ: zdarzenie nie może przepaść.
+ *   3. Duplikat → 200 bez przetwarzania. Wiadomość jeszcze nie powiązana → 200
+ *      „orphan": zdarzenie czeka, `record_legacy_send_message` wróci do niego.
+ *   4. email.opened → rozliczenie WYŁĄCZNIE propozycji z tej wiadomości (legacy_ids
+ *      z powiązania) przez `mark_legacy_send_seen`. Błąd przejściowy → zdarzenie
+ *      w `error`, odpowiedź 500 → Svix ponawia; rozliczenie i powiadomienie
+ *      dostawcy są idempotentne, więc ponowienie nie dubluje.
+ *   5. Inne typy → historia (status processed), 200.
  *
- * Bezpieczeństwo:
- *   - Walidacja signature constant-time (timingSafeEqual)
- *   - Bad signature → 200 OK z {ignored:'bad_signature'}, żeby Svix nie
- *     retryował na innym końcu (PayU-style).
- *   - Replay protection: odrzucamy eventy starsze niż 10 minut (anti-replay).
+ * Maile niezwiązane z propozycjami (logowanie, powiadomienia dostawców) nie mają
+ * powiązania w legacy_send_messages → trafiają do rejestru jako orphan i nigdy
+ * niczego nie rozliczają.
  */
 
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
-import { markLegacySendsSeen } from "./_shared/legacy-send-seen.js";
+import { ingestResendEvent, processKnownEvent, RetryableEventError } from "./_shared/email-events.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, svix-id, svix-timestamp, svix-signature",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+const REPLAY_WINDOW_SECONDS = 10 * 60;
 
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: cors };
@@ -53,43 +50,34 @@ export const handler = async (event) => {
   const env = resolveEnvConfig();
   const missing = missingEnvNames(env, ["supabaseUrl", "supabaseServiceRoleKey", "resendWebhookSecret"]);
   if (missing.length) {
-    // 200 nawet przy missing env — Resend by retryował niepotrzebnie.
+    // Konfiguracja, nie zdarzenie — ponowienie przez Svix nic nie da. Głośno w logu.
     console.error("[resend-webhook] missing env:", missing);
     return reply(200, { ignored: "missing_env", missing });
   }
 
-  // ── 1. Verify Svix signature ────────────────────────────────────────
-  const rawBody = event.body || "";
-  const svixId = event.headers["svix-id"] || event.headers["Svix-Id"];
-  const svixTs = event.headers["svix-timestamp"] || event.headers["Svix-Timestamp"];
-  const svixSig = event.headers["svix-signature"] || event.headers["Svix-Signature"];
-
+  // ── 1. Podpis Svix + anty-replay ────────────────────────────────────────
+  const h = lowerHeaders(event.headers || {});
+  const svixId = h["svix-id"];
+  const svixTs = h["svix-timestamp"];
+  const svixSig = h["svix-signature"];
   if (!svixId || !svixTs || !svixSig) {
     console.warn("[resend-webhook] brak svix headers");
     return reply(200, { ignored: "missing_svix_headers" });
   }
-
-  // Anti-replay: ignoruj eventy starsze niż 10 minut
-  const tsMs = Number(svixTs) * 1000;
-  if (!Number.isFinite(tsMs) || Math.abs(Date.now() - tsMs) > 10 * 60 * 1000) {
-    console.warn("[resend-webhook] timestamp out of window");
+  const tsNum = Number(svixTs);
+  if (!Number.isFinite(tsNum) || Math.abs(Math.floor(Date.now() / 1000) - tsNum) > REPLAY_WINDOW_SECONDS) {
+    console.warn("[resend-webhook] timestamp poza oknem");
     return reply(200, { ignored: "stale_timestamp" });
   }
 
-  // Resend webhook secret ma format: whsec_<base64>
-  const secret = env.resendWebhookSecret.startsWith("whsec_")
-    ? env.resendWebhookSecret.slice(6)
-    : env.resendWebhookSecret;
+  const rawBody = event.isBase64Encoded
+    ? Buffer.from(event.body || "", "base64").toString("utf8")
+    : (event.body || "");
 
-  const secretBytes = Buffer.from(secret, "base64");
-  const signedContent = `${svixId}.${svixTs}.${rawBody}`;
-  const expectedSig = crypto.createHmac("sha256", secretBytes).update(signedContent).digest("base64");
-
-  // svix-signature ma format "v1,<sig1> v1,<sig2> ..." — kilka możliwych podpisów (key rotation)
-  const candidates = svixSig.split(" ")
-    .map((part) => part.split(",")[1])
-    .filter(Boolean);
-
+  const secret = String(env.resendWebhookSecret || "");
+  const secretBytes = Buffer.from(secret.startsWith("whsec_") ? secret.slice(6) : secret, "base64");
+  const expectedSig = crypto.createHmac("sha256", secretBytes).update(`${svixId}.${svixTs}.${rawBody}`).digest("base64");
+  const candidates = String(svixSig).split(" ").map((part) => part.split(",")[1]).filter(Boolean);
   const expectedBuf = Buffer.from(expectedSig, "base64");
   const sigOk = candidates.some((sig) => {
     try {
@@ -97,75 +85,90 @@ export const handler = async (event) => {
       return sigBuf.length === expectedBuf.length && crypto.timingSafeEqual(sigBuf, expectedBuf);
     } catch { return false; }
   });
-
   if (!sigOk) {
     console.warn("[resend-webhook] zła sygnatura");
     return reply(200, { ignored: "bad_signature" });
   }
 
-  // ── 2. Parse body ───────────────────────────────────────────────────
+  // ── 2. Ładunek ──────────────────────────────────────────────────────────
   let payload;
   try { payload = JSON.parse(rawBody); }
   catch { return reply(200, { ignored: "invalid_json" }); }
 
   const type = String(payload?.type || "");
-  const messageId = payload?.data?.email_id;
-
-  // ── 3. Obsługa per event-type ───────────────────────────────────────
-  // Najważniejsze: email.opened. Reszta loguje się tylko (na razie).
-  if (type !== "email.opened") {
-    console.log("[resend-webhook] event:", type, "message_id:", messageId);
-    return reply(200, { ok: true, ignored: `event_${type}` });
-  }
-
-  if (!messageId) {
-    return reply(200, { ignored: "no_message_id" });
-  }
+  const messageId = payload?.data?.email_id ? String(payload.data.email_id) : "";
+  if (!messageId) return reply(200, { ignored: "no_message_id", type });
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
 
-  // Find ALL legacy_sends z tym message_id (jeden batch = wiele sends ten sam
-  // mail). Aktualizujemy każdy: jeśli status='sent' → 'opened', plus
-  // email_opened_at (idempotent — `coalesce` z istniejącą wartością).
-  let { data: rows, error: selErr } = await supaSvc
-    .from("legacy_sends")
-    .select("id, legacy_id, status, email_opened_at, data")
-    .eq("resend_message_id", messageId);
-
-  if (selErr) {
-    console.error("[resend-webhook] select error", selErr);
-    return reply(200, { error: "db_select_failed", message: selErr.message });
+  // ── 3. Zapis zdarzenia (deduplikacja po svix-id) ────────────────────────
+  let ingested;
+  try {
+    ingested = await ingestResendEvent({
+      supaSvc, eventId: svixId, messageId, type,
+      occurredAt: payload?.created_at || null,
+      payload: { type, created_at: payload?.created_at || null, data: scrubPayload(payload?.data) },
+    });
+  } catch (e) {
+    // Nie zapisaliśmy — nie wolno potwierdzić. Svix ponowi.
+    console.error("[resend-webhook] ingest failed:", e?.detail || e?.message);
+    return reply(500, { error: "ingest_failed", retry: true });
   }
 
-  // Nowe batche wysyłają osobny email do każdego kupca tej samej sieci, więc
-  // legacy_sends przechowuje też listę message_id w JSONB data.resendMessageIds.
-  if (!rows || rows.length === 0) {
-    const alt = await supaSvc
-      .from("legacy_sends")
-      .select("id, legacy_id, status, email_opened_at, data")
-      .contains("data", { resendMessageIds: [messageId] });
-    if (alt.error) {
-      console.error("[resend-webhook] jsonb select error", alt.error);
-      return reply(200, { error: "db_select_failed", message: alt.error.message });
+  if (ingested.duplicate) {
+    // Ten sam svix-id już był. Jeśli poprzednia próba skończyła się błędem,
+    // przetwarzamy ponownie (to właśnie jest ponowienie Svixa); inaczej nic.
+    if (ingested.status !== "error" && ingested.status !== "pending") {
+      return reply(200, { ok: true, duplicate: true, status: ingested.status });
     }
-    rows = alt.data || [];
   }
 
-  if (!rows || rows.length === 0) {
-    console.warn("[resend-webhook] no sends with message_id:", messageId);
-    return reply(200, { ignored: "unknown_message_id", messageId });
+  if (ingested.status === "ignored") return reply(200, { ok: true, status: "ignored", type });
+  if (ingested.status === "orphan") {
+    console.log("[resend-webhook] orphan:", type, "message:", messageId);
+    return reply(200, { ok: true, status: "orphan", type });
   }
 
-  const result = await markLegacySendsSeen({
-    supaSvc,
-    env,
-    legacyIds: rows.map((row) => row.legacy_id),
-    channel: "email",
-    notifySupplier: true,
-  });
+  // ── 4. Przetwarzanie (pending / error po ponowieniu) ────────────────────
+  let legacyIds = Array.isArray(ingested.legacy_ids) ? ingested.legacy_ids : null;
+  if (!legacyIds) {
+    // duplikat w stanie pending/error: ingest nie oddaje legacy_ids — doczytaj powiązanie
+    const { data: link, error: linkErr } = await supaSvc
+      .from("legacy_send_messages")
+      .select("legacy_ids")
+      .eq("resend_message_id", messageId)
+      .maybeSingle();
+    if (linkErr) return reply(500, { error: "link_read_failed", retry: true });
+    if (!link) return reply(200, { ok: true, status: "orphan", type });
+    legacyIds = link.legacy_ids || [];
+  }
 
-  return reply(200, { ok: true, message_id: messageId, ...result });
+  try {
+    const result = await processKnownEvent({ supaSvc, env, eventId: svixId, type, legacyIds });
+    return reply(200, { ok: true, message_id: messageId, type, ...result });
+  } catch (e) {
+    if (e instanceof RetryableEventError) {
+      console.error("[resend-webhook] processing failed, retry:", e.message, e.detail);
+      return reply(500, { error: e.message, detail: e.detail, retry: true });
+    }
+    console.error("[resend-webhook] unexpected:", e?.message || e);
+    return reply(500, { error: "unexpected", retry: true });
+  }
 };
+
+function lowerHeaders(headers) {
+  const out = {};
+  for (const [k, v] of Object.entries(headers)) out[String(k).toLowerCase()] = v;
+  return out;
+}
+
+// Do rejestru trafia to, co potrzebne do historii; bez treści i bez list adresów
+// poza samym odbiorcą tej wiadomości (jest jeden — tak wysyłamy).
+function scrubPayload(data) {
+  if (!data || typeof data !== "object") return {};
+  const { email_id, from, to, subject, created_at, click, bounce, tags } = data;
+  return { email_id, from, to, subject, created_at, click, bounce, tags };
+}
 
 function reply(statusCode, payload) {
   return {

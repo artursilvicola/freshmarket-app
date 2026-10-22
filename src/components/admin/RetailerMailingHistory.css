@@ -42,3 +42,11 @@
 @media (max-width: 600px) {
   .fm-mailing-history__proposals li { grid-template-columns: minmax(0, 1fr); padding: 8px 0; }
 }
+
+/* [feat/email-open-history] odbiorcy i wejścia do aplikacji */
+.fm-mailing-history__recipients { margin-top: 10px; display: grid; gap: 6px; }
+.fm-mailing-history__recipients h4 { margin: 8px 0 2px; font-size: 12px; font-weight: 700; color: #334155; }
+.fm-mailing-history__table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.fm-mailing-history__table th, .fm-mailing-history__table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+.fm-mailing-history__table th { color: #64748b; font-weight: 600; white-space: nowrap; }
+.fm-mailing-history__table td { color: #1e293b; }

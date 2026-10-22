@@ -89,6 +89,9 @@ export const handler = async (event) => {
     channel: "app_detail",
     allowedRetailerId: profile.role === "buyer" ? profile.retailer_id : null,
     notifySupplier: true,
+    // [feat/email-open-history] otwarcie propozycji przypisane do uwierzytelnionego czytającego
+    readerProfileId: profile.id,
+    readerRole: profile.role,
   });
 
   // 200 zawsze (fire-and-forget z frontu) — frontend nie powinien się

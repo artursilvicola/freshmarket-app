@@ -78,7 +78,8 @@ describe('retailer delivery persistence', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(JSON.parse(fetch.mock.calls[0][1].body).to).toEqual(['buyer@example.test']);
     expect(state.service.from.mock.calls.filter(([table]) => table === 'profiles')).toHaveLength(1);
-    expect(state.service.rpc).toHaveBeenCalledTimes(1);
+    // [feat/email-open-history] dwa wąskie RPC: znacznik transportu + powiązanie per odbiorca; nic więcej
+    expect(state.service.rpc.mock.calls.map(([name]) => name).sort()).toEqual(['mark_legacy_sends_retailer_emailed','record_legacy_send_message']);
   });
 
   it('renders mixed buyers in their own saved languages, not the admin language',async () => {
@@ -118,4 +119,78 @@ describe('retailer delivery persistence', () => {
       expect(fetch).not.toHaveBeenCalled();
     },
   );
+});
+
+// [feat/email-open-history] powiązanie wiadomość ↔ odbiorca, Idempotency-Key, brak ponownej wysyłki
+describe('retailer batch — historia per odbiorca', () => {
+  function rpcByName(impl) {
+    state.service.rpc = vi.fn(async (name, args) => impl[name] ? impl[name](args) : ({ data: [7] }));
+  }
+  it('każdy mail idzie z Idempotency-Key stałym dla (sieć, zestaw, kupiec) i dostaje powiązanie z DOKŁADNYMI propozycjami', async () => {
+    state.retailer = {id:1,name:'Test',buyers:[{id:'b-anna',email:'anna@example.test',active:true,locale:'pl'},{id:'b-bartek',email:'bartek@example.test',active:true,locale:'en'}]};
+    state.rows = [{legacy_id:7,retailer_id:1,status:'sent',data:{offerId:1,supplierId:'supplier-1'}},{legacy_id:9,retailer_id:1,status:'approved',data:{offerId:1,supplierId:'supplier-1'}}];
+    let n = 0;
+    fetch.mockImplementation(async () => new Response(JSON.stringify({id:'msg-'+(++n)}),{status:200}));
+    const recorded = [];
+    rpcByName({
+      record_legacy_send_message: async (args) => { recorded.push(args); return { data: { recorded: true, message: {}, pending_events: [] } }; },
+      mark_legacy_sends_retailer_emailed: async () => ({ data: [7, 9] }),
+    });
+    const body = await (await handler(request({retailer_id:1,send_ids:[7,9]}))).json();
+    expect(body.ok).toBe(true);
+    const keys = fetch.mock.calls.map(([, init]) => init.headers['Idempotency-Key']);
+    expect(keys).toHaveLength(2);
+    expect(new Set(keys).size).toBe(2);
+    expect(keys[0]).toMatch(/^fm-batch:[0-9a-f]{24}:b-anna$/);
+    expect(recorded).toHaveLength(2);
+    expect(recorded[0]).toMatchObject({ p_resend_message_id:'msg-1', p_retailer_id:1, p_buyer_profile_id:'b-anna', p_to_email:'anna@example.test', p_legacy_ids:[7,9], p_send_key: keys[0], p_locale:'pl' });
+    expect(recorded[1]).toMatchObject({ p_resend_message_id:'msg-2', p_buyer_profile_id:'b-bartek', p_locale:'en' });
+    expect(body.recipient_links_unrecorded).toBeUndefined();
+  });
+
+  it('ten sam batch dwa razy = ten sam klucz (Resend zdeduplikuje), inny zestaw = inny klucz', async () => {
+    rpcByName({ record_legacy_send_message: async () => ({ data: { recorded: true, pending_events: [] } }) });
+    await handler(request({retailer_id:1,send_ids:[7]}));
+    const k1 = fetch.mock.calls[0][1].headers['Idempotency-Key'];
+    state.rows[0].data = {offerId:1,supplierId:'supplier-1'}; // reset markera z atrapy
+    await handler(request({retailer_id:1,send_ids:[7]}));
+    const k2 = fetch.mock.calls[1][1].headers['Idempotency-Key'];
+    expect(k2).toBe(k1);
+    state.rows.push({legacy_id:8,retailer_id:1,status:'sent',data:{offerId:1,supplierId:'supplier-1'}});
+    state.rows[0].data = {offerId:1,supplierId:'supplier-1'};
+    await handler(request({retailer_id:1,send_ids:[7,8]}));
+    expect(fetch.mock.calls[2][1].headers['Idempotency-Key']).not.toBe(k1);
+  });
+
+  it('awaria zapisu powiązania PO akceptacji przez Resend: mail NIE idzie drugi raz, odbiorca raportowany', async () => {
+    rpcByName({
+      record_legacy_send_message: async () => ({ data: null, error: { message: 'db down' } }),
+      mark_legacy_sends_retailer_emailed: async () => ({ data: [7] }),
+    });
+    const body = await (await handler(request())).json();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(body.ok).toBe(true);
+    expect(body.recipient_links_unrecorded).toEqual([{ buyer:'buyer@example.test', message_id:'resend-1', error:'db down' }]);
+  });
+
+  it('zdarzenia, które przyszły PRZED powiązaniem, są przetwarzane zaraz po jego zapisaniu', async () => {
+    const finished = [];
+    rpcByName({
+      record_legacy_send_message: async () => ({ data: { recorded: true, pending_events: [{ event_id:'svix-early', event_type:'email.delivered', occurred_at:'2026-10-22T10:00:00Z' }] } }),
+      finish_legacy_send_email_event: async (args) => { finished.push(args); return { data: 1 }; },
+      mark_legacy_sends_retailer_emailed: async () => ({ data: [7] }),
+    });
+    const body = await (await handler(request())).json();
+    expect(finished).toHaveLength(1);
+    expect(finished[0]).toMatchObject({ p_event_id:'svix-early', p_status:'processed' });
+    expect(body.early_events).toEqual([{ buyer:'buyer@example.test', event_id:'svix-early', event_type:'email.delivered', status:'processed', history_only:true }]);
+  });
+
+  it('odrzucenie przez Resend nie tworzy powiązania', async () => {
+    const recorded = [];
+    rpcByName({ record_legacy_send_message: async (a) => { recorded.push(a); return { data: {} }; } });
+    fetch.mockResolvedValue(new Response('{}',{status:500}));
+    await handler(request());
+    expect(recorded).toHaveLength(0);
+  });
 });

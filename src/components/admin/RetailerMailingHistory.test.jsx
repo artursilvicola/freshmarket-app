@@ -95,3 +95,59 @@ describe("admin mailing history", () => {
     expect(output()).toContain("Emails sent to buyers: at least 1");
   });
 });
+
+// [feat/email-open-history] odbiorcy per kupiec i wejścia do aplikacji — osobno, nazwane jak trzeba
+describe("admin mailing history — recipients", () => {
+  const history = {
+    messages: [
+      { resend_message_id: "one", retailer_id: 1, buyer_profile_id: "b-anna", to_email: "anna@siec.test", legacy_ids: [1, 2],
+        sent_at: "2026-10-06T12:14:00Z", buyer_name: "Anna Kupiec", buyer_email_now: "anna@siec.test",
+        delivered_at: "2026-10-06T12:14:30Z", first_opened_at: "2026-10-06T13:00:00Z", last_opened_at: "2026-10-07T08:00:00Z", open_count: 3,
+        bounced_at: null, complained_at: null, delayed_at: null, last_event_error: null, event_count: 4 },
+      { resend_message_id: "two", retailer_id: 1, buyer_profile_id: "b-bartek", to_email: "bartek@siec.test", legacy_ids: [1, 2],
+        sent_at: "2026-10-06T12:14:00Z", buyer_name: "Bartek Kupiec", buyer_email_now: "bartek@siec.test",
+        delivered_at: "2026-10-06T12:14:31Z", first_opened_at: null, last_opened_at: null, open_count: 0,
+        bounced_at: null, complained_at: null, delayed_at: null, last_event_error: null, event_count: 1 },
+    ],
+    app_reads: [
+      { legacy_id: 1, buyer_profile_id: "b-bartek", reader_role: "buyer", channel: "app_detail",
+        first_read_at: "2026-10-08T09:00:00Z", last_read_at: "2026-10-08T09:05:00Z", read_count: 2, buyer_name: "Bartek Kupiec", buyer_email_now: "bartek@siec.test" },
+    ],
+  };
+  // efekt → Promise.resolve(loadHistory) → then → setState: potrzebna pełna makrotura
+  const flush = async () => { await act(async () => { await new Promise(r => setTimeout(r, 0)); }); };
+
+  it("po rozwinięciu doczytuje odbiorców i pokazuje otwarcia e-maila osobno od wejść do aplikacji", async () => {
+    const calls = [];
+    mount({ loadHistory: async (id) => { calls.push(id); return history; } });
+    expect(calls).toHaveLength(0);                      // nic nie ładuje, póki panel zwinięty
+    toggle(); await flush();
+    expect(calls).toEqual([1]);
+    const out = output();
+    expect(out).toContain("Anna Kupiec");
+    expect(out).toContain("anna@siec.test");
+    expect(out).toContain("06.10.2026, 15:00");         // pierwsze otwarcie, czas polski
+    expect(out).toContain("otwarć: 3");
+    // Bartek: brak otwarcia maila to NIE „nie przeczytał"
+    expect(out).toContain("Brak zarejestrowanego otwarcia");
+    expect(out).not.toContain("Nie przeczytał");
+    // wejście do aplikacji — osobna sekcja, przypisana do kupca, z rodzajem
+    expect(out).toContain("Wejścia do aplikacji");
+    expect(out).toContain("otwarcie propozycji");
+    expect(out).toContain("Jabłka");
+    expect(out).toContain("bez błędów");
+  });
+
+  it("błąd wczytania nie chowa historii wysyłek i jest nazwany", async () => {
+    mount({ loadHistory: async () => null });
+    toggle(); await flush();
+    expect(output()).toContain("Nie udało się wczytać historii odbiorców.");
+    expect(output()).toContain("Jabłka");
+  });
+
+  it("stare mailingi bez powiązań per kupiec: jasny komunikat zamiast pustej tabeli", async () => {
+    mount({ loadHistory: async () => ({ messages: [], app_reads: [] }) });
+    toggle(); await flush();
+    expect(output()).toContain("Brak zapisanych odbiorców dla tego mailingu");
+  });
+});

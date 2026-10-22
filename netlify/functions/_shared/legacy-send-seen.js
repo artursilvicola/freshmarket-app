@@ -50,6 +50,25 @@ export function mapBilling(b) {
   return out;
 }
 
+// [feat/email-open-history] Wejście do aplikacji przypisujemy do UWIERZYTELNIONEGO
+// kupca (readerProfileId/readerRole z tokenu), osobno od piksela e-mail. Zapis jest
+// pomocniczy: jego błąd nie wywraca odczytu ani rozliczenia, tylko trafia do wyniku.
+async function recordAppRead({ supaSvc, legacyId, readerProfileId, readerRole, channel, nowIso }) {
+  try {
+    const { data, error } = await supaSvc.rpc("record_legacy_send_app_read", {
+      p_legacy_id: legacyId,
+      p_buyer_profile_id: readerProfileId || null,
+      p_reader_role: readerRole || null,
+      p_channel: channel,
+      p_at: nowIso,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, first: !!data?.first };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e) };
+  }
+}
+
 export async function markLegacySendsSeen({
   supaSvc,
   env,
@@ -57,6 +76,8 @@ export async function markLegacySendsSeen({
   channel = "app_list",
   allowedRetailerId = null,
   notifySupplier = true,
+  readerProfileId = null,
+  readerRole = null,
 }) {
   const ids = [...new Set((legacyIds || []).map(Number).filter((id) => Number.isFinite(id) && id > 0))];
   if (!ids.length) return { ok: true, results: [] };
@@ -104,6 +125,11 @@ export async function markLegacySendsSeen({
         notifyLegacyIds.push(row.legacy_id);
       }
 
+      // Atrybucja do kupca tylko dla kanałów aplikacji; piksel ma własny rejestr zdarzeń.
+      const appRead = channel === "email"
+        ? null
+        : await recordAppRead({ supaSvc, legacyId: row.legacy_id, readerProfileId, readerRole, channel, nowIso });
+
       results.push({
         legacy_id: row.legacy_id,
         ok: true,
@@ -112,6 +138,7 @@ export async function markLegacySendsSeen({
         data: r.data || row.data || {},
         billing,
         notification: notifySupplier && !notifiedBefore ? { status: "queued" } : null,
+        appRead,
       });
     } catch (e) {
       results.push({ legacy_id: row.legacy_id, ok: false, status: "error", reason: e?.message || String(e) });

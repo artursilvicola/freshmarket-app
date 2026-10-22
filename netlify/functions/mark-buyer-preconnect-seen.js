@@ -64,11 +64,20 @@ export const handler = async (event) => {
     channel,
     allowedRetailerId: profile.role === "buyer" ? profile.retailer_id : null,
     notifySupplier: true,
+    // [feat/email-open-history] wejście przypisane do uwierzytelnionego czytającego
+    readerProfileId: profile.id,
+    readerRole: profile.role,
   });
 
-  // [TEMP DEBUG] dispatchnij pełen result + notificationSummary do Netlify log
-  // żebyśmy mogli zobaczyć dlaczego mail H nie wysyłany. Usunąć po diagnozie.
-  try { console.log("[mark-buyer-preconnect-seen RESULT]", JSON.stringify(result, null, 2)); } catch (e) {}
+  // Podsumowanie bez danych osobowych — same liczby i statusy.
+  try {
+    const rows = result?.results || [];
+    console.log("[mark-buyer-preconnect-seen]", JSON.stringify({
+      channel, role: profile.role, rows: rows.length,
+      statuses: rows.reduce((a, r) => ({ ...a, [r.status]: (a[r.status] || 0) + 1 }), {}),
+      charged: rows.filter((r) => r.billing?.charged).length,
+    }));
+  } catch (e) {}
 
   return json(200, result);
 };

@@ -3,10 +3,12 @@
  * approved/sent rows without an email marker are eligible. No automatic send.
  */
 
+import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { renderRetailerEmail } from "./_shared/render-retailer-email.js";
 import { errLoc, resolveLocale } from "./_shared/error-messages.js";
+import { recordSendMessage, processPendingEvents } from "./_shared/email-events.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -248,6 +250,18 @@ export default async function handler(request) {
   }
 
   // ── Wysyłka przez Resend (po jednej wiadomości na buyera, w jego locale) ─
+  // [feat/email-open-history] Każda wiadomość:
+  //  * idzie z Idempotency-Key stałym dla (sieć, zestaw propozycji, kupiec) — jeśli
+  //    nasz zapis po akceptacji padnie, NIE wysyłamy drugi raz; ewentualne ponowienie
+  //    tego samego batcha Resend zdeduplikuje (24 h);
+  //  * zaraz po akceptacji dostaje powiązanie w legacy_send_messages: kto, na jaki
+  //    adres, które DOKŁADNIE propozycje. To jest źródło prawdy dla historii per
+  //    kupiec i dla rozliczeń z piksela;
+  //  * zdarzenia Resend, które zdążyły przyjść przed powiązaniem (orphan), są
+  //    przetwarzane od razu po jego zapisaniu.
+  const eligibleIds = eligible.map((s) => Number(s.legacy_id)).sort((a, b) => a - b);
+  const batchFingerprint = crypto.createHash("sha256")
+    .update(`${retailerId}|${eligibleIds.join(",")}`).digest("hex").slice(0, 24);
   const resendResults = [];
   for (const buyer of activeBuyers) {
     const buyerLocale = (buyer.locale || "pl").toLowerCase().startsWith("en") ? "en" : "pl";
@@ -273,12 +287,18 @@ export default async function handler(request) {
     if (!renderedByLocale.has(buyerLocale)) {
       renderedByLocale.set(buyerLocale, { html, subject, month });
     }
+    // Klucz stały dla (sieć, zestaw propozycji, kupiec): awaria naszego zapisu po
+    // akceptacji NIGDY nie prowadzi do drugiej wysyłki, a powtórzenie batcha w ciągu
+    // 24 h oddaje pierwotną wiadomość zamiast tworzyć nową.
+    const sendKey = `fm-batch:${batchFingerprint}:${buyer.id || buyer.email}`;
+    const sentAtIso = new Date().toISOString();
     try {
       const res = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${env.resendApiKey}`,
           "Content-Type": "application/json",
+          "Idempotency-Key": sendKey,
         },
         body: JSON.stringify({
           from: "Fresh Market <newsletter@freshmarket.eu>",
@@ -290,10 +310,28 @@ export default async function handler(request) {
       if (!res.ok) {
         const detail = await res.text();
         resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: res.status, detail });
-      } else {
-        const r = await res.json().catch(() => ({}));
-        resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: Boolean(r.id), message_id: r.id || null });
+        continue;
       }
+      const r = await res.json().catch(() => ({}));
+      if (!r.id) {
+        resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: res.status, detail: "resend_no_id" });
+        continue;
+      }
+      // Powiązanie wiadomość ↔ odbiorca ↔ dokładne propozycje. Błąd zapisu = mail
+      // poszedł, ale historia per kupiec jest niekompletna — raportujemy, nie ponawiamy.
+      const link = await recordSendMessage({
+        supaSvc, messageId: r.id, retailerId, buyerProfileId: buyer.id || null,
+        toEmail: buyer.email, legacyIds: eligibleIds, sentAt: sentAtIso, sendKey, locale: buyerLocale,
+      });
+      let earlyEvents = [];
+      if (link.ok && Array.isArray(link.pending_events) && link.pending_events.length) {
+        earlyEvents = await processPendingEvents({ supaSvc, env, legacyIds: eligibleIds, pendingEvents: link.pending_events });
+      }
+      resendResults.push({
+        buyer: buyer.email, locale: buyerLocale, ok: true, message_id: r.id,
+        link_recorded: link.ok, link_error: link.ok ? undefined : link.error,
+        early_events: earlyEvents.length ? earlyEvents : undefined,
+      });
     } catch (e) {
       resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: 0, detail: e?.message || String(e) });
     }
@@ -343,12 +381,21 @@ export default async function handler(request) {
     [...renderedByLocale.entries()].map(([lng, rendered]) => [lng, rendered.subject])
   );
   const firstRendered = renderedByLocale.values().next().value || pickRender("pl");
+  const linksUnrecorded = resendResults.filter((r) => r.ok && !r.link_recorded);
   return json(200, {
     ok: anySent,
     sent_count: markedSendIds.length,
     buyer_count: activeBuyers.length,
     buyers_succeeded: resendResults.filter((r) => r.ok).map((r) => r.buyer),
     buyers_failed: resendResults.filter((r) => !r.ok),
+    // [feat/email-open-history] maile, które poszły, ale bez powiązania per kupiec —
+    // historia otwarć tych odbiorców będzie niepełna; NIE wysyłać ponownie.
+    recipient_links_unrecorded: linksUnrecorded.length
+      ? linksUnrecorded.map((r) => ({ buyer: r.buyer, message_id: r.message_id, error: r.link_error }))
+      : undefined,
+    early_events: resendResults.flatMap((r) => r.early_events || []).length
+      ? resendResults.flatMap((r) => (r.early_events || []).map((e) => ({ buyer: r.buyer, ...e })))
+      : undefined,
     send_ids_marked: markedSendIds,
     skipped: skipped.map((s) => ({ legacy_id: s.legacy_id, status: s.status })),
     subject: firstRendered.subject,

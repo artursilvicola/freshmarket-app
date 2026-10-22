@@ -1,12 +1,46 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { History, ChevronDown, ChevronUp } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { buildRetailerMailingHistory, formatRetailerMailingStamp } from "../../lib/retailer-mailing-history.js";
+import { buildRetailerMailingHistory, formatRetailerMailingStamp, MAILING_TIME_ZONE } from "../../lib/retailer-mailing-history.js";
+import { loadRetailerEmailHistory } from "../../lib/db.js";
 import "./RetailerMailingHistory.css";
 
-export default function RetailerMailingHistory({ retailerId, retailerName, sends, offers = [], companies = [] }) {
+// [feat/email-open-history] Historia per odbiorca (legacy_send_messages + rejestr zdarzeń)
+// jest doczytywana dopiero po rozwinięciu panelu — jedna sieć, jedno RPC, tylko admin.
+// Otwarcie piksela i wejście do aplikacji to RÓŻNE zdarzenia i są pokazywane osobno.
+function fmtInstant(value, language) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const locale = language.toLowerCase().startsWith("en") ? "en-GB" : "pl-PL";
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: MAILING_TIME_ZONE, day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).format(date);
+}
+
+export function recipientsForEntry(entry, history) {
+  const ids = new Set(entry?.sends.map(s => String(s.id ?? s.data?.id)).filter(Boolean));
+  return (history?.messages || []).filter(m => (m.legacy_ids || []).some(id => ids.has(String(id))));
+}
+
+export function appReadsForEntry(entry, history) {
+  const ids = new Set(entry?.sends.map(s => String(s.id ?? s.data?.id)).filter(Boolean));
+  return (history?.app_reads || []).filter(r => ids.has(String(r.legacy_id)));
+}
+
+export function recipientStatus(m, t, p) {
+  if (m.last_event_error) return t(p + "status_error", { error: m.last_event_error });
+  if (m.bounced_at) return t(p + "status_bounced");
+  if (m.complained_at) return t(p + "status_complained");
+  if (m.delayed_at && !m.delivered_at) return t(p + "status_delayed");
+  return t(p + "status_ok");
+}
+
+export default function RetailerMailingHistory({ retailerId, retailerName, sends, offers = [], companies = [], loadHistory = loadRetailerEmailHistory }) {
   const { t, i18n } = useTranslation("legacy");
   const [open, setOpen] = useState(false);
+  const [history, setHistory] = useState({ state: "idle", data: null });
   const regionId = useId();
   const entries = useMemo(() => buildRetailerMailingHistory(sends, retailerId), [sends, retailerId]);
   const p = "admin.mailing_history.";
@@ -27,6 +61,28 @@ export default function RetailerMailingHistory({ retailerId, retailerName, sends
       supplier: company?.name || t(p + "unknown_supplier"),
     };
   };
+  const proposalTitleById = id => {
+    const send = (sends || []).find(s => String(s.id ?? s.data?.id) === String(id));
+    return send ? proposal(send).title : t(p + "proposal_id", { id });
+  };
+
+  // Jedno doczytanie na sieć, dopiero po rozwinięciu. Stan wczytywania NIE jest
+  // zależnością efektu — inaczej zmiana „idle → loading" uruchamiałaby sprzątanie
+  // i anulowała właśnie wystartowane żądanie.
+  const fetchedFor = useRef(null);
+  useEffect(() => {
+    if (!open || fetchedFor.current === retailerId) return;
+    fetchedFor.current = retailerId;
+    let cancelled = false;
+    setHistory({ state: "loading", data: null });
+    Promise.resolve().then(() => loadHistory(retailerId)).then(data => {
+      if (cancelled) return;
+      setHistory(data ? { state: "ready", data } : { state: "error", data: null });
+    }).catch(() => { if (!cancelled) setHistory({ state: "error", data: null }); });
+    return () => { cancelled = true; };
+  }, [open, loadHistory, retailerId]);
+
+  const fmt = v => fmtInstant(v, i18n.language);
 
   return (
     <div className="fm-mailing-history">
@@ -45,23 +101,84 @@ export default function RetailerMailingHistory({ retailerId, retailerName, sends
       {open && <section id={regionId} aria-label={t(p + "toggle", { retailer: retailerName })} className="fm-mailing-history__details">
         <p className="fm-mailing-history__note">{t(p + "source_note")}</p>
         {incompleteDates && <p className="fm-mailing-history__warning">{t(p + "incomplete_dates")}</p>}
-        {!entries.length ? <p>{t(p + "empty")}</p> : entries.map(entry => (
-          <div key={entry.key} className="fm-mailing-history__entry">
-            <div className="fm-mailing-history__entry-heading">
-              <strong>{dateLabel(entry)}</strong>
-              <span>{t(p + "proposals")}: {entry.sends.length}</span>
-              <span>{t(p + "buyers")}: {entry.buyerCount == null ? t(p + "unknown_count")
-                : entry.buyerCountIsMinimum ? t(p + "count_minimum", { count: entry.buyerCount }) : entry.buyerCount}</span>
+        {history.state === "loading" && <p className="fm-mailing-history__note" role="status">{t(p + "recipients_loading")}</p>}
+        {history.state === "error" && <p className="fm-mailing-history__warning" role="alert">{t(p + "recipients_error")}</p>}
+        {!entries.length ? <p>{t(p + "empty")}</p> : entries.map(entry => {
+          const recipients = history.state === "ready" ? recipientsForEntry(entry, history.data) : [];
+          const appReads = history.state === "ready" ? appReadsForEntry(entry, history.data) : [];
+          return (
+            <div key={entry.key} className="fm-mailing-history__entry">
+              <div className="fm-mailing-history__entry-heading">
+                <strong>{dateLabel(entry)}</strong>
+                <span>{t(p + "proposals")}: {entry.sends.length}</span>
+                <span>{t(p + "buyers")}: {entry.buyerCount == null ? t(p + "unknown_count")
+                  : entry.buyerCountIsMinimum ? t(p + "count_minimum", { count: entry.buyerCount }) : entry.buyerCount}</span>
+              </div>
+              {entry.incomplete && <p className="fm-mailing-history__note">{t(p + "unlinked")}</p>}
+              <ul className="fm-mailing-history__proposals">
+                {entry.sends.map((send, index) => {
+                  const item = proposal(send);
+                  return <li key={send.id ?? send.data?.id ?? index}><span>{item.title}</span><span>{item.supplier}</span></li>;
+                })}
+              </ul>
+
+              {history.state === "ready" && (
+                <div className="fm-mailing-history__recipients">
+                  <h4>{t(p + "recipients")}</h4>
+                  {!recipients.length ? <p className="fm-mailing-history__note">{t(p + "recipients_none")}</p> : (
+                    <table className="fm-mailing-history__table">
+                      <thead>
+                        <tr>
+                          <th>{t(p + "col_buyer")}</th><th>{t(p + "col_email")}</th><th>{t(p + "col_sent")}</th>
+                          <th>{t(p + "col_delivered")}</th><th>{t(p + "col_first_open")}</th><th>{t(p + "col_last_open")}</th><th>{t(p + "col_status")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recipients.map(m => (
+                          <tr key={m.resend_message_id}>
+                            <td>{m.buyer_name || (m.buyer_profile_id ? m.buyer_email_now : t(p + "recipient_unknown_buyer"))}</td>
+                            <td>{m.to_email}</td>
+                            <td>{fmt(m.sent_at)}</td>
+                            <td>{fmt(m.delivered_at) || t(p + "not_delivered_yet")}</td>
+                            <td>{fmt(m.first_opened_at) || t(p + "no_open_recorded")}</td>
+                            <td>{m.last_opened_at ? `${fmt(m.last_opened_at)} (${t(p + "open_count", { count: m.open_count || 0 })})` : "—"}</td>
+                            <td>{recipientStatus(m, t, p)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  <p className="fm-mailing-history__note">{t(p + "pixel_note")}</p>
+
+                  <h4>{t(p + "app_reads")}</h4>
+                  <p className="fm-mailing-history__note">{t(p + "app_reads_note")}</p>
+                  {!appReads.length ? <p className="fm-mailing-history__note">{t(p + "app_reads_none")}</p> : (
+                    <table className="fm-mailing-history__table">
+                      <thead>
+                        <tr>
+                          <th>{t(p + "col_buyer")}</th><th>{t(p + "col_proposal")}</th><th>{t(p + "col_channel")}</th>
+                          <th>{t(p + "col_first_read")}</th><th>{t(p + "col_last_read")}</th><th>{t(p + "col_read_count")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {appReads.map(r => (
+                          <tr key={`${r.legacy_id}:${r.channel}:${r.buyer_profile_id || "admin"}`}>
+                            <td>{r.buyer_profile_id ? (r.buyer_name || r.buyer_email_now || t(p + "recipient_unknown_buyer")) : t(p + "app_reader_admin")}</td>
+                            <td>{proposalTitleById(r.legacy_id)}</td>
+                            <td>{t(p + `app_channel_${r.channel}`)}</td>
+                            <td>{fmt(r.first_read_at)}</td>
+                            <td>{fmt(r.last_read_at)}</td>
+                            <td>{r.read_count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
             </div>
-            {entry.incomplete && <p className="fm-mailing-history__note">{t(p + "unlinked")}</p>}
-            <ul className="fm-mailing-history__proposals">
-              {entry.sends.map((send, index) => {
-                const item = proposal(send);
-                return <li key={send.id ?? send.data?.id ?? index}><span>{item.title}</span><span>{item.supplier}</span></li>;
-              })}
-            </ul>
-          </div>
-        ))}
+          );
+        })}
       </section>}
     </div>
   );

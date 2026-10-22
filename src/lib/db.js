@@ -1472,6 +1472,20 @@ export async function deleteLegacyOffer(legacyId) {
   if (error) throw error;
 }
 
+// [feat/email-open-history] Historia e-maili per odbiorca dla sieci (tylko admin;
+// RPC sam sprawdza is_admin()). Zwraca { messages: [...], app_reads: [...] } albo
+// null przy błędzie — UI rozróżnia „brak danych" od „nie udało się wczytać".
+export async function loadRetailerEmailHistory(retailerId) {
+  const id = Number(retailerId);
+  if (!Number.isFinite(id)) return null;
+  const { data, error } = await supabase.rpc("admin_retailer_email_history", { p_retailer_id: id });
+  if (error) {
+    console.warn("[loadRetailerEmailHistory]", error.message);
+    return null;
+  }
+  return data && typeof data === "object" ? data : { messages: [], app_reads: [] };
+}
+
 export async function loadLegacySends() {
   const { data, error } = await supabase
     .from("legacy_sends")
