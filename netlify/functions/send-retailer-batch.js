@@ -258,7 +258,12 @@ export default async function handler(request) {
   //    adres, które DOKŁADNIE propozycje. To jest źródło prawdy dla historii per
   //    kupiec i dla rozliczeń z piksela;
   //  * zdarzenia Resend, które zdążyły przyjść przed powiązaniem (orphan), są
-  //    przetwarzane od razu po jego zapisaniu.
+  //    przetwarzane DOPIERO po `mark_legacy_sends_retailer_emailed` — wcześniej
+  //    wiersze są jeszcze `approved` i rozliczenie zostałoby pominięte [review 22.10];
+  //  * ponowienie batcha w ciągu 24 h: treść maila zawiera nowe magic linki, więc
+  //    Resend odpowiada 409 (ten sam klucz, inny ładunek). Wtedy odzyskujemy
+  //    pierwotny message_id po send_key z legacy_send_messages i traktujemy jak
+  //    wysłane — bez drugiego maila [review 22.10].
   const eligibleIds = eligible.map((s) => Number(s.legacy_id)).sort((a, b) => a - b);
   const batchFingerprint = crypto.createHash("sha256")
     .update(`${retailerId}|${eligibleIds.join(",")}`).digest("hex").slice(0, 24);
@@ -288,8 +293,8 @@ export default async function handler(request) {
       renderedByLocale.set(buyerLocale, { html, subject, month });
     }
     // Klucz stały dla (sieć, zestaw propozycji, kupiec): awaria naszego zapisu po
-    // akceptacji NIGDY nie prowadzi do drugiej wysyłki, a powtórzenie batcha w ciągu
-    // 24 h oddaje pierwotną wiadomość zamiast tworzyć nową.
+    // akceptacji NIGDY nie prowadzi do drugiej wysyłki; powtórzenie batcha w ciągu
+    // 24 h kończy się 409 i odzyskaniem pierwotnego message_id (patrz niżej).
     const sendKey = `fm-batch:${batchFingerprint}:${buyer.id || buyer.email}`;
     const sentAtIso = new Date().toISOString();
     try {
@@ -307,6 +312,28 @@ export default async function handler(request) {
           html,
         }),
       });
+      if (res.status === 409) {
+        // Ten sam Idempotency-Key, inny ładunek (nowe magic linki) albo wciąż w locie.
+        // Mail z pierwszej próby już poszedł — odzyskaj jego id po send_key.
+        const detail = await res.text();
+        const { data: prior, error: priorErr } = await supaSvc
+          .from("legacy_send_messages").select("resend_message_id").eq("send_key", sendKey).maybeSingle();
+        if (priorErr || !prior?.resend_message_id) {
+          resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: 409,
+            detail: priorErr ? `idempotent_conflict_lookup_failed: ${priorErr.message}` : `idempotent_conflict_unrecorded: ${detail}` });
+          continue;
+        }
+        const link = await recordSendMessage({   // idempotentne; oddaje czekające zdarzenia
+          supaSvc, messageId: prior.resend_message_id, retailerId, buyerProfileId: buyer.id || null,
+          toEmail: buyer.email, legacyIds: eligibleIds, sentAt: sentAtIso, sendKey, locale: buyerLocale,
+        });
+        resendResults.push({
+          buyer: buyer.email, locale: buyerLocale, ok: true, message_id: prior.resend_message_id, reused: true,
+          link_recorded: link.ok, link_error: link.ok ? undefined : link.error,
+          pending_events: link.ok && Array.isArray(link.pending_events) ? link.pending_events : [],
+        });
+        continue;
+      }
       if (!res.ok) {
         const detail = await res.text();
         resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: res.status, detail });
@@ -323,14 +350,10 @@ export default async function handler(request) {
         supaSvc, messageId: r.id, retailerId, buyerProfileId: buyer.id || null,
         toEmail: buyer.email, legacyIds: eligibleIds, sentAt: sentAtIso, sendKey, locale: buyerLocale,
       });
-      let earlyEvents = [];
-      if (link.ok && Array.isArray(link.pending_events) && link.pending_events.length) {
-        earlyEvents = await processPendingEvents({ supaSvc, env, legacyIds: eligibleIds, pendingEvents: link.pending_events });
-      }
       resendResults.push({
         buyer: buyer.email, locale: buyerLocale, ok: true, message_id: r.id,
         link_recorded: link.ok, link_error: link.ok ? undefined : link.error,
-        early_events: earlyEvents.length ? earlyEvents : undefined,
+        pending_events: link.ok && Array.isArray(link.pending_events) ? link.pending_events : [],
       });
     } catch (e) {
       resendResults.push({ buyer: buyer.email, locale: buyerLocale, ok: false, status: 0, detail: e?.message || String(e) });
@@ -369,6 +392,13 @@ export default async function handler(request) {
     }
     markedSendIds = persisted.data;
 
+    // Dopiero teraz wiersze są `sent` — zdarzenia, które przyszły przed powiązaniem
+    // (sieroty), mogą się rozliczyć. Błąd tu nie wywraca wysyłki: raportujemy.
+    for (const r of resendResults) {
+      if (!r.ok || !r.pending_events?.length) continue;
+      r.early_events = await processPendingEvents({ supaSvc, env, legacyIds: eligibleIds, pendingEvents: r.pending_events });
+    }
+
     // Supplier notification is tied to the buyer's read, not this optional mailing.
   }
 
@@ -387,6 +417,7 @@ export default async function handler(request) {
     sent_count: markedSendIds.length,
     buyer_count: activeBuyers.length,
     buyers_succeeded: resendResults.filter((r) => r.ok).map((r) => r.buyer),
+    buyers_reused: resendResults.filter((r) => r.ok && r.reused).map((r) => r.buyer),
     buyers_failed: resendResults.filter((r) => !r.ok),
     // [feat/email-open-history] maile, które poszły, ale bez powiązania per kupiec —
     // historia otwarć tych odbiorców będzie niepełna; NIE wysyłać ponownie.

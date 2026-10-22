@@ -214,6 +214,43 @@ describe.skipIf(!PGLITE_PATH)("historia otwarć — zintegrowany (prawdziwy SQL 
     expect(await used()).toBe(1);
   });
 
+  // [review 22.10] maile sprzed wdrożenia historii per kupiec: brak powiązania, ale legacy_sends zna message_id
+  it("mail sprzed wdrożenia (legacy_sends.resend_message_id, bez powiązania): rozliczony jak dotąd, powiązanie dopisane z kupcem po adresie", async () => {
+    await db.query(`update public.legacy_sends set resend_message_id = 'm-old' where legacy_id in (101, 102)`);
+    const r = await call(signed({ type: "email.opened", created_at: "2026-10-22T10:00:00.000Z", data: { email_id: "m-old", to: ["Anna@example.invalid"] } }, { id: "svix-old" }));
+    expect(r.status).toBe(200); expect(r.body.status).toBe("processed"); expect(r.body.linked_from_legacy_sends).toBe(true);
+    expect(await used()).toBe(2);
+    expect((await send(101)).status).toBe("opened"); expect((await send(103)).status).toBe("sent");
+    const m = (await db.query(`select buyer_profile_id, to_email, legacy_ids, send_key from public.legacy_send_messages where resend_message_id = 'm-old'`)).rows[0];
+    expect(m).toMatchObject({ buyer_profile_id: ANNA, to_email: "anna@example.invalid", send_key: "fallback:m-old" });
+    expect(m.legacy_ids.map(Number)).toEqual([101, 102]);
+    expect((await db.query(`select status from public.legacy_send_email_events where event_id = 'svix-old'`)).rows[0].status).toBe("processed");
+    // ta sama dostawa jeszcze raz: duplikat, zero zmian
+    const r2 = await call(signed({ type: "email.opened", created_at: "2026-10-22T10:00:00.000Z", data: { email_id: "m-old", to: ["Anna@example.invalid"] } }, { id: "svix-old" }));
+    expect(r2.body.duplicate).toBe(true); expect(await used()).toBe(2);
+  });
+
+  it("mail sprzed wdrożenia z id tylko w data.resendMessageIds (najstarszy zapis): też rozliczony", async () => {
+    await db.query(`update public.legacy_sends set data = data || '{"resendMessageIds":["m-json","m-json-b"]}' where legacy_id = 103`);
+    const r = await call(signed(opened("m-json"), { id: "svix-json" }));
+    expect(r.body.status).toBe("processed"); expect(await used()).toBe(1);
+    expect((await send(103)).status).toBe("opened");
+  });
+
+  it("otwarcie, gdy wiersz jest jeszcze `approved` (batch w toku): 500 + error; po oznaczeniu `sent` ponowienie rozlicza raz", async () => {
+    await db.query(`update public.legacy_sends set status = 'approved' where legacy_id = 101`);
+    await link("m1", ANNA, "anna@example.invalid", [101, 102]);
+    const ev = signed(opened("m1"), { id: "svix-approved" });
+    const r1 = await call(ev);
+    expect(r1.status).toBe(500); expect(r1.body.error).toBe("not_yet_marked_sent");
+    expect((await db.query(`select status, last_error from public.legacy_send_email_events where event_id = 'svix-approved'`)).rows[0]).toMatchObject({ status: "error" });
+    expect(await used()).toBe(1);                                 // 102 było sent
+    await db.query(`update public.legacy_sends set status = 'sent' where legacy_id = 101`);
+    const r2 = await call(ev);
+    expect(r2.status).toBe(200); expect(await used()).toBe(2);
+    expect((await db.query(`select status from public.legacy_send_email_events where event_id = 'svix-approved'`)).rows[0].status).toBe("processed");
+  });
+
   it("wygasła propozycja: zdarzenie zapisane, bez obciążenia i bez wznowienia", async () => {
     await link("m1", ANNA, "anna@example.invalid", [104]);
     const r = await call(signed(opened("m1"), { id: "svix-exp" }));

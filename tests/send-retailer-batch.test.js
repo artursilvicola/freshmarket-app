@@ -173,17 +173,58 @@ describe('retailer batch — historia per odbiorca', () => {
     expect(body.recipient_links_unrecorded).toEqual([{ buyer:'buyer@example.test', message_id:'resend-1', error:'db down' }]);
   });
 
-  it('zdarzenia, które przyszły PRZED powiązaniem, są przetwarzane zaraz po jego zapisaniu', async () => {
-    const finished = [];
+  it('zdarzenia, które przyszły PRZED powiązaniem, są przetwarzane DOPIERO po oznaczeniu wierszy jako wysłane', async () => {
+    const order = [];
     rpcByName({
-      record_legacy_send_message: async () => ({ data: { recorded: true, pending_events: [{ event_id:'svix-early', event_type:'email.delivered', occurred_at:'2026-10-22T10:00:00Z' }] } }),
-      finish_legacy_send_email_event: async (args) => { finished.push(args); return { data: 1 }; },
-      mark_legacy_sends_retailer_emailed: async () => ({ data: [7] }),
+      record_legacy_send_message: async () => { order.push('record'); return { data: { recorded: true, pending_events: [{ event_id:'svix-early', event_type:'email.delivered', occurred_at:'2026-10-22T10:00:00Z' }] } }; },
+      finish_legacy_send_email_event: async (args) => { order.push('finish:' + args.p_status); return { data: 1 }; },
+      mark_legacy_sends_retailer_emailed: async () => { order.push('mark'); return { data: [7] }; },
     });
     const body = await (await handler(request())).json();
-    expect(finished).toHaveLength(1);
-    expect(finished[0]).toMatchObject({ p_event_id:'svix-early', p_status:'processed' });
+    expect(order).toEqual(['record', 'mark', 'finish:processed']);
     expect(body.early_events).toEqual([{ buyer:'buyer@example.test', event_id:'svix-early', event_type:'email.delivered', status:'processed', history_only:true }]);
+  });
+
+  it('sieroce otwarcie nie jest przetwarzane, gdy oznaczenie wysyłki padło (502) — zostaje do ponowienia', async () => {
+    const finished = [];
+    rpcByName({
+      record_legacy_send_message: async () => ({ data: { recorded: true, pending_events: [{ event_id:'svix-early', event_type:'email.opened' }] } }),
+      finish_legacy_send_email_event: async (args) => { finished.push(args); return { data: 1 }; },
+      mark_legacy_sends_retailer_emailed: async () => ({ data: null, error: { message: 'network' } }),
+    });
+    const r = await handler(request());
+    expect(r.status).toBe(502);
+    expect(finished).toHaveLength(0);
+  });
+
+  it('409 od Resend (ten sam klucz, inny ładunek): odzyskuje pierwotny message_id po send_key, nie wysyła drugi raz, oznacza wysyłkę', async () => {
+    const recorded = [];
+    state.service.from = vi.fn((table) => {
+      const q = query(table);
+      if (table === 'legacy_send_messages') q.maybeSingle = async () => ({ data: { resend_message_id: 'msg-pierwotny' }, error: null });
+      return q;
+    });
+    rpcByName({
+      record_legacy_send_message: async (a) => { recorded.push(a); return { data: { recorded: false, pending_events: [] } }; },
+      mark_legacy_sends_retailer_emailed: async (a) => ({ data: a.p_send_ids }),
+    });
+    fetch.mockResolvedValue(new Response(JSON.stringify({ name: 'invalid_idempotent_request', message: 'Same key, different payload' }), { status: 409 }));
+    const body = await (await handler(request())).json();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(body.ok).toBe(true);
+    expect(body.buyers_reused).toEqual(['buyer@example.test']);
+    expect(body.send_ids_marked).toEqual([7]);
+    expect(recorded[0]).toMatchObject({ p_resend_message_id: 'msg-pierwotny' });
+    expect(state.service.rpc).toHaveBeenCalledWith('mark_legacy_sends_retailer_emailed', expect.objectContaining({ p_message_ids: ['msg-pierwotny'] }));
+  });
+
+  it('409 bez zapisanego powiązania: nie da się odzyskać id — raportowane jako błąd, bez oznaczenia', async () => {
+    rpcByName({});
+    fetch.mockResolvedValue(new Response('{"name":"invalid_idempotent_request"}', { status: 409 }));
+    const body = await (await handler(request())).json();
+    expect(body.ok).toBe(false);
+    expect(body.buyers_failed[0].detail).toContain('idempotent_conflict_unrecorded');
+    expect(state.service.rpc).not.toHaveBeenCalledWith('mark_legacy_sends_retailer_emailed', expect.anything());
   });
 
   it('odrzucenie przez Resend nie tworzy powiązania', async () => {

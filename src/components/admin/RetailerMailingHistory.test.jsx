@@ -187,3 +187,41 @@ describe("admin mailing history — stan odczytu propozycji", () => {
     expect(output()).not.toContain("admin.mailing_history");
   });
 });
+
+// [review 22.10] podgląd admina nazwany jako admin; odbiorcy dopasowani po id wiadomości; po błędzie można ponowić
+describe("admin mailing history — poprawki po review", () => {
+  const flush = async () => { await act(async () => { await new Promise(r => setTimeout(r, 0)); }); };
+  it("wejście administratora w podglądzie jest podpisane jako administrator, nie jako kupiec", async () => {
+    mount({ loadHistory: async () => ({ messages: [], app_reads: [
+      { legacy_id: 1, buyer_profile_id: "admin-1", reader_role: "admin", channel: "app_detail", first_read_at: "2026-10-08T09:00:00Z", last_read_at: "2026-10-08T09:00:00Z", read_count: 1, buyer_name: "Jagoda Admin", buyer_email_now: "admin@fm.test" },
+    ] }) });
+    toggle(); await flush();
+    expect(output()).toContain("administrator (podgląd)");
+    expect(output()).not.toContain("Jagoda Admin");
+  });
+  it("odbiorcy są dopasowani po identyfikatorach wiadomości tego mailingu, nie po przecięciu propozycji", async () => {
+    const sends = [
+      { id: 1, retailerId: 1, offerId: 11, emailSentAt: "2026-10-06T12:14:00Z", resendMessageIds: ["one"] },
+      { id: 2, retailerId: 1, offerId: 12, emailSentAt: "2026-10-13T12:14:00Z", resendMessageIds: ["two"] },
+    ];
+    // wiadomość „two" zawierała propozycje 1 i 2 — po przecięciu trafiłaby też pod wpis z 06.10
+    mount({ sends, loadHistory: async () => ({ app_reads: [], messages: [
+      { resend_message_id: "one", retailer_id: 1, buyer_profile_id: "b1", buyer_name: "Pierwszy Kupiec", to_email: "pierwszy@siec.test", legacy_ids: [1], sent_at: "2026-10-06T12:14:00Z", open_count: 0 },
+      { resend_message_id: "two", retailer_id: 1, buyer_profile_id: "b2", buyer_name: "Drugi Kupiec", to_email: "drugi@siec.test", legacy_ids: [1, 2], sent_at: "2026-10-13T12:14:00Z", open_count: 0 },
+    ] }) });
+    toggle(); await flush();
+    const out = output();
+    expect(out.indexOf("Drugi Kupiec")).toBeLessThan(out.indexOf("Pierwszy Kupiec"));   // nowszy wpis pierwszy
+    expect(out.match(/Drugi Kupiec/g)).toHaveLength(1);
+    expect(out.match(/Pierwszy Kupiec/g)).toHaveLength(1);
+  });
+  it("po błędzie wczytania zwinięcie i rozwinięcie ponawia", async () => {
+    let n = 0;
+    mount({ loadHistory: async () => (++n === 1 ? null : { messages: [], app_reads: [] }) });
+    toggle(); await flush();
+    expect(output()).toContain("Nie udało się wczytać historii odbiorców.");
+    toggle(); toggle(); await flush();
+    expect(n).toBe(2);
+    expect(output()).not.toContain("Nie udało się wczytać historii odbiorców.");
+  });
+});

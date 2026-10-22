@@ -17,9 +17,11 @@ vi.mock("../netlify/functions/_shared/supplier-read-notify.js", () => ({
 }));
 import { handler } from "../netlify/functions/resend-webhook.js";
 
-function fakeDb({ messages = {}, sends = [] } = {}) {
+function fakeDb({ messages = {}, sends = [], profiles = [] } = {}) {
   const db = {
     messages,                       // resend_message_id -> { retailer_id, buyer_profile_id, legacy_ids }
+    profiles,                       // [{ id, email }]
+    recorded: [],                   // wywołania record_legacy_send_message
     events: new Map(),              // event_id -> row
     sends: new Map(sends.map((s) => [s.legacy_id, { id: "uuid-" + s.legacy_id, supplier_legacy_id: "sup-1", retailer_id: 1, status: "sent", data: {}, ...s }])),
     charges: 0, failSeen: 0, failIngest: false, failFinish: false,
@@ -30,6 +32,8 @@ function fakeDb({ messages = {}, sends = [] } = {}) {
         _table: table, _filters: [],
         select() { return q; }, eq(col, val) { q._filters.push([col, val]); return q; },
         in(col, vals) { q._filters.push([col, vals]); return q; },
+        contains(col, val) { q._filters.push(["contains:" + col, val]); return q; },
+        limit() { return q; },
         async maybeSingle() {
           if (table === "legacy_send_messages") {
             const id = q._filters.find(([c]) => c === "resend_message_id")?.[1];
@@ -37,10 +41,21 @@ function fakeDb({ messages = {}, sends = [] } = {}) {
             return { data: m ? { legacy_ids: m.legacy_ids } : null, error: null };
           }
           if (table === "companies") return { data: { id: "company-1" }, error: null };
+          if (table === "profiles") {
+            const email = q._filters.find(([c]) => c === "email")?.[1];
+            const p = db.profiles.find((x) => x.email === email);
+            return { data: p ? { id: p.id } : null, error: null };
+          }
           return { data: null, error: null };
         },
         then(res, rej) {
           if (table === "legacy_sends") {
+            if (db.failLegacyLookup) return Promise.resolve({ data: null, error: { message: "lookup down" } }).then(res, rej);
+            const all = [...db.sends.values()];
+            const byCol = q._filters.find(([c]) => c === "resend_message_id")?.[1];
+            if (byCol !== undefined) return Promise.resolve({ data: all.filter((s) => s.resend_message_id === byCol).map((s) => structuredClone(s)), error: null }).then(res, rej);
+            const byJson = q._filters.find(([c]) => c === "contains:data")?.[1];
+            if (byJson) return Promise.resolve({ data: all.filter((s) => (s.data?.resendMessageIds || []).includes(byJson.resendMessageIds[0])).map((s) => structuredClone(s)), error: null }).then(res, rej);
             const ids = q._filters.find(([c]) => c === "legacy_id")?.[1] || [];
             return Promise.resolve({ data: ids.map((id) => structuredClone(db.sends.get(Number(id)))).filter(Boolean), error: null }).then(res, rej);
           }
@@ -82,6 +97,18 @@ function fakeDb({ messages = {}, sends = [] } = {}) {
         return { data: { skipped: false, previous_status: prev, status: next, data: structuredClone(row.data), billing, supplier_notified_before: !!row.data.supplierNotifiedAt }, error: null };
       }
       if (name === "record_legacy_send_app_read") return { data: { first: true }, error: null };
+      if (name === "record_legacy_send_message") {
+        db.recorded.push(args);
+        if (!db.messages[args.p_resend_message_id]) {
+          db.messages[args.p_resend_message_id] = { retailer_id: args.p_retailer_id, buyer_profile_id: args.p_buyer_profile_id, legacy_ids: args.p_legacy_ids, to_email: args.p_to_email, send_key: args.p_send_key };
+        }
+        const pending = [];
+        for (const ev of db.events.values()) {
+          if (ev.resend_message_id === args.p_resend_message_id && ev.status === "orphan") ev.status = "pending";
+          if (ev.resend_message_id === args.p_resend_message_id && ev.status === "pending") pending.push({ event_id: ev.event_id, event_type: ev.event_type });
+        }
+        return { data: { recorded: true, pending_events: pending }, error: null };
+      }
       return { data: null, error: { code: "PGRST202", message: "not found: " + name } };
     },
   };
@@ -215,5 +242,80 @@ describe("resend-webhook — zapisz, przetwórz, potwierdź", () => {
     expect(r.body.history_only).toBe(true);
     expect(db.charges).toBe(0);
     expect(db.events.get("svix-d").status).toBe("processed");
+  });
+});
+
+// [review 22.10] fallback po legacy_sends (maile sprzed historii per kupiec), otwarcie przed `sent`, scrub click
+describe("resend-webhook — poprawki po review 22.10", () => {
+  beforeEach(() => { state.supa = null; });
+
+  it("mail sprzed wdrożenia (brak powiązania, ale legacy_sends.resend_message_id) → rozliczony jak w starym webhooku, powiązanie dopisane", async () => {
+    const { supa, db } = fakeDb({
+      sends: [{ legacy_id: 101, resend_message_id: "m-old" }, { legacy_id: 102, resend_message_id: "m-old" }, { legacy_id: 103, resend_message_id: "m-inny" }],
+      profiles: [{ id: "prof-anna", email: "anna@siec.test" }],
+    });
+    state.supa = supa;
+    const r = await call(signed(opened("m-old", { data: { email_id: "m-old", to: ["Anna@siec.test"] } }), { id: "svix-old" }));
+    expect(r.status).toBe(200);
+    expect(r.body.status).toBe("processed");
+    expect(r.body.linked_from_legacy_sends).toBe(true);
+    expect(db.charges).toBe(2);                                   // 101 i 102, NIE 103
+    expect(db.sends.get(103).status).toBe("sent");
+    expect(db.recorded).toHaveLength(1);
+    expect(db.recorded[0]).toMatchObject({ p_resend_message_id: "m-old", p_retailer_id: 1, p_buyer_profile_id: "prof-anna", p_to_email: "anna@siec.test", p_legacy_ids: [101, 102], p_send_key: "fallback:m-old" });
+    expect(db.events.get("svix-old").status).toBe("processed");
+    // powtórka tego samego webhooka: nic więcej
+    const r2 = await call(signed(opened("m-old", { data: { email_id: "m-old", to: ["Anna@siec.test"] } }), { id: "svix-old" }));
+    expect(r2.body.duplicate).toBe(true);
+    expect(db.charges).toBe(2);
+  });
+
+  it("mail sprzed wdrożenia z id tylko w data.resendMessageIds → też rozliczony", async () => {
+    const { supa, db } = fakeDb({ sends: [{ legacy_id: 101, data: { resendMessageIds: ["m-json", "m-json-2"] } }] });
+    state.supa = supa;
+    const r = await call(signed(opened("m-json"), { id: "svix-json" }));
+    expect(r.body.status).toBe("processed");
+    expect(db.charges).toBe(1);
+    expect(db.recorded[0].p_buyer_profile_id).toBeNull();          // adres bez profilu — powiązanie i tak jest
+  });
+
+  it("awaria bazy w fallbacku → 500 (Svix ponowi), zdarzenie zachowane, nic nie rozliczone", async () => {
+    const { supa, db } = fakeDb({ sends: [{ legacy_id: 101, resend_message_id: "m-old" }] });
+    db.failLegacyLookup = true; state.supa = supa;
+    const r = await call(signed(opened("m-old"), { id: "svix-fb" }));
+    expect(r.status).toBe(500);
+    expect(db.charges).toBe(0);
+    expect(db.events.get("svix-fb").status).toBe("orphan");
+    db.failLegacyLookup = false;
+    const r2 = await call(signed(opened("m-old"), { id: "svix-fb" }));   // ponowienie Svixa
+    expect(r2.status).toBe(200);
+    expect(db.charges).toBe(1);
+  });
+
+  it("otwarcie w trakcie batcha (wiersz jeszcze `approved`) → 500 i ponowienie po oznaczeniu `sent` rozlicza raz", async () => {
+    const { supa, db } = fakeDb({ messages: { "m1": { retailer_id: 1, legacy_ids: [101, 102] } }, sends: [{ legacy_id: 101, status: "approved" }, { legacy_id: 102, status: "sent" }] });
+    state.supa = supa;
+    const ev = signed(opened("m1"), { id: "svix-early" });
+    const r1 = await call(ev);
+    expect(r1.status).toBe(500);
+    expect(r1.body.error).toBe("not_yet_marked_sent");
+    expect(db.events.get("svix-early").status).toBe("error");
+    expect(db.charges).toBe(1);                                   // 102 było `sent` — rozliczone od razu
+    db.sends.get(101).status = "sent";                            // batch skończył oznaczanie
+    const r2 = await call(ev);
+    expect(r2.status).toBe(200);
+    expect(db.events.get("svix-early").status).toBe("processed");
+    expect(db.charges).toBe(2);                                   // 101 dorozliczone, 102 bez dubla
+  });
+
+  it("z kliknięcia do rejestru trafia tylko czas — bez linku z tokenem, IP i user-agenta", async () => {
+    const { supa, db } = fakeDb({ messages: { "m1": { retailer_id: 1, legacy_ids: [101] } }, sends: [{ legacy_id: 101 }] });
+    const ingestArgs = []; const origRpc = supa.rpc.bind(supa);
+    supa.rpc = async (name, args) => { if (name === "ingest_legacy_send_email_event") ingestArgs.push(args); return origRpc(name, args); };
+    state.supa = supa;
+    await call(signed({ type: "email.clicked", created_at: "2026-10-22T10:00:00Z", data: { email_id: "m1", click: { link: "https://x/auth?token=SEKRET", ipAddress: "1.2.3.4", userAgent: "UA", timestamp: "2026-10-22T10:00:01Z" } } }, { id: "svix-c" }));
+    expect(ingestArgs[0].p_payload.data.click).toEqual({ timestamp: "2026-10-22T10:00:01Z" });
+    expect(JSON.stringify(ingestArgs[0].p_payload)).not.toContain("SEKRET");
+    expect(db.charges).toBe(0);
   });
 });

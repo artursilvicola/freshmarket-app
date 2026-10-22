@@ -103,6 +103,7 @@ export function buildRetailerMailingHistory(sends, retailerId) {
     candidates.sort(newestStamp);
     return {
       key: g.key, sends: g.sends, stamp: candidates[0] || null,
+      messageIds: [...g.messageIds],
       conflictingDates: candidates.length > 1,
       incomplete: !g.messageIds.size,
       buyerCount: Math.max(g.messageIds.size, g.buyerCount || 0) || null,

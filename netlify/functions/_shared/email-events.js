@@ -74,6 +74,16 @@ export async function processKnownEvent({ supaSvc, env, eventId, type, legacyIds
   }
 
   const rows = result?.results || [];
+  // [review 22.10] Otwarcie, które dotarło ZANIM batch oznaczył wiersze jako `sent`
+  // (status jeszcze `approved`), nie jest wynikiem końcowym — to okno kilku sekund
+  // między akceptacją Resend a `mark_legacy_sends_retailer_emailed`. Traktujemy jak
+  // błąd przejściowy: zdarzenie w `error`, 500, Svix ponawia po oznaczeniu.
+  const notYetSent = rows.filter((r) => r.status === "skipped" && String(r.reason || "") === "status_approved");
+  if (notYetSent.length) {
+    const msg = "not_yet_marked_sent: " + notYetSent.map((r) => r.legacy_id).join(",");
+    await finishEvent(supaSvc, eventId, "error", { legacy_ids: ids, not_yet_marked_sent: notYetSent.map((r) => r.legacy_id) }, msg);
+    throw new RetryableEventError("not_yet_marked_sent", msg);
+  }
   const errors = rows.filter((r) => r.status === "error");
   const summary = {
     legacy_ids: ids,
@@ -111,6 +121,47 @@ export async function processPendingEvents({ supaSvc, env, legacyIds, pendingEve
     }
   }
   return out;
+}
+
+/**
+ * [review 22.10] Wiadomość bez powiązania w legacy_send_messages: maile sprzed
+ * wdrożenia historii per kupiec oraz maile, dla których zapis powiązania padł po
+ * akceptacji Resend. Stara ścieżka (do 7d35f52) znajdowała je po
+ * legacy_sends.resend_message_id / data.resendMessageIds — przywracamy ją jako
+ * fallback. Jeśli znajdziemy wiersze, zapisujemy powiązanie (to_email z ładunku,
+ * kupiec po adresie w profiles, jeśli jest), żeby zdarzenie wróciło z `orphan`
+ * do `pending` i mogło się rozliczyć. Nic nie wysyłamy.
+ * Zwraca { linked, legacyIds, retailerId } albo { linked: false }.
+ */
+export async function linkMessageFromLegacySends({ supaSvc, messageId, toEmail, occurredAt }) {
+  const sel = "id, legacy_id, retailer_id, data";
+  const byColumn = await supaSvc.from("legacy_sends").select(sel).eq("resend_message_id", messageId);
+  if (byColumn.error) throw new RetryableEventError("legacy_lookup_failed", byColumn.error.message);
+  let rows = byColumn.data || [];
+  if (!rows.length) {
+    const byJson = await supaSvc.from("legacy_sends").select(sel).contains("data", { resendMessageIds: [messageId] });
+    if (byJson.error) throw new RetryableEventError("legacy_lookup_failed", byJson.error.message);
+    rows = byJson.data || [];
+  }
+  const legacyIds = [...new Set(rows.map((r) => Number(r.legacy_id)).filter((n) => Number.isFinite(n) && n > 0))];
+  if (!legacyIds.length) return { linked: false };
+  const retailerId = rows.map((r) => r.retailer_id).find((v) => v != null) ?? null;
+  if (retailerId == null) return { linked: false };
+
+  const email = typeof toEmail === "string" ? toEmail.trim().toLowerCase() : "";
+  let buyerProfileId = null;
+  if (email) {
+    const { data: prof, error: profErr } = await supaSvc.from("profiles").select("id").eq("email", email).limit(1).maybeSingle();
+    if (profErr) throw new RetryableEventError("legacy_lookup_failed", profErr.message);
+    buyerProfileId = prof?.id || null;
+  }
+  const sentAt = rows.map((r) => r?.data?.emailSentAt).find((v) => typeof v === "string" && v) || occurredAt || null;
+  const link = await recordSendMessage({
+    supaSvc, messageId, retailerId, buyerProfileId,
+    toEmail: email || "nieznany@brak-adresu.invalid", legacyIds, sentAt, sendKey: `fallback:${messageId}`, locale: null,
+  });
+  if (!link.ok) throw new RetryableEventError("legacy_link_failed", link.error);
+  return { linked: true, legacyIds, retailerId, buyerProfileId };
 }
 
 /** Zapis powiązania po akceptacji przez Resend. Nigdy nie wysyła ponownie. */

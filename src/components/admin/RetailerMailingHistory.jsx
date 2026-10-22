@@ -20,8 +20,13 @@ function fmtInstant(value, language) {
 }
 
 export function recipientsForEntry(entry, history) {
+  const messages = history?.messages || [];
+  // Najpierw po identyfikatorach wiadomości tego mailingu (jednoznaczne); przecięcie
+  // propozycji tylko wtedy, gdy wpis nie ma identyfikatorów (stare zapisy).
+  const mids = new Set((entry?.messageIds || []).map(String));
+  if (mids.size) return messages.filter(m => mids.has(String(m.resend_message_id)));
   const ids = new Set(entry?.sends.map(s => String(s.id ?? s.data?.id)).filter(Boolean));
-  return (history?.messages || []).filter(m => (m.legacy_ids || []).some(id => ids.has(String(id))));
+  return messages.filter(m => (m.legacy_ids || []).some(id => ids.has(String(id))));
 }
 
 export function appReadsForEntry(entry, history) {
@@ -94,10 +99,11 @@ export default function RetailerMailingHistory({ retailerId, retailerName, sends
     fetchedFor.current = retailerId;
     let cancelled = false;
     setHistory({ state: "loading", data: null });
+    const fail = () => { if (cancelled) return; fetchedFor.current = null; setHistory({ state: "error", data: null }); };
     Promise.resolve().then(() => loadHistory(retailerId)).then(data => {
       if (cancelled) return;
-      setHistory(data ? { state: "ready", data } : { state: "error", data: null });
-    }).catch(() => { if (!cancelled) setHistory({ state: "error", data: null }); });
+      if (data) setHistory({ state: "ready", data }); else fail();
+    }).catch(fail);
     return () => { cancelled = true; };
   }, [open, loadHistory, retailerId]);
 
@@ -167,7 +173,7 @@ export default function RetailerMailingHistory({ retailerId, retailerName, sends
                       <tbody>
                         {recipients.map(m => (
                           <tr key={m.resend_message_id}>
-                            <td>{m.buyer_name || (m.buyer_profile_id ? m.buyer_email_now : t(p + "recipient_unknown_buyer"))}</td>
+                            <td>{m.buyer_name || (m.buyer_profile_id ? m.buyer_email_now : m.to_email)}</td>
                             <td>{m.to_email}</td>
                             <td>{fmt(m.sent_at)}</td>
                             <td>{fmt(m.delivered_at) || t(p + "not_delivered_yet")}</td>
@@ -194,7 +200,7 @@ export default function RetailerMailingHistory({ retailerId, retailerName, sends
                       <tbody>
                         {appReads.map(r => (
                           <tr key={`${r.legacy_id}:${r.channel}:${r.buyer_profile_id || "admin"}`}>
-                            <td>{r.buyer_profile_id ? (r.buyer_name || r.buyer_email_now || t(p + "recipient_unknown_buyer")) : t(p + "app_reader_admin")}</td>
+                            <td>{r.reader_role === "admin" || !r.buyer_profile_id ? t(p + "app_reader_admin") : (r.buyer_name || r.buyer_email_now || t(p + "recipient_unknown_buyer"))}</td>
                             <td>{proposalTitleById(r.legacy_id)}</td>
                             <td>{t(p + `app_channel_${r.channel}`)}</td>
                             <td>{fmt(r.first_read_at)}</td>

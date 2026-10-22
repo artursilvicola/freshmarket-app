@@ -59,7 +59,7 @@ comment on table public.legacy_send_messages is
 alter table public.legacy_send_messages enable row level security;
 drop policy if exists lsm_admin_read on public.legacy_send_messages;
 create policy lsm_admin_read on public.legacy_send_messages for select using (public.is_admin());
-revoke all on table public.legacy_send_messages from public, anon;
+revoke all on table public.legacy_send_messages from public, anon, authenticated;  -- domyślne uprawnienia Supabase dają authenticated ALL
 grant select on table public.legacy_send_messages to authenticated;   -- RLS zawęża do admina
 grant select, insert, update on table public.legacy_send_messages to service_role;
 
@@ -89,7 +89,7 @@ comment on table public.legacy_send_email_events is
 alter table public.legacy_send_email_events enable row level security;
 drop policy if exists lsee_admin_read on public.legacy_send_email_events;
 create policy lsee_admin_read on public.legacy_send_email_events for select using (public.is_admin());
-revoke all on table public.legacy_send_email_events from public, anon;
+revoke all on table public.legacy_send_email_events from public, anon, authenticated;
 grant select on table public.legacy_send_email_events to authenticated;
 grant select, insert, update on table public.legacy_send_email_events to service_role;
 
@@ -113,7 +113,7 @@ comment on table public.legacy_send_app_reads is
 alter table public.legacy_send_app_reads enable row level security;
 drop policy if exists lsar_admin_read on public.legacy_send_app_reads;
 create policy lsar_admin_read on public.legacy_send_app_reads for select using (public.is_admin());
-revoke all on table public.legacy_send_app_reads from public, anon;
+revoke all on table public.legacy_send_app_reads from public, anon, authenticated;
 grant select on table public.legacy_send_app_reads to authenticated;
 grant select, insert, update on table public.legacy_send_app_reads to service_role;
 grant usage, select on sequence public.legacy_send_app_reads_id_seq to service_role;

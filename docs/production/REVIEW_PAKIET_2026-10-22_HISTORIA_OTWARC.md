@@ -82,3 +82,24 @@ Czułość sprawdzona w trakcie: błąd w efekcie komponentu (anulowanie własne
 
 - Sweep zdarzeń w `error` po wyczerpaniu ponowień Svixa (ręczny przycisk w panelu vs. zostawić w historii).
 - Czy wejścia administratora w podglądzie konta kupca mają być zapisywane jako „administrator (podgląd)" (dziś: tak, oznaczone osobno) — czy w ogóle pomijane.
+
+## 8. Poprawki po niezależnym review (22.10, po południu) — wdrożone w gałęzi
+
+Codex niedostępny (brak kredytów); review wykonał niezależny agent na diffie `7d35f52..4dc6270`. Wszystkie znaleziska zweryfikowane w kodzie i poprawione:
+
+| waga | znalezisko | poprawka | test |
+|---|---|---|---|
+| BLOKUJE | `email.opened` dla maila bez wiersza w `legacy_send_messages` (mail sprzed wdrożenia, albo zapis powiązania padł) → `orphan` na zawsze, kredyt nigdy nie pobrany | webhook: po braku powiązania **fallback jak w starym kodzie** (`legacy_sends.resend_message_id` / `data.resendMessageIds`) → dopisanie powiązania (`send_key = fallback:<id>`, kupiec po adresie z `profiles.email`) → normalne rozliczenie. Duplikat svix-id w stanie `orphan` też jest przetwarzany ponownie | webhook 3 nowe, zintegrowany 2 nowe (kolumna i JSON) |
+| WAŻNE | otwarcie w trakcie batcha (wiersz jeszcze `approved`) → `skipped` → `processed` → kredyt stracony | `processKnownEvent`: `status_approved` = błąd przejściowy → `error` + 500 (Svix ponawia po oznaczeniu). Batch: sieroty przetwarzane **po** `mark_legacy_sends_retailer_emailed` | webhook 1, batch 2, zintegrowany 1 |
+| WAŻNE | ponowienie batcha w 24 h → 409 (`invalid_idempotent_request`: nowe magic linki = inny ładunek), wysyłki nie da się zamknąć | przy 409: odzyskanie `message_id` po `send_key` z `legacy_send_messages`, traktowane jak wysłane (`buyers_reused`), oznaczenie dochodzi do skutku; bez zapisu → `idempotent_conflict_unrecorded` | batch 2 |
+| DROBNE | `scrubPayload` zapisywał cały `click` (link z tokenem, IP, UA) | tylko `click.timestamp` | webhook 1 |
+| DROBNE | `revoke … from public, anon` nie zdejmuje domyślnych uprawnień Supabase dla `authenticated` | `revoke all … from public, anon, authenticated` ×3 (jak w 20261013) | PGlite nie odwzorowuje domyślnych uprawnień — kontrola ACL po migracji na prod |
+| DROBNE | podgląd admina w „Wejścia do aplikacji” podpisany nazwiskiem admina | warunek po `reader_role === "admin"` | komponent 1 |
+| DROBNE | odbiorcy dopasowani po przecięciu `legacy_ids` (duplikaty przy ponownej wysyłce) | najpierw po `resend_message_id` z wpisu (`entry.messageIds`), przecięcie tylko dla starych wpisów | komponent 1 |
+| DROBNE | po błędzie wczytania historii nie da się ponowić bez przeładowania | zerowanie `fetchedFor` w gałęzi błędu | komponent 1 |
+
+Dodatkowo (zlecenie Artura 22.10): **stan odczytu przy każdej propozycji** w historii wysyłek z istniejących danych `legacy_sends` (status/readAt/emailOpenedAt) — działa też dla tury 07.10. Bez migracji. Komponent 2 testy.
+
+Niezamknięte, do decyzji (bez zmian): sweep zdarzeń w `error` po wyczerpaniu ponowień Svixa; wyścig ingest↔record przy sierocie w tym samym ułamku sekundy (jedno ponowne sprawdzenie powiązania jest; cyklicznego przebiegu nie ma).
+
+Wyniki po poprawkach: SQL 9/9, zintegrowany **13/13** (cały łańcuch migracji), webhook 16/16, batch 20/20, komponent 15/15, całość **760+/760+**, build OK.

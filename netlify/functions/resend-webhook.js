@@ -28,12 +28,18 @@
  * Maile niezwiązane z propozycjami (logowanie, powiadomienia dostawców) nie mają
  * powiązania w legacy_send_messages → trafiają do rejestru jako orphan i nigdy
  * niczego nie rozliczają.
+ *
+ * [review 22.10] Wiadomość bez powiązania, ale ZNANA w legacy_sends (mail sprzed
+ * wdrożenia historii per kupiec albo zapis powiązania padł po akceptacji) →
+ * fallback po resend_message_id / data.resendMessageIds jak w starym webhooku,
+ * dopisanie powiązania i normalne przetwarzanie. Dopiero gdy i tam nic nie ma
+ * → orphan.
  */
 
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
-import { ingestResendEvent, processKnownEvent, RetryableEventError } from "./_shared/email-events.js";
+import { ingestResendEvent, linkMessageFromLegacySends, processKnownEvent, RetryableEventError } from "./_shared/email-events.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -116,36 +122,54 @@ export const handler = async (event) => {
   }
 
   if (ingested.duplicate) {
-    // Ten sam svix-id już był. Jeśli poprzednia próba skończyła się błędem,
-    // przetwarzamy ponownie (to właśnie jest ponowienie Svixa); inaczej nic.
-    if (ingested.status !== "error" && ingested.status !== "pending") {
+    // Ten sam svix-id już był. Jeśli poprzednia próba skończyła się błędem albo
+    // zdarzenie wciąż czeka (pending / orphan — np. 500 z fallbacku), przetwarzamy
+    // ponownie (to właśnie jest ponowienie Svixa); processed/ignored → nic.
+    if (!["error", "pending", "orphan"].includes(ingested.status)) {
       return reply(200, { ok: true, duplicate: true, status: ingested.status });
     }
   }
 
   if (ingested.status === "ignored") return reply(200, { ok: true, status: "ignored", type });
-  if (ingested.status === "orphan") {
-    console.log("[resend-webhook] orphan:", type, "message:", messageId);
-    return reply(200, { ok: true, status: "orphan", type });
-  }
 
-  // ── 4. Przetwarzanie (pending / error po ponowieniu) ────────────────────
-  let legacyIds = Array.isArray(ingested.legacy_ids) ? ingested.legacy_ids : null;
+  // ── 4. Przetwarzanie (pending / error po ponowieniu / orphan z fallbackiem) ─
+  let legacyIds = Array.isArray(ingested.legacy_ids) && !ingested.duplicate && ingested.status !== "orphan"
+    ? ingested.legacy_ids : null;
+  let fallbackLinked = false;
   if (!legacyIds) {
-    // duplikat w stanie pending/error: ingest nie oddaje legacy_ids — doczytaj powiązanie
+    // orphan albo duplikat w stanie pending/error: ingest nie oddaje legacy_ids.
+    // Najpierw powiązanie (mogło powstać równolegle z ingestem), potem fallback.
     const { data: link, error: linkErr } = await supaSvc
       .from("legacy_send_messages")
       .select("legacy_ids")
       .eq("resend_message_id", messageId)
       .maybeSingle();
     if (linkErr) return reply(500, { error: "link_read_failed", retry: true });
-    if (!link) return reply(200, { ok: true, status: "orphan", type });
-    legacyIds = link.legacy_ids || [];
+    if (link) {
+      legacyIds = link.legacy_ids || [];
+    } else {
+      let fb;
+      try {
+        fb = await linkMessageFromLegacySends({
+          supaSvc, messageId, toEmail: Array.isArray(payload?.data?.to) ? payload.data.to[0] : null,
+          occurredAt: payload?.created_at || null,
+        });
+      } catch (e) {
+        console.error("[resend-webhook] fallback lookup failed, retry:", e?.detail || e?.message);
+        return reply(500, { error: e?.message || "legacy_lookup_failed", retry: true });
+      }
+      if (!fb.linked) {
+        console.log("[resend-webhook] orphan:", type, "message:", messageId);
+        return reply(200, { ok: true, status: "orphan", type });
+      }
+      legacyIds = fb.legacyIds;
+      fallbackLinked = true;
+    }
   }
 
   try {
     const result = await processKnownEvent({ supaSvc, env, eventId: svixId, type, legacyIds });
-    return reply(200, { ok: true, message_id: messageId, type, ...result });
+    return reply(200, { ok: true, message_id: messageId, type, ...(fallbackLinked ? { linked_from_legacy_sends: true } : {}), ...result });
   } catch (e) {
     if (e instanceof RetryableEventError) {
       console.error("[resend-webhook] processing failed, retry:", e.message, e.detail);
@@ -164,10 +188,13 @@ function lowerHeaders(headers) {
 
 // Do rejestru trafia to, co potrzebne do historii; bez treści i bez list adresów
 // poza samym odbiorcą tej wiadomości (jest jeden — tak wysyłamy).
+// [review 22.10] Z `click` zostaje tylko czas: `link` to magic link z tokenem,
+// `ipAddress`/`userAgent` to dane osobowe kupca — nie do tabeli czytanej przez adminów.
 function scrubPayload(data) {
   if (!data || typeof data !== "object") return {};
   const { email_id, from, to, subject, created_at, click, bounce, tags } = data;
-  return { email_id, from, to, subject, created_at, click, bounce, tags };
+  const clickSafe = click && typeof click === "object" ? { timestamp: click.timestamp ?? null } : undefined;
+  return { email_id, from, to, subject, created_at, click: clickSafe, bounce, tags };
 }
 
 function reply(statusCode, payload) {
