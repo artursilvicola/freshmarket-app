@@ -36,7 +36,12 @@
 .fm-mailing-history__entry { padding: 10px 0; border-top: 1px solid #e2e8f0; }
 .fm-mailing-history__entry-heading > strong { color: #0f172a; }
 .fm-mailing-history__proposals { list-style: none; padding: 0; margin: 8px 0 0; }
-.fm-mailing-history__proposals li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 4px 16px; padding: 5px 0; }
+.fm-mailing-history__proposals li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 4px 16px; padding: 5px 0; }
+.fm-mailing-history__read { font-size: 11px; }
+.fm-mailing-history__read--app, .fm-mailing-history__read--manual { color: #15803d; font-weight: 600; }
+.fm-mailing-history__read--email { color: #0f766e; }
+.fm-mailing-history__read--expired, .fm-mailing-history__read--rejected { color: #92400e; }
+.fm-mailing-history__read--none, .fm-mailing-history__read--unknown { color: #94a3b8; }
 .fm-mailing-history__proposals span { overflow-wrap: anywhere; }
 .fm-mailing-history__proposals span + span { color: #64748b; }
 @media (max-width: 600px) {

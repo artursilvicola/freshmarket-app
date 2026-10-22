@@ -1742,7 +1742,7 @@
       "toggle": "Historia wysyłek: {{retailer}}",
       "none": "brak zapisanej wysyłki",
       "empty": "Nie ma zapisanych wysyłek e-mail do tej sieci.",
-      "source_note": "Godziny: czas polski (Europe/Warsaw). Starsze daty bez godziny: według zapisu w systemie (UTC). Historia potwierdzeń wysyłki, nie odczytów; bez nieudanych prób i usuniętych rekordów. Nazwy propozycji i firm są bieżące.",
+      "source_note": "Godziny: czas polski (Europe/Warsaw). Starsze daty bez godziny: według zapisu w systemie (UTC). Historia potwierdzeń wysyłki; bez nieudanych prób i usuniętych rekordów. Przy każdej propozycji: stan odczytu według zapisu w systemie (aplikacja, e-mail). Nazwy propozycji i firm są bieżące.",
       "unknown_date": "data nie została zapisana",
       "unknown_time": "godzina nie została zapisana",
       "conflicting_dates": "niezgodne daty w zapisach tego mailingu",
@@ -1785,7 +1785,17 @@
       "col_first_read": "Pierwsze wejście",
       "col_last_read": "Ostatnie wejście",
       "col_read_count": "Razem",
-      "pixel_note": "Otwarcie e-maila jest miarą przybliżoną: część programów pocztowych pobiera piksel automatycznie, część blokuje obrazki. Twardym dowodem jest wejście do aplikacji."
+      "pixel_note": "Otwarcie e-maila jest miarą przybliżoną: część programów pocztowych pobiera piksel automatycznie, część blokuje obrazki. Twardym dowodem jest wejście do aplikacji.",
+      "read_app": "odczytana w aplikacji {{at}}",
+      "read_app_nodate": "odczytana w aplikacji",
+      "read_manual": "oznaczona jako odczytana {{at}}",
+      "read_manual_nodate": "oznaczona jako odczytana",
+      "read_email": "e-mail otwarty {{at}}",
+      "read_email_nodate": "e-mail otwarty",
+      "read_expired_nodate": "nieodczytana, wygasła",
+      "read_rejected_nodate": "odrzucona",
+      "read_none_nodate": "bez odczytu",
+      "read_unknown_nodate": "stan odczytu nieznany"
     },
     "proformas": {
       "card_title": "Proformy oczekujące na płatność (przelew)",

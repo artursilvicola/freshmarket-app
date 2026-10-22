@@ -151,3 +151,39 @@ describe("admin mailing history — recipients", () => {
     expect(output()).toContain("Brak zapisanych odbiorców dla tego mailingu");
   });
 });
+
+// Stan odczytu przy propozycji — z tego, co już jest w legacy_sends (działa też dla tury 07.10)
+describe("admin mailing history — stan odczytu propozycji", () => {
+  const sends = [
+    { id: 1, retailerId: 1, offerId: 11, status: "read", emailSentAt: "2026-10-07T07:56:00Z", resendMessageIds: ["m"],
+      data: { readAt: "2026-10-07T08:12:00Z", readType: "auto_buyer_open", emailOpenedAt: "2026-10-07T07:58:00Z" } },
+    { id: 2, retailerId: 1, offerId: 12, status: "opened", emailSentAt: "2026-10-07T07:56:00Z", resendMessageIds: ["m"],
+      data: { emailOpenedAt: "2026-10-07T09:00:00Z" } },
+    { id: 3, retailerId: 1, offerId: 13, status: "unread_expired", emailSentAt: "2026-10-07T07:56:00Z", resendMessageIds: ["m"] },
+    { id: 4, retailerId: 1, offerId: 14, status: "sent", emailSentAt: "2026-10-07T07:56:00Z", resendMessageIds: ["m"] },
+    { id: 5, retailerId: 1, offerId: 15, status: "read_manual", emailSentAt: "2026-10-07T07:56:00Z", resendMessageIds: ["m"],
+      data: { readAt: "2026-10-08T10:00:00Z" } },
+  ];
+  const offers = [{ id: 11, title: "P1" }, { id: 12, title: "P2" }, { id: 13, title: "P3" }, { id: 14, title: "P4" }, { id: 15, title: "P5" }];
+
+  it("pokazuje odczyt w aplikacji, otwarcie e-maila, wygaśnięcie i brak odczytu — bez doczytywania historii", () => {
+    mount({ sends, offers, loadHistory: async () => null });
+    toggle();
+    const out = output();
+    expect(out).toContain("odczytana w aplikacji 07.10.2026, 10:12; e-mail otwarty 07.10.2026, 09:58");
+    expect(out).toContain("e-mail otwarty 07.10.2026, 11:00");
+    expect(out).toContain("nieodczytana, wygasła");
+    expect(out).toContain("bez odczytu");
+    expect(out).toContain("oznaczona jako odczytana 08.10.2026, 12:00");
+    expect(out).not.toContain("admin.mailing_history");
+  });
+
+  it("po angielsku", async () => {
+    await i18n.changeLanguage("en");
+    mount({ sends, offers, loadHistory: async () => null });
+    toggle();
+    expect(output()).toContain("read in the app 07/10/2026, 10:12");
+    expect(output()).toContain("unread, expired");
+    expect(output()).not.toContain("admin.mailing_history");
+  });
+});

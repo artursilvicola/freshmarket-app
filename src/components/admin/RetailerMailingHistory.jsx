@@ -29,6 +29,25 @@ export function appReadsForEntry(entry, history) {
   return (history?.app_reads || []).filter(r => ids.has(String(r.legacy_id)));
 }
 
+// Stan odczytu POJEDYNCZEJ propozycji wg zapisu w legacy_sends (status + znaczniki z
+// mark_legacy_send_seen). Dziala takze dla mailingow sprzed historii per kupiec, bo czyta
+// to, co juz jest w bazie. Nie mowi, KTORY kupiec — to robi tabela odbiorcow nizej.
+export function proposalReadState(send) {
+  const row = send?.data ? { ...send.data, ...send } : (send || {});
+  const status = typeof row.status === "string" ? row.status : null;
+  const readAt = row.readAt || null;
+  const openedAt = row.emailOpenedAt || row.email_opened_at || null;
+  if (status === "read_manual" || (status === "read" && typeof row.readType === "string" && row.readType.startsWith("manual"))) {
+    return { kind: "manual", at: readAt || row.seenAt || null, openedAt };
+  }
+  if (status === "read") return { kind: "app", at: readAt || row.seenAt || null, openedAt };
+  if (status === "opened") return { kind: "email", at: openedAt || row.seenAt || null, openedAt };
+  if (status === "unread_expired") return { kind: "expired", at: null, openedAt };
+  if (status === "rejected") return { kind: "rejected", at: null, openedAt };
+  if (status === "sent") return { kind: "none", at: null, openedAt };
+  return { kind: "unknown", at: null, openedAt };
+}
+
 export function recipientStatus(m, t, p) {
   if (m.last_event_error) return t(p + "status_error", { error: m.last_event_error });
   if (m.bounced_at) return t(p + "status_bounced");
@@ -118,7 +137,19 @@ export default function RetailerMailingHistory({ retailerId, retailerName, sends
               <ul className="fm-mailing-history__proposals">
                 {entry.sends.map((send, index) => {
                   const item = proposal(send);
-                  return <li key={send.id ?? send.data?.id ?? index}><span>{item.title}</span><span>{item.supplier}</span></li>;
+                  const state = proposalReadState(send);
+                  const at = fmt(state.at);
+                  const label = at ? t(p + `read_${state.kind}`, { at }) : t(p + `read_${state.kind}_nodate`);
+                  const extra = state.kind === "app" || state.kind === "manual" ? fmt(state.openedAt) : null;
+                  return (
+                    <li key={send.id ?? send.data?.id ?? index}>
+                      <span>{item.title}</span>
+                      <span>{item.supplier}</span>
+                      <span className={`fm-mailing-history__read fm-mailing-history__read--${state.kind}`}>
+                        {label}{extra ? `; ${t(p + "read_email", { at: extra })}` : ""}
+                      </span>
+                    </li>
+                  );
                 })}
               </ul>
 

@@ -1742,7 +1742,7 @@
       "toggle": "Mailing history: {{retailer}}",
       "none": "no recorded mailing",
       "empty": "There are no recorded email mailings to this retailer.",
-      "source_note": "Times: Polish time (Europe/Warsaw). Older dates without a time are shown as recorded (UTC). Sending confirmations, not reads; failed attempts and deleted records are not included. Proposal and company names are current.",
+      "source_note": "Times: Polish time (Europe/Warsaw). Older dates without a time are shown as recorded (UTC). Sending confirmations; failed attempts and deleted records are not included. Next to each proposal: its read state as recorded (app, email). Proposal and company names are current.",
       "unknown_date": "date not recorded",
       "unknown_time": "time not recorded",
       "conflicting_dates": "conflicting dates in this mailing's records",
@@ -1785,7 +1785,17 @@
       "col_first_read": "First visit",
       "col_last_read": "Last visit",
       "col_read_count": "Total",
-      "pixel_note": "Email opens are approximate: some mail clients fetch the pixel automatically, others block images. An app visit is the hard evidence."
+      "pixel_note": "Email opens are approximate: some mail clients fetch the pixel automatically, others block images. An app visit is the hard evidence.",
+      "read_app": "read in the app {{at}}",
+      "read_app_nodate": "read in the app",
+      "read_manual": "marked as read {{at}}",
+      "read_manual_nodate": "marked as read",
+      "read_email": "email opened {{at}}",
+      "read_email_nodate": "email opened",
+      "read_expired_nodate": "unread, expired",
+      "read_rejected_nodate": "rejected",
+      "read_none_nodate": "not read",
+      "read_unknown_nodate": "read state unknown"
     },
     "proformas": {
       "card_title": "Proformas awaiting payment (bank transfer)",
