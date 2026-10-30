@@ -40,12 +40,6 @@
 .fm-instr__btn--primary { background: #0d9488; border-color: #0d9488; color: white; }
 .fm-instr__print-hint { margin: 8px 0 0; font-size: 11.5px; color: #94a3b8; }
 
-.fm-instr__organizer {
-  background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px;
-}
-.fm-instr__organizer-body { font-size: 14px; line-height: 1.7; color: #134e4a; }
-.fm-instr__organizer-body img { max-width: 100%; height: auto; }
-
 .fm-instr__toc { margin-bottom: 14px; }
 .fm-instr__toc-box { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 18px; }
 .fm-instr__toc-title { font-weight: 700; font-size: 13px; cursor: pointer; color: #0f172a; }
@@ -80,27 +74,35 @@
 .fm-instr__footer { font-size: 12.5px; color: #64748b; padding: 4px 4px 16px; }
 
 @media (max-width: 640px) {
-  .fm-instr__header, .fm-instr__chapter, .fm-instr__questions, .fm-instr__archive, .fm-instr__toc-box, .fm-instr__organizer { padding: 14px 14px; }
+  .fm-instr__header, .fm-instr__chapter, .fm-instr__questions, .fm-instr__archive, .fm-instr__toc-box { padding: 14px 14px; }
   .fm-instr__title { font-size: 19px; }
   .fm-instr__toc-list { columns: 1; }
   .fm-instr__btn { min-height: 40px; }
 }
 
-/* Wydruk / „Zapisz jako PDF": sama instrukcja, bez menu i paska panelu. */
+.fm-instr__edition-note { display: flex; align-items: flex-start; gap: 6px; margin: 8px 0 0; padding: 8px 10px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; font-size: 12.5px; color: #92400e; }
+.fm-instr__archive-link { color: #64748b; text-decoration: underline; }
+.fm-instr__archive-notice { margin: 8px 0 0; padding: 8px 10px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12.5px; color: #334155; }
+.fm-instr__back { margin: 10px 0 0; font-size: 13px; }
+.fm-instr__back a { color: #0f766e; }
+.fm-instr__archive-body { font-size: 14px; line-height: 1.7; color: #334155; }
+.fm-instr__archive-body img { max-width: 100%; height: auto; }
+
+/* Wydruk / „Zapisz jako PDF": tylko instrukcja. Reszta strony jest chowana
+   (display: none) przez print-isolation.js — tu zostaje układ i rozmiary. */
 @media print {
   body { background: white !important; }
-  body * { visibility: hidden !important; }
-  .fm-instr, .fm-instr * { visibility: visible !important; }
-  .fm-instr { position: absolute; left: 0; top: 0; width: 100%; max-width: none; font-size: 12pt; color: black; }
-  .fm-instr__header, .fm-instr__chapter, .fm-instr__questions, .fm-instr__archive, .fm-instr__toc-box, .fm-instr__organizer {
-    border: none; border-radius: 0; padding: 0 0 10pt; margin: 0 0 10pt; box-shadow: none;
+  .fm-instr { max-width: none; font-size: 11pt; color: black; }
+  .fm-instr__header, .fm-instr__chapter, .fm-instr__questions, .fm-instr__archive, .fm-instr__toc-box {
+    border: none; border-radius: 0; padding: 0 0 8pt; margin: 0 0 8pt; box-shadow: none;
   }
-  .fm-instr__chapter { page-break-inside: avoid; border-bottom: 1px solid #cbd5e1; }
-  .fm-instr__actions, .fm-instr__print-hint, .fm-instr__switch, .fm-instr__footer { display: none !important; }
+  .fm-instr__chapter { break-inside: avoid; page-break-inside: avoid; border-bottom: 1px solid #cbd5e1; }
+  .fm-instr__actions, .fm-instr__print-hint, .fm-instr__switch, .fm-instr__footer, .fm-instr__back { display: none !important; }
   .fm-instr__toc-list { columns: 1; }
   .fm-instr__toc-list a { color: black; text-decoration: none; }
-  .fm-instr__archive details, .fm-instr__toc-box details { display: block; }
-  .fm-instr__archive details:not([open]) > *:not(summary) { display: block; }
-  .fm-instr__figure img { max-height: 90mm; width: auto; }
-  .fm-instr__notes, .fm-instr__questions, .fm-instr__organizer { background: white; border: 1px solid #94a3b8; }
+  .fm-instr__figure { break-inside: avoid; page-break-inside: avoid; }
+  .fm-instr__figure img { max-width: 100%; max-height: 110mm; width: auto; }
+  .fm-instr__notes, .fm-instr__questions, .fm-instr__edition-note, .fm-instr__archive-notice { background: white; border: 1px solid #94a3b8; }
 }
+body.fm-instr-printing { background: white; }
+body.fm-instr-printing .fm-instr { max-width: 900px; margin: 0 auto; padding: 16px; }

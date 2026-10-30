@@ -89,7 +89,7 @@ export default {
       },
       {
         id: "wysylka",
-        figure: { src: "/instrukcje/preconnect-dostawca-wysylki.jpg", alt: "Wysyłki → Sieci handlowe: karty sieci z datą mailingu i kategoriami kupca", caption: "Wysyłki → Sieci handlowe: przy każdej sieci data mailingu, kategorie kupca i przycisk wysyłki; pasek kredytów u góry." },
+        figure: { src: "/instrukcje/preconnect-dostawca-wysylki.jpg", alt: "Wysyłki → Sieci handlowe: karty sieci z datą mailingu i kategoriami kupca", caption: "Wysyłki → Sieci handlowe (zrzut z 2026): przy każdej sieci data mailingu, kategorie kupca i przycisk wysyłki; pasek kredytów u góry. To bieżąca lista sieci PreConnect, nie lista uczestników wydarzenia." },
         title: "Wybór sieci i wysyłka (Wysyłki)",
         intro: "Jedna wysyłka = jedna propozycja do jednej sieci handlowej. Wysyłka rezerwuje 1 kredyt z Twojego pakietu.",
         steps: [
@@ -243,7 +243,7 @@ export default {
       },
       {
         id: "wysylka",
-        figure: { src: "/instrukcje/preconnect-dostawca-wysylki.jpg", alt: "Sendings → Retail chains: chain cards with mailing date and buyer categories", caption: "Sendings → Retail chains: mailing date, buyer categories and send button per chain; credit bar at the top." },
+        figure: { src: "/instrukcje/preconnect-dostawca-wysylki.jpg", alt: "Sendings → Retail chains: chain cards with mailing date and buyer categories", caption: "Sendings → Retail chains (2026 screenshot): mailing date, buyer categories and send button per chain; credit bar at the top. This is the current PreConnect chain list, not a list of event participants." },
         title: "Choosing a chain and sending (Sendings)",
         intro: "One sending = one proposal to one retail chain. A sending reserves 1 credit from your package.",
         steps: [

@@ -15,14 +15,19 @@
 export const INSTRUCTION_DOCS = Object.freeze({
   preconnect: { slug: "preconnect" },
   b2b: { slug: "spotkania-b2b" },
+  // Dawna połączona instrukcja 2026 (HTML z Brandingu) — osobny odnośnik, poza
+  // instrukcją PreConnect i poza instrukcją spotkań.
+  archive2026: { slug: "archiwum-2026" },
 });
 
 // klucz strony (pg) → dokument
 export const INSTRUCTION_PAGE_KEYS = Object.freeze({
   "instr-preconnect": "preconnect",
   "instr-b2b": "b2b",
+  "instr-archive2026": "archive2026",
   "a-instr-preconnect": "preconnect",
   "a-instr-b2b": "b2b",
+  "a-instr-archive2026": "archive2026",
 });
 
 // Stary link „Instrukcja" (klucz `instructions`) prowadzi do instrukcji PreConnect.

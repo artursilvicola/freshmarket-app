@@ -3,6 +3,8 @@ import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
 import InstructionPage, { renderInline, fillYear } from "./InstructionPage.jsx";
+import InstructionArchivePage from "./InstructionArchivePage.jsx";
+import { isolateForPrint, wantsPrintMode } from "./print-isolation.js";
 import { listInstructions, getInstruction } from "../../content/instructions/index.js";
 
 let tree;
@@ -84,7 +86,7 @@ describe("strona instrukcji", () => {
     const out = output();
     expect(out).toContain("B2B Meetings 2027 for buyers");
     expect(out).toContain("Contents");
-    expect(out).toContain("Download PDF / print");
+    expect(out).toContain("Print / save as PDF");
     expect(out).not.toContain("instructions.page");
   });
 
@@ -103,20 +105,27 @@ describe("strona instrukcji", () => {
     expect(output()).not.toContain("Do potwierdzenia przez organizatora");
   });
 
-  it("informacja od organizatora pojawia się tylko w PreConnect uczestnika", () => {
-    const organizerBoxes = () => tree.root.findAll(n => n.props?.className === "fm-instr__organizer");
-    mount({ doc: "preconnect", role: "buyer", lang: "pl", organizerHtml: "<b>Przerwa techniczna 1.11</b>" });
-    expect(organizerBoxes()).toHaveLength(1);
-    expect(organizerBoxes()[0].findByProps({ className: "fm-instr__organizer-body" }).props.dangerouslySetInnerHTML.__html).toContain("Przerwa techniczna");
+  it("dawna połączona instrukcja 2026 NIE jest wklejana do instrukcji — jest tylko odnośnik do osobnej strony", () => {
+    const onArchive = vi.fn();
+    mount({ doc: "preconnect", role: "buyer", lang: "pl", archiveHref: "/kupiec/instrukcja/archiwum-2026", onArchive });
+    expect(tree.root.findAll(n => n.props?.dangerouslySetInnerHTML)).toHaveLength(0);
+    const link = tree.root.findByProps({ className: "fm-instr__archive-link" });
+    expect(link.props.href).toBe("/kupiec/instrukcja/archiwum-2026");
+    expect(textOf(link)).toContain("Archiwum instrukcji 2026");
+    act(() => link.props.onClick({ preventDefault() {} }));
+    expect(onArchive).toHaveBeenCalledTimes(1);
     act(() => tree.unmount());
-    mount({ doc: "preconnect", role: "admin", lang: "pl", organizerHtml: "<b>Przerwa techniczna 1.11</b>" });
-    expect(organizerBoxes()).toHaveLength(0);
+    mount({ doc: "b2b", role: "buyer", lang: "pl" });            // bez odnośnika — instrukcja spotkań
+    expect(tree.root.findAll(n => n.props?.className === "fm-instr__archive-link")).toHaveLength(0);
+  });
+
+  it("instrukcja spotkań mówi, że dotyczy edycji z treści, nie z dat modułu", () => {
+    mount({ doc: "b2b", role: "supplier", lang: "pl", editionYear: 2027 });
+    expect(output()).toContain("Instrukcja dotyczy edycji 2027");
+    expect(tree.root.findByType("article").props["data-edition"]).toBe(2027);
     act(() => tree.unmount());
-    mount({ doc: "b2b", role: "buyer", lang: "pl", organizerHtml: "<b>x</b>" });
-    expect(organizerBoxes()).toHaveLength(0);
-    act(() => tree.unmount());
-    mount({ doc: "preconnect", role: "buyer", lang: "pl", organizerHtml: "   " });
-    expect(organizerBoxes()).toHaveLength(0);
+    mount({ doc: "preconnect", role: "supplier", lang: "pl", editionYear: 2027 });
+    expect(output()).not.toContain("Instrukcja dotyczy edycji");
   });
 
   it("przełącznik wersji dla admina i przycisk drukowania", () => {
@@ -127,7 +136,7 @@ describe("strona instrukcji", () => {
     const supplierBtn = btns.find(b => textOf(b) === "Dostawca");
     act(() => supplierBtn.props.onClick());
     expect(onChange).toHaveBeenCalledWith("supplier");
-    const printBtn = btns.find(b => textOf(b).includes("Pobierz PDF"));
+    const printBtn = btns.find(b => textOf(b).includes("Drukuj / zapisz jako PDF"));
     act(() => printBtn.props.onClick());
     expect(onPrint).toHaveBeenCalledTimes(1);
     expect(btns.find(b => textOf(b) === "Administrator").props["aria-pressed"]).toBe(true);
@@ -166,5 +175,72 @@ describe("zrzuty ekranu instrukcji", () => {
       }
     }
     expect(count).toBeGreaterThanOrEqual(10);
+  });
+});
+
+describe("archiwum instrukcji 2026 (osobna strona)", () => {
+  it("pokazuje HTML z Brandingu z ostrzeżeniem, że to nie bieżąca instrukcja, i odnośnik powrotu", () => {
+    const onBack = vi.fn();
+    act(() => { tree = create(<InstructionArchivePage role="buyer" lang="pl" html="<h3>Witamy</h3><p>CZĘŚĆ I — Spotkania B2B 2026</p>" backHref="/kupiec/instrukcja/preconnect" onBack={onBack} />); });
+    const out = output();
+    expect(out).toContain("Archiwum instrukcji 2026");
+    expect(out).toContain("Nie opisuje bieżącej edycji");
+    expect(tree.root.findByProps({ className: "fm-instr__chapter fm-instr__archive-body" }).props.dangerouslySetInnerHTML.__html).toContain("CZĘŚĆ I");
+    const back = tree.root.findAll(n => n.type === "a" && n.props.href === "/kupiec/instrukcja/preconnect")[0];
+    act(() => back.props.onClick({ preventDefault() {} }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+  it("bez treści w bazie — komunikat, nie pusta strona", async () => {
+    await i18n.changeLanguage("en");
+    act(() => { tree = create(<InstructionArchivePage role="supplier" lang="en" html="  " />); });
+    expect(output()).toContain("No archived content");
+  });
+});
+
+// Środowisko testów to node (bez jsdom) — minimalna atrapa drzewa DOM wystarcza, bo
+// print-isolation używa tylko children / parentElement / style / atrybutów / classList.
+function fakeEl(tag, { cls = "", children = [] } = {}) {
+  const el = { tagName: tag, className: cls, children, parentElement: null, style: { display: "" }, _attrs: {},
+    getAttribute(k) { return this._attrs[k] ?? null; }, setAttribute(k, v) { this._attrs[k] = String(v); }, removeAttribute(k) { delete this._attrs[k]; } };
+  for (const c of children) c.parentElement = el;
+  return el;
+}
+function fakeDoc(root) {
+  const all = []; (function walk(n) { all.push(n); n.children.forEach(walk); })(root);
+  const body = root;
+  body.classList = { _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); } };
+  return { body, querySelector: (sel) => all.find(n => (" " + n.className + " ").includes(" " + sel.slice(1) + " ")) || null };
+}
+
+describe("izolacja wydruku", () => {
+  it("chowa wszystko poza instrukcją (rodzeństwo każdego przodka) i przywraca po wydruku", () => {
+    const banner = fakeEl("DIV", { cls: "banner" });
+    const instr = fakeEl("ARTICLE", { cls: "fm-instr" });
+    const main = fakeEl("MAIN", { children: [banner, instr] });
+    const menu = fakeEl("ASIDE", { cls: "menu" });
+    const shell = fakeEl("DIV", { children: [menu, main] });
+    const top = fakeEl("HEADER", { cls: "top" });
+    const foot = fakeEl("FOOTER", { cls: "foot" });
+    const script = fakeEl("SCRIPT");
+    const body = fakeEl("BODY", { children: [top, shell, foot, script] });
+    const doc = fakeDoc(body);
+    const restore = isolateForPrint(doc);
+    expect([top.style.display, menu.style.display, foot.style.display, banner.style.display]).toEqual(["none", "none", "none", "none"]);
+    expect([shell.style.display, main.style.display, instr.style.display, script.style.display]).toEqual(["", "", "", ""]);
+    expect(doc.body.classList.contains("fm-instr-printing")).toBe(true);
+    restore();
+    expect([top.style.display, menu.style.display, foot.style.display, banner.style.display]).toEqual(["", "", "", ""]);
+    expect(doc.body.classList.contains("fm-instr-printing")).toBe(false);
+  });
+  it("bez instrukcji w drzewie nic nie zmienia", () => {
+    const body = fakeEl("BODY", { children: [fakeEl("DIV", { cls: "x" })] });
+    const doc = fakeDoc(body);
+    isolateForPrint(doc)();
+    expect(body.children[0].style.display).toBe("");
+  });
+  it("?print=1 włącza tryb wydruku", () => {
+    expect(wantsPrintMode("?print=1")).toBe(true);
+    expect(wantsPrintMode("?rola=kupiec")).toBe(false);
+    expect(wantsPrintMode("")).toBe(false);
   });
 });

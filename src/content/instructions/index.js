@@ -17,6 +17,12 @@ import b2bAdmin from "./b2b-admin.js";
 export const INSTRUCTION_ROLES = ["supplier", "buyer", "admin"];
 export const INSTRUCTION_LANGS = ["pl", "en"];
 
+// Edycja, której dotyczą instrukcje Spotkań B2B. CELOWO niezależna od konfiguracji
+// wydarzenia (fm_settings.event_date, fazy, plany) — ta steruje aktywnym modułem
+// 2026 i nie wolno jej zmieniać po to, żeby instrukcja pokazywała inny rok.
+// Zmiana edycji instrukcji = zmiana tej stałej i przegląd treści.
+export const B2B_INSTRUCTION_EDITION_YEAR = 2027;
+
 const DOCS = {
   preconnect: { supplier: preconnectSupplier, buyer: preconnectBuyer, admin: preconnectAdmin },
   b2b: { supplier: b2bSupplier, buyer: b2bBuyer, admin: b2bAdmin },

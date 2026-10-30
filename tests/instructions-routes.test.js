@@ -3,7 +3,7 @@ import {
   instructionPath, parseInstructionLocation, instructionPageKey, normalizeInstructionKey,
   isInstructionPage, instructionDocForPage, panelBasePath, panelRoleFromPath,
 } from "../src/lib/instructions-routes.js";
-import { fmEditionYear, fmEditionFromConfig } from "../src/lib/fm-edition.js";
+import { B2B_INSTRUCTION_EDITION_YEAR } from "../src/content/instructions/index.js";
 
 describe("adresy instrukcji", () => {
   it("każda rola i każdy dokument mają osobny, stały adres", () => {
@@ -13,6 +13,15 @@ describe("adresy instrukcji", () => {
     expect(instructionPath({ panelRole: "buyer", doc: "b2b" })).toBe("/kupiec/instrukcja/spotkania-b2b");
     expect(instructionPath({ panelRole: "admin", doc: "preconnect" })).toBe("/admin/instrukcja/preconnect");
     expect(instructionPath({ panelRole: "admin", doc: "b2b", viewRole: "admin" })).toBe("/admin/instrukcja/spotkania-b2b");
+  });
+
+  it("archiwum instrukcji 2026 ma własny adres, osobny od instrukcji PreConnect", () => {
+    expect(instructionPath({ panelRole: "supplier", doc: "archive2026" })).toBe("/dostawca/instrukcja/archiwum-2026");
+    expect(instructionPath({ panelRole: "buyer", doc: "archive2026" })).toBe("/kupiec/instrukcja/archiwum-2026");
+    expect(instructionPath({ panelRole: "admin", doc: "archive2026", viewRole: "buyer" })).toBe("/admin/instrukcja/archiwum-2026?rola=kupiec");
+    expect(parseInstructionLocation("/kupiec/instrukcja/archiwum-2026")).toEqual({ panelRole: "buyer", doc: "archive2026", pg: "instr-archive2026", viewRole: "buyer" });
+    expect(instructionPageKey("archive2026", "admin")).toBe("a-instr-archive2026");
+    expect(isInstructionPage("instr-archive2026")).toBe(true);
   });
 
   it("admin wybiera wersję uczestnika parametrem, uczestnik nie ma takiego parametru", () => {
@@ -27,6 +36,8 @@ describe("adresy instrukcji", () => {
     expect(parseInstructionLocation("/admin/instrukcja/spotkania-b2b", "?rola=kupiec")).toEqual({ panelRole: "admin", doc: "b2b", pg: "a-instr-b2b", viewRole: "buyer" });
     expect(parseInstructionLocation("/admin/instrukcja/preconnect", "?rola=cokolwiek")).toMatchObject({ viewRole: "admin" });
     expect(parseInstructionLocation("/admin/instrukcja/preconnect", "")).toMatchObject({ viewRole: "admin" });
+    // ?print=1 nie przeszkadza w rozpoznaniu adresu
+    expect(parseInstructionLocation("/dostawca/instrukcja/preconnect", "?print=1")).toMatchObject({ pg: "instr-preconnect" });
   });
 
   it("parametr roli w adresie uczestnika jest ignorowany (nie da się podejrzeć wersji admina)", () => {
@@ -62,18 +73,11 @@ describe("adresy instrukcji", () => {
   });
 });
 
-describe("rok edycji z konfiguracji wydarzenia", () => {
-  it("bierze rok z daty wydarzenia, inaczej 2026 (dzisiejsze etykiety)", () => {
-    expect(fmEditionYear({ event_date: "2027-09-23" })).toBe(2027);
-    expect(fmEditionYear({ eventDate: "2026-09-24" })).toBe(2026);
-    expect(fmEditionYear({ edition_year: 2027, event_date: "2026-09-24" })).toBe(2027);
-    expect(fmEditionYear({})).toBe(2026);
-    expect(fmEditionYear(null)).toBe(2026);
-    expect(fmEditionYear({ event_date: "nonsens" })).toBe(2026);
-  });
-  it("mówi, czy rok pochodzi z konfiguracji", () => {
-    expect(fmEditionFromConfig({})).toEqual({ year: 2026, fromConfig: false });
-    expect(fmEditionFromConfig({ event_date: "2026-09-24" })).toEqual({ year: 2026, fromConfig: true });
-    expect(fmEditionFromConfig({ event_date: "2027-09-23" })).toEqual({ year: 2027, fromConfig: true });
+describe("edycja instrukcji", () => {
+  it("rok edycji instrukcji B2B to stała treści, niezależna od konfiguracji wydarzenia", async () => {
+    expect(B2B_INSTRUCTION_EDITION_YEAR).toBe(2027);
+    // brak modułu, który czytałby rok z fm_settings (event_date / fazy / plany)
+    const mods = import.meta.glob("../src/lib/fm-edition*.js");
+    expect(Object.keys(mods)).toHaveLength(0);
   });
 });

@@ -5,8 +5,9 @@ import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Susp
 import { useLocation, useNavigate } from "react-router-dom";
 // [feat/instructions-split] Instrukcje PreConnect / Spotkań B2B jako strony z własnym adresem.
 import InstructionPage from "../components/instructions/InstructionPage.jsx";
+import InstructionArchivePage from "../components/instructions/InstructionArchivePage.jsx";
 import { isInstructionPage, instructionDocForPage, instructionPageKey, instructionPath, normalizeInstructionKey, panelBasePath, parseInstructionLocation } from "../lib/instructions-routes.js";
-import { fmEditionYear } from "../lib/fm-edition.js";
+import { B2B_INSTRUCTION_EDITION_YEAR } from "../content/instructions/index.js";
 import AdminFmPaymentDate from "../components/AdminFmPaymentDate";
 import RetailerMailingHistory from "../components/admin/RetailerMailingHistory.jsx";
 import { retailerMailingStamp } from "../lib/retailer-mailing-history.js";
@@ -3798,10 +3799,16 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       const ownAdmin = role === "admin";
       const instrRole = ownAdmin ? instrViewRole : role;
       const instrLang = fmUiLang(i18nApp);
-      const editionYear = fmEditionYear(fmSettings);
+      // Rok edycji instrukcji = stała treści. NIE z fm_settings (event_date, fazy, plany) —
+      // konfiguracja wydarzenia steruje aktywnym modułem 2026 i nie służy do „przestawiania" instrukcji.
+      const editionYear = B2B_INSTRUCTION_EDITION_YEAR;
       const viewRoleForPath = initialRole === "admin" ? instrRole : null;
       const relPath = instructionPath({ panelRole: initialRole, doc, viewRole: viewRoleForPath });
       const directUrl = typeof window !== "undefined" && relPath ? `${window.location.origin}${relPath}` : null;
+      const archiveKey = instructionPageKey("archive2026", initialRole);
+      const archiveHref = instructionPath({ panelRole: initialRole, doc: "archive2026", viewRole: viewRoleForPath });
+      const currentKey = instructionPageKey("preconnect", initialRole);
+      const currentHref = instructionPath({ panelRole: initialRole, doc: "preconnect", viewRole: viewRoleForPath });
       const roleSwitcher = ownAdmin ? {
         value: instrViewRole,
         options: [
@@ -3815,9 +3822,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
           if (path) routerNavigate(path, { replace: true });
         },
       } : null;
+      if (doc === "archive2026") {
+        // Dawna połączona instrukcja 2026 z Brandingu — tylko tu. Admin ogląda wersję dostawcy
+        // lub kupca; własna rola admina nie ma treści archiwalnej (pokazujemy wersję dostawcy).
+        const archiveRole = instrRole === "admin" ? "supplier" : instrRole;
+        return <InstructionArchivePage key={`archive:${instrRole}:${instrLang}`} role={instrRole} lang={instrLang}
+          html={organizerInstructionHtml(fmSettings, archiveRole, instrLang)}
+          roleSwitcher={roleSwitcher} directUrl={directUrl}
+          backHref={currentHref} onBack={() => nav(currentKey)}/>;
+      }
       return <InstructionPage key={`${doc}:${instrRole}:${instrLang}`} doc={doc} role={instrRole} lang={instrLang} editionYear={editionYear}
-        organizerHtml={instrRole === "admin" ? null : organizerInstructionHtml(fmSettings, instrRole, instrLang)}
-        roleSwitcher={roleSwitcher} directUrl={directUrl}/>;
+        roleSwitcher={roleSwitcher} directUrl={directUrl}
+        archiveHref={doc === "preconnect" ? archiveHref : null} onArchive={() => nav(archiveKey)}/>;
     }
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offersForBuyer} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
@@ -3898,7 +3914,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 </div>
               ))}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section", { year: fmEditionYear(fmSettings) })}</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
               </div>
               {/* [B2B Round supplier-onboarding-access-and-communication]
                   Dwie warstwy locka:
@@ -3907,7 +3923,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                   Jedno LUB drugie = lock. Tooltip mówi czego brakuje. */}
               {!fmSettings.schedulingOpen || !co?.fm_b2b_enabled
                 ? <div title={!co?.fm_b2b_enabled ? t("shell.sidebar.fm_locked_tooltip_company") : t("shell.sidebar.fm_locked_tooltip_phase")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:"#475569",borderRadius:8,marginBottom:1,cursor:"not-allowed",fontSize:13 }}>
-                    <Calendar size={14}/><span style={{ opacity:0.5 }}>{t("shell.sidebar.fm_locked_label", { year: fmEditionYear(fmSettings) })}</span>
+                    <Calendar size={14}/><span style={{ opacity:0.5 }}>{t("shell.sidebar.fm_locked_label")}</span>
                     <span style={{ marginLeft:"auto",fontSize:10,color:"#475569" }}>🔒</span>
                   </div>
                 : [
@@ -3948,10 +3964,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               ))}
               <div style={{ padding:"5px 14px 3px",marginTop:4 }}/>
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section", { year: fmEditionYear(fmSettings) })}</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
               </div>
               <div onClick={()=>fmSettings.schedulingOpen&&nav("fm-sched")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="fm-sched"?"white":"#64748b",background:navKey==="fm-sched"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:fmSettings.schedulingOpen?"pointer":"not-allowed",fontSize:13,opacity:fmSettings.schedulingOpen?1:0.5,fontWeight:navKey==="fm-sched"?600:400 }}>
-                <Calendar size={14}/><span>{t("shell.sidebar.buyer_fm_meetings", { year: fmEditionYear(fmSettings) })}</span>
+                <Calendar size={14}/><span>{t("shell.sidebar.buyer_fm_meetings")}</span>
                 {!fmSettings.schedulingOpen&&<span style={{ marginLeft:"auto",fontSize:10 }}>🔒</span>}
               </div>
               {/* [feat/instructions-split] Instrukcja spotkań — zawsze dostępna, także przy kłódce. */}
@@ -4025,7 +4041,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 </>
               )}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section", { year: fmEditionYear(fmSettings) })}</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
               </div>
               <div onClick={()=>nav("a-fm")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-fm"?"white":"#64748b",background:navKey==="a-fm"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-fm"?600:400 }}>
                 <Settings size={14}/><span>{t("shell.sidebar.admin_fm_meetings")}</span>
@@ -4033,7 +4049,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               </div>
               {/* [feat/instructions-split] Instrukcja administratora spotkań B2B — przy module FM. */}
               <div onClick={()=>nav("a-instr-b2b")} data-testid="nav-a-instr-b2b" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px 8px 22px",color:navKey==="a-instr-b2b"?"white":"#64748b",background:navKey==="a-instr-b2b"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:12,fontWeight:navKey==="a-instr-b2b"?600:400,transition:"all 0.15s" }}>
-                <FileText size={13}/><span>{t("shell.sidebar.admin_instructions_b2b", { year: fmEditionYear(fmSettings) })}</span>
+                <FileText size={13}/><span>{t("shell.sidebar.admin_instructions_b2b", { year: B2B_INSTRUCTION_EDITION_YEAR })}</span>
               </div>
               {/* [B2B Round prod-rollout / branding] Sekcja "System" — globalne
                   ustawienia całej aplikacji. Brand = logo Fresh Market podmieniane

@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileText, Printer, Link2, Check, BookOpen, AlertTriangle, Archive, Info } from "lucide-react";
 import { getInstruction } from "../../content/instructions/index.js";
+import { usePrintIsolation } from "./print-isolation.js";
 import "./InstructionPage.css";
 
 // Minimalny zapis pogrubień w treści: **tekst**. Nic więcej — treść to zwykły tekst.
@@ -27,21 +28,68 @@ function anchorId(doc, role, chapterId) {
   return `instr-${doc}-${role}-${chapterId}`;
 }
 
+export function RoleSwitcher({ roleSwitcher, label }) {
+  if (!roleSwitcher || !roleSwitcher.options?.length) return null;
+  return (
+    <div className="fm-instr__switch" role="group" aria-label={label}>
+      <span className="fm-instr__switch-label">{label}:</span>
+      {roleSwitcher.options.map((o) => (
+        <button key={o.value} type="button"
+          className={"fm-instr__switch-btn" + (o.value === roleSwitcher.value ? " is-active" : "")}
+          aria-pressed={o.value === roleSwitcher.value}
+          onClick={() => roleSwitcher.onChange?.(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function PrintActions({ onPrint, directUrl, t, p }) {
+  const [copied, setCopied] = useState(false);
+  const copyLink = useCallback(async () => {
+    if (!directUrl) return;
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(directUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch { /* schowek niedostępny — adres i tak jest w pasku */ }
+  }, [directUrl]);
+  return (
+    <>
+      <div className="fm-instr__actions">
+        <button type="button" className="fm-instr__btn fm-instr__btn--primary" onClick={onPrint}>
+          <Printer size={14} aria-hidden="true" /> {t(p + "print")}
+        </button>
+        {directUrl && (
+          <button type="button" className="fm-instr__btn" onClick={copyLink} title={directUrl}>
+            {copied ? <Check size={14} aria-hidden="true" /> : <Link2 size={14} aria-hidden="true" />} {copied ? t(p + "link_copied") : t(p + "copy_link")}
+          </button>
+        )}
+      </div>
+      <p className="fm-instr__print-hint">{t(p + "print_hint")}</p>
+    </>
+  );
+}
+
 export default function InstructionPage({
   doc,
   role,
   lang = "pl",
-  editionYear,
-  organizerHtml = null,
+  editionYear,             // rok edycji INSTRUKCJI (stała treści), nie rok z konfiguracji wydarzenia
   roleSwitcher = null,     // { value, options: [{ value, label }], onChange }
   directUrl = null,        // bezwzględny adres tej instrukcji (do skopiowania)
+  archiveHref = null,      // odnośnik „Archiwum instrukcji 2026" (osobna strona)
+  onArchive = null,        // nawigacja do archiwum w aplikacji (zamiast przeładowania)
   onPrint = null,          // test hook; domyślnie window.print()
 }) {
   const { t } = useTranslation("legacy");
   const p = "instructions.page.";
   const content = useMemo(() => getInstruction(doc, role, lang), [doc, role, lang]);
   const year = editionYear || new Date().getFullYear();
-  const [copied, setCopied] = useState(false);
+  const print = usePrintIsolation(onPrint);
 
   // Nowy dokument: od góry (poprzednia strona panelu mogła być przewinięta na dół);
   // wejście z kotwicą (#rozdział) przewija do niej, gdy treść jest już w DOM.
@@ -53,22 +101,6 @@ export default function InstructionPage({
     else if (typeof window.scrollTo === "function") { try { window.scrollTo(0, 0); } catch { /* jsdom */ } }
   }, [doc, role, lang]);
 
-  const print = useCallback(() => {
-    if (onPrint) return onPrint();
-    if (typeof window !== "undefined" && typeof window.print === "function") window.print();
-  }, [onPrint]);
-
-  const copyLink = useCallback(async () => {
-    if (!directUrl) return;
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(directUrl);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    } catch { /* schowek niedostępny — adres i tak jest widoczny w pasku */ }
-  }, [directUrl]);
-
   if (!content) {
     return (
       <div className="fm-instr fm-instr--missing" role="alert">
@@ -79,11 +111,11 @@ export default function InstructionPage({
 
   const title = fillYear(content.title, year);
   const eyebrow = fillYear(content.eyebrow || "", year);
-  const showOrganizer = doc === "preconnect" && role !== "admin" && !!(organizerHtml || "").trim();
   const chapters = content.chapters || [];
+  const archiveClick = (e) => { if (onArchive) { e.preventDefault(); onArchive(); } };
 
   return (
-    <article className="fm-instr" lang={lang} data-doc={doc} data-role={role}>
+    <article className="fm-instr" lang={lang} data-doc={doc} data-role={role} data-edition={doc === "b2b" ? year : undefined}>
       <header className="fm-instr__header">
         <div className="fm-instr__eyebrow"><BookOpen size={14} aria-hidden="true" />{eyebrow}</div>
         <h1 className="fm-instr__title">{title}</h1>
@@ -92,30 +124,9 @@ export default function InstructionPage({
           <span className="fm-instr__badge">{t(p + `role_${role}`)}</span>
           {content.updated && <span className="fm-instr__updated">{t(p + "updated", { date: content.updated })}</span>}
         </div>
-        {roleSwitcher && roleSwitcher.options?.length > 0 && (
-          <div className="fm-instr__switch" role="group" aria-label={t(p + "switch_label")}>
-            <span className="fm-instr__switch-label">{t(p + "switch_label")}:</span>
-            {roleSwitcher.options.map((o) => (
-              <button key={o.value} type="button"
-                className={"fm-instr__switch-btn" + (o.value === roleSwitcher.value ? " is-active" : "")}
-                aria-pressed={o.value === roleSwitcher.value}
-                onClick={() => roleSwitcher.onChange?.(o.value)}>
-                {o.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="fm-instr__actions">
-          <button type="button" className="fm-instr__btn fm-instr__btn--primary" onClick={print}>
-            <Printer size={14} aria-hidden="true" /> {t(p + "print")}
-          </button>
-          {directUrl && (
-            <button type="button" className="fm-instr__btn" onClick={copyLink} title={directUrl}>
-              {copied ? <Check size={14} aria-hidden="true" /> : <Link2 size={14} aria-hidden="true" />} {copied ? t(p + "link_copied") : t(p + "copy_link")}
-            </button>
-          )}
-        </div>
-        <p className="fm-instr__print-hint">{t(p + "print_hint")}</p>
+        {doc === "b2b" && <p className="fm-instr__edition-note"><Info size={13} aria-hidden="true" /> {t(p + "edition_note", { year })}</p>}
+        <RoleSwitcher roleSwitcher={roleSwitcher} label={t(p + "switch_label")} />
+        <PrintActions onPrint={print} directUrl={directUrl} t={t} p={p} />
       </header>
 
       <nav className="fm-instr__toc" aria-label={t(p + "toc")}>
@@ -185,21 +196,12 @@ export default function InstructionPage({
         </section>
       )}
 
-      {showOrganizer && (
-        // Dotychczasowa treść „Instrukcja" z Brandingu (HTML organizatora). Zostaje
-        // dostępna, ale zwinięta na końcu — to ona była połączoną instrukcją
-        // PreConnect + spotkań, której rozdzielenie jest celem tej zmiany.
-        <section className="fm-instr__organizer" aria-label={t(p + "organizer_note")}>
-          <details>
-            <summary className="fm-instr__h2 fm-instr__h2--summary"><Info size={15} aria-hidden="true" /> {t(p + "organizer_note")}</summary>
-            <p className="fm-instr__intro">{t(p + "organizer_note_hint")}</p>
-            <div className="fm-instr__organizer-body" dangerouslySetInnerHTML={{ __html: organizerHtml }} />
-          </details>
-        </section>
-      )}
-
       <footer className="fm-instr__footer">
         <p>{t(p + "footer_help")}</p>
+        {archiveHref && (
+          // Dawna połączona instrukcja 2026 — tylko odnośnik, nigdy treść wewnątrz tej strony.
+          <p><a className="fm-instr__archive-link" href={archiveHref} onClick={archiveClick}>{t(p + "archive_link")}</a></p>
+        )}
       </footer>
     </article>
   );
