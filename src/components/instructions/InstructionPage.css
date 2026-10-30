@@ -1,0 +1,106 @@
+/* [feat/instructions-split] Strona instrukcji — ekran, telefon, wydruk/PDF. */
+.fm-instr {
+  max-width: 920px;
+  color: #1e293b;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.fm-instr--missing {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 16px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; color: #92400e;
+}
+.fm-instr__header {
+  background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin-bottom: 14px;
+}
+.fm-instr__eyebrow {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #0f766e;
+}
+.fm-instr__title { font-size: 22px; line-height: 1.25; margin: 6px 0 6px; color: #0f172a; }
+.fm-instr__summary { margin: 0 0 10px; color: #475569; }
+.fm-instr__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: 12px; color: #64748b; }
+.fm-instr__badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  background: rgba(13,148,136,0.1); color: #0f766e; font-weight: 700; font-size: 11px;
+}
+.fm-instr__switch { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+.fm-instr__switch-label { font-size: 12px; color: #64748b; margin-right: 2px; }
+.fm-instr__switch-btn {
+  font: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid #cbd5e1; background: white; color: #334155; cursor: pointer;
+}
+.fm-instr__switch-btn.is-active { background: #0d9488; border-color: #0d9488; color: white; }
+.fm-instr__switch-btn:focus-visible, .fm-instr__btn:focus-visible { outline: 2px solid #0f766e; outline-offset: 2px; }
+.fm-instr__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.fm-instr__btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px;
+  border-radius: 8px; border: 1px solid #cbd5e1; background: white; color: #0f172a;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.fm-instr__btn--primary { background: #0d9488; border-color: #0d9488; color: white; }
+.fm-instr__print-hint { margin: 8px 0 0; font-size: 11.5px; color: #94a3b8; }
+
+.fm-instr__organizer {
+  background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 12px; padding: 14px 18px; margin-bottom: 14px;
+}
+.fm-instr__organizer-body { font-size: 14px; line-height: 1.7; color: #134e4a; }
+.fm-instr__organizer-body img { max-width: 100%; height: auto; }
+
+.fm-instr__toc { margin-bottom: 14px; }
+.fm-instr__toc-box { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px 18px; }
+.fm-instr__toc-title { font-weight: 700; font-size: 13px; cursor: pointer; color: #0f172a; }
+.fm-instr__toc-list { margin: 8px 0 0; padding-left: 22px; columns: 2; column-gap: 24px; }
+.fm-instr__toc-list li { break-inside: avoid; margin: 3px 0; }
+.fm-instr__toc-list a { color: #0f766e; text-decoration: none; }
+.fm-instr__toc-list a:hover { text-decoration: underline; }
+
+.fm-instr__chapter, .fm-instr__questions, .fm-instr__archive {
+  background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; margin-bottom: 12px;
+  scroll-margin-top: 16px;
+}
+.fm-instr__h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; margin: 0 0 8px; color: #0f172a; }
+.fm-instr__h2--summary { cursor: pointer; }
+.fm-instr__num { color: #0d9488; }
+.fm-instr__intro { margin: 0 0 10px; color: #334155; }
+.fm-instr__steps { margin: 0; padding-left: 22px; }
+.fm-instr__steps > li { margin: 6px 0; padding-left: 4px; }
+.fm-instr__steps > li::marker { color: #0d9488; font-weight: 700; }
+.fm-instr__step-note { margin-top: 3px; font-size: 12.5px; color: #64748b; }
+.fm-instr__notes { margin-top: 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; }
+.fm-instr__notes-title { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12px; color: #92400e; margin-bottom: 4px; }
+.fm-instr__notes ul { margin: 0; padding-left: 18px; color: #78350f; font-size: 13px; }
+.fm-instr__figure { margin: 14px 0 0; }
+.fm-instr__figure img { display: block; max-width: 100%; height: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+.fm-instr__figure figcaption { margin-top: 6px; font-size: 12px; color: #64748b; }
+.fm-instr__questions { border-color: #fde68a; background: #fffbeb; }
+.fm-instr__questions .fm-instr__h2 { color: #92400e; }
+.fm-instr__steps--questions > li::marker { color: #b45309; }
+.fm-instr__archive { border-style: dashed; }
+.fm-instr__archive-list { margin: 8px 0 0; padding-left: 20px; color: #475569; }
+.fm-instr__footer { font-size: 12.5px; color: #64748b; padding: 4px 4px 16px; }
+
+@media (max-width: 640px) {
+  .fm-instr__header, .fm-instr__chapter, .fm-instr__questions, .fm-instr__archive, .fm-instr__toc-box, .fm-instr__organizer { padding: 14px 14px; }
+  .fm-instr__title { font-size: 19px; }
+  .fm-instr__toc-list { columns: 1; }
+  .fm-instr__btn { min-height: 40px; }
+}
+
+/* Wydruk / „Zapisz jako PDF": sama instrukcja, bez menu i paska panelu. */
+@media print {
+  body { background: white !important; }
+  body * { visibility: hidden !important; }
+  .fm-instr, .fm-instr * { visibility: visible !important; }
+  .fm-instr { position: absolute; left: 0; top: 0; width: 100%; max-width: none; font-size: 12pt; color: black; }
+  .fm-instr__header, .fm-instr__chapter, .fm-instr__questions, .fm-instr__archive, .fm-instr__toc-box, .fm-instr__organizer {
+    border: none; border-radius: 0; padding: 0 0 10pt; margin: 0 0 10pt; box-shadow: none;
+  }
+  .fm-instr__chapter { page-break-inside: avoid; border-bottom: 1px solid #cbd5e1; }
+  .fm-instr__actions, .fm-instr__print-hint, .fm-instr__switch, .fm-instr__footer { display: none !important; }
+  .fm-instr__toc-list { columns: 1; }
+  .fm-instr__toc-list a { color: black; text-decoration: none; }
+  .fm-instr__archive details, .fm-instr__toc-box details { display: block; }
+  .fm-instr__archive details:not([open]) > *:not(summary) { display: block; }
+  .fm-instr__figure img { max-height: 90mm; width: auto; }
+  .fm-instr__notes, .fm-instr__questions, .fm-instr__organizer { background: white; border: 1px solid #94a3b8; }
+}

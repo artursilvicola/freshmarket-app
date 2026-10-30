@@ -2,6 +2,11 @@ import { usesPreconnectCredit, countUsedCreditSlots, describeCreditUsage, isRele
 import { offerEnumLabel, offerEnumOptions } from "../lib/offer-enums.js";
 import { openGrantForm, editGrantForm, addCompany as grantAddCompany, removeCompany as grantRemoveCompany, submitStart as grantSubmitStart, submitFailed as grantSubmitFailed, canSubmit as grantCanSubmit, closeNeedsWarning as grantCloseNeedsWarning, isEditable as grantIsEditable, GRANT_REASONS } from "../lib/grant-form.js";
 import { useState, useRef, useMemo, useCallback, useEffect, Fragment, lazy, Suspense } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+// [feat/instructions-split] Instrukcje PreConnect / Spotkań B2B jako strony z własnym adresem.
+import InstructionPage from "../components/instructions/InstructionPage.jsx";
+import { isInstructionPage, instructionDocForPage, instructionPageKey, instructionPath, normalizeInstructionKey, panelBasePath, parseInstructionLocation } from "../lib/instructions-routes.js";
+import { fmEditionYear } from "../lib/fm-edition.js";
 import AdminFmPaymentDate from "../components/AdminFmPaymentDate";
 import RetailerMailingHistory from "../components/admin/RetailerMailingHistory.jsx";
 import { retailerMailingStamp } from "../lib/retailer-mailing-history.js";
@@ -967,19 +972,12 @@ function AnnouncementModal({ role, uiContent }) {
   );
 }
 
-function PageInstructions({ role, fmSettings }) {
-  const { t, i18n } = useTranslation("legacy");
-  const lang = fmUiLang(i18n);
-  const html = (fmSettings?.ui_content?.instructions?.[fmRoleKey(role)]?.[lang] || "").trim();
-  return (
-    <div style={{ maxWidth:820 }}>
-      <Card title={t("shell.sidebar.instructions_page_title")} icon={FileText}>
-        {html
-          ? <div style={{ fontSize:14,lineHeight:1.7,color:"#334155" }} dangerouslySetInnerHTML={{ __html: html }} />
-          : <div style={{ fontSize:13,color:"#94a3b8" }}>{t("shell.sidebar.instructions_empty")}</div>}
-      </Card>
-    </div>
-  );
+// [feat/instructions-split] Dawna strona „Instrukcja" (sam HTML z Brandingu) została
+// zastąpiona pełnymi instrukcjami w aplikacji (src/content/instructions). HTML
+// z Brandingu nadal jest pokazywany — jako „Informacja od organizatora" w instrukcji
+// PreConnect uczestnika.
+function organizerInstructionHtml(fmSettings, role, lang) {
+  return (fmSettings?.ui_content?.instructions?.[fmRoleKey(role)]?.[lang] || "").trim();
 }
 
 function TrackingBar({ daysLeft, status }) {
@@ -2148,11 +2146,30 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // 4 opublikowanych" and other supplier-only UI before they could navigate
   // anywhere. Buyer lands on b-dash (PageBuyerDashboard with buyer copy);
   // admin lands on a-dash; supplier keeps "dashboard".
+  // [feat/instructions-split] Instrukcje mają własne adresy (/…/instrukcja/…) —
+  // wejście z takiego adresu otwiera od razu właściwą instrukcję. Reszta stron
+  // nadal żyje w stanie `pg`, bez adresu (jak dotąd).
+  const routerLocation = useLocation();
+  const routerNavigate = useNavigate();
+  const defaultPgFor = (r) => r === "buyer" ? "b-dash" : r === "admin" ? "a-dash" : "dashboard";
+  const initialInstruction = parseInstructionLocation(routerLocation.pathname, routerLocation.search);
   const [pg,     setPg]     = useState(
-    role === "buyer"  ? "b-dash" :
-    role === "admin"  ? "a-dash" :
-    "dashboard"
+    initialInstruction && initialInstruction.panelRole === initialRole ? initialInstruction.pg : defaultPgFor(role)
   );
+  // Wersja instrukcji oglądana przez admina na WŁASNYM koncie (Administrator / Dostawca / Kupiec).
+  const [instrViewRole, setInstrViewRole] = useState(
+    initialRole === "admin" && initialInstruction ? initialInstruction.viewRole : (initialRole === "admin" ? "admin" : initialRole)
+  );
+  // Cofnij/dalej w przeglądarce oraz wejście z linku: adres → stan strony.
+  useEffect(() => {
+    const parsed = parseInstructionLocation(routerLocation.pathname, routerLocation.search);
+    if (parsed && parsed.panelRole === initialRole) {
+      setPg((prev) => (prev === parsed.pg ? prev : parsed.pg));
+      if (initialRole === "admin") setInstrViewRole((prev) => (prev === parsed.viewRole ? prev : parsed.viewRole));
+    } else if (!parsed) {
+      setPg((prev) => (isInstructionPage(prev) ? defaultPgFor(role) : prev));
+    }
+  }, [routerLocation.pathname, routerLocation.search]); // eslint-disable-line react-hooks/exhaustive-deps
   const [sid,    setSid]    = useState(null);
   const [flash,  setFlash]  = useState(null);
   const [adminChatTargetId, setAdminChatTargetId] = useState(null);
@@ -3140,9 +3157,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const rem     = Math.max(0, pkgMax - pkgUsed);
 
   const fl  = (m,t) => { setFlash({m, t:t||"success"}); setTimeout(()=>setFlash(null), 3800); };
-  const nav = (p,id) => {
+  const nav = (p0,id) => {
+    const p = normalizeInstructionKey(p0, initialRole);
     setAdminChatTargetId(null);
     setPg(p); setSid(id||null); setFlash(null);
+    // [feat/instructions-split] adres w pasku: instrukcja ma własny, reszta wraca na bazowy
+    if (isInstructionPage(p)) {
+      const viewRole = initialRole === "admin" ? (role === "admin" ? instrViewRole : role) : null;
+      const path = instructionPath({ panelRole: initialRole, doc: instructionDocForPage(p), viewRole });
+      if (path && routerLocation.pathname + routerLocation.search !== path) routerNavigate(path);
+    } else if (parseInstructionLocation(routerLocation.pathname, routerLocation.search)) {
+      routerNavigate(panelBasePath(initialRole));
+    }
   };
   const openAdminChatWithCompany = (companyId) => {
     setAdminChatTargetId(companyId || null);
@@ -3742,6 +3768,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     setPg(defaultPg);
     setSid(null);
     setFlash(null);
+    if (parseInstructionLocation(routerLocation.pathname, routerLocation.search)) routerNavigate(panelBasePath(initialRole));
   }
 
   function renderPage(){
@@ -3763,7 +3790,35 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offersForBuyer} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers} profiles={adminChatProfiles}/>;
     if(pg==="b-profile")    return <PageBuyerProfile buyer={buyer} setBuyer={setBuyer} fl={fl} readOnly={viewingOtherAccount}/>;
-    if(pg==="instructions") return <PageInstructions role={role} fmSettings={fmSettings}/>;
+    if(isInstructionPage(pg) || pg==="instructions") {
+      // [feat/instructions-split] Dokument wynika z roli OGLĄDANEGO konta: w podglądzie
+      // cudzego konta admin widzi instrukcję podglądanej roli; na własnym koncie
+      // admin wybiera wersję (Administrator / Dostawca / Kupiec).
+      const doc = instructionDocForPage(normalizeInstructionKey(pg, initialRole)) || "preconnect";
+      const ownAdmin = role === "admin";
+      const instrRole = ownAdmin ? instrViewRole : role;
+      const instrLang = fmUiLang(i18nApp);
+      const editionYear = fmEditionYear(fmSettings);
+      const viewRoleForPath = initialRole === "admin" ? instrRole : null;
+      const relPath = instructionPath({ panelRole: initialRole, doc, viewRole: viewRoleForPath });
+      const directUrl = typeof window !== "undefined" && relPath ? `${window.location.origin}${relPath}` : null;
+      const roleSwitcher = ownAdmin ? {
+        value: instrViewRole,
+        options: [
+          { value: "admin", label: t("instructions.page.role_admin") },
+          { value: "supplier", label: t("instructions.page.role_supplier") },
+          { value: "buyer", label: t("instructions.page.role_buyer") },
+        ],
+        onChange: (v) => {
+          setInstrViewRole(v);
+          const path = instructionPath({ panelRole: initialRole, doc, viewRole: v });
+          if (path) routerNavigate(path, { replace: true });
+        },
+      } : null;
+      return <InstructionPage key={`${doc}:${instrRole}:${instrLang}`} doc={doc} role={instrRole} lang={instrLang} editionYear={editionYear}
+        organizerHtml={instrRole === "admin" ? null : organizerInstructionHtml(fmSettings, instrRole, instrLang)}
+        roleSwitcher={roleSwitcher} directUrl={directUrl}/>;
+    }
     if(pg==="b-detail")     return <PageBuyerDetail send={(sends||[]).find(s=>s.id===sid)} offers={offersForBuyer} co={co} nav={nav} buyer={buyer} toggleStar={toggleStar} companies={companies} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} sends={sends} onOpened={markSendOpened}/>;
     if(pg==="a-dash")       return <PageAdminDash sends={sends} nav={nav} fmSettings={fmSettings} fmPrefs={fmPrefs} fmResps={fmResps} fmSchedule={fmSchedule} retailers={retailers} fmSuppliers={fmSuppliers} companies={companies}/>;
     if(pg==="a-pipeline")   return <PageAdminPipeline sends={sends} setSends={setSends} onRetailerEmailSent={refreshSendsAfterEmail} offers={offers} moderate={moderate} sendApproved={sendApproved} updateSendDate={updateSendDate} updateSendPos={updateSendPos} confirmManual={confirmManual} undoConfirm={undoConfirm} fl={fl} retailers={retailers} companies={companies} dbCapacity={dbCapacity} onSendSupplierMessage={sendAdminReply}/>;
@@ -3834,7 +3889,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.preconnect_section")}</span>
               </div>
-              {[[Send,t("shell.sidebar.supplier_wysylki"),"wysylki"],[Tag,t("shell.sidebar.supplier_my_offers"),"offers"],[CreditCard,t("shell.sidebar.supplier_finance"),"finanse"],[Building2,t("shell.sidebar.supplier_your_company"),"company"],[User,t("shell.sidebar.supplier_my_profile"),"profile"],[FileText,t("shell.sidebar.instructions"),"instructions"]].map(([Ic,label,key])=>(
+              {[[Send,t("shell.sidebar.supplier_wysylki"),"wysylki"],[Tag,t("shell.sidebar.supplier_my_offers"),"offers"],[CreditCard,t("shell.sidebar.supplier_finance"),"finanse"],[Building2,t("shell.sidebar.supplier_your_company"),"company"],[User,t("shell.sidebar.supplier_my_profile"),"profile"],[FileText,t("shell.sidebar.instructions_preconnect"),"instr-preconnect"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
                   {key==="finanse" && (CREDITS_UI_SUPPLIER
@@ -3843,7 +3898,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 </div>
               ))}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section", { year: fmEditionYear(fmSettings) })}</span>
               </div>
               {/* [B2B Round supplier-onboarding-access-and-communication]
                   Dwie warstwy locka:
@@ -3852,7 +3907,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                   Jedno LUB drugie = lock. Tooltip mówi czego brakuje. */}
               {!fmSettings.schedulingOpen || !co?.fm_b2b_enabled
                 ? <div title={!co?.fm_b2b_enabled ? t("shell.sidebar.fm_locked_tooltip_company") : t("shell.sidebar.fm_locked_tooltip_phase")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:"#475569",borderRadius:8,marginBottom:1,cursor:"not-allowed",fontSize:13 }}>
-                    <Calendar size={14}/><span style={{ opacity:0.5 }}>{t("shell.sidebar.fm_locked_label")}</span>
+                    <Calendar size={14}/><span style={{ opacity:0.5 }}>{t("shell.sidebar.fm_locked_label", { year: fmEditionYear(fmSettings) })}</span>
                     <span style={{ marginLeft:"auto",fontSize:10,color:"#475569" }}>🔒</span>
                   </div>
                 : [
@@ -3874,6 +3929,11 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                     );
                   })
               }
+              {/* [feat/instructions-split] Instrukcja spotkań — dostępna także przy zamkniętym module
+                  i bez wykupionego udziału. Nie odblokowuje samych spotkań. */}
+              <div onClick={()=>nav("instr-b2b")} data-testid="nav-instr-b2b" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="instr-b2b"?"white":"#64748b",background:navKey==="instr-b2b"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="instr-b2b"?600:400,transition:"all 0.15s" }}>
+                <FileText size={14}/><span>{t("shell.sidebar.instructions_b2b")}</span>
+              </div>
             </>}
 
             {/* ── BUYER NAV ── */}
@@ -3881,18 +3941,22 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               <div style={{ padding:"5px 14px 3px",marginTop:2 }}>
                 <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.preconnect_section")}</span>
               </div>
-              {[[Send,t("shell.sidebar.buyer_offers"),"b-offers"],[Building2,t("shell.sidebar.buyer_suppliers"),"b-katalog"],[Heart,t("shell.sidebar.buyer_saved"),"b-saved"],[User,t("shell.sidebar.buyer_my_profile"),"b-profile"],[FileText,t("shell.sidebar.instructions"),"instructions"]].map(([Ic,label,key])=>(
+              {[[Send,t("shell.sidebar.buyer_offers"),"b-offers"],[Building2,t("shell.sidebar.buyer_suppliers"),"b-katalog"],[Heart,t("shell.sidebar.buyer_saved"),"b-saved"],[User,t("shell.sidebar.buyer_my_profile"),"b-profile"],[FileText,t("shell.sidebar.instructions_preconnect"),"instr-preconnect"]].map(([Ic,label,key])=>(
                 <div key={key} onClick={()=>nav(key)} style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey===key?"white":"#64748b",background:navKey===key?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey===key?600:400,transition:"all 0.15s" }}>
                   <Ic size={14}/><span>{label}</span>
                 </div>
               ))}
               <div style={{ padding:"5px 14px 3px",marginTop:4 }}/>
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section", { year: fmEditionYear(fmSettings) })}</span>
               </div>
               <div onClick={()=>fmSettings.schedulingOpen&&nav("fm-sched")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="fm-sched"?"white":"#64748b",background:navKey==="fm-sched"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:fmSettings.schedulingOpen?"pointer":"not-allowed",fontSize:13,opacity:fmSettings.schedulingOpen?1:0.5,fontWeight:navKey==="fm-sched"?600:400 }}>
-                <Calendar size={14}/><span>{t("shell.sidebar.buyer_fm_meetings")}</span>
+                <Calendar size={14}/><span>{t("shell.sidebar.buyer_fm_meetings", { year: fmEditionYear(fmSettings) })}</span>
                 {!fmSettings.schedulingOpen&&<span style={{ marginLeft:"auto",fontSize:10 }}>🔒</span>}
+              </div>
+              {/* [feat/instructions-split] Instrukcja spotkań — zawsze dostępna, także przy kłódce. */}
+              <div onClick={()=>nav("instr-b2b")} data-testid="nav-instr-b2b" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="instr-b2b"?"white":"#64748b",background:navKey==="instr-b2b"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="instr-b2b"?600:400,transition:"all 0.15s" }}>
+                <FileText size={14}/><span>{t("shell.sidebar.instructions_b2b")}</span>
               </div>
             </>}
 
@@ -3944,6 +4008,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                   </div>
                 );
               })()}
+              {/* [feat/instructions-split] Instrukcja administratora PreConnect — przy module PreConnect. */}
+              <div onClick={()=>nav("a-instr-preconnect")} data-testid="nav-a-instr-preconnect" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="a-instr-preconnect"?"white":"#64748b",background:navKey==="a-instr-preconnect"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-instr-preconnect"?600:400,transition:"all 0.15s" }}>
+                <FileText size={14}/><span>{t("shell.sidebar.admin_instructions_preconnect")}</span>
+              </div>
               {/* [feat/admin-access-polish] Grupa "Finanse" — Rozliczenia jako osobna
                   sekcja. Zostają widoczne dla zwykłego admina (UI-only, brak blokady). */}
               {ADMIN_ACCESS_POLISH && ADMIN_SETTLEMENTS && (
@@ -3957,11 +4025,15 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                 </>
               )}
               <div style={{ padding:"8px 14px 3px",marginTop:6,borderTop:"1px solid rgba(255,255,255,0.06)" }}>
-                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section")}</span>
+                <span style={{ fontSize:9,textTransform:"uppercase",letterSpacing:"0.08em",color:"rgba(255,255,255,0.25)",fontWeight:700 }}>{t("shell.sidebar.fm_section", { year: fmEditionYear(fmSettings) })}</span>
               </div>
               <div onClick={()=>nav("a-fm")} style={{ display:"flex",alignItems:"center",gap:9,padding:"9px 14px",color:navKey==="a-fm"?"white":"#64748b",background:navKey==="a-fm"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-fm"?600:400 }}>
                 <Settings size={14}/><span>{t("shell.sidebar.admin_fm_meetings")}</span>
                 <span style={{ marginLeft:"auto",background:fmSettings.planPublished?"rgba(5,150,105,0.3)":fmSettings.schedulingOpen?"rgba(37,99,235,0.3)":"rgba(220,38,38,0.25)",color:fmSettings.planPublished?"#6ee7b7":fmSettings.schedulingOpen?"#93c5fd":"#fca5a5",borderRadius:8,fontSize:9,fontWeight:700,padding:"2px 6px" }}>{fmSettings.planPublished?t("shell.sidebar.admin_fm_status_published"):fmSettings.schedulingOpen?t("shell.sidebar.admin_fm_status_active"):t("shell.sidebar.admin_fm_status_closed")}</span>
+              </div>
+              {/* [feat/instructions-split] Instrukcja administratora spotkań B2B — przy module FM. */}
+              <div onClick={()=>nav("a-instr-b2b")} data-testid="nav-a-instr-b2b" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px 8px 22px",color:navKey==="a-instr-b2b"?"white":"#64748b",background:navKey==="a-instr-b2b"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:12,fontWeight:navKey==="a-instr-b2b"?600:400,transition:"all 0.15s" }}>
+                <FileText size={13}/><span>{t("shell.sidebar.admin_instructions_b2b", { year: fmEditionYear(fmSettings) })}</span>
               </div>
               {/* [B2B Round prod-rollout / branding] Sekcja "System" — globalne
                   ustawienia całej aplikacji. Brand = logo Fresh Market podmieniane
