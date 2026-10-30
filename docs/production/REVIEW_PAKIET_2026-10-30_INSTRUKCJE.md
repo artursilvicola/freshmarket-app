@@ -19,6 +19,8 @@ Gałąź **`feat/instructions-split`** od `origin/main` = `988d095`. Commity: `d
 
 Przyjęte dla dostawcy, kupca i administratora. Zasady pakietów (5 sieci głównych na pakiet Business, rezerwowe bez limitu), wyboru sieci (⭐/👍, Potwierdź wybór), odpowiedzi kupców (Chcę / Daj szansę / Nie chcę, brak odpowiedzi = Daj szansę), pierwszeństwa (data opłaty, Premium przy remisie), przydziału i korzystania z planu są opisane **jako obowiązujące**, bez oznaczania ich jako niepotwierdzonych. Dane konkretnej edycji (terminy, lista sieci, kupcy, miejsce) **nie są przenoszone z 2026**: w instrukcjach stoi „informacja zostanie podana przez organizatora". Nota na górze instrukcji B2B: „Instrukcja dotyczy edycji Fresh Market 2027. Szczegóły organizacyjne i terminy będą aktualizowane przed wydarzeniem." Ramka administratora nazywa się teraz „Do ustalenia przez organizatora" i zawiera wyłącznie dane edycji (data i miejsce, terminy faz, lista sieci, tryb włączania B2B z rejestracji, ręczny wybór dla powracających) — pytanie o zasady pakietów usunięte. Archiwum 2026 bez zmian; konfiguracja, daty i plany w działającym module nietknięte.
 
+**PDF po tej zmianie (30.10, ~17:50)**: wszystkie 24 pliki wygenerowane ponownie z aktualnej gałęzi tym samym skryptem (`scripts/instructions-pdf.mjs`, Chrome CDP) — 10 plików Spotkań B2B (dostawca, kupiec, administrator × wersje × PL/EN) oraz, ponieważ poprawka druku poniżej jest globalna, także 8 plików PreConnect/Archiwum uczestników i 6 PreConnect administratora. Sesje: konta testowe (+dostawca, +kupiec) przez magic link oraz Twoja sesja administratora z karty `localhost`. Kontrola skryptem (PyMuPDF) na każdym pliku: nowa nota i „informacja zostanie podana przez organizatora” obecne w 10 plikach B2B, stare brzmienia nieobecne, brak menu panelu, żaden blok tekstu ani zrzut nie dotyka krawędzi strony; arkusze miniatur wszystkich stron obejrzane — rozdziały w całości, bez ucięć. **Jedna poprawka**: w PDF kupca (Spotkania B2B, PL i EN) po dodaniu kroku z terminami pojawiła się **pusta czwarta strona** — same dolne odstępy (padding sekcji archiwum + padding kontenera) wypychały nową stronę, gdy treść kończyła się tuż przy dole. Poprawione w `InstructionPage.css` (druk: ostatnia sekcja i kontener bez dolnych odstępów); po poprawce kupiec = 3 strony, a archiwum EN dostawcy, które wcześniej też kończyło się pustą stroną (6), ma 5 stron. Liczby stron pozostałych plików bez zmian. Pliki: `C:\Users\Artur\AppData\Local\Temp\pdf3\` (poza repozytorium; stary komplet w `...\Temp\pdf\`).
+
 ## 1. Co jest
 
 Sześć instrukcji w aplikacji (treść w repozytorium, PL i EN), każda z własnym adresem, spisem treści, ponumerowanymi krokami, zrzutami z kont testowych i przyciskiem „Drukuj / zapisz jako PDF"; plus osobna strona archiwum.
@@ -57,7 +59,7 @@ Tylko rzeczywiste działanie aplikacji (teksty interfejsu, kod modułów, dokume
 
 **Kontrola w przeglądarce** (serwer dev, konta testowe przez magic link): dostawca i kupiec — menu, kłódka, instrukcja spotkań mimo kłódki, bezpośrednie adresy po przeładowaniu, Wstecz, PL→EN, 375 px bez poziomego przewijania, strona archiwum z HTML z bazy i powrotem, `?print=1` bez menu. **Administrator — sprawdzony** (punkt 4 wyżej). Po kontroli treść dwóch instrukcji administratora poprawiona o zmiany z wersji 2 (opis sekcji Brandingu jako archiwum; rok instrukcji niezależny od konfiguracji wydarzenia; pytanie o podział mailingu usunięte).
 
-**Wydruk**: 24 PDF w `C:\Users\Artur\AppData\Local\Temp\pdf\` (poza repozytorium), obejrzane wszystkie strony. Uwaga z archiwum: wersja PL dostawcy w Brandingu jest pusta (strona pokazuje „Brak zapisanej treści archiwalnej"), wersja EN dostawcy i obie wersje kupca mają treść.
+**Wydruk**: aktualny komplet 24 PDF w `C:\Users\Artur\AppData\Local\Temp\pdf3\` (poza repozytorium; wygenerowany po zmianie z §0a, obejrzane wszystkie strony). Uwaga z archiwum: w pierwszym przebiegu wersja PL dostawcy w Brandingu była pusta („Brak zapisanej treści archiwalnej"); przy przebiegu ~17:50 ma już treść w bazie („PreConnect — instrukcja dla dostawcy”, ok. 8,5 tys. znaków, 5 stron PDF) — nie zmieniałem tego pola, treść pochodzi z `fm_settings.ui_content`. Wersja EN dostawcy i obie wersje kupca mają treść.
 
 ## 5. Zrzuty ekranu
 
@@ -72,7 +74,7 @@ Tylko rzeczywiste działanie aplikacji (teksty interfejsu, kod modułów, dokume
 5. Lista sieci 2027 i kupców.
 6. Ręczny wybór sieci dla firm powracających (gałąź z 2026).
 7. Pole „Archiwum instrukcji 2026 (treść HTML)" w Brandingu: zostawić (zalecane, treść w bazie nienaruszona) czy kiedyś wyczyścić.
-8. Uwaga do PDF-ów z §4: 24 pliki powstały przed zmianą z §0a — 12 plików B2B (dostawca/kupiec/admin × PL/EN) ma poprzednie brzmienie noty i archiwum; układ stron bez zmian (zmiana wyłącznie tekstowa, sprawdzona w przeglądarce na dev: nota, krok z terminami, ramka admina). Przed publikacją można je wygenerować ponownie tym samym skryptem.
+8. ~~Uwaga do PDF-ów z §4~~ **Zrobione 30.10 ~17:50**: komplet 24 PDF wygenerowany ponownie z aktualnej wersji i sprawdzony (§0a), w tym poprawka pustej strony w druku.
 
 ## 7. Wdrożenie (po zgodzie) i wycofanie
 

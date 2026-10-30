@@ -106,3 +106,12 @@
 }
 body.fm-instr-printing { background: white; }
 body.fm-instr-printing .fm-instr { max-width: 900px; margin: 0 auto; padding: 16px; }
+
+/* Wydruk: ostatnia sekcja i kontener bez dolnych odstępów — same odstępy (padding + margin)
+   potrafiły wypchnąć pustą ostatnią stronę, gdy treść kończyła się tuż przy dole strony
+   (kupiec, Spotkania B2B, 30.10.2026). */
+@media print {
+  .fm-instr > :last-child { margin-bottom: 0 !important; padding-bottom: 0 !important; }
+  .fm-instr__archive, .fm-instr__questions { margin-bottom: 0; padding-bottom: 0; }
+  body.fm-instr-printing .fm-instr { padding-bottom: 0; }
+}
