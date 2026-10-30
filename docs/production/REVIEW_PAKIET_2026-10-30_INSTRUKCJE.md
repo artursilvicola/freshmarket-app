@@ -88,3 +88,12 @@ Tylko rzeczywiste działanie aplikacji (teksty interfejsu, kod modułów, dokume
 ## 7. Wdrożenie (po zgodzie) i wycofanie
 
 Bez migracji, bez zmian danych. Deploy = push gałęzi na `main` (fast-forward od `988d095`), kontrola `/version.json`, wejście na konto testowe dostawcy i kupca oraz na własne konto admina. Wycofanie: Netlify „Publish deploy" poprzedniej wersji (`988d095`); HTML w Brandingu nieruszony, stara „Instrukcja" wraca bez zmian.
+
+## 8. WDROŻONE 30.10.2026 ~18:24 (zgoda Artura „wdrażaj" po odbiorze Codexa)
+
+- main: `988d095` → **`4fb2ac2`** (fast-forward gałęzi `feat/instructions-split`, bez migracji SQL, bez zmian w bazie).
+- Tag do wycofania: `prod-rollback-2026-10-30-instructions` = `988d095`. Wycofanie = Netlify → „Publish deploy" **`6ada2eeba2395228abeaecdd`** (deploy 988d095 z 22.10), nie push --force.
+- Deploy produkcyjny: **`6ae4c490e6a36d623c5052e9`**, stan „ready" o 16:23:44 UTC, bundle `assets/index-p12cyz4p.js`.
+- Kontrola po publikacji (16:25–16:30 UTC): bundle zawiera nowe adresy (`spotkania-b2b`, `archiwum-2026`), notę 2027 PL/EN, brzmienia z review Codexa (lista = odczyt, akceptacja = pierwszeństwo), przycisk „Drukuj / zapisz jako PDF", nazwę pola Brandingu; 4 zrzuty `/instrukcje/*` 200; adresy instrukcji 200 (SPA). W przeglądarce na koncie administratora Artura: `/admin/instrukcja/spotkania-b2b?rola=dostawca` (nota, terminy od organizatora, zasada akceptacji), `/admin/instrukcja/preconnect` (ramka „Do ustalenia przez organizatora", odczyt przy wejściu na listę), `/admin/instrukcja/archiwum-2026?rola=kupiec` (HTML kupca z bazy, 2,9 tys. znaków); oba wejścia w menu admina. Dwa PDF z produkcji z konta testowego dostawcy (Spotkania B2B PL 4 strony, PreConnect PL 9 stron): nowe brzmienia, bez menu, bez ucięć — `C:\Users\Artur\AppData\Local\Temp\pdf-prod\`.
+- Na kontach testowych tylko logowanie magic linkiem; dane produkcyjne bez zmian.
+- Otwarte po wdrożeniu (§6): konfiguracja edycji 2027 (daty, miejsce, lista sieci), auto-włączanie B2B z rejestracji, ręczny wybór dla powracających, przyszłość pola „Archiwum instrukcji 2026 (treść HTML)".
