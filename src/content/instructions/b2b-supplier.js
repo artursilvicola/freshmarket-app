@@ -2,7 +2,9 @@
 // Źródła: moduł Spotkań w panelu dostawcy (ekran blokady, Wybór sieci, Algorytm,
 // Twoje spotkania, Moja kolejka w dniu wydarzenia) i jego teksty. Terminy edycji
 // {{year}} ustala organizator — instrukcja ich nie podaje; w module widać daty
-// wpisane przez organizatora. Edycja 2026 jest opisana jako archiwum.
+// wpisane przez organizatora. Zasady (pakiety, wybór sieci, odpowiedzi kupców, pierwszeństwo,
+// przydział, plan) = zasady z 2026 przyjęte jako podstawa edycji {{year}} (decyzja Artura 30.10.2026);
+// dane konkretnej edycji (terminy, sieci, osoby) tylko gdy ustalone. Edycja 2026 = osobne archiwum.
 export default {
   pl: {
     eyebrow: "Spotkania B2B Fresh Market {{year}} · instrukcja dla dostawcy",
@@ -18,6 +20,7 @@ export default {
           "Spotkania są umawiane dla firm z pakietem spotkań (Business lub Premium). Pakiet i jego poziom przypisuje organizator w Twojej firmie.",
           "Ty wskazujesz sieci, z którymi chcesz się spotkać. Kupcy odpowiadają na zgłoszenia. Organizator układa plan.",
           "Po publikacji planu widzisz listę sieci z **numerami spotkań**. W dniu wydarzenia numer oznacza kolejność wywołania do rozmowy.",
+          "Terminy edycji {{year}} — otwarcie wyboru sieci, zamknięcie wyborów, publikacja planu, data i miejsce wydarzenia: informacja zostanie podana przez organizatora.",
         ],
         notes: [
           "Spotkanie wymaga akceptacji kupca. Wybór sieci jest zgłoszeniem, nie gwarancją spotkania.",
@@ -105,7 +108,7 @@ export default {
     ],
     archive: {
       title: "Archiwum: edycja 2026",
-      intro: "Tak wyglądał harmonogram i zasady edycji 2026. Terminy edycji {{year}} ogłasza organizator — nie wynikają z tego archiwum.",
+      intro: "Tak wyglądał harmonogram edycji 2026. Zasady z 2026 są podstawą edycji {{year}}; terminy i szczegóły organizacyjne edycji {{year}}: informacja zostanie podana przez organizatora.",
       items: [
         "Wydarzenie: 24 września 2026, MCC Mazurkas Conference Centre, Ożarów Mazowiecki.",
         "Fazy modułu w 2026: Rejestracja (sieci potwierdzają udział) → Preferencje 1–16 września (dostawcy i kupcy wybierają partnerów) → Algorytm i korekty 17–21 września (organizator) → Publikacja planu 22 września i wydarzenie 24 września.",
@@ -128,6 +131,7 @@ export default {
           "Meetings are scheduled for companies with a meeting package (Business or Premium). The package and its level are assigned to your company by the organiser.",
           "You indicate the chains you want to meet. Buyers answer the requests. The organiser builds the plan.",
           "After the plan is published you see the list of chains with **meeting numbers**. On the event day the number is the order in which you are called to the conversation.",
+          "Dates of the {{year}} edition — opening of chain selection, closing of selections, plan publication, event date and venue: information will be provided by the organiser.",
         ],
         notes: [
           "A meeting requires the buyer's acceptance. Choosing a chain is a request, not a guarantee of a meeting.",
@@ -215,7 +219,7 @@ export default {
     ],
     archive: {
       title: "Archive: 2026 edition",
-      intro: "This is how the schedule and rules of the 2026 edition looked. Dates for the {{year}} edition are announced by the organiser — they do not follow from this archive.",
+      intro: "This is how the 2026 schedule looked. The 2026 rules are the basis of the {{year}} edition; dates and organisational details of the {{year}} edition: information will be provided by the organiser.",
       items: [
         "Event: 24 September 2026, MCC Mazurkas Conference Centre, Ożarów Mazowiecki.",
         "Module phases in 2026: Registration (chains confirm participation) → Preferences 1–16 September (suppliers and buyers choose partners) → Algorithm and corrections 17–21 September (organiser) → Plan published 22 September, event 24 September.",

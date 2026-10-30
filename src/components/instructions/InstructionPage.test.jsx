@@ -76,7 +76,7 @@ describe("strona instrukcji", () => {
     expect(out).toContain("1. Czym jest PreConnect");
     expect(out).toContain("Dostawca");
     expect(tree.root.findAllByType("ol").length).toBeGreaterThan(3);
-    expect(out).not.toContain("Do potwierdzenia przez organizatora");
+    expect(out).not.toContain("Do ustalenia przez organizatora");
     expect(tree.root.findByType("article").props["data-role"]).toBe("supplier");
   });
 
@@ -99,10 +99,10 @@ describe("strona instrukcji", () => {
 
   it("wersja administratora ma pytania do potwierdzenia; uczestnik ich nie widzi", () => {
     mount({ doc: "b2b", role: "admin", lang: "pl" });
-    expect(output()).toContain("Do potwierdzenia przez organizatora");
+    expect(output()).toContain("Do ustalenia przez organizatora");
     act(() => tree.unmount());
     mount({ doc: "b2b", role: "buyer", lang: "pl" });
-    expect(output()).not.toContain("Do potwierdzenia przez organizatora");
+    expect(output()).not.toContain("Do ustalenia przez organizatora");
   });
 
   it("dawna połączona instrukcja 2026 NIE jest wklejana do instrukcji — jest tylko odnośnik do osobnej strony", () => {
@@ -121,11 +121,11 @@ describe("strona instrukcji", () => {
 
   it("instrukcja spotkań mówi, że dotyczy edycji z treści, nie z dat modułu", () => {
     mount({ doc: "b2b", role: "supplier", lang: "pl", editionYear: 2027 });
-    expect(output()).toContain("Instrukcja dotyczy edycji 2027");
+    expect(output()).toContain("Instrukcja dotyczy edycji Fresh Market 2027");
     expect(tree.root.findByType("article").props["data-edition"]).toBe(2027);
     act(() => tree.unmount());
     mount({ doc: "preconnect", role: "supplier", lang: "pl", editionYear: 2027 });
-    expect(output()).not.toContain("Instrukcja dotyczy edycji");
+    expect(output()).not.toContain("Instrukcja dotyczy edycji Fresh Market");
   });
 
   it("przełącznik wersji dla admina i przycisk drukowania", () => {

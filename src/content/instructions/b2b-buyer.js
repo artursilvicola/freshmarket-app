@@ -16,6 +16,7 @@ export default {
           "Dostawcy wybierają Twoją sieć jako główną (⭐) lub rezerwową (👍).",
           "Ty odpowiadasz na każde zgłoszenie: Chcę się spotkać, Daj szansę albo Nie chcę.",
           "Organizator uruchamia algorytm, koryguje plan i publikuje listę firm z numerami kolejki dla Twojej sieci.",
+          "Terminy edycji {{year}} — otwarcie wyboru sieci, zamknięcie wyborów, publikacja planu, data i miejsce wydarzenia: informacja zostanie podana przez organizatora.",
         ],
       },
       {
@@ -83,7 +84,7 @@ export default {
     ],
     archive: {
       title: "Archiwum: edycja 2026",
-      intro: "Harmonogram i zasady edycji 2026. Terminy edycji {{year}} ogłasza organizator.",
+      intro: "Harmonogram edycji 2026. Zasady z 2026 są podstawą edycji {{year}}; terminy i szczegóły organizacyjne edycji {{year}}: informacja zostanie podana przez organizatora.",
       items: [
         "Wydarzenie: 24 września 2026, MCC Mazurkas Conference Centre, Ożarów Mazowiecki; rejestracja od 8:00.",
         "Wybory kupców do 16 września 2026; algorytm i korekty 17–21 września; publikacja planu 22 września.",
@@ -105,6 +106,7 @@ export default {
           "Suppliers choose your chain as main (⭐) or backup (👍).",
           "You answer each request: Want to meet, Give a chance or Do not want.",
           "The organiser runs the algorithm, corrects the plan and publishes the list of companies with queue numbers for your chain.",
+          "Dates of the {{year}} edition — opening of chain selection, closing of selections, plan publication, event date and venue: information will be provided by the organiser.",
         ],
       },
       {
@@ -172,7 +174,7 @@ export default {
     ],
     archive: {
       title: "Archive: 2026 edition",
-      intro: "Schedule and rules of the 2026 edition. Dates for the {{year}} edition are announced by the organiser.",
+      intro: "Schedule of the 2026 edition. The 2026 rules are the basis of the {{year}} edition; dates and organisational details of the {{year}} edition: information will be provided by the organiser.",
       items: [
         "Event: 24 September 2026, MCC Mazurkas Conference Centre, Ożarów Mazowiecki; registration from 8:00.",
         "Buyers' selections until 16 September 2026; algorithm and corrections 17–21 September; plan published 22 September.",

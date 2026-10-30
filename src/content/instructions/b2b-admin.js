@@ -18,6 +18,7 @@ export default {
           "Panel **FM Spotkania B2B** ma zakładki: Zarządzanie, Dane wejściowe, Plan spotkań, Korekty, Dzień wydarzenia. Status modułu (Zamknięta / Aktywna / Opublikowany) widać przy pozycji w menu.",
           "Dostęp uczestników: w Zarządzaniu **Otwórz dostęp / Zamknij** oraz **Data planowanego otwarcia** (pokazywana na ekranie blokady).",
           "Instrukcje spotkań dla uczestników są dostępne także przy zamkniętym module — nie odblokowują samych spotkań.",
+          "Zasady edycji {{year}} (pakiety, wybór sieci, odpowiedzi kupców, pierwszeństwo, przydział, plan) = zasady z 2026, przyjęte jako podstawa. Dane edycji (terminy, lista sieci, kupcy) nie są przenoszone z 2026 — wpisujesz je do aplikacji, gdy zostaną ustalone; do tego czasu uczestnicy czytają „informacja zostanie podana przez organizatora”.",
         ],
       },
       {
@@ -87,8 +88,7 @@ export default {
     ],
     questions: [
       "Data i miejsce wydarzenia {{year}} — do wpisania w konfiguracji FM, gdy edycja będzie otwierana (nie zmienia roku w instrukcjach — ten jest stałą treści).",
-      "Daty otwarcia i zamknięcia wyborów oraz publikacji planu {{year}} — dziś w aplikacji są wpisane na sztywno daty 2026 (ekran blokady, bloki na Dashboardzie, teksty faz); wymagają zmiany przy otwarciu edycji.",
-      "Czy zasada pakietów (5 sieci głównych na pakiet Business, rezerwowe bez limitu) i pierwszeństwo wg daty opłaty obowiązują bez zmian w {{year}}?",
+      "Daty otwarcia i zamknięcia wyborów oraz publikacji planu {{year}} — do ustalenia; dziś w aplikacji są wpisane na sztywno daty 2026 (ekran blokady, bloki na Dashboardzie, teksty faz) i wymagają zmiany przy otwarciu edycji.",
       "Czy rejestracja udziału firm na {{year}} (freshmarket.eu) ma automatycznie włączać Spotkania B2B i liczbę pakietów w panelu, czy nadal ręcznie?",
       "Lista sieci uczestniczących w {{year}} i ich kupców — do oznaczenia w Sieciach przed otwarciem wyborów.",
       "Czy ręczny wybór sieci dla firm powracających (gałąź przygotowana w 2026, niewdrożona) ma być użyty w {{year}}?",
@@ -119,6 +119,7 @@ export default {
           "The **FM B2B Meetings** panel has tabs: Management, Input data, Meeting plan, Corrections, Event day. The module status (Closed / Active / Published) is shown next to the menu item.",
           "Participant access: in Management **Open access / Close** and the **Planned opening date** (shown on the lock screen).",
           "Meeting guides for participants are available even while the module is closed — they do not unlock the meetings themselves.",
+          "Rules of the {{year}} edition (packages, chain selection, buyer answers, priority, allocation, plan) = the 2026 rules, adopted as the basis. Edition data (dates, chain list, buyers) is not carried over from 2026 — you enter it into the app once set; until then participants read “information will be provided by the organiser”.",
         ],
       },
       {
@@ -188,8 +189,7 @@ export default {
     ],
     questions: [
       "Date and venue of the {{year}} event — to be entered in the FM configuration when the edition opens (it does not change the year in the guides — that is a content constant).",
-      "Opening and closing dates of selections and plan publication for {{year}} — today the app has 2026 dates hard-coded (lock screen, Dashboard blocks, phase texts); they need changing when the edition opens.",
-      "Do the package rule (5 main chains per Business package, unlimited backups) and priority by payment date apply unchanged in {{year}}?",
+      "Opening and closing dates of selections and plan publication for {{year}} — to be set; today the app has 2026 dates hard-coded (lock screen, Dashboard blocks, phase texts) and they need changing when the edition opens.",
       "Should company registration for {{year}} (freshmarket.eu) automatically enable B2B Meetings and the number of packages in the panel, or stay manual?",
       "List of chains taking part in {{year}} and their buyers — to be marked in Chains before selections open.",
       "Should the manual chain selection for returning companies (branch prepared in 2026, not deployed) be used in {{year}}?",
