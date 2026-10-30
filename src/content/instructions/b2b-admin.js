@@ -26,7 +26,7 @@ export default {
         steps: [
           "**Sieci**: dla każdej sieci biorącej udział włącz „Sieć uczestniczy w Fresh Market”, wpisz unikalny **identyfikator sieci FM** (np. ch28) — bez niego sieć nie pojawi się u dostawców — i oznacz co najmniej jednego aktywnego kupca jako kupca tej edycji. Ustaw **Wejście (GATE)** i informacje organizacyjne FM (tryb online, godziny).",
           "**Firmy**: włącz Spotkania B2B dla firm z opłaconym udziałem, ustaw liczbę **pakietów Business** (1 pakiet = pula 5 sieci głównych) i **poziom** (Business / Premium — Premium ma pierwszeństwo przy remisie), wpisz **datę opłaty** (pierwszeństwo w kolejce; zmiana działa przy kolejnym przeliczeniu).",
-          "**Ustawienia wydarzenia**: data wydarzenia, data otwarcia wyborów i termin zamknięcia są przechowywane w konfiguracji FM; rok edycji w menu i tytułach instrukcji wynika z daty wydarzenia.",
+          "**Ustawienia wydarzenia**: data wydarzenia, data otwarcia wyborów i termin zamknięcia są w konfiguracji FM i sterują aktywnym modułem. Rok edycji w **instrukcjach** jest osobną stałą w treści aplikacji — zmiana konfiguracji wydarzenia go nie zmienia i odwrotnie.",
           "**Dzień wydarzenia → Stanowiska**: liczba stanowisk na sieć i liczba spotkań na stanowisko wyznaczają pojemność planu; po zmianie uruchom algorytm ponownie.",
         ],
         notes: [
@@ -86,7 +86,7 @@ export default {
       },
     ],
     questions: [
-      "Data i miejsce wydarzenia {{year}} — do wpisania w konfiguracji FM (od tego zależy rok edycji w menu i w tytułach instrukcji).",
+      "Data i miejsce wydarzenia {{year}} — do wpisania w konfiguracji FM, gdy edycja będzie otwierana (nie zmienia roku w instrukcjach — ten jest stałą treści).",
       "Daty otwarcia i zamknięcia wyborów oraz publikacji planu {{year}} — dziś w aplikacji są wpisane na sztywno daty 2026 (ekran blokady, bloki na Dashboardzie, teksty faz); wymagają zmiany przy otwarciu edycji.",
       "Czy zasada pakietów (5 sieci głównych na pakiet Business, rezerwowe bez limitu) i pierwszeństwo wg daty opłaty obowiązują bez zmian w {{year}}?",
       "Czy rejestracja udziału firm na {{year}} (freshmarket.eu) ma automatycznie włączać Spotkania B2B i liczbę pakietów w panelu, czy nadal ręcznie?",
@@ -127,7 +127,7 @@ export default {
         steps: [
           "**Chains**: for each participating chain enable “Chain takes part in Fresh Market”, enter a unique **FM chain identifier** (e.g. ch28) — without it the chain does not appear for suppliers — and mark at least one active buyer as this edition's buyer. Set the **Gate** and FM organisational notes (online mode, hours).",
           "**Companies**: enable B2B Meetings for companies with paid participation, set the number of **Business packages** (1 package = pool of 5 main chains) and the **level** (Business / Premium — Premium has priority in a tie), enter the **payment date** (queue priority; a change applies at the next recalculation).",
-          "**Event settings**: the event date, selection opening date and closing deadline are stored in the FM configuration; the edition year in the menu and guide titles follows the event date.",
+          "**Event settings**: the event date, selection opening date and closing deadline are in the FM configuration and drive the active module. The edition year in the **guides** is a separate constant in the app content — changing the event configuration does not change it, and vice versa.",
           "**Event day → Stations**: stations per chain and meetings per station define the plan's capacity; after a change run the algorithm again.",
         ],
         notes: [
@@ -187,7 +187,7 @@ export default {
       },
     ],
     questions: [
-      "Date and venue of the {{year}} event — to be entered in the FM configuration (the edition year in the menu and guide titles follows it).",
+      "Date and venue of the {{year}} event — to be entered in the FM configuration when the edition opens (it does not change the year in the guides — that is a content constant).",
       "Opening and closing dates of selections and plan publication for {{year}} — today the app has 2026 dates hard-coded (lock screen, Dashboard blocks, phase texts); they need changing when the edition opens.",
       "Do the package rule (5 main chains per Business package, unlimited backups) and priority by payment date apply unchanged in {{year}}?",
       "Should company registration for {{year}} (freshmarket.eu) automatically enable B2B Meetings and the number of packages in the panel, or stay manual?",

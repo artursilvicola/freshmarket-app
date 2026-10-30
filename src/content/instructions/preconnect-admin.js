@@ -88,10 +88,10 @@ export default {
       {
         id: "branding",
         figure: { src: "/instrukcje/admin-branding-instrukcje.jpg", alt: "Branding: pola Instrukcje (link w menu) i Komunikaty", caption: "Branding → Instrukcje (link w menu): dotychczasowa treść HTML per rola i język; poniżej Komunikaty." },
-        title: "Branding: logo, komunikaty, sponsorzy, informacja od organizatora",
+        title: "Branding: logo, komunikaty, sponsorzy, archiwum instrukcji 2026",
         steps: [
           "**Logo** aplikacji: PNG/JPG/SVG/WEBP do 1 MB; widoczne w menu, nagłówkach i na stronach logowania.",
-          "**Instrukcje (link w menu)** — pole „Treść PL/EN” per rola: jego zawartość jest wyświetlana w instrukcji PreConnect uczestnika jako ramka **„Informacja od organizatora”** nad spisem treści. Właściwa instrukcja jest częścią aplikacji i nie wymaga edycji tutaj.",
+          "**Archiwum instrukcji 2026 (treść HTML)** — dawna, połączona instrukcja PreConnect i spotkań z edycji 2026, per rola i język. Widać ją wyłącznie pod osobnym odnośnikiem „Archiwum instrukcji 2026” (w stopce instrukcji PreConnect uczestnika i pod własnym adresem). Bieżące instrukcje — PreConnect i Spotkania B2B dla dostawcy, kupca i administratora — są częścią aplikacji (pliki `src/content/instructions`); ich zmiana to zmiana w kodzie i wdrożenie, nie edycja w Brandingu.",
           "**Komunikaty**: pasek na górze panelu albo okno przy wejściu (pilne), osobno dla dostawcy i kupca, z opcjonalnym zakresem dat.",
           "**Sponsorzy**: logotypy w stopce paneli; kolejność na liście = kolejność w pasku.",
           "Zapisz treści — uczestnicy zobaczą zmiany po odświeżeniu strony.",
@@ -117,7 +117,6 @@ export default {
       },
     ],
     questions: [
-      "Czy mailing PreConnect ma dalej jedną treść dla wszystkich kupców sieci, czy podział według kategorii kupca (dziś każdy kupiec sieci dostaje wszystkie propozycje)?",
       "Czy wejścia administratora w podglądzie konta kupca mają być zapisywane w historii odczytów jako „administrator (podgląd)”, czy pomijane?",
       "Czy zdarzenia webhooka Resend, które po ponowieniach zostaną w stanie „błąd”, mają dostać ręczny przycisk „ponów” w panelu?",
     ],
@@ -208,10 +207,10 @@ export default {
       {
         id: "branding",
         figure: { src: "/instrukcje/admin-branding-instrukcje.jpg", alt: "Branding: Instructions (menu link) and Announcements fields", caption: "Branding → Instructions (menu link): previous HTML content per role and language; Announcements below." },
-        title: "Branding: logo, announcements, sponsors, organiser note",
+        title: "Branding: logo, announcements, sponsors, 2026 guide archive",
         steps: [
           "App **logo**: PNG/JPG/SVG/WEBP up to 1 MB; shown in the menu, headers and login pages.",
-          "**Instructions (menu link)** — the “Content PL/EN” field per role: its content is displayed in the participant's PreConnect guide as the box **“Note from the organiser”** above the table of contents. The guide itself is part of the app and needs no editing here.",
+          "**2026 guide archive (HTML content)** — the former combined PreConnect and meetings guide from the 2026 edition, per role and language. It is shown only under the separate link “2026 guide archive” (in the footer of the participant's PreConnect guide and at its own address). The current guides — PreConnect and B2B Meetings for supplier, buyer and administrator — are part of the app (files `src/content/instructions`); changing them is a code change and deployment, not an edit in Branding.",
           "**Announcements**: a bar at the top of the panel or a window on entry (urgent), separately for supplier and buyer, with an optional date range.",
           "**Sponsors**: logos in the panel footer; list order = strip order.",
           "Save content — participants see the changes after refreshing the page.",
@@ -237,7 +236,6 @@ export default {
       },
     ],
     questions: [
-      "Should the PreConnect mailing keep one content for all buyers of a chain, or be split by buyer category (today every buyer of a chain receives all proposals)?",
       "Should administrator visits in buyer-account preview be recorded in the read history as “administrator (preview)”, or skipped?",
       "Should Resend webhook events that remain in the “error” state after retries get a manual “retry” button in the panel?",
     ],
