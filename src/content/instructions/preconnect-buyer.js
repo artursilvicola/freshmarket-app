@@ -63,7 +63,7 @@ export default {
         title: "Powiadomienia e-mail i status odczytu",
         steps: [
           "Mailing PreConnect przychodzi z adresu newsletter@freshmarket.eu i zawiera propozycje dołączone od ostatniego mailingu. W **Mój profil → Subskrypcja mailingowa** widzisz datę następnego mailingu i możesz wycofać zgodę.",
-          "**Otwarcie e-maila albo szczegółów propozycji w aplikacji oznacza propozycję jako odczytaną.** Dostawca widzi w swoim panelu tylko ten fakt — bez Twoich danych.",
+          "**Otwarcie e-maila z mailingu albo wejście na listę propozycji w aplikacji (Propozycje asortymentowe lub Zapisane) oznacza propozycje jako odczytane** — wszystkie nowe propozycje na liście naraz, bez otwierania szczegółów. Dostawca widzi w swoim panelu tylko ten fakt — bez Twoich danych.",
           "Propozycje nieotwarte w ciągu 14 dni od mailingu wygasają po stronie dostawcy; w Twoim panelu nadal możesz je obejrzeć w historii listy.",
         ],
       },
@@ -166,7 +166,7 @@ export default {
         title: "E-mail notifications and read status",
         steps: [
           "The PreConnect mailing comes from newsletter@freshmarket.eu and contains the proposals added since the last mailing. In **My profile → Mailing subscription** you see the date of the next mailing and can withdraw consent.",
-          "**Opening the e-mail or the proposal details in the app marks the proposal as read.** The supplier sees only that fact in their panel — none of your data.",
+          "**Opening the mailing e-mail or entering the proposal list in the app (Proposals or Saved) marks proposals as read** — all new proposals on the list at once, without opening the details. The supplier sees only that fact in their panel — none of your data.",
           "Proposals not opened within 14 days of the mailing expire on the supplier's side; you can still view them in your list history.",
         ],
       },

@@ -23,7 +23,7 @@ export default {
           "Terminy edycji {{year}} — otwarcie wyboru sieci, zamknięcie wyborów, publikacja planu, data i miejsce wydarzenia: informacja zostanie podana przez organizatora.",
         ],
         notes: [
-          "Spotkanie wymaga akceptacji kupca. Wybór sieci jest zgłoszeniem, nie gwarancją spotkania.",
+          "Wybór sieci jest zgłoszeniem, nie gwarancją spotkania. Akceptacja kupca daje pierwszeństwo. „Daj szansę” oraz brak odpowiedzi pozwalają na przydział w miarę dostępnych miejsc; odmowa wyklucza automatyczny przydział.",
         ],
       },
       {
@@ -134,7 +134,7 @@ export default {
           "Dates of the {{year}} edition — opening of chain selection, closing of selections, plan publication, event date and venue: information will be provided by the organiser.",
         ],
         notes: [
-          "A meeting requires the buyer's acceptance. Choosing a chain is a request, not a guarantee of a meeting.",
+          "Choosing a chain is a request, not a guarantee of a meeting. The buyer's acceptance gives priority. “Give a chance” and no answer allow allocation as places permit; a refusal excludes automatic allocation.",
         ],
       },
       {

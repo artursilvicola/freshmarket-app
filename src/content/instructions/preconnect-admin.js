@@ -11,7 +11,7 @@ export default {
       {
         id: "przeglad",
         title: "Przegląd modułu",
-        intro: "PreConnect działa cały rok. Dostawca wysyła propozycję do sieci → administrator moderuje → propozycja trafia do panelu kupca i do mailingu → kupiec otwiera → z pakietu dostawcy pobierany jest kredyt → dostawca dostaje powiadomienie.",
+        intro: "PreConnect działa cały rok. Dostawca wysyła propozycję do sieci → administrator moderuje → propozycja trafia do panelu kupca i do mailingu → kupiec otwiera e-mail albo wchodzi na listę propozycji → z pakietu dostawcy pobierany jest kredyt → dostawca dostaje powiadomienie.",
         steps: [
           "**Dashboard** pokazuje, co wymaga akcji: propozycje do moderacji, firmy do aktywacji, proformy oczekujące, oraz skróty do modułów.",
           "Obowiązuje zasada: **dostawca nigdy nie widzi danych kupca** (nazwisk, adresów, telefonów). Sieć może widzieć osobę i telefon dostawcy z profilu firmy.",
@@ -68,7 +68,7 @@ export default {
         id: "kredyty",
         title: "Kredyty, proformy, rozliczenia",
         steps: [
-          "Cykl kredytu: **rezerwacja** przy wysłaniu propozycji → **pobranie** przy pierwszym odczycie (otwarcie e-maila lub wejście kupca w propozycję) → **zwolnienie rezerwacji** po 14 dniach od mailingu bez odczytu (status „wygasła”) albo po odrzuceniu w moderacji.",
+          "Cykl kredytu: **rezerwacja** przy wysłaniu propozycji → **pobranie** przy pierwszym odczycie (otwarcie e-maila lub wejście kupca na listę propozycji w aplikacji — wtedy wszystkie jego nowe propozycje naraz; otwarcie szczegółów nie jest potrzebne) → **zwolnienie rezerwacji** po 14 dniach od mailingu bez odczytu (status „wygasła”) albo po odrzuceniu w moderacji.",
           "Kolejność pul: bezpłatne od organizatora → kupione (najbliższy termin ważności) → historyczne. Kupione kredyty są ważne 12 miesięcy.",
           "**Proformy** (Dashboard / Rozliczenia): dostawca generuje proformę przy wyborze przelewu; po zaksięgowaniu wpłaty kliknij **Oznacz opłaconą → aktywuj pakiet**.",
           "**PayU**: płatności online aktywują pakiet automatycznie; status widzisz w Rozliczeniach (opłacone / oczekujące / błędy).",
@@ -130,7 +130,7 @@ export default {
       {
         id: "przeglad",
         title: "Module overview",
-        intro: "PreConnect runs all year. A supplier sends a proposal to a chain → the administrator moderates → the proposal reaches the buyer's panel and the mailing → the buyer opens it → a credit is taken from the supplier's package → the supplier is notified.",
+        intro: "PreConnect runs all year. A supplier sends a proposal to a chain → the administrator moderates → the proposal reaches the buyer's panel and the mailing → the buyer opens the e-mail or enters the proposal list → a credit is taken from the supplier's package → the supplier is notified.",
         steps: [
           "The **Dashboard** shows what needs action: proposals to moderate, companies to activate, pending pro formas, and module shortcuts.",
           "Rule: **a supplier never sees buyer data** (names, addresses, phones). A chain may see the supplier's contact person and phone from the company profile.",
@@ -187,7 +187,7 @@ export default {
         id: "kredyty",
         title: "Credits, pro formas, settlements",
         steps: [
-          "Credit cycle: **reservation** when the proposal is sent → **charge** on the first read (e-mail opened or buyer opens the proposal) → **reservation released** 14 days after the mailing without a read (status “expired”) or after rejection in moderation.",
+          "Credit cycle: **reservation** when the proposal is sent → **charge** on the first read (e-mail opened or buyer enters the proposal list in the app — all their new proposals at once; opening the details is not required) → **reservation released** 14 days after the mailing without a read (status “expired”) or after rejection in moderation.",
           "Pool order: free from the organiser → purchased (nearest expiry) → historical. Purchased credits are valid for 12 months.",
           "**Pro formas** (Dashboard / Settlements): the supplier generates a pro forma when choosing bank transfer; once the payment is booked click **Mark as paid → activate package**.",
           "**PayU**: online payments activate the package automatically; the status is shown in Settlements (paid / pending / errors).",

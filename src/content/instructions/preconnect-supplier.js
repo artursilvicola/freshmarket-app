@@ -16,7 +16,7 @@ export default {
         steps: [
           "Przygotowujesz profil firmy i propozycje w panelu.",
           "Wysyłasz propozycję do wybranej sieci. Organizator ją moderuje, a po zatwierdzeniu trafia do panelu kupca i do najbliższego mailingu PreConnect.",
-          "Kupiec otwiera e-mail albo propozycję w aplikacji — wtedy pobierany jest 1 kredyt z Twojego pakietu i dostajesz powiadomienie.",
+          "Kupiec otwiera e-mail z mailingu albo wchodzi na listę propozycji w swoim panelu — wtedy pobierany jest 1 kredyt z Twojego pakietu i dostajesz powiadomienie.",
           "Jeśli kupiec nie otworzy propozycji w ciągu 14 dni od mailingu, rezerwacja kredytu jest zwalniana (złota zasada 14 dni).",
         ],
         notes: [
@@ -109,7 +109,7 @@ export default {
         id: "kredyty",
         figure: { src: "/instrukcje/preconnect-dostawca-finanse.jpg", alt: "Finanse: saldo kredytów i pule", caption: "Finanse → Saldo i pakiet: kredyty bezpłatne od organizatora i kupione, zwolnione rezerwacje, open rate." },
         title: "Kredyty i pakiety (Finanse)",
-        intro: "1 kredyt = 1 wysyłka propozycji do jednej sieci. Kredyt jest **rezerwowany** w chwili wysłania, a **pobierany** dopiero wtedy, gdy kupiec otworzy propozycję.",
+        intro: "1 kredyt = 1 wysyłka propozycji do jednej sieci. Kredyt jest **rezerwowany** w chwili wysłania, a **pobierany** dopiero wtedy, gdy kupiec otworzy e-mail albo wejdzie na listę propozycji w swoim panelu.",
         steps: [
           "**Saldo i pakiet**: widzisz kredyty dostępne do nowych wysyłek, zarezerwowane przez propozycje czekające na moderację, mailing lub odczyt, oraz najbliższy termin ważności.",
           "Kolejność pobierania: najpierw kredyty **bezpłatne od organizatora**, potem **kupione** (według najbliższego terminu ważności), na końcu pakiety historyczne.",
@@ -126,7 +126,7 @@ export default {
       {
         id: "odczyty",
         title: "Odczyty kupców i powiadomienia",
-        intro: "Propozycja jest „zobaczona”, gdy kupiec otworzy e-mail z mailingu albo wejdzie w propozycję w swoim panelu. Oba zdarzenia liczą się tak samo: pobierany jest 1 kredyt.",
+        intro: "Propozycja jest „zobaczona”, gdy kupiec otworzy e-mail z mailingu albo wejdzie na listę propozycji w swoim panelu (wtedy jako zobaczone oznaczane są wszystkie jego nowe propozycje, także bez otwierania szczegółów). Oba zdarzenia liczą się tak samo: pobierany jest 1 kredyt.",
         steps: [
           "Po pierwszym odczycie dostajesz **jedno powiadomienie e-mail** o tym, że kupiec zobaczył propozycję. Kolejne otwarcia tej samej propozycji nie wysyłają kolejnych maili i nie pobierają kolejnych kredytów.",
           "Na **Dashboardzie** widzisz liczniki z ostatnich 30 dni: czekają na otwarcie, zobaczone/rozliczone, wygasłe, współczynnik zobaczeń, oraz „Ostatnią aktywność”.",
@@ -152,7 +152,7 @@ export default {
           "**Nie mogę wysłać propozycji** — konto czeka na zatwierdzenie, jest wstrzymane albo nie ma wolnych kredytów. Komunikat przy przycisku mówi, o którą sytuację chodzi.",
           "**Propozycja odrzucona w moderacji** — przeczytaj wiadomość organizatora na czacie, popraw kopię propozycji (Duplikuj) i wyślij ponownie.",
           "**Konto wstrzymane** — profil firmy jest dostępny, wysyłki i Spotkania B2B są zablokowane do wyjaśnienia; skontaktuj się z organizatorem.",
-          "**Kredyt pobrany, choć kupiec „nic nie odpowiedział”** — pobranie następuje przy otwarciu e-maila lub propozycji, nie przy odpowiedzi kupca. Odpowiedź zależy od kupca.",
+          "**Kredyt pobrany, choć kupiec „nic nie odpowiedział”** — pobranie następuje przy otwarciu e-maila albo przy wejściu kupca na listę propozycji w aplikacji, nie przy odpowiedzi kupca ani dopiero przy otwarciu szczegółów. Odpowiedź zależy od kupca.",
         ],
       },
     ],
@@ -170,7 +170,7 @@ export default {
         steps: [
           "You prepare your company profile and proposals in the panel.",
           "You send a proposal to a chosen chain. The organiser moderates it; once approved it appears in the buyer's panel and is included in the next PreConnect mailing.",
-          "When the buyer opens the e-mail or the proposal in the app, 1 credit is taken from your package and you receive a notification.",
+          "When the buyer opens the mailing e-mail or enters the proposal list in their panel, 1 credit is taken from your package and you receive a notification.",
           "If the buyer does not open the proposal within 14 days of the mailing, the credit reservation is released (the 14-day rule).",
         ],
         notes: [
@@ -263,7 +263,7 @@ export default {
         id: "kredyty",
         figure: { src: "/instrukcje/preconnect-dostawca-finanse.jpg", alt: "Finance: credit balance and pools", caption: "Finance → Balance and package: free credits from the organiser and purchased ones, released reservations, open rate." },
         title: "Credits and packages (Finance)",
-        intro: "1 credit = 1 sending of a proposal to one chain. A credit is **reserved** when you send and **charged** only when the buyer opens the proposal.",
+        intro: "1 credit = 1 sending of a proposal to one chain. A credit is **reserved** when you send and **charged** only when the buyer opens the e-mail or enters the proposal list in their panel.",
         steps: [
           "**Balance and package**: you see credits available for new sendings, credits reserved by proposals waiting for moderation, mailing or reading, and the nearest expiry date.",
           "Charging order: first **free credits from the organiser**, then **purchased** ones (nearest expiry first), finally historical packages.",
@@ -280,7 +280,7 @@ export default {
       {
         id: "odczyty",
         title: "Buyer reads and notifications",
-        intro: "A proposal is “seen” when the buyer opens the mailing e-mail or opens the proposal in their panel. Both count the same way: 1 credit is charged.",
+        intro: "A proposal is “seen” when the buyer opens the mailing e-mail or enters the proposal list in their panel (all their new proposals are then marked as seen, even without opening the details). Both count the same way: 1 credit is charged.",
         steps: [
           "After the first read you get **one e-mail notification** that the buyer has seen the proposal. Further openings of the same proposal send no further e-mails and charge no further credits.",
           "On the **Dashboard** you see the last 30 days: waiting to be opened, seen/settled, expired, view rate, and “Recent activity”.",
@@ -306,7 +306,7 @@ export default {
           "**I cannot send a proposal** — the account awaits approval, is suspended, or has no free credits. The message next to the button says which case it is.",
           "**Proposal rejected in moderation** — read the organiser's chat message, correct a copy (Duplicate) and send again.",
           "**Account suspended** — the company profile stays available; sendings and B2B Meetings are blocked until clarified; contact the organiser.",
-          "**A credit was charged although the buyer “did not reply”** — charging happens when the e-mail or proposal is opened, not when the buyer replies. Replying is up to the buyer.",
+          "**A credit was charged although the buyer “did not reply”** — charging happens when the e-mail is opened or when the buyer enters the proposal list in the app, not when the buyer replies and not only when the details are opened. Replying is up to the buyer.",
         ],
       },
     ],
