@@ -52,7 +52,10 @@ Zmiana tych etykiet to zmiana interfejsu (i historii wyświetlanej dostawcom), p
 
 ## PDF
 
-(uzupełniane po wygenerowaniu)
+Wydruk zmienionych instrukcji z dev (localhost:5173, gałąź korekty) tym samym skryptem co wcześniej (`scripts/instructions-pdf.mjs`, Chrome CDP), sesje kont testowych przez magic link:
+- PreConnect dostawcy PL i EN (9 stron każdy), PreConnect kupca PL i EN (4 strony każdy) — liczby stron bez zmian względem kompletu z 30.10; kontrola skryptem: brak ucięć, bez menu panelu, 0 wystąpień „organizator/organiser” poza cytatem etykiety „Bezpłatne od organizatora”, 18 (dostawca) i 6 (kupiec) wystąpień „administrator”, nowy opis kontaktu u kupca obecny; arkusze miniatur obejrzane.
+- Pliki: `C:\Users\Artur\AppData\Local\Temp\pdf-oksana\`.
+- **Nie wydrukowano** wersji administratora (PreConnect — instrukcja administratora, PL/EN): wymaga sesji administratora na localhost, której nie ma po zamknięciu przeglądarki; treść admina pokrywa test 29/29 i render. Do zrobienia po Twoim zalogowaniu na dev albo po wdrożeniu z produkcji.
 
 ## Załącznik — pełna lista zamian
 
