@@ -11,9 +11,9 @@ export default {
       {
         id: "czym-jest",
         title: "Czym jest PreConnect dla kupca",
-        intro: "PreConnect to część panelu Fresh Market B2B, w której dostawcy kierują do Twojej sieci **propozycje asortymentowe**: konkretne produkty z opisem, zdjęciami, specyfikacją, logistyką i certyfikatami. Propozycje są wcześniej sprawdzane przez organizatora.",
+        intro: "PreConnect to część panelu Fresh Market B2B, w której dostawcy kierują do Twojej sieci **propozycje asortymentowe**: konkretne produkty z opisem, zdjęciami, specyfikacją, logistyką i certyfikatami. Propozycje są wcześniej sprawdzane przez administratora.",
         steps: [
-          "Dostawca wysyła propozycję do Twojej sieci, organizator ją zatwierdza.",
+          "Dostawca wysyła propozycję do Twojej sieci, administrator ją zatwierdza.",
           "Propozycja pojawia się w Twoim panelu w zakładce **Propozycje asortymentowe** i jest dołączana do najbliższego mailingu PreConnect (raz w miesiącu, w pierwszy wtorek).",
           "Przeglądasz, zapisujesz interesujące propozycje i kontaktujesz się z dostawcą bezpośrednio z aplikacji.",
         ],
@@ -51,11 +51,11 @@ export default {
       {
         id: "kategorie",
         title: "Kategorie",
-        intro: "Każdy kupiec ma w systemie przypisane kategorie, za które odpowiada (np. owoce, warzywa, kwiaty). Ustawia je organizator przy koncie kupca.",
+        intro: "Każdy kupiec ma przypisane kategorie, za które odpowiada, np. owoce, warzywa lub kwiaty. Kategorie ustawia administrator w koncie kupca.",
         steps: [
           "Dostawcy widzą Twoje kategorie przy wyborze sieci — to dla nich wskazówka, do kogo kierować propozycję.",
           "W panelu widzisz propozycje skierowane do Twojej sieci; do zawężenia listy użyj filtrów kategorii.",
-          "Jeśli Twoje kategorie są nieaktualne albo w sieci powinien odbierać propozycje inny kupiec, napisz do organizatora (czat lub kontakt w panelu).",
+          "Jeśli Twoje kategorie są nieaktualne albo w sieci powinien odbierać propozycje inny kupiec, napisz do administratora (czat lub kontakt w panelu).",
         ],
       },
       {
@@ -63,7 +63,7 @@ export default {
         title: "Powiadomienia e-mail i status odczytu",
         steps: [
           "Mailing PreConnect przychodzi z adresu newsletter@freshmarket.eu i zawiera propozycje dołączone od ostatniego mailingu. W **Mój profil → Subskrypcja mailingowa** widzisz datę następnego mailingu i możesz wycofać zgodę.",
-          "**Otwarcie e-maila z mailingu albo wejście na listę propozycji w aplikacji (Propozycje asortymentowe lub Zapisane) oznacza propozycje jako odczytane** — wszystkie nowe propozycje na liście naraz, bez otwierania szczegółów. Dostawca widzi w swoim panelu tylko ten fakt — bez Twoich danych.",
+          "**Otwarcie e-maila z mailingu albo wejście na listę propozycji w aplikacji (Propozycje asortymentowe lub Zapisane) oznacza propozycje jako odczytane.** Dotyczy to wszystkich nowych propozycji na liście naraz, bez otwierania szczegółów. Dostawca widzi w swoim panelu tylko ten fakt — bez Twoich danych.",
           "Propozycje nieotwarte w ciągu 14 dni od mailingu wygasają po stronie dostawcy; w Twoim panelu nadal możesz je obejrzeć w historii listy.",
         ],
       },
@@ -74,7 +74,7 @@ export default {
         steps: [
           "W szczegółach propozycji w sekcji **Możliwe działania** wybierz: Poproś o próbkę, Poproś o specyfikację, Zapytaj o cenę i wolumen, Umów rozmowę, Program sezonowy lub Spotkanie na Fresh Market.",
           "Otworzy się Twój program pocztowy z gotowym tematem i treścią; uzupełnij ją i wyślij.",
-          "Jeśli dostawca nie podał kontaktu handlowego z e-mailem, zobaczysz komunikat o braku danych; pozostałe dane kontaktowe, jeśli są, znajdziesz w karcie **Kontakt z dostawcą**.",
+          "Brak e-maila do kontaktu handlowego? Zobaczysz komunikat o braku danych. Pozostałe dane kontaktowe, jeśli zostały podane, znajdziesz w karcie **Kontakt z dostawcą**.",
         ],
       },
       {
@@ -91,7 +91,7 @@ export default {
         figure: { src: "/instrukcje/preconnect-kupiec-profil.jpg", alt: "Mój profil kupca: dane, subskrypcja mailingowa, zmiana hasła", caption: "Mój profil (konto testowe): dane, zgoda na mailing z datą następnej wysyłki, zmiana hasła." },
         title: "Mój profil",
         steps: [
-          "Zmieniasz imię i nazwisko, stanowisko i telefon. Sieć handlowa i adres e-mail są przypisane przez organizatora.",
+          "Zmieniasz imię i nazwisko, stanowisko i telefon. Sieć handlowa i adres e-mail są przypisane przez administratora.",
           "**Subskrypcja mailingowa**: zgoda na mailing PreConnect i data następnej wysyłki.",
           "**Zmiana hasła**: nowe hasło musi mieć co najmniej 8 znaków.",
         ],
@@ -100,7 +100,7 @@ export default {
         id: "pomoc",
         title: "Pomoc",
         steps: [
-          "Pytania i błędne dane zgłaszasz organizatorowi przez czat w prawym dolnym rogu panelu albo na dane kontaktowe podane w panelu.",
+          "Pytania i błędne dane zgłaszasz administratorowi przez czat w prawym dolnym rogu panelu albo na dane kontaktowe podane w panelu.",
         ],
       },
     ],
@@ -114,9 +114,9 @@ export default {
       {
         id: "czym-jest",
         title: "What PreConnect is for a buyer",
-        intro: "PreConnect is the part of the Fresh Market B2B panel where suppliers address **product proposals** to your chain: specific products with a description, photos, specification, logistics and certificates. Proposals are checked by the organiser first.",
+        intro: "PreConnect is the part of the Fresh Market B2B panel where suppliers address **product proposals** to your chain: specific products with a description, photos, specification, logistics and certificates. Proposals are checked by the administrator first.",
         steps: [
-          "A supplier sends a proposal to your chain; the organiser approves it.",
+          "A supplier sends a proposal to your chain; the administrator approves it.",
           "The proposal appears in your panel under **Product proposals** and is included in the next PreConnect mailing (once a month, first Tuesday).",
           "You browse, save interesting proposals and contact the supplier directly from the app.",
         ],
@@ -154,11 +154,11 @@ export default {
       {
         id: "kategorie",
         title: "Categories",
-        intro: "Every buyer has categories assigned in the system (e.g. fruit, vegetables, flowers). The organiser sets them on the buyer account.",
+        intro: "Every buyer has assigned categories they are responsible for, e.g. fruit, vegetables or flowers. The administrator sets the categories on the buyer account.",
         steps: [
           "Suppliers see your categories when choosing a chain — a hint for them about whom to address.",
           "In the panel you see proposals addressed to your chain; use the category filters to narrow the list.",
-          "If your categories are out of date, or another buyer in your chain should receive the proposals, write to the organiser (chat or the contact details in the panel).",
+          "If your categories are out of date, or another buyer in your chain should receive the proposals, write to the administrator (chat or the contact details in the panel).",
         ],
       },
       {
@@ -166,7 +166,7 @@ export default {
         title: "E-mail notifications and read status",
         steps: [
           "The PreConnect mailing comes from newsletter@freshmarket.eu and contains the proposals added since the last mailing. In **My profile → Mailing subscription** you see the date of the next mailing and can withdraw consent.",
-          "**Opening the mailing e-mail or entering the proposal list in the app (Proposals or Saved) marks proposals as read** — all new proposals on the list at once, without opening the details. The supplier sees only that fact in their panel — none of your data.",
+          "**Opening the mailing e-mail or entering the proposal list in the app (Proposals or Saved) marks proposals as read.** This applies to all new proposals on the list at once, without opening the details. The supplier sees only that fact in their panel — none of your data.",
           "Proposals not opened within 14 days of the mailing expire on the supplier's side; you can still view them in your list history.",
         ],
       },
@@ -177,7 +177,7 @@ export default {
         steps: [
           "In the proposal details, under **Possible actions**, choose: Request a sample, Request specification, Ask for price and volume, Arrange a call, Seasonal programme or Meeting at Fresh Market.",
           "Your e-mail program opens with a ready subject and body; complete it and send.",
-          "If the supplier has not provided a sales contact with an e-mail, you see a “no contact data” message; other contact details, if any, are in the **Contact with supplier** card.",
+          "No e-mail for the sales contact? You see a “no contact data” message. Other contact details, if provided, are in the **Contact with supplier** card.",
         ],
       },
       {
@@ -194,7 +194,7 @@ export default {
         figure: { src: "/instrukcje/preconnect-kupiec-profil.jpg", alt: "Buyer profile: data, mailing subscription, password change", caption: "My profile (test account): data, mailing consent with the next sending date, password change." },
         title: "My profile",
         steps: [
-          "You change your name, position and phone. The retail chain and e-mail address are assigned by the organiser.",
+          "You change your name, position and phone. The retail chain and e-mail address are assigned by the administrator.",
           "**Mailing subscription**: consent to the PreConnect mailing and the date of the next sending.",
           "**Change password**: the new password must have at least 8 characters.",
         ],
@@ -203,7 +203,7 @@ export default {
         id: "pomoc",
         title: "Help",
         steps: [
-          "Report questions and incorrect data to the organiser via the chat in the bottom-right corner of the panel or the contact details shown in the panel.",
+          "Report questions and incorrect data to the administrator via the chat in the bottom-right corner of the panel or the contact details shown in the panel.",
         ],
       },
     ],

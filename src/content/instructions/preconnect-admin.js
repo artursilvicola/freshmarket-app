@@ -55,7 +55,7 @@ export default {
           "**Krok 2 — Wyślij zatwierdzone do panelu kupca (N)**: zatwierdzone propozycje zmieniają status na „wysłane” i od razu są widoczne w panelu kupca. To nie wysyła e-maila.",
           "**Sieci / mailing**: przy każdej sieci widzisz „w panelu · w koszyku · wysłane”, datę ostatniego mailingu i **Historię wysyłek**. Zaznacz propozycje do koszyka e-mail (checkbox „Dodaj do koszyka e-mail”) i kliknij **Wyślij e-mail do tej sieci**.",
           "Okno wysyłki pokazuje odbiorców (aktywni kupcy sieci), temat, podgląd maila i listę propozycji do wyboru. **Wyślij (N)** jest nieodwracalne — każdy kupiec dostaje osobną wiadomość z linkami logowania na swój adres.",
-          "Mailing organizator wykonuje ręcznie, zwykle w pierwszy wtorek miesiąca (pasek u góry pokazuje najbliższą datę). System nie wysyła automatycznie.",
+          "Mailing wykonujesz ręcznie, zwykle w pierwszy wtorek miesiąca (pasek u góry pokazuje najbliższą datę). System nie wysyła automatycznie.",
           "**Historia wysyłek** przy sieci: każdy mailing z listą propozycji i stanem odczytu każdej („odczytana w aplikacji”, „e-mail otwarty”, „nieodczytana, wygasła”), a od mailingów po 22.10.2026 także tabela **Odbiorcy** (kupiec, adres, wysłano, dostarczono, pierwsze i ostatnie otwarcie) oraz **Wejścia do aplikacji** per kupiec.",
           "**Dostawcy / tracking**: per dostawca liczba ofert w panelu kupców, sieci, ostatni e-mail, termin odczytu (14 dni od e-maila), odczytane, czekające na rozliczenie lub zwrot.",
         ],
@@ -69,7 +69,7 @@ export default {
         title: "Kredyty, proformy, rozliczenia",
         steps: [
           "Cykl kredytu: **rezerwacja** przy wysłaniu propozycji → **pobranie** przy pierwszym odczycie (otwarcie e-maila lub wejście kupca na listę propozycji w aplikacji — wtedy wszystkie jego nowe propozycje naraz; otwarcie szczegółów nie jest potrzebne) → **zwolnienie rezerwacji** po 14 dniach od mailingu bez odczytu (status „wygasła”) albo po odrzuceniu w moderacji.",
-          "Kolejność pul: bezpłatne od organizatora → kupione (najbliższy termin ważności) → historyczne. Kupione kredyty są ważne 12 miesięcy.",
+          "Kolejność pul: bezpłatne przyznane przez administratora (u dostawcy pula „Bezpłatne od organizatora”) → kupione (najbliższy termin ważności) → historyczne. Kupione kredyty są ważne 12 miesięcy.",
           "**Proformy** (Dashboard / Rozliczenia): dostawca generuje proformę przy wyborze przelewu; po zaksięgowaniu wpłaty kliknij **Oznacz opłaconą → aktywuj pakiet**.",
           "**PayU**: płatności online aktywują pakiet automatycznie; status widzisz w Rozliczeniach (opłacone / oczekujące / błędy).",
           "**Rozliczenia**: przegląd proform, płatności PayU i pakietów kredytów per dostawca (kupiono, wykorzystane, pozostałe, ważne do).",
@@ -91,7 +91,7 @@ export default {
         title: "Branding: logo, komunikaty, sponsorzy, archiwum instrukcji 2026",
         steps: [
           "**Logo** aplikacji: PNG/JPG/SVG/WEBP do 1 MB; widoczne w menu, nagłówkach i na stronach logowania.",
-          "**Archiwum instrukcji 2026 (treść HTML)** — dawna, połączona instrukcja PreConnect i spotkań z edycji 2026, per rola i język. Widać ją wyłącznie pod osobnym odnośnikiem „Archiwum instrukcji 2026” (w stopce instrukcji PreConnect uczestnika i pod własnym adresem). Bieżące instrukcje — PreConnect i Spotkania B2B dla dostawcy, kupca i administratora — są częścią aplikacji (pliki `src/content/instructions`); ich zmiana to zmiana w kodzie i wdrożenie, nie edycja w Brandingu.",
+          "**Archiwum instrukcji 2026 (treść HTML)** — dawna, połączona instrukcja PreConnect i spotkań z edycji 2026, per rola i język. Widać ją wyłącznie pod osobnym odnośnikiem „Archiwum instrukcji 2026” (w stopce instrukcji PreConnect uczestnika i pod własnym adresem). Bieżące instrukcje PreConnect i Spotkań B2B dla dostawcy, kupca i administratora są częścią aplikacji (pliki `src/content/instructions`). Ich zmiana to zmiana w kodzie i wdrożenie, nie edycja w Brandingu.",
           "**Komunikaty**: pasek na górze panelu albo okno przy wejściu (pilne), osobno dla dostawcy i kupca, z opcjonalnym zakresem dat.",
           "**Sponsorzy**: logotypy w stopce paneli; kolejność na liście = kolejność w pasku.",
           "Zapisz treści — uczestnicy zobaczą zmiany po odświeżeniu strony.",
@@ -174,7 +174,7 @@ export default {
           "**Step 2 — Send approved to the buyer panel (N)**: approved proposals change status to “sent” and become visible in the buyer's panel immediately. This sends no e-mail.",
           "**Chains / mailing**: each chain shows “in panel · in basket · sent”, the date of the last mailing and the **Mailing history**. Tick proposals into the e-mail basket (“Add to e-mail basket”) and click **Send e-mail to this chain**.",
           "The sending window shows the recipients (active buyers of the chain), subject, e-mail preview and the list of proposals to include. **Send (N)** is irreversible — each buyer receives a separate message with login links for their own address.",
-          "The mailing is done manually by the organiser, usually on the first Tuesday of the month (the bar at the top shows the next date). The system does not send automatically.",
+          "You run the mailing manually, usually on the first Tuesday of the month (the bar at the top shows the next date). The system does not send automatically.",
           "**Mailing history** per chain: each mailing with its proposals and the read state of each (“read in the app”, “e-mail opened”, “unread, expired”), and for mailings after 22 Oct 2026 also the **Recipients** table (buyer, address, sent, delivered, first and last open) and **App visits** per buyer.",
           "**Suppliers / tracking**: per supplier the number of offers in buyer panels, chains, last e-mail, reading deadline (14 days from the e-mail), read, awaiting settlement or refund.",
         ],
@@ -188,7 +188,7 @@ export default {
         title: "Credits, pro formas, settlements",
         steps: [
           "Credit cycle: **reservation** when the proposal is sent → **charge** on the first read (e-mail opened or buyer enters the proposal list in the app — all their new proposals at once; opening the details is not required) → **reservation released** 14 days after the mailing without a read (status “expired”) or after rejection in moderation.",
-          "Pool order: free from the organiser → purchased (nearest expiry) → historical. Purchased credits are valid for 12 months.",
+          "Pool order: free credits granted by the administrator (shown to the supplier as “Free from the organiser”) → purchased (nearest expiry) → historical. Purchased credits are valid for 12 months.",
           "**Pro formas** (Dashboard / Settlements): the supplier generates a pro forma when choosing bank transfer; once the payment is booked click **Mark as paid → activate package**.",
           "**PayU**: online payments activate the package automatically; the status is shown in Settlements (paid / pending / errors).",
           "**Settlements**: overview of pro formas, PayU payments and credit packages per supplier (bought, used, remaining, valid until).",
@@ -210,7 +210,7 @@ export default {
         title: "Branding: logo, announcements, sponsors, 2026 guide archive",
         steps: [
           "App **logo**: PNG/JPG/SVG/WEBP up to 1 MB; shown in the menu, headers and login pages.",
-          "**2026 guide archive (HTML content)** — the former combined PreConnect and meetings guide from the 2026 edition, per role and language. It is shown only under the separate link “2026 guide archive” (in the footer of the participant's PreConnect guide and at its own address). The current guides — PreConnect and B2B Meetings for supplier, buyer and administrator — are part of the app (files `src/content/instructions`); changing them is a code change and deployment, not an edit in Branding.",
+          "**2026 guide archive (HTML content)** — the former combined PreConnect and meetings guide from the 2026 edition, per role and language. It is shown only under the separate link “2026 guide archive” (in the footer of the participant's PreConnect guide and at its own address). The current PreConnect and B2B Meetings guides for supplier, buyer and administrator are part of the app (files `src/content/instructions`). Changing them is a code change and deployment, not an edit in Branding.",
           "**Announcements**: a bar at the top of the panel or a window on entry (urgent), separately for supplier and buyer, with an optional date range.",
           "**Sponsors**: logos in the panel footer; list order = strip order.",
           "Save content — participants see the changes after refreshing the page.",

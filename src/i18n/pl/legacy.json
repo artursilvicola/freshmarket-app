@@ -3508,6 +3508,7 @@
       "role_admin": "Administrator",
       "updated": "Aktualizacja: {{date}}",
       "footer_help": "Pytania? Napisz do organizatora przez czat w prawym dolnym rogu panelu.",
+      "footer_help_preconnect": "Pytania? Napisz do administratora przez czat w prawym dolnym rogu panelu.",
       "edition_note": "Instrukcja dotyczy edycji Fresh Market {{year}}. Szczegóły organizacyjne i terminy będą aktualizowane przed wydarzeniem.",
       "archive_link": "Archiwum instrukcji 2026 →",
       "archive_title": "Archiwum instrukcji 2026",

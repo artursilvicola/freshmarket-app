@@ -15,25 +15,25 @@ export default {
         intro: "PreConnect to całoroczny moduł panelu Fresh Market B2B. Wysyłasz w nim **propozycje asortymentowe** do kupców sieci handlowych. Propozycja to konkretny produkt z opisem, zdjęciami i warunkami — nie klasyczna oferta cenowa, więc cena jest opcjonalna.",
         steps: [
           "Przygotowujesz profil firmy i propozycje w panelu.",
-          "Wysyłasz propozycję do wybranej sieci. Organizator ją moderuje, a po zatwierdzeniu trafia do panelu kupca i do najbliższego mailingu PreConnect.",
+          "Wysyłasz propozycję do wybranej sieci. Administrator ją moderuje, a po zatwierdzeniu trafia do panelu kupca i do najbliższego mailingu PreConnect.",
           "Kupiec otwiera e-mail z mailingu albo wchodzi na listę propozycji w swoim panelu — wtedy pobierany jest 1 kredyt z Twojego pakietu i dostajesz powiadomienie.",
           "Jeśli kupiec nie otworzy propozycji w ciągu 14 dni od mailingu, rezerwacja kredytu jest zwalniana (złota zasada 14 dni).",
         ],
         notes: [
-          "Mailing PreConnect do kupców jest wysyłany przez organizatora w pierwszy wtorek miesiąca. Dokładną datę najbliższego mailingu widzisz na Dashboardzie („Najbliższe okno wysyłki”) i przy każdej sieci.",
+          "Mailing PreConnect do kupców wysyła administrator w pierwszy wtorek miesiąca. Dokładną datę najbliższego mailingu widzisz na Dashboardzie („Najbliższe okno wysyłki”) i przy każdej sieci.",
         ],
       },
       {
         id: "start",
         figure: { src: "/instrukcje/preconnect-dostawca-dashboard.jpg", alt: "Dashboard dostawcy: kredyty, najbliższe okno wysyłki, liczniki odczytów", caption: "Dashboard dostawcy (konto testowe): kredyty PreConnect, najbliższe okno wysyłki, wysyłki z ostatnich 30 dni." },
         title: "Pierwsze kroki po zalogowaniu",
-        intro: "Nowe konto ma status „oczekuje na zatwierdzenie”. Możesz już uzupełniać profil, logo i propozycje; wysyłki odblokowuje organizator po aktywacji konta.",
+        intro: "Nowe konto ma status „oczekuje na zatwierdzenie”. Możesz już uzupełniać profil, logo i propozycje; wysyłki odblokowuje administrator po aktywacji konta.",
         steps: [
           "Wejdź na **Dashboard** — blok „Zacznij tutaj” pokazuje brakujące kroki: dane firmy, logo, pierwsza propozycja, pakiet.",
           "Uzupełnij **Twoja firma** (rozdział 3) i **Mój profil** (rozdział 4).",
           "Dodaj pierwszą propozycję w **Moje propozycje** (rozdział 5).",
-          "Jeśli chcesz przyspieszyć aktywację, użyj przycisku „Napisz do admina” w pasku nad panelem — wiadomość trafi na czat z organizatorem.",
-          "Po aktywacji konta kup pakiet kredytów w **Finanse → Cennik i pakiety** albo wykorzystaj kredyty bezpłatne, jeśli organizator je przyznał (rozdział 7).",
+          "Jeśli chcesz przyspieszyć aktywację, użyj przycisku „Napisz do admina” w pasku nad panelem — wiadomość trafi na czat z administratorem.",
+          "Po aktywacji konta kup pakiet kredytów w **Finanse → Cennik i pakiety** albo wykorzystaj kredyty bezpłatne, jeśli administrator je przyznał (rozdział 7).",
         ],
         notes: [
           "Dopóki konto czeka na zatwierdzenie, przycisk wysyłki pokazuje komunikat o oczekiwaniu — to nie błąd.",
@@ -47,7 +47,7 @@ export default {
         steps: [
           "**Dane podstawowe**: nazwa, NIP/VAT, kraj, miasto, strona WWW, telefon. NIP jest wymagany do rozliczeń i zakupu pakietu.",
           "**Logo**: PNG lub JPG, najlepiej ok. 400×400 px. Logo pokazuje się w mailu do kupca i przy propozycjach; bez logo profil zapisze się, ale nie będzie kompletny.",
-          "**Opis firmy**: krótki (2–3 zdania) i standardowy (4–6 zdań), po polsku; osobne pola na wersję angielską, którą widzi kupiec używający aplikacji po angielsku. Przycisk „Generuj AI” proponuje opisy na podstawie Twoich danych i strony WWW — możesz je poprawić ręcznie.",
+          "**Opis firmy**: krótki (2–3 zdania) i standardowy (4–6 zdań), po polsku. Wersję angielską wpisujesz w osobnych polach — widzi ją kupiec używający aplikacji po angielsku. Przycisk „Generuj AI” proponuje opisy na podstawie Twoich danych i strony WWW; możesz je poprawić ręcznie.",
           "**Typ firmy i kategorie**: typ (producent, eksporter, importer…), kategorie produktowe (owoce, warzywa, kwiaty, zioła, inne), produkty i rynki sprzedaży.",
           "**Profil rozszerzony** (opcjonalny): rok założenia, liczba pracowników, produkty całoroczne i sezonowe, typ klientów, marka własna, kraje eksportu, typ współpracy, wolumeny, zaplecze operacyjne.",
           "**Materiały**: katalogi PDF, broszury, zdjęcia zakładu i produktów — kupiec zobaczy je w podglądzie profilu.",
@@ -58,7 +58,7 @@ export default {
         ],
         notes: [
           "Zapis działa zawsze; brak logo albo NIP wyświetla ostrzeżenie o niekompletnym profilu, ale nie blokuje zapisu.",
-          "Nie wpisuj angielskiego tekstu w pola polskie — kupiec z polskim interfejsem widzi pola polskie, kupiec z angielskim — angielskie (a gdy są puste, polskie).",
+          "Nie wpisuj angielskiego tekstu w pola polskie. Kupiec z polskim interfejsem widzi pola polskie, a kupiec z angielskim — angielskie (gdy są puste, polskie).",
         ],
       },
       {
@@ -66,7 +66,7 @@ export default {
         title: "Mój profil (Twoje konto)",
         steps: [
           "W **Mój profil** zmieniasz imię i nazwisko, stanowisko, telefon oraz hasło.",
-          "Adres e-mail konta i dane firmy przypisane do konta zmienia organizator — napisz na czacie, jeśli trzeba je poprawić.",
+          "Adres e-mail konta i dane firmy przypisane do konta zmienia administrator — napisz na czacie, jeśli trzeba je poprawić.",
         ],
       },
       {
@@ -81,7 +81,7 @@ export default {
           "Dodaj zdjęcia produktu (1–3) i, jeśli chcesz, cenę orientacyjną — kupiec zobaczy ją z dopiskiem „do potwierdzenia”.",
           "Na końcu wybierz **Zapisz szkic** (możesz wrócić do edycji) albo **Zapisz jako gotową** (gotowa do wysłania).",
           "Gotowej propozycji nie edytujesz. Żeby zmienić treść, użyj **Duplikuj**, popraw kopię i zapisz ją jako gotową.",
-          "**Usuń** działa tylko dla propozycji, które nie zostały jeszcze wysłane do żadnej sieci. Po wysyłce propozycja jest w pipeline organizatora i nie można jej usunąć.",
+          "**Usuń** działa tylko dla propozycji, które nie zostały jeszcze wysłane do żadnej sieci. Po wysyłce propozycja jest w pipeline administratora i nie można jej usunąć.",
         ],
         notes: [
           "Na liście widzisz filtry (gotowe, szkice, wysłane, niewysłane, odczytane), wyszukiwarkę i sortowanie. Każda karta pokazuje liczbę sieci, do których poszła propozycja, i liczbę odczytów.",
@@ -93,40 +93,40 @@ export default {
         title: "Wybór sieci i wysyłka (Wysyłki)",
         intro: "Jedna wysyłka = jedna propozycja do jednej sieci handlowej. Wysyłka rezerwuje 1 kredyt z Twojego pakietu.",
         steps: [
-          "Otwórz **Wysyłki → Sieci handlowe**. Przy każdej sieci widzisz kraj, kategorie, za które odpowiada kupiec, datę najbliższego mailingu i liczbę Twoich propozycji już wysłanych oraz przeczytanych.",
+          "Otwórz **Wysyłki → Sieci handlowe**. Przy każdej sieci widzisz kraj i kategorie, za które odpowiada kupiec. Jest tam też data najbliższego mailingu oraz liczba Twoich propozycji już wysłanych i przeczytanych.",
           "Kliknij **Wyślij propozycję do [nazwa sieci]** albo na karcie propozycji w Moje propozycje kliknij **Wyślij**.",
           "W formularzu wybierz propozycję i sieć. Jeśli sieć opublikowała **wymagania handlowe**, przeczytaj je i zaznacz potwierdzenie — bez tego wysyłka jest zablokowana.",
           "Kliknij **Wyślij propozycję**, a w oknie „Potwierdź wysyłkę” sprawdź propozycję, sieć i stan kredytów po wysyłce. Potwierdź.",
-          "Propozycja trafia do **kolejki moderacji** organizatora (zakładka Historia → Kolejka). Po zatwierdzeniu pojawia się w panelu kupca i jest dołączana do najbliższego mailingu PreConnect.",
+          "Propozycja trafia do **kolejki moderacji** administratora (zakładka Historia → Kolejka). Po zatwierdzeniu pojawia się w panelu kupca i jest dołączana do najbliższego mailingu PreConnect.",
           "W **Historii** śledzisz statusy: Kolejka (moderacja), Wysłane (w panelu kupca; z datą mailingu i terminem odczytu), Wygasłe (nieotwarte w 14 dni od mailingu).",
         ],
         notes: [
-          "Organizator może odrzucić propozycję w moderacji — dostaniesz wiadomość na czacie z powodem. Rezerwacja kredytu jest wtedy zwalniana.",
+          "Administrator może odrzucić propozycję w moderacji — dostaniesz wiadomość na czacie z powodem. Rezerwacja kredytu jest wtedy zwalniana.",
           "Tę samą propozycję możesz wysłać do wielu sieci; każda sieć to osobna wysyłka i osobny kredyt.",
         ],
       },
       {
         id: "kredyty",
-        figure: { src: "/instrukcje/preconnect-dostawca-finanse.jpg", alt: "Finanse: saldo kredytów i pule", caption: "Finanse → Saldo i pakiet: kredyty bezpłatne od organizatora i kupione, zwolnione rezerwacje, open rate." },
+        figure: { src: "/instrukcje/preconnect-dostawca-finanse.jpg", alt: "Finanse: saldo kredytów i pule", caption: "Finanse → Saldo i pakiet: kredyty bezpłatne przyznane przez administratora i kupione, zwolnione rezerwacje, open rate." },
         title: "Kredyty i pakiety (Finanse)",
         intro: "1 kredyt = 1 wysyłka propozycji do jednej sieci. Kredyt jest **rezerwowany** w chwili wysłania, a **pobierany** dopiero wtedy, gdy kupiec otworzy e-mail albo wejdzie na listę propozycji w swoim panelu.",
         steps: [
           "**Saldo i pakiet**: widzisz kredyty dostępne do nowych wysyłek, zarezerwowane przez propozycje czekające na moderację, mailing lub odczyt, oraz najbliższy termin ważności.",
-          "Kolejność pobierania: najpierw kredyty **bezpłatne od organizatora**, potem **kupione** (według najbliższego terminu ważności), na końcu pakiety historyczne.",
+          "Kolejność pobierania: najpierw kredyty **bezpłatne** przyznane przez administratora (w panelu pula „Bezpłatne od organizatora”), potem **kupione** (według najbliższego terminu ważności), na końcu pakiety historyczne.",
           "**Cennik i pakiety**: wybierz pakiet Standard (pozycja środkowa w newsletterze) albo Premium (Twoja propozycja jako pierwsza w newsletterze, z oznaczeniem Premium). Ceny netto, VAT 23%.",
-          "Zapłać online przez **PayU** (przekierowanie do bramki) albo wybierz **Przelew bankowy** — aplikacja wygeneruje proformę i wyśle ją na Twój e-mail. Pakiet z proformy aktywuje organizator po zaksięgowaniu wpłaty.",
+          "Zapłać online przez **PayU** (przekierowanie do bramki) albo wybierz **Przelew bankowy** — aplikacja wygeneruje proformę i wyśle ją na Twój e-mail. Pakiet z proformy aktywuje administrator po zaksięgowaniu wpłaty.",
           "Kupione kredyty są ważne 12 miesięcy od zakupu; kredyty bezpłatne mają własny termin ważności podany przy przyznaniu.",
           "**Historia wysyłek** w Finansach pokazuje każdą wysyłkę z rozliczeniem: „Zużyto 1 kredyt”, „Rezerwacja zwolniona — bez pobrania kredytu” albo „Oczekuje”.",
         ],
         notes: [
           "Bez wolnych kredytów nie wyślesz propozycji — przycisk wysyłki pokaże, ile kredytów jest wykorzystanych lub zarezerwowanych.",
-          "Bezpłatne kredyty od organizatora pojawiają się jako osobny baner nad panelem z wiadomością od organizatora i terminem ważności.",
+          "Bezpłatne kredyty przyznane przez administratora pojawiają się jako osobny baner nad panelem, z wiadomością administratora i terminem ważności.",
         ],
       },
       {
         id: "odczyty",
         title: "Odczyty kupców i powiadomienia",
-        intro: "Propozycja jest „zobaczona”, gdy kupiec otworzy e-mail z mailingu albo wejdzie na listę propozycji w swoim panelu (wtedy jako zobaczone oznaczane są wszystkie jego nowe propozycje, także bez otwierania szczegółów). Oba zdarzenia liczą się tak samo: pobierany jest 1 kredyt.",
+        intro: "Propozycja jest „zobaczona”, gdy kupiec otworzy e-mail z mailingu albo wejdzie na listę propozycji w swoim panelu. Wejście na listę oznacza wszystkie jego nowe propozycje naraz, także bez otwierania szczegółów. Oba zdarzenia liczą się tak samo: pobierany jest 1 kredyt.",
         steps: [
           "Po pierwszym odczycie dostajesz **jedno powiadomienie e-mail** o tym, że kupiec zobaczył propozycję. Kolejne otwarcia tej samej propozycji nie wysyłają kolejnych maili i nie pobierają kolejnych kredytów.",
           "Na **Dashboardzie** widzisz liczniki z ostatnich 30 dni: czekają na otwarcie, zobaczone/rozliczone, wygasłe, współczynnik zobaczeń, oraz „Ostatnią aktywność”.",
@@ -141,18 +141,18 @@ export default {
         steps: [
           "Kupiec ma w aplikacji przyciski „Poproś o próbkę”, „Poproś o specyfikację”, „Zapytaj o cenę i wolumen”, „Umów rozmowę”, „Program sezonowy” — każdy otwiera e-mail do **kontaktu handlowego** z Twojego profilu firmy.",
           "Jeśli w profilu nie ma kontaktu handlowego z adresem e-mail, kupiec zobaczy komunikat o braku danych do kontaktu zamiast przycisków. Uzupełnij kontakt w **Twoja firma → Kontakty**.",
-          "Pytania do organizatora zadajesz przez **czat** w prawym dolnym rogu panelu. Odpowiedzi organizatora widzisz w tym samym oknie.",
+          "Pytania do administratora zadajesz przez **czat** w prawym dolnym rogu panelu. Odpowiedzi administratora widzisz w tym samym oknie.",
         ],
       },
       {
         id: "problemy",
         title: "Najczęstsze sytuacje",
         steps: [
-          "**Profil się nie zapisuje** — sprawdź komunikat pod przyciskiem: zwykle brakuje NIP albo logo; zapis działa, ale profil jest oznaczony jako niekompletny. Przy błędzie połączenia odśwież stronę i spróbuj ponownie.",
+          "**Profil się nie zapisuje** — sprawdź komunikat pod przyciskiem. Zwykle brakuje NIP albo logo; zapis działa, ale profil jest oznaczony jako niekompletny. Przy błędzie połączenia odśwież stronę i spróbuj ponownie.",
           "**Nie mogę wysłać propozycji** — konto czeka na zatwierdzenie, jest wstrzymane albo nie ma wolnych kredytów. Komunikat przy przycisku mówi, o którą sytuację chodzi.",
-          "**Propozycja odrzucona w moderacji** — przeczytaj wiadomość organizatora na czacie, popraw kopię propozycji (Duplikuj) i wyślij ponownie.",
-          "**Konto wstrzymane** — profil firmy jest dostępny, wysyłki i Spotkania B2B są zablokowane do wyjaśnienia; skontaktuj się z organizatorem.",
-          "**Kredyt pobrany, choć kupiec „nic nie odpowiedział”** — pobranie następuje przy otwarciu e-maila albo przy wejściu kupca na listę propozycji w aplikacji, nie przy odpowiedzi kupca ani dopiero przy otwarciu szczegółów. Odpowiedź zależy od kupca.",
+          "**Propozycja odrzucona w moderacji** — przeczytaj wiadomość administratora na czacie, popraw kopię propozycji (Duplikuj) i wyślij ponownie.",
+          "**Konto wstrzymane** — profil firmy jest dostępny, wysyłki i Spotkania B2B są zablokowane do wyjaśnienia; skontaktuj się z administratorem.",
+          "**Kredyt pobrany, choć kupiec „nic nie odpowiedział”** — kredyt jest pobierany przy otwarciu e-maila albo przy wejściu kupca na listę propozycji w aplikacji. Nie zależy to od odpowiedzi kupca ani od otwarcia szczegółów. Odpowiedź zależy od kupca.",
         ],
       },
     ],
@@ -169,25 +169,25 @@ export default {
         intro: "PreConnect is the year-round module of the Fresh Market B2B panel. You use it to send **product proposals** to buyers of retail chains. A proposal is a specific product with a description, photos and terms — not a classic price offer, so the price is optional.",
         steps: [
           "You prepare your company profile and proposals in the panel.",
-          "You send a proposal to a chosen chain. The organiser moderates it; once approved it appears in the buyer's panel and is included in the next PreConnect mailing.",
+          "You send a proposal to a chosen chain. The administrator moderates it; once approved it appears in the buyer's panel and is included in the next PreConnect mailing.",
           "When the buyer opens the mailing e-mail or enters the proposal list in their panel, 1 credit is taken from your package and you receive a notification.",
           "If the buyer does not open the proposal within 14 days of the mailing, the credit reservation is released (the 14-day rule).",
         ],
         notes: [
-          "The organiser sends the PreConnect mailing to buyers on the first Tuesday of the month. The exact date of the next mailing is shown on the Dashboard (“Next sending window”) and next to each chain.",
+          "The administrator sends the PreConnect mailing to buyers on the first Tuesday of the month. The exact date of the next mailing is shown on the Dashboard (“Next sending window”) and next to each chain.",
         ],
       },
       {
         id: "start",
         figure: { src: "/instrukcje/preconnect-dostawca-dashboard.jpg", alt: "Supplier dashboard: credits, next sending window, read counters", caption: "Supplier dashboard (test account): PreConnect credits, next sending window, sendings from the last 30 days." },
         title: "First steps after logging in",
-        intro: "A new account has the status “awaiting approval”. You can already complete the profile, logo and proposals; sending is unlocked by the organiser once the account is activated.",
+        intro: "A new account has the status “awaiting approval”. You can already complete the profile, logo and proposals; sending is unlocked by the administrator once the account is activated.",
         steps: [
           "Open the **Dashboard** — the “Start here” block lists the missing steps: company data, logo, first proposal, package.",
           "Complete **Your company** (chapter 3) and **My profile** (chapter 4).",
           "Add your first proposal in **My proposals** (chapter 5).",
-          "To speed up activation, use “Write to admin” in the bar above the panel — the message goes to the chat with the organiser.",
-          "After activation, buy a credit package in **Finance → Pricing and packages** or use free credits if the organiser granted them (chapter 7).",
+          "To speed up activation, use “Write to admin” in the bar above the panel — the message goes to the chat with the administrator.",
+          "After activation, buy a credit package in **Finance → Pricing and packages** or use free credits if the administrator granted them (chapter 7).",
         ],
         notes: [
           "While the account awaits approval, the send button shows a waiting message — this is not an error.",
@@ -201,7 +201,7 @@ export default {
         steps: [
           "**Basic data**: name, VAT number, country, city, website, phone. The VAT number is required for settlements and package purchase.",
           "**Logo**: PNG or JPG, ideally about 400×400 px. The logo appears in the e-mail to buyers and next to proposals; without it the profile saves but is marked incomplete.",
-          "**Company description**: short (2–3 sentences) and standard (4–6 sentences) in Polish; separate fields for the English version, which a buyer using the app in English sees. “Generate AI” proposes descriptions from your data and website — you can edit them by hand.",
+          "**Company description**: short (2–3 sentences) and standard (4–6 sentences) in Polish. The English version goes into separate fields — a buyer using the app in English sees it. “Generate AI” proposes descriptions from your data and website; you can edit them by hand.",
           "**Company type and categories**: type (producer, exporter, importer…), product categories (fruit, vegetables, flowers, herbs, other), products and sales markets.",
           "**Extended profile** (optional): founding year, employees, year-round and seasonal products, customer types, private label, export countries, cooperation type, volumes, operational facilities.",
           "**Materials**: PDF catalogues, brochures, photos of the plant and products — buyers see them in the profile preview.",
@@ -212,7 +212,7 @@ export default {
         ],
         notes: [
           "Saving always works; a missing logo or VAT number shows an “incomplete profile” warning but does not block saving.",
-          "Do not type English text into the Polish fields — a buyer with the Polish interface sees the Polish fields, a buyer with English sees the English ones (and the Polish ones when English is empty).",
+          "Do not type English text into the Polish fields. A buyer with the Polish interface sees the Polish fields, and a buyer with English sees the English ones (the Polish ones when English is empty).",
         ],
       },
       {
@@ -220,7 +220,7 @@ export default {
         title: "My profile (your account)",
         steps: [
           "In **My profile** you change your name, position, phone and password.",
-          "The account e-mail and the company assigned to the account are changed by the organiser — write on the chat if they need correcting.",
+          "The account e-mail and the company assigned to the account are changed by the administrator — write on the chat if they need correcting.",
         ],
       },
       {
@@ -235,7 +235,7 @@ export default {
           "Add product photos (1–3) and, if you wish, an indicative price — the buyer sees it marked “to be confirmed”.",
           "At the end choose **Save draft** (you can come back and edit) or **Save as ready** (ready to send).",
           "A ready proposal cannot be edited. To change it, use **Duplicate**, correct the copy and save it as ready.",
-          "**Delete** works only for proposals not yet sent to any chain. Once sent, the proposal is in the organiser's pipeline and cannot be deleted.",
+          "**Delete** works only for proposals not yet sent to any chain. Once sent, the proposal is in the administrator's pipeline and cannot be deleted.",
         ],
         notes: [
           "The list has filters (ready, drafts, sent, unsent, read), search and sorting. Each card shows how many chains the proposal went to and how many times it was read.",
@@ -247,40 +247,40 @@ export default {
         title: "Choosing a chain and sending (Sendings)",
         intro: "One sending = one proposal to one retail chain. A sending reserves 1 credit from your package.",
         steps: [
-          "Open **Sendings → Retail chains**. Each chain shows the country, the categories its buyer is responsible for, the date of the next mailing and how many of your proposals were already sent and read.",
+          "Open **Sendings → Retail chains**. Each chain shows the country and the categories its buyer is responsible for. You also see the date of the next mailing and how many of your proposals were already sent and read.",
           "Click **Send proposal to [chain]**, or click **Send** on a proposal card in My proposals.",
           "In the form choose the proposal and the chain. If the chain published **trade requirements**, read them and tick the confirmation — without it sending is blocked.",
           "Click **Send proposal** and, in the “Confirm sending” window, check the proposal, the chain and the credit balance after sending. Confirm.",
-          "The proposal goes to the organiser's **moderation queue** (History → Queue). After approval it appears in the buyer's panel and is attached to the next PreConnect mailing.",
+          "The proposal goes to the administrator's **moderation queue** (History → Queue). After approval it appears in the buyer's panel and is attached to the next PreConnect mailing.",
           "In **History** you follow statuses: Queue (moderation), Sent (in the buyer's panel, with mailing date and reading deadline), Expired (not opened within 14 days of the mailing).",
         ],
         notes: [
-          "The organiser may reject a proposal in moderation — you get a chat message with the reason. The credit reservation is then released.",
+          "The administrator may reject a proposal in moderation — you get a chat message with the reason. The credit reservation is then released.",
           "You can send the same proposal to many chains; each chain is a separate sending and a separate credit.",
         ],
       },
       {
         id: "kredyty",
-        figure: { src: "/instrukcje/preconnect-dostawca-finanse.jpg", alt: "Finance: credit balance and pools", caption: "Finance → Balance and package: free credits from the organiser and purchased ones, released reservations, open rate." },
+        figure: { src: "/instrukcje/preconnect-dostawca-finanse.jpg", alt: "Finance: credit balance and pools", caption: "Finance → Balance and package: free credits granted by the administrator and purchased ones, released reservations, open rate." },
         title: "Credits and packages (Finance)",
         intro: "1 credit = 1 sending of a proposal to one chain. A credit is **reserved** when you send and **charged** only when the buyer opens the e-mail or enters the proposal list in their panel.",
         steps: [
           "**Balance and package**: you see credits available for new sendings, credits reserved by proposals waiting for moderation, mailing or reading, and the nearest expiry date.",
-          "Charging order: first **free credits from the organiser**, then **purchased** ones (nearest expiry first), finally historical packages.",
+          "Charging order: first **free credits** granted by the administrator (the “Free from the organiser” pool in the panel), then **purchased** ones (nearest expiry first), finally historical packages.",
           "**Pricing and packages**: choose Standard (middle position in the newsletter) or Premium (your proposal first in the newsletter, marked Premium). Net prices, 23% VAT.",
-          "Pay online via **PayU** (redirect to the payment gateway) or choose **Bank transfer** — the app generates a pro forma invoice and e-mails it to you. The organiser activates the package once the payment is booked.",
+          "Pay online via **PayU** (redirect to the payment gateway) or choose **Bank transfer** — the app generates a pro forma invoice and e-mails it to you. The administrator activates the package once the payment is booked.",
           "Purchased credits are valid for 12 months from purchase; free credits have their own expiry date given when granted.",
           "**Sending history** in Finance shows each sending with its settlement: “1 credit used”, “Reservation released — no credit charged” or “Pending”.",
         ],
         notes: [
           "Without free credits you cannot send — the send button tells you how many credits are used or reserved.",
-          "Free credits from the organiser appear as a separate banner above the panel with the organiser's message and expiry date.",
+          "Free credits granted by the administrator appear as a separate banner above the panel, with the administrator's message and expiry date.",
         ],
       },
       {
         id: "odczyty",
         title: "Buyer reads and notifications",
-        intro: "A proposal is “seen” when the buyer opens the mailing e-mail or enters the proposal list in their panel (all their new proposals are then marked as seen, even without opening the details). Both count the same way: 1 credit is charged.",
+        intro: "A proposal is “seen” when the buyer opens the mailing e-mail or enters the proposal list in their panel. Entering the list marks all their new proposals at once, even without opening the details. Both count the same way: 1 credit is charged.",
         steps: [
           "After the first read you get **one e-mail notification** that the buyer has seen the proposal. Further openings of the same proposal send no further e-mails and charge no further credits.",
           "On the **Dashboard** you see the last 30 days: waiting to be opened, seen/settled, expired, view rate, and “Recent activity”.",
@@ -295,18 +295,18 @@ export default {
         steps: [
           "The buyer has buttons in the app: “Request a sample”, “Request specification”, “Ask for price and volume”, “Arrange a call”, “Seasonal programme” — each opens an e-mail to the **sales contact** from your company profile.",
           "If the profile has no sales contact with an e-mail address, the buyer sees a “no contact data” message instead of the buttons. Complete the contact in **Your company → Contacts**.",
-          "Questions to the organiser go through the **chat** in the bottom-right corner of the panel. The organiser's replies appear in the same window.",
+          "Questions to the administrator go through the **chat** in the bottom-right corner of the panel. The administrator's replies appear in the same window.",
         ],
       },
       {
         id: "problemy",
         title: "Common situations",
         steps: [
-          "**The profile does not save** — check the message under the button: usually the VAT number or logo is missing; saving works but the profile is marked incomplete. On a connection error refresh the page and try again.",
+          "**The profile does not save** — check the message under the button. Usually the VAT number or logo is missing; saving works but the profile is marked incomplete. On a connection error refresh the page and try again.",
           "**I cannot send a proposal** — the account awaits approval, is suspended, or has no free credits. The message next to the button says which case it is.",
-          "**Proposal rejected in moderation** — read the organiser's chat message, correct a copy (Duplicate) and send again.",
-          "**Account suspended** — the company profile stays available; sendings and B2B Meetings are blocked until clarified; contact the organiser.",
-          "**A credit was charged although the buyer “did not reply”** — charging happens when the e-mail is opened or when the buyer enters the proposal list in the app, not when the buyer replies and not only when the details are opened. Replying is up to the buyer.",
+          "**Proposal rejected in moderation** — read the administrator's chat message, correct a copy (Duplicate) and send again.",
+          "**Account suspended** — the company profile stays available; sendings and B2B Meetings are blocked until clarified; contact the administrator.",
+          "**A credit was charged although the buyer “did not reply”** — the credit is charged when the e-mail is opened or when the buyer enters the proposal list in the app. It does not depend on the buyer's reply or on opening the details. Replying is up to the buyer.",
         ],
       },
     ],

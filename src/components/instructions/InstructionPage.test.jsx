@@ -105,6 +105,21 @@ describe("strona instrukcji", () => {
     expect(output()).not.toContain("Do ustalenia przez organizatora");
   });
 
+  it("PreConnect mówi o administratorze (obsługa platformy), Spotkania B2B o organizatorze (uwagi Oksany 02.11)", () => {
+    mount({ doc: "preconnect", role: "supplier", lang: "pl" });
+    expect(output()).toContain("Napisz do administratora");
+    expect(output()).not.toContain("Napisz do organizatora");
+    act(() => tree.unmount());
+    mount({ doc: "b2b", role: "supplier", lang: "pl" });
+    expect(output()).toContain("Napisz do organizatora");
+    // treść PreConnect uczestników: „organizator” tylko jako cytat etykiety z panelu („Bezpłatne od organizatora”)
+    for (const role of ["supplier", "buyer"]) for (const lang of ["pl", "en"]) {
+      const text = JSON.stringify(getInstruction("preconnect", role, lang))
+        .replace(/Bezpłatne od organizatora|Free from the organiser/g, "");
+      expect(text).not.toMatch(/organizator|organiser|organizer/i);
+    }
+  });
+
   it("dawna połączona instrukcja 2026 NIE jest wklejana do instrukcji — jest tylko odnośnik do osobnej strony", () => {
     const onArchive = vi.fn();
     mount({ doc: "preconnect", role: "buyer", lang: "pl", archiveHref: "/kupiec/instrukcja/archiwum-2026", onArchive });

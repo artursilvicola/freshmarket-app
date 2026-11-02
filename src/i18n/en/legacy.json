@@ -3508,6 +3508,7 @@
       "role_admin": "Administrator",
       "updated": "Updated: {{date}}",
       "footer_help": "Questions? Write to the organiser via the chat in the bottom-right corner of the panel.",
+      "footer_help_preconnect": "Questions? Write to the administrator via the chat in the bottom-right corner of the panel.",
       "edition_note": "This guide concerns the Fresh Market {{year}} edition. Organisational details and dates will be updated before the event.",
       "archive_link": "2026 guide archive →",
       "archive_title": "2026 guide archive",

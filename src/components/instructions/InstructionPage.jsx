@@ -197,7 +197,8 @@ export default function InstructionPage({
       )}
 
       <footer className="fm-instr__footer">
-        <p>{t(p + "footer_help")}</p>
+        {/* PreConnect = obsługa platformy → „administrator”; Spotkania B2B = organizator wydarzenia (uwagi Oksany, 02.11.2026) */}
+        <p>{t(p + (doc === "preconnect" ? "footer_help_preconnect" : "footer_help"))}</p>
         {archiveHref && (
           // Dawna połączona instrukcja 2026 — tylko odnośnik, nigdy treść wewnątrz tej strony.
           <p><a className="fm-instr__archive-link" href={archiveHref} onClick={archiveClick}>{t(p + "archive_link")}</a></p>
