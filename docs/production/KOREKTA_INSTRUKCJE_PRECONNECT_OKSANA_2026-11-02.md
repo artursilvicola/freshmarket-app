@@ -339,3 +339,12 @@ Instrukcja administratora, Pipeline, uwaga o rozliczaniu otwarć e-maila — zam
 - przed:         <p>{t(p + "footer_help")}</p>
 - po:         {/* PreConnect = obsługa platformy → „administrator”; Spotkania B2B = organizator wydarzenia (uwagi Oksany, 02.11.2026) */}
         <p>{t(p + (doc === "preconnect" ? "footer_help_preconnect" : "footer_help"))}</p>
+
+## WDROŻONE 02.11.2026 ~13:25 (zgoda Artura „wdrażaj!" po rekomendacji Codexa)
+
+- main: `0e4dbef` → **`2e170aa`** (fast-forward gałęzi `fix/instructions-wording-oksana`, bez migracji SQL, bez zmian w bazie).
+- Tag do wycofania: `prod-rollback-2026-11-02-wording` = `0e4dbef`. Wycofanie = Netlify → „Publish deploy" **`6ae4c54042611cfec17bfd78`** (deploy 0e4dbef z 30.10), nie push --force.
+- Deploy produkcyjny: **`6ae880f793b8cdd1968c83ee`**, stan „ready" o 12:25:04 UTC, bundle `assets/index-C0BeCmOc.js`.
+- Kontrola po publikacji: bundle zawiera nowe brzmienia PL/EN (kategorie, kontakt, neutralne zdanie o pikselu, stopka „Napisz do administratora", klucz `footer_help_preconnect`), stare brzmienia nieobecne. Prawdziwy wydruk z produkcji z kont testowych: PreConnect dostawcy PL/EN (9 stron) i kupca PL/EN (4 strony) — bez ucięć, 0 „organizator" poza cytatem etykiety, nowy opis kontaktu u kupca. W przeglądarce na koncie testowego kupca: stopka instrukcji PreConnect „Write to the administrator…", stopka Spotkań B2B „Write to the organiser…" (konto testowe ma interfejs EN).
+- **Wydruk wersji administratora z panelu produkcyjnego**: wymaga sesji administratora Artura — do zrobienia po jego zalogowaniu (kontrola pomocnicza ze statycznego renderu: 7/7 stron, bez „organizator" poza cytatami).
+- Na kontach testowych tylko logowania magic linkiem; dane produkcyjne bez zmian.
