@@ -112,8 +112,8 @@ describe("strona instrukcji", () => {
     act(() => tree.unmount());
     mount({ doc: "b2b", role: "supplier", lang: "pl" });
     expect(output()).toContain("Napisz do organizatora");
-    // treść PreConnect uczestników: „organizator” tylko jako cytat etykiety z panelu („Bezpłatne od organizatora”)
-    for (const role of ["supplier", "buyer"]) for (const lang of ["pl", "en"]) {
+    // treść PreConnect (uczestnicy i administrator): „organizator” tylko jako cytat etykiety z panelu („Bezpłatne od organizatora”)
+    for (const role of ["supplier", "buyer", "admin"]) for (const lang of ["pl", "en"]) {
       const text = JSON.stringify(getInstruction("preconnect", role, lang))
         .replace(/Bezpłatne od organizatora|Free from the organiser/g, "");
       expect(text).not.toMatch(/organizator|organiser|organizer/i);

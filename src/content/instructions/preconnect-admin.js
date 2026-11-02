@@ -60,7 +60,7 @@ export default {
           "**Dostawcy / tracking**: per dostawca liczba ofert w panelu kupców, sieci, ostatni e-mail, termin odczytu (14 dni od e-maila), odczytane, czekające na rozliczenie lub zwrot.",
         ],
         notes: [
-          "Otwarcie e-maila przez kupca (piksel) liczy się jak odczyt i pobiera kredyt dostawcy — to decyzja organizatora; nie zmieniaj jej bez uzgodnienia.",
+          "Otwarcie e-maila przez kupca (piksel) jest traktowane jako odczyt i powoduje pobranie kredytu dostawcy. Takie są przyjęte zasady PreConnect; nie zmieniaj ich bez uzgodnienia.",
           "Próby wysyłki rób tylko na sieci testowej i aliasach testowych; po próbie wyłącz sieć testową i wstrzymaj firmę testową.",
         ],
       },
@@ -179,7 +179,7 @@ export default {
           "**Suppliers / tracking**: per supplier the number of offers in buyer panels, chains, last e-mail, reading deadline (14 days from the e-mail), read, awaiting settlement or refund.",
         ],
         notes: [
-          "A buyer opening the e-mail (tracking pixel) counts as a read and charges the supplier's credit — this is the organiser's decision; do not change it without agreement.",
+          "A buyer opening the e-mail (tracking pixel) is treated as a read and charges the supplier's credit. These are the adopted PreConnect rules; do not change them without agreement.",
           "Run sending tests only on the test chain and test aliases; after a test deactivate the test chain and suspend the test company.",
         ],
       },
