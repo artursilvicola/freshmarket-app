@@ -139,6 +139,22 @@ ok(row7.state === "suppressed" && row7.resend_message_id === "resend-wlocie" && 
 const rr2 = (await db.query(`select public.marketing_record_result($1,'accepted','resend-inny',null) as r`, [m7])).rows[0].r;
 ok(rr2.ok === false && (await db.query(`select resend_message_id from public.marketing_messages where id=$1`, [m7])).rows[0].resend_message_id === "resend-wlocie", "powtórka nie nadpisuje id");
 
+console.log("6d2. [r4] webhook delivered PRZED zapisem odpowiedzi Resend + wypis w locie: zdarzenie dopięte, stan suppressed, id nie nadpisane");
+const camp5b = (await db.query(`insert into public.marketing_campaigns (name, template_key, status) values ('Piata-b','start_with_credits','sending') returning id`)).rows[0].id;
+const m7b = (await db.query(`insert into public.marketing_messages (campaign_id, profile_id, to_email, subject, html, text_body, payload_hash, idempotency_key, consent_source) values ($1::uuid,$2::uuid,'wlocie2@example.invalid','S','H','T','h',$3,'lista') returning id`, [camp5b, OWNER, `marketing:${camp5b}:${OWNER}`])).rows[0].id;
+ok((await db.query(`select id from public.marketing_claim_messages($1, 50, 900, 82800)`, [camp5b])).rows.length === 1, "zajęty");
+await db.query(`select public.marketing_suppress_email('wlocie2@example.invalid','unsubscribe','one-click',null,null)`); // 2. wypis
+const evD = (await db.query(`select public.marketing_ingest_email_event('svix-deliv-early','resend-wlocie2','email.delivered',now(),'{"type":"email.delivered","data":{"to":["wlocie2@example.invalid"]}}'::jsonb) as r`)).rows[0].r; // 3. webhook przed zapisem odpowiedzi
+ok(evD.status === "pending", "delivered przed powiązaniem czeka jako pending");
+const rr3 = (await db.query(`select public.marketing_record_result($1,'accepted','resend-wlocie2',null) as r`, [m7b])).rows[0].r; // 4. zapis odpowiedzi Resend
+const evRow = (await db.query(`select status, message_id from public.marketing_email_events where event_id = 'svix-deliv-early'`)).rows[0];
+ok(rr3.ok === true && rr3.sent_before_unsubscribe === true && rr3.linked_events === 1, "accepted po wypisie dopiął 1 czekające zdarzenie");
+ok(evRow.status === "processed" && evRow.message_id === m7b, "zdarzenie processed z message_id wiersza");
+const row7b = (await db.query(`select state, resend_message_id, sent_at from public.marketing_messages where id=$1`, [m7b])).rows[0];
+ok(row7b.state === "suppressed" && row7b.resend_message_id === "resend-wlocie2" && row7b.sent_at !== null, "stan suppressed, id i sent_at zapisane");
+ok((await db.query(`select public.marketing_record_result($1,'accepted','resend-nadpis',null) as r`, [m7b])).rows[0].r.ok === false && (await db.query(`select resend_message_id from public.marketing_messages where id=$1`, [m7b])).rows[0].resend_message_id === "resend-wlocie2", "powtórka nie nadpisuje id");
+ok((await db.query(`select count(*)::int as n from public.marketing_suppressions where email = 'wlocie2@example.invalid'`)).rows[0].n === 1, "wypis zachowany");
+
 console.log("6e. [r3 #2] zamknięcie kampanii po zajęciu partii: precheck odrzuca, wiersz wraca do pending");
 const camp6 = (await db.query(`insert into public.marketing_campaigns (name, template_key, status) values ('Szosta','start_with_credits','sending') returning id`)).rows[0].id;
 const m8 = (await db.query(`insert into public.marketing_messages (campaign_id, profile_id, to_email, subject, html, text_body, payload_hash, idempotency_key, consent_source) values ($1::uuid,$2::uuid,'zamknieta@example.invalid','S','H','T','h',$3,'lista') returning id`, [camp6, OWNER, `marketing:${camp6}:${OWNER}`])).rows[0].id;
@@ -161,7 +177,7 @@ ok(!(await can("authenticated", `select public.marketing_precheck_message('${m1}
 const rowsSupplier = await (async () => { await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${OWNER}', false); set role authenticated;`); const r = await db.query("select count(*)::int as n from public.marketing_messages"); await db.exec("reset role"); return r.rows[0].n; })();
 ok(rowsSupplier === 0, "dostawca przez RLS widzi 0 wierszy");
 const rowsAdmin = await (async () => { await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${ADMIN}', false); set role authenticated;`); const r = await db.query("select count(*)::int as n from public.marketing_messages"); await db.exec("reset role"); return r.rows[0].n; })();
-ok(rowsAdmin === 8, "admin przez RLS widzi 8 wierszy");
+ok(rowsAdmin === 9, "admin przez RLS widzi 9 wierszy");
 
 console.log("8. nic nie dotknęło rozliczeń");
 const legacy = (await db.query(`select (select count(*) from public.legacy_send_email_events)::int as ev, (select count(*) from public.legacy_send_messages)::int as msgs`)).rows[0];

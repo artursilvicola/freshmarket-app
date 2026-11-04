@@ -96,3 +96,11 @@ Dodatkowo: wiadomości `is_test` wyłączone z claim (`is_test = false` w claim)
 | 3 P2 | Treść upraszczała rozliczanie („pobierany dopiero wtedy, gdy kupiec otworzy propozycję") i obiecywała wysyłkę („zatwierdzone … trafią do mailingu") | Oba szablony PL i EN: „Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca." oraz „Przygotuj propozycję przed najbliższym mailingiem do kupców {data}. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem." (EN odpowiednio) | `marketing-templates.test.js` (nowe zdania obecne w PL/EN dla obu szablonów, stare nieobecne) |
 
 Smoke SQL: 40 kontroli (było 31). Testy marketingu: 74 (było 71); cała suita 834/834, build OK.
+
+## 8. Poprawka po review Codexa, runda 4 (1272662)
+
+| # | Uwaga | Poprawka | Test |
+|---|---|---|---|
+| 1 P2 | Ścieżka „przyjęta po wypisie" kończyła się `return` przed dopięciem czekających zdarzeń — webhook `email.delivered` sprzed zapisu odpowiedzi Resend zostawał `pending` bez `message_id` | `marketing_record_result`: w gałęzi `suppressed` + `accepted` po zapisaniu id i `sent_at` dopina zdarzenia `pending` dla tego id Resend (status `processed`, `message_id`), zwraca `linked_events`; wypis i ochrona przed nadpisaniem id bez zmian | smoke SQL 6d2 (zajęcie → wypis → delivered przed zapisem → accepted: zdarzenie processed z message_id, stan suppressed, id zapisane, powtórka nie nadpisuje, wypis zachowany); skrypt Codexa `1FMK2026/tmp/review-marketing-1272662.mjs` przechodzi |
+
+Sprostowanie do rundy 3 (za Codexem): zamknięta kampania nadal pozwala SQL-owi *zająć* wiadomość (`claim` nie sprawdza statusu kampanii); blokuje dopiero `precheck` tuż przed wysyłką — i to sprawdza test. Smoke SQL: 47 kontroli.

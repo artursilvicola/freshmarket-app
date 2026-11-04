@@ -238,7 +238,15 @@ begin
        set resend_message_id = p_resend_message_id, sent_at = coalesce(sent_at, now()), lease_until = null,
            last_error = coalesce(last_error, '') || '; sent_before_unsubscribe'
      where id = p_message_id;
-    return jsonb_build_object('ok', true, 'state', 'suppressed', 'sent_before_unsubscribe', true, 'linked_events', 0);
+    -- [review Codexa r4] zdarzenia, które przyszły ZANIM zapisaliśmy id Resend (np. delivered w trakcie
+    -- wypisu), też trzeba dopiąć do wiersza — historia nie może zostać z `pending` bez message_id
+    if p_resend_message_id is not null then
+      update public.marketing_email_events e
+         set message_id = p_message_id, status = 'processed', processed_at = now()
+       where e.resend_message_id = p_resend_message_id and e.status = 'pending';
+      get diagnostics v_events = row_count;
+    end if;
+    return jsonb_build_object('ok', true, 'state', 'suppressed', 'sent_before_unsubscribe', true, 'linked_events', v_events);
   end if;
   if v_row.state <> 'claimed' then
     -- ponowienie po tym, jak inny przebieg już zapisał wynik — nic nie nadpisujemy
