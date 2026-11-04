@@ -40,6 +40,7 @@ import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { ingestResendEvent, linkMessageFromLegacySends, processKnownEvent, RetryableEventError } from "./_shared/email-events.js";
+import { isMarketingEvent, ingestMarketingEvent } from "./_shared/marketing-events.js";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -106,6 +107,21 @@ export const handler = async (event) => {
   if (!messageId) return reply(200, { ignored: "no_message_id", type });
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
+
+  // ── 2b. [feat/marketing-activation] Router: mail z tagiem kind=marketing idzie do
+  // rejestru marketingowego i NIGDY do ingest_legacy_send_email_event / rozliczeń.
+  // Brak tagu lub inny tag → dotychczasowa ścieżka bez zmian. Błąd RPC (np. moduł
+  // cofnięty, brak funkcji) → 200 ignored: ponowienie nic by nie naprawiło, a te
+  // zdarzenia niczego nie rozliczają.
+  if (isMarketingEvent(payload)) {
+    const mk = await ingestMarketingEvent({
+      supaSvc, eventId: svixId, messageId, type,
+      occurredAt: payload?.created_at || null,
+      payload: { type, created_at: payload?.created_at || null, data: scrubPayload(payload?.data) },
+    });
+    if (!mk.ok) { console.warn("[resend-webhook] marketing ingest failed:", mk.error); return reply(200, { ignored: "marketing_ingest_failed", type }); }
+    return reply(200, { ok: true, marketing: true, type, duplicate: !!mk.duplicate, status: mk.status || null });
+  }
 
   // ── 3. Zapis zdarzenia (deduplikacja po svix-id) ────────────────────────
   let ingested;

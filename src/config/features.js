@@ -282,3 +282,11 @@ export const ADMIN_ACCESS_POLISH = true;
 // pełny PipelineTableV2 (zero utraty funkcji), 3 = master-detail dostawców.
 // W razie problemu: rollback jednej flagi na false.
 export const ADMIN_PIPELINE_SPLIT = true;
+
+// [feat/marketing-activation] Marketing → Aktywacja PreConnect (faza 1).
+// Ekran administratora: kandydaci (saldo, rezerwacje, ważność, wykluczenia,
+// dopasowanie do potrzeb kupców), źródło zgody, podgląd PL/EN, zatwierdzenie,
+// test na adres zespołu, wysyłka z rejestru. Domyślnie `false` — pozycja menu
+// i strona nie istnieją. Sama flaga NIE włącza poczty: prawdziwa wysyłka
+// (także testowa) wymaga osobno MARKETING_SEND_ENABLED="true" w env Netlify.
+export const ADMIN_MARKETING_ACTIVATION = false;

@@ -2501,3 +2501,24 @@ export function addCalendarMonthsISO(iso, months) {
   const day = Math.min(d, lastDay);
   return `${String(y).padStart(4, "0")}-${String(mo + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
+
+// [feat/marketing-activation] Wywołanie funkcji Marketing → Aktywacja PreConnect
+// (marketing-campaign / marketing-candidates / marketing-preview / marketing-send).
+// Token sesji admina; rola sprawdzana po stronie serwera. Błąd → wyjątek z treścią.
+export async function marketingCall(fn, body) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error(i18n.t("legacy:errors.db.no_active_admin_session"));
+  const res = await fetch(`/.netlify/functions/${fn}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body || {}),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(json?.error ? `${json.error}${json.detail ? ": " + json.detail : ""}${json.hint ? " — " + json.hint : ""}` : `${fn} ${res.status}`);
+    err.payload = json;
+    throw err;
+  }
+  return json;
+}

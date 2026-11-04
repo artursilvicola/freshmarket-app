@@ -37,6 +37,13 @@ export function resolveEnvConfig() {
   const payuEurToPayuRate = getFirstEnv("PAYU_EUR_TO_PAYU_RATE");
   const payuVatRate = getFirstEnv("PAYU_VAT_RATE") || "23";
 
+  // [feat/marketing-activation] Marketing → Aktywacja PreConnect.
+  // MARKETING_SEND_ENABLED="true" włącza PRAWDZIWĄ pocztę (batch i test); domyślnie
+  // wyłączone na każdym środowisku. MARKETING_UNSUBSCRIBE_SECRET podpisuje linki wypisu
+  // (bez sekretu nie da się zatwierdzić ani wysłać wiadomości).
+  const marketingSendEnabled = String(getFirstEnv("MARKETING_SEND_ENABLED") || "").trim().toLowerCase() === "true";
+  const marketingUnsubscribeSecret = getFirstEnv("MARKETING_UNSUBSCRIBE_SECRET");
+
   return {
     supabaseUrl,
     supabaseAnonKey,
@@ -54,6 +61,8 @@ export function resolveEnvConfig() {
     payuCurrencyCode,
     payuEurToPayuRate,
     payuVatRate,
+    marketingSendEnabled,
+    marketingUnsubscribeSecret,
   };
 }
 

@@ -19,7 +19,7 @@ import {
   Package, ExternalLink, Sparkles, RefreshCw, Eye, Upload, ShieldCheck,
   Filter, Globe, Star, TrendingUp, CreditCard, ChevronDown, ChevronUp,
   RotateCcw, GripVertical, Heart, Wallet, Bell, Activity, Settings, Lock, Unlock,
-  MessageCircle, MessageSquare, Send as SendIcon, Download, Gift
+  MessageCircle, MessageSquare, Send as SendIcon, Download, Gift, Megaphone
 } from "lucide-react";
 import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
@@ -132,7 +132,9 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC, ADMIN_ACCESS_POLISH, ADMIN_PIPELINE_SPLIT } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC, ADMIN_ACCESS_POLISH, ADMIN_PIPELINE_SPLIT, ADMIN_MARKETING_ACTIVATION } from "../config/features";
+// [feat/marketing-activation] Marketing → Aktywacja PreConnect (za flagą ADMIN_MARKETING_ACTIVATION).
+import MarketingActivation from "../components/admin/MarketingActivation.jsx";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -3841,6 +3843,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-retailers")  return <PageAdminRetailers retailers={retailers} setRetailers={setRetailers} fl={fl}/>;
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} onPaymentDateSaved={saved => _setCompaniesRaw(prev => applyPaymentDate(prev, saved))} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
     if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity} sends={sends} offers={offers}/>;
+    if(pg==="a-marketing" && ADMIN_MARKETING_ACTIVATION) return <MarketingActivation fl={fl}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if (["fm-sched","fm-algo","fm-wyniki"].includes(pg) && (!fmRespsLoaded || fmInputsError) && !fmSettings.planPublished)
@@ -4024,6 +4027,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
                   </div>
                 );
               })()}
+              {/* [feat/marketing-activation] Marketing → Aktywacja PreConnect (Operacyjne), tylko za flagą. */}
+              {ADMIN_MARKETING_ACTIVATION && (
+                <div onClick={()=>nav("a-marketing")} data-testid="nav-a-marketing" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="a-marketing"?"white":"#64748b",background:navKey==="a-marketing"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-marketing"?600:400,transition:"all 0.15s" }}>
+                  <Megaphone size={14}/><span>{t("shell.sidebar.admin_marketing")}</span>
+                </div>
+              )}
               {/* [feat/instructions-split] Instrukcja administratora PreConnect — przy module PreConnect. */}
               <div onClick={()=>nav("a-instr-preconnect")} data-testid="nav-a-instr-preconnect" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="a-instr-preconnect"?"white":"#64748b",background:navKey==="a-instr-preconnect"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-instr-preconnect"?600:400,transition:"all 0.15s" }}>
                 <FileText size={14}/><span>{t("shell.sidebar.admin_instructions_preconnect")}</span>
