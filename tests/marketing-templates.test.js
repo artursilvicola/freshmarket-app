@@ -25,6 +25,20 @@ describe("render", () => {
     expect(r.text).toContain("Wypisz się z informacji o PreConnect: " + base.unsubscribeUrl);
     expect(r.text).toContain("preconnect@freshmarket.eu");
     expect(r.html.toLowerCase()).not.toMatch(/gwarant|na pewno przeczyta|guarantee/);
+    // [r3 #3] rozliczanie opisane zgodnie z regułami (e-mail LUB lista w panelu), bez obietnicy wysyłki
+    expect(r.html).toContain("Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.");
+    expect(r.html).toContain("Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem.");
+    expect(r.html).not.toMatch(/dopiero wtedy, gdy kupiec otworzy|trafią do najbliższego mailingu/);
+  });
+  it("[r3 #3] EN i szablon powrotu mają tę samą regułę rozliczania", () => {
+    for (const templateKey of ["start_with_credits", "return_active"]) {
+      const en = renderMarketingTemplate({ ...base, templateKey, locale: "en" });
+      expect(en.html).toContain("The credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.".replace("The credit", templateKey === "return_active" ? "A credit" : "The credit"));
+      expect(en.html).toContain("Proposals qualify for the mailing according to their current status.");
+      expect(en.html).not.toMatch(/charged only when a buyer opens|go out in the next/);
+      const pl = renderMarketingTemplate({ ...base, templateKey, locale: "pl" });
+      expect(pl.html).toContain("Kredyt rozliczamy po zarejestrowanym odczycie");
+    }
   });
   it("EN return: temat i CTA po angielsku, odmiana credits", () => {
     const r = renderMarketingTemplate({ ...base, templateKey: "return_active", locale: "en", creditsRemaining: 1, creditsExpiry: null });

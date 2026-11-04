@@ -230,6 +230,16 @@ begin
   end if;
   select * into v_row from public.marketing_messages where id = p_message_id for update;
   if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  -- [review Codexa r3 #1] wypis W TRAKCIE żądania do Resend: wiersz jest już `suppressed`, ale poczta
+  -- przyjęła wiadomość — nie da się jej cofnąć. Zachowujemy OBA fakty: stan suppressed (bez kolejnych
+  -- maili) + id Resend i sent_at (prawdziwy ślad wysyłki). Inne wyniki na suppressed nic nie zmieniają.
+  if v_row.state = 'suppressed' and v_row.resend_message_id is null and p_state = 'accepted' then
+    update public.marketing_messages
+       set resend_message_id = p_resend_message_id, sent_at = coalesce(sent_at, now()), lease_until = null,
+           last_error = coalesce(last_error, '') || '; sent_before_unsubscribe'
+     where id = p_message_id;
+    return jsonb_build_object('ok', true, 'state', 'suppressed', 'sent_before_unsubscribe', true, 'linked_events', 0);
+  end if;
   if v_row.state <> 'claimed' then
     -- ponowienie po tym, jak inny przebieg już zapisał wynik — nic nie nadpisujemy
     return jsonb_build_object('ok', false, 'reason', 'not_claimed', 'state', v_row.state);
@@ -281,12 +291,21 @@ language plpgsql
 security definer
 set search_path = public
 as $$
-declare v_row public.marketing_messages%rowtype;
+declare
+  v_row public.marketing_messages%rowtype;
+  v_campaign_status text;
 begin
   select * into v_row from public.marketing_messages where id = p_message_id for update;
   if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
   if v_row.state <> 'claimed' then return jsonb_build_object('ok', false, 'reason', 'not_claimed', 'state', v_row.state); end if;
   if v_row.is_test then return jsonb_build_object('ok', true, 'test', true); end if;
+  -- [review Codexa r3 #2] zamknięta / niezatwierdzona kampania nie dopuszcza kolejnych żądań do poczty,
+  -- także dla partii zajętej wcześniej: wiersz wraca do pending (widoczny, bez dzierżawy)
+  select status into v_campaign_status from public.marketing_campaigns where id = v_row.campaign_id;
+  if v_campaign_status is distinct from 'sending' and v_campaign_status is distinct from 'approved' then
+    update public.marketing_messages set state = 'pending', lease_until = null, claimed_at = null, last_error = 'campaign_' || coalesce(v_campaign_status, 'missing') where id = p_message_id;
+    return jsonb_build_object('ok', false, 'reason', 'campaign_not_active', 'campaign_status', v_campaign_status);
+  end if;
   if v_row.consent_source is null or btrim(v_row.consent_source) = '' then
     update public.marketing_messages set state = 'blocked_no_consent', lease_until = null, last_error = 'consent_source_missing_at_send' where id = p_message_id;
     return jsonb_build_object('ok', false, 'reason', 'blocked_no_consent');

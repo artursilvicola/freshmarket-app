@@ -46,7 +46,8 @@ function service() {
         if (db.failRecord) return { data: null, error: { message: "record down" } };
         const m = db.messages.find((x) => x.id === args.p_message_id);
         if (!m) return { data: { ok: false, reason: "not_found" }, error: null };
-        if (m.state !== "claimed") return { data: { ok: false, reason: "not_claimed" }, error: null };
+        if (m.state === "suppressed" && args.p_state === "accepted" && !m.resend_message_id) { m.resend_message_id = args.p_resend_message_id; m.sent_at = "now"; return { data: { ok: true, state: "suppressed", sent_before_unsubscribe: true }, error: null }; }
+        if (m.state !== "claimed") return { data: { ok: false, reason: "not_claimed", state: m.state }, error: null };
         if (args.p_state === "accepted") { m.state = "accepted"; m.resend_message_id = args.p_resend_message_id; }
         else if (args.p_state === "rejected") { m.state = "rejected"; m.last_error = args.p_error; }
         else { m.state = "claimed"; m.last_error = args.p_error; }
@@ -186,6 +187,19 @@ describe("batch z rejestru", () => {
     expect(r.body.outcome.accepted).toBe(2);
     expect(r.body.done).toBe(false); expect(r.body.remaining).toBeNull(); expect(r.body.warning).toMatch(/remaining_unknown/);
     expect(state.db.campaign.status).toBe("sending");
+  });
+  it("[r3 #1] wypis w trakcie żądania do Resend: potwierdzenie przyjęcia zapisane, wiersz zostaje suppressed, nie liczy się jako „sukces bez śladu”", async () => {
+    fetch.mockImplementationOnce(async () => { state.db.messages[0].state = "suppressed"; return new Response(JSON.stringify({ id: "resend-x" }), { status: 200 }); });
+    const r = await call({ campaign_id: CAMP });
+    expect(state.db.messages[0]).toMatchObject({ state: "suppressed", resend_message_id: "resend-x", sent_at: "now" });
+    expect(r.body.details[0]).toMatchObject({ result: "accepted", sent_before_unsubscribe: true });
+    expect(r.body.outcome.accepted).toBe(2);
+  });
+  it("[r3 #1] baza odmawia zapisu wyniku (ok:false) → uncertain, nie accepted", async () => {
+    fetch.mockImplementationOnce(async () => { state.db.messages[0].state = "rejected"; return new Response(JSON.stringify({ id: "resend-y" }), { status: 200 }); });
+    const r = await call({ campaign_id: CAMP });
+    expect(r.body.outcome.uncertain).toBe(1);
+    expect(r.body.details[0]).toMatchObject({ result: "uncertain", error: "record_refused:not_claimed", resend_message_id: "resend-y" });
   });
   it("awaria claim → 500, bez maili", async () => {
     state.db.failClaim = true;

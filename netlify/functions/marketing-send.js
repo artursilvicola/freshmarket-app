@@ -90,8 +90,12 @@ export const handler = async (event) => {
         // poczta mogła przyjąć, a zapis padł: wiersz zostaje claimed z dzierżawą → ponowienie pod tym samym kluczem = ta sama wiadomość
         outcome.uncertain += 1; details.push({ id: m.id, result: "uncertain", error: "record_failed:" + recErr.message, resend_message_id: r.id || null }); continue;
       }
+      if (!rec || rec.ok !== true) {
+        // [review Codexa r3 #1] baza odmówiła zapisu wyniku (np. stan zmieniony w locie) — nie udajemy sukcesu
+        outcome.uncertain += 1; details.push({ id: m.id, result: "uncertain", error: "record_refused:" + (rec?.reason || "unknown"), state: rec?.state || null, resend_message_id: r.id || null }); continue;
+      }
       outcome[r.status] += 1;
-      details.push({ id: m.id, result: r.status, resend_message_id: r.id || null, error: r.error || null, record: rec || null });
+      details.push({ id: m.id, result: r.status, resend_message_id: r.id || null, error: r.error || null, record: rec || null, sent_before_unsubscribe: rec.sent_before_unsubscribe === true || undefined });
     }
 
     // [review Codexa #6] co zostało? Błąd odczytu NIE zamyka kampanii — zostaje `sending`.

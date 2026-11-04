@@ -100,8 +100,8 @@ export function renderMarketingTemplate(d) {
       subject = `You have ${credits} in PreConnect — next buyer mailing on ${mailingLabel}`;
       paras = [
         `Hello${company ? ", " + esc(company) : ""},`,
-        `Your Fresh Market B2B account has <strong>${credits}</strong> available in PreConnect (as of ${snapshotLabel})${expiryLabel ? `, the nearest expiry date is <strong>${expiryLabel}</strong>` : ""}. One product proposal to one retail chain uses one credit — and it is charged only when a buyer opens the proposal.`,
-        `Proposals approved before <strong>${mailingLabel}</strong> go out in the next PreConnect mailing to buyers.`,
+        `Your Fresh Market B2B account has <strong>${credits}</strong> available in PreConnect (as of ${snapshotLabel})${expiryLabel ? `, the nearest expiry date is <strong>${expiryLabel}</strong>` : ""}. One product proposal to one retail chain uses one credit. The credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.`,
+        `Prepare your proposal before the next buyer mailing on <strong>${mailingLabel}</strong>. Proposals qualify for the mailing according to their current status.`,
         `If you are not sure how to prepare a proposal or which chain to address, reply to this e-mail. We will help you start.`,
       ];
       ctaLabel = "Open the panel";
@@ -109,8 +109,8 @@ export function renderMarketingTemplate(d) {
       subject = `Buyer mailing on ${mailingLabel} — add a new proposal in PreConnect?`;
       paras = [
         `Hello${company ? ", " + esc(company) : ""},`,
-        `If you have a new product or an up-to-date supply programme, you can prepare another proposal in PreConnect. Your account has <strong>${credits}</strong> available (as of ${snapshotLabel})${expiryLabel ? `, nearest expiry <strong>${expiryLabel}</strong>` : ""}.`,
-        `Proposals approved before <strong>${mailingLabel}</strong> go out in the next mailing to buyers. In the panel you can check the state of your previous sendings.`,
+        `If you have a new product or an up-to-date supply programme, you can prepare another proposal in PreConnect. Your account has <strong>${credits}</strong> available (as of ${snapshotLabel})${expiryLabel ? `, nearest expiry <strong>${expiryLabel}</strong>` : ""}. A credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.`,
+        `Prepare your proposal before the next buyer mailing on <strong>${mailingLabel}</strong>. Proposals qualify for the mailing according to their current status. In the panel you can check the state of your previous sendings.`,
         `If you would like help choosing a chain or describing your range, reply to this e-mail.`,
       ];
       ctaLabel = "Go to PreConnect";
@@ -121,8 +121,8 @@ export function renderMarketingTemplate(d) {
       subject = `Masz ${credits} PreConnect — najbliższy mailing do kupców ${mailingLabel}`;
       paras = [
         `Dzień dobry${company ? ", " + esc(company) : ""},`,
-        `W Twoim koncie Fresh Market B2B dostępne są <strong>${credits}</strong> PreConnect (stan na ${snapshotLabel})${expiryLabel ? `, najbliższy termin ważności: <strong>${expiryLabel}</strong>` : ""}. Jedna propozycja asortymentowa do jednej sieci = jeden kredyt, pobierany dopiero wtedy, gdy kupiec otworzy propozycję.`,
-        `Propozycje zatwierdzone przed <strong>${mailingLabel}</strong> trafią do najbliższego mailingu PreConnect dla kupców.`,
+        `W Twoim koncie Fresh Market B2B dostępne są <strong>${credits}</strong> PreConnect (stan na ${snapshotLabel})${expiryLabel ? `, najbliższy termin ważności: <strong>${expiryLabel}</strong>` : ""}. Jedna propozycja asortymentowa do jednej sieci = jeden kredyt. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.`,
+        `Przygotuj propozycję przed najbliższym mailingiem do kupców <strong>${mailingLabel}</strong>. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem.`,
         `Jeżeli nie wiesz, jak przygotować propozycję lub do kogo ją skierować, odpowiedz na tę wiadomość. Pomożemy Ci zacząć.`,
       ];
       ctaLabel = "Przejdź do panelu";
@@ -130,8 +130,8 @@ export function renderMarketingTemplate(d) {
       subject = `Mailing do kupców ${mailingLabel} — dodasz nową propozycję w PreConnect?`;
       paras = [
         `Dzień dobry${company ? ", " + esc(company) : ""},`,
-        `Jeżeli masz nowy produkt lub aktualny program dostaw, możesz przygotować kolejną propozycję w PreConnect. W Twoim koncie dostępne są <strong>${credits}</strong> (stan na ${snapshotLabel})${expiryLabel ? `, najbliższy termin ważności: <strong>${expiryLabel}</strong>` : ""}.`,
-        `Propozycje zatwierdzone przed <strong>${mailingLabel}</strong> trafią do najbliższego mailingu dla kupców. W panelu sprawdzisz stan dotychczasowych wysyłek.`,
+        `Jeżeli masz nowy produkt lub aktualny program dostaw, możesz przygotować kolejną propozycję w PreConnect. W Twoim koncie dostępne są <strong>${credits}</strong> (stan na ${snapshotLabel})${expiryLabel ? `, najbliższy termin ważności: <strong>${expiryLabel}</strong>` : ""}. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.`,
+        `Przygotuj propozycję przed najbliższym mailingiem do kupców <strong>${mailingLabel}</strong>. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem. W panelu sprawdzisz stan dotychczasowych wysyłek.`,
         `Jeżeli chcesz pomocy w wyborze sieci albo opisaniu asortymentu, odpowiedz na tę wiadomość.`,
       ];
       ctaLabel = "Przejdź do PreConnect";

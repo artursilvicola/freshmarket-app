@@ -86,3 +86,13 @@ Sześć uwag, wszystkie zasadne, wszystkie poprawione i pokryte testami:
 | 6 P2 | Błąd końcowego odczytu („co zostało") traktowany jak pusta lista → kampania fałszywie `sent` | błąd → odpowiedź z `remaining: null`, `done: false`, `warning`; kampania zostaje `sending`; błąd zamknięcia też raportowany | `marketing-send.test.js` (failLeft → status `sending`) |
 
 Dodatkowo: wiadomości `is_test` wyłączone z claim (`is_test = false` w claim); precheck dla testu = ok. Smoke SQL: 31 kontroli (było 23). Testy marketingu: 71 (było 45).
+
+## 7. Poprawki po review Codexa, runda 3 (abae69f → runda 3, 04.11 wieczór)
+
+| # | Uwaga | Poprawka | Test |
+|---|---|---|---|
+| 1 P1 | Wypis w trakcie żądania do Resend: poczta przyjęła, a SQL odrzucał zapis wyniku (`not_claimed`, wiersz już `suppressed`) → brak `resend_message_id` i `sent_at`; funkcja ignorowała `ok:false` | `marketing_record_result`: dla wiersza `suppressed` bez id Resend wynik `accepted` zapisuje id + `sent_at` (+ `sent_before_unsubscribe` w `last_error`), stan zostaje `suppressed` (żadnych kolejnych maili); inne wyniki na `suppressed` nic nie zmieniają, powtórka nie nadpisuje id. `marketing-send.js`: `ok:false` z bazy = `uncertain` z powodem, nie „sukces" | smoke SQL 6d; `marketing-send.test.js` (wypis w locie → id i sent_at zapisane, stan suppressed; odmowa zapisu → uncertain `record_refused:not_claimed`) |
+| 2 P1 | `precheck` nie sprawdzał statusu kampanii — zamknięta kampania dopuszczała zajętą wcześniej partię | `marketing_precheck_message` czyta status kampanii; inny niż `sending`/`approved` → `campaign_not_active`, wiersz wraca do `pending` bez dzierżawy (widoczny, nie wyśle się także po ponownym zajęciu) | smoke SQL 6e (zajęcie → zamknięcie → precheck odrzuca → ponowne zajęcie też odrzuca) |
+| 3 P2 | Treść upraszczała rozliczanie („pobierany dopiero wtedy, gdy kupiec otworzy propozycję") i obiecywała wysyłkę („zatwierdzone … trafią do mailingu") | Oba szablony PL i EN: „Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca." oraz „Przygotuj propozycję przed najbliższym mailingiem do kupców {data}. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem." (EN odpowiednio) | `marketing-templates.test.js` (nowe zdania obecne w PL/EN dla obu szablonów, stare nieobecne) |
+
+Smoke SQL: 40 kontroli (było 31). Testy marketingu: 74 (było 71); cała suita 834/834, build OK.
