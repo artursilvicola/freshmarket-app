@@ -289,4 +289,6 @@ export const ADMIN_PIPELINE_SPLIT = true;
 // test na adres zespołu, wysyłka z rejestru. Domyślnie `false` — pozycja menu
 // i strona nie istnieją. Sama flaga NIE włącza poczty: prawdziwa wysyłka
 // (także testowa) wymaga osobno MARKETING_SEND_ENABLED="true" w env Netlify.
-export const ADMIN_MARKETING_ACTIVATION = false;
+// Widoczność WYŁĄCZNIE w buildzie testowym: `VITE_ADMIN_MARKETING_ACTIVATION=true` w .env.test
+// (scripts/dev-test.mjs). W buildzie produkcyjnym zmiennej nie ma → false.
+export const ADMIN_MARKETING_ACTIVATION = (typeof import.meta !== "undefined" && import.meta.env?.VITE_ADMIN_MARKETING_ACTIVATION === "true");

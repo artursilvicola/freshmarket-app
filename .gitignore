@@ -29,3 +29,5 @@ pl-audit.json
 
 # [feat/fm-plan-export] wyniki generatora kart (PDF/Excel) — nie do repo
 out/
+# środowisko odbiorowe (klucze projektu TESTOWEGO)
+.env.test

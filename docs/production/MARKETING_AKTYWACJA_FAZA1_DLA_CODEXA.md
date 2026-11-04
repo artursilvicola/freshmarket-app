@@ -124,3 +124,21 @@ Dwie możliwe ścieżki (decyzja Artura):
 **B. Scalenie do main za flagą `false`.** Moduł niewidoczny dla użytkowników; funkcje wdrożone, ale nieużywane; migracja jak w A.2; odbiór wymaga chwilowego `true` na main — mniej bezpieczne niż A.
 
 W obu ścieżkach: żaden mail nie wyjdzie bez `MARKETING_SEND_ENABLED=true`, a prawdziwy test na adres zespołu to osobna zgoda (Codex, 4.11).
+
+## 10. Odbiór na IZOLOWANYM środowisku testowym (decyzja Codexa/Artura 04.11 wieczór) — co jest gotowe, czego brakuje
+
+Zasada: migracja i dane odbiorowe wyłącznie na osobnej bazie testowej; preview z testowymi kluczami; `MARKETING_SEND_ENABLED` wyłączone; bez produkcyjnego klucza Resend; osobny sekret wypisu; moduł widoczny tylko w buildzie testowym; main i produkcyjny Supabase nietknięte.
+
+**Przeszkoda (stan maszyny Artura, 04.11):** nie ma Dockera ani Supabase CLI (lokalny stack Supabase niemożliwy bez instalacji), a jedyny projekt Supabase B2B to produkcja. Potrzebny jest **osobny projekt Supabase do testów** (darmowy plan wystarczy) — zakłada go Artur w panelu Supabase (np. `fm-b2b-test`, region EU). Claude nie ma dostępu do panelu Supabase.
+
+**Gotowe w gałęzi (bez bazy nie da się tego uruchomić, ale wszystko jest przygotowane):**
+- `.env.test.example` — lista zmiennych projektu TESTOWEGO (URL, anon, service_role, connection string, sekret testowy, fikcyjny klucz Resend, `VITE_ADMIN_MARKETING_ACTIVATION=true`). Kopiuje się do `.env.test` (w `.gitignore`).
+- `scripts/marketing-test-env.mjs` — stawia środowisko na bazie testowej: 72 migracje → `seed.sql` (sieci, 3 firmy bazowe) → `e2e_create_test_accounts.sql` (admin/supplier/buyer testowi) → `supabase/tests/marketing_acceptance_seed.sql`. **Bezpieczniki:** odmawia, gdy adres zawiera ref produkcyjny lub gdy w bazie są firmy spoza seedów.
+- `supabase/tests/marketing_acceptance_seed.sql` — 9 fikcyjnych firm pokrywających segmenty i wykluczenia (start z kredytami + kredyty wygasające za 20 dni; powrót z wysyłkami bez odczytów i z rezerwacją; ES z operatorem EN i rezerwacją; „tylko czeka"; bez ważnych kredytów; oczekująca na zatwierdzenie; dwóch operatorów; adres w suppresji; konto ZZZ TEST), 10 operatorów `@example.test`, pakiety, wysyłki, jedna suppresja. Idempotentny.
+- `scripts/dev-test.mjs` — uruchamia `netlify dev --offline` (Vite + funkcje) ze zmiennymi z `.env.test`; wymaga kompletu zmiennych (inaczej odmawia, żeby nie dociągnąć produkcji z `.env`/ustawień strony), usuwa `MARKETING_SEND_ENABLED`.
+- `src/config/features.js`: `ADMIN_MARKETING_ACTIVATION` = `import.meta.env.VITE_ADMIN_MARKETING_ACTIVATION === "true"` — w buildzie produkcyjnym zmiennej nie ma → moduł niewidoczny; w buildzie testowym widoczny.
+
+**Procedura po założeniu projektu testowego (Artur → Claude):**
+1. Artur: nowy projekt Supabase; w Project Settings → API i Database odczytać URL, anon key, service_role key, hasło/connection string; wpisać do `.env.test` (lokalnie, plik niewersjonowany). Nie podawać w rozmowie.
+2. Claude: `node scripts/marketing-test-env.mjs` (migracje + seedy + kontrola), potem `node scripts/dev-test.mjs`, logowanie na `http://localhost:8888` kontem `codex.admin@freshmarket.test` (z pliku e2e), odbiór: kampanie, kandydaci (salda vs Finanse/Rozliczenia dla 3 firm), podgląd PL/EN, zatwierdzenie ze źródłem zgody, rejestr, test → 403 `send_disabled`, zamknięcie kampanii, trwałość po odświeżeniu; zrzuty i wynik do tego dokumentu.
+3. Po odbiorze projekt testowy można zostawić (0 danych produkcyjnych) albo usunąć.
