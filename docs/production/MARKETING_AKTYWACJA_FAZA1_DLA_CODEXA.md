@@ -171,3 +171,15 @@ Projekt testowy: `rruszzdffclfhbtfeznb` (region eu-west-1). Artur przygotował `
 | Diagnoza (bez wypisywania sekretu) | host = pooler sesyjny `aws-0-eu-west-1`, user `postgres.<ref>`, DB `postgres` — poprawne (pooler znajduje tenanta; inne regiony „tenant not found”). Hasło: 14 znaków, bez `%`, `#`, `?`, `/`, `@`, cudzysłowów i spacji, nie obcinane przez parser URL. To samo hasło odrzucone na :5432, :6543 i po zdekodowaniu. Host bezpośredni `db.<ref>.supabase.co` nie rozwiązuje się (IPv6 bez dodatku IPv4) — pooler jest właściwą drogą. |
 | Wniosek | **hasło w `TEST_DATABASE_URL` nie jest hasłem bazy tego projektu** (najpewniej hasło konta/dashboardu albo hasło sprzed resetu). Do zrobienia przez Artura: Supabase → projekt testowy → Project Settings → Database → *Reset database password*, nowe hasło (najlepiej same litery i cyfry) wkleić w `.env.test` w miejsce starego; reszta URL bez zmian. Potem ponownie `node scripts/marketing-test-env.mjs`. |
 | Produkcja | nietknięta (skrypt odrzuca ref produkcji; żadne polecenie nie poszło do `sklyfuvzjikkqerxtulo`). Wysyłka maili: wyłączona. |
+
+**Ciąg dalszy 04.11 ~17:30 (po resecie hasła bazy):**
+
+| Krok | Wynik |
+|---|---|
+| `node scripts/marketing-test-env.mjs` | **OK, kod 0**: połączono (PostgreSQL 17, ref `rruszzdffclfhbtfeznb`), rejestr utworzony na pustej bazie, **71 migracji** w transakcjach, 3 seedy; stan = oczekiwany (`test_companies 9, test_operators 10, admins 1, packages 9, suppressions 1, marketing_tables true, migrations_registered 71`) |
+| Podgląd `fm-b2b-test` (`netlify dev --offline`, port 8888) | start OK; `.env` ignorowany dla `VITE_SUPABASE_*` (proces ma pierwszeństwo), funkcje `marketing-*` załadowane. Uwaga: `netlify dev` dociąga z lokalnego `.env` zmienne `PAYU_*` — moduł Marketing ich nie używa, nie wywoływano funkcji PayU |
+| Logowanie `codex.admin@freshmarket.test` | OK, pozycja „Marketing” w menu (flaga testowa), ekran „Marketing → Aktywacja PreConnect” renderuje się (formularz nowej kampanii, lista kampanii) |
+| `marketing-campaign` (lista) | **403 `profile_not_found`** mimo że profil admina istnieje w bazie (sprawdzone przez `pg`: 13 profili, 1 admin, trigger `on_auth_user_created` aktywny) |
+| Przyczyna | w `.env.test` pod `SUPABASE_SERVICE_ROLE_KEY` wklejono **klucz anon** (identyczny z `SUPABASE_ANON_KEY`, rola JWT `anon`) → klient „service” podlega RLS i nie widzi profili. Walidator tego nie wykrywał. |
+| Poprawka | `validateTestEnv`: odmowa gdy `SUPABASE_SERVICE_ROLE_KEY` = anon, gdy JWT ma rolę ≠ `service_role`, oraz gdy pod anon trafi JWT `service_role` (klucze `sb_secret_…` bez JWT przechodzą); helper `jwtRole`; test 9/9 (`tests/marketing-test-env.test.js`). Na aktualnym `.env.test` `dev-test.mjs` i `marketing-test-env.mjs` teraz odmawiają z czytelnym komunikatem. |
+| Do zrobienia przez Artura | Supabase → projekt testowy → Project Settings → API → **service_role** (legacy JWT secret) → wkleić do `.env.test` jako `SUPABASE_SERVICE_ROLE_KEY`. Baza jest już przygotowana — ponowny `marketing-test-env.mjs` nic nie powtórzy (rejestr), wystarczy `preview_start fm-b2b-test`. |

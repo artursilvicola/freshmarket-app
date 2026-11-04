@@ -39,6 +39,12 @@ export function supabaseRef(url) {
   const m = /^https?:\/\/([a-z0-9-]+)\.supabase\.(co|in|red)\b/i.exec(String(url || "").trim());
   return m ? m[1].toLowerCase() : null;
 }
+/** Rola z ładunku JWT Supabase (anon / service_role) albo null dla kluczy innego formatu (np. sb_secret_…). */
+export function jwtRole(key) {
+  const parts = String(key || "").split(".");
+  if (parts.length !== 3) return null;
+  try { return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")).role || null; } catch { return null; }
+}
 export function dbUrlRef(url) {
   // postgresql://postgres:…@db.<ref>.supabase.co:5432/postgres  |  …@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?… (user postgres.<ref>)
   const s = String(url || "");
@@ -61,6 +67,11 @@ export function validateTestEnv(fileEnv) {
   if (f.TEST_DATABASE_URL && !dbRef) errors.push("TEST_DATABASE_URL nie zawiera ref projektu Supabase (db.<ref>… albo postgres.<ref>)");
   if (dbRef && beRef && dbRef !== beRef) errors.push(`TEST_DATABASE_URL (${dbRef}) i SUPABASE_URL (${beRef}) wskazują różne projekty`);
   if (f.VITE_SUPABASE_ANON_KEY && f.SUPABASE_ANON_KEY && f.VITE_SUPABASE_ANON_KEY !== f.SUPABASE_ANON_KEY) errors.push("VITE_SUPABASE_ANON_KEY i SUPABASE_ANON_KEY różnią się");
+  if (f.SUPABASE_SERVICE_ROLE_KEY && f.SUPABASE_ANON_KEY && f.SUPABASE_SERVICE_ROLE_KEY === f.SUPABASE_ANON_KEY) errors.push("SUPABASE_SERVICE_ROLE_KEY jest identyczny z kluczem anon — wklej klucz service_role projektu TESTOWEGO");
+  const svcRole = jwtRole(f.SUPABASE_SERVICE_ROLE_KEY);
+  if (svcRole && svcRole !== "service_role") errors.push(`SUPABASE_SERVICE_ROLE_KEY ma rolę '${svcRole}', a nie service_role`);
+  const anonRole = jwtRole(f.SUPABASE_ANON_KEY);
+  if (anonRole && anonRole !== "anon") errors.push(`SUPABASE_ANON_KEY ma rolę '${anonRole}', a nie anon (klucz service_role NIE może trafić do frontu)`);
   if (f.RESEND_API_KEY && !/^re_test_/i.test(f.RESEND_API_KEY)) errors.push("RESEND_API_KEY musi być fikcyjny (prefiks re_test_) — prawdziwego klucza nie używamy w odbiorze");
   if (String(f.MARKETING_SEND_ENABLED || "").trim().toLowerCase() === "true") errors.push("MARKETING_SEND_ENABLED=true w .env.test — niedozwolone w odbiorze");
   if (f.MARKETING_UNSUBSCRIBE_SECRET && String(f.MARKETING_UNSUBSCRIBE_SECRET).length < 24) errors.push("MARKETING_UNSUBSCRIBE_SECRET za krótki (min. 24 znaki)");

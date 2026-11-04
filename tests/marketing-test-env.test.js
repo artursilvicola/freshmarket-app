@@ -2,7 +2,7 @@
 // komplet wartości TYLKO z .env.test, jeden projekt dla frontu/backendu/bazy, ref produkcyjny
 // odrzucany, fikcyjny klucz Resend wymuszony, MARKETING_SEND_ENABLED=false jawnie, brak dziedziczenia.
 import { describe, it, expect } from "vitest";
-import { parseDotenv, validateTestEnv, buildChildEnv, supabaseRef, dbUrlRef, REQUIRED_KEYS } from "../scripts/lib/test-env.mjs";
+import { parseDotenv, validateTestEnv, buildChildEnv, supabaseRef, dbUrlRef, jwtRole, REQUIRED_KEYS } from "../scripts/lib/test-env.mjs";
 
 const good = () => ({
   TEST_DATABASE_URL: "postgresql://postgres:haslo@db.abcdefghijklmnopqrst.supabase.co:5432/postgres",
@@ -61,6 +61,21 @@ describe("validateTestEnv", () => {
     expect(validateTestEnv(g).errors.join("\n")).toMatch(/za krótki/);
     g = good(); g.B2B_APP_URL = "https://b2b.freshmarket.eu";
     expect(validateTestEnv(g).errors.join("\n")).toMatch(/localhost/);
+  });
+  it("klucz service_role równy anon = odmowa; JWT o roli anon pod SUPABASE_SERVICE_ROLE_KEY = odmowa; service_role pod anon = odmowa (przypadek z odbioru 04.11)", () => {
+    const jwt = (role) => "eyJhbGciOiJIUzI1NiJ9." + Buffer.from(JSON.stringify({ iss: "supabase", ref: "abcdefghijklmnopqrst", role })).toString("base64url") + ".sig";
+    expect(jwtRole(jwt("anon"))).toBe("anon");
+    expect(jwtRole("sb_secret_abc")).toBeNull();
+    let g = good(); g.SUPABASE_SERVICE_ROLE_KEY = g.SUPABASE_ANON_KEY;
+    expect(validateTestEnv(g).errors.join("\n")).toMatch(/identyczny z kluczem anon/);
+    g = good(); g.SUPABASE_SERVICE_ROLE_KEY = jwt("anon"); g.VITE_SUPABASE_ANON_KEY = g.SUPABASE_ANON_KEY = jwt("anon") + "x";
+    expect(validateTestEnv(g).errors.join("\n")).toMatch(/rolę 'anon', a nie service_role/);
+    g = good(); g.VITE_SUPABASE_ANON_KEY = g.SUPABASE_ANON_KEY = jwt("service_role");
+    expect(validateTestEnv(g).errors.join("\n")).toMatch(/NIE może trafić do frontu/);
+    g = good(); g.SUPABASE_SERVICE_ROLE_KEY = jwt("service_role"); g.VITE_SUPABASE_ANON_KEY = g.SUPABASE_ANON_KEY = jwt("anon");
+    expect(validateTestEnv(g)).toEqual({ ok: true, errors: [] });
+    g = good(); g.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_nowy_format";
+    expect(validateTestEnv(g)).toEqual({ ok: true, errors: [] });
   });
 });
 
