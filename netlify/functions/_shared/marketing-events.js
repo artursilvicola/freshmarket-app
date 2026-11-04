@@ -7,9 +7,10 @@
  * `ingest_legacy_send_email_event` ani do rozliczeń. Zdarzenie bez tagu (albo z innym
  * tagiem) przechodzi dotychczasową ścieżką bez żadnej zmiany.
  *
- * Cofnięcie modułu (brak RPC w bazie) nie może zepsuć webhooka: błąd RPC
- * `marketing_ingest_email_event` → odpowiedź 200 „ignored” (nie 500), bo ponowienie
- * przez Svix nic by nie naprawiło, a zdarzenia marketingowe niczego nie rozliczają.
+ * Cofnięcie modułu (brak RPC w bazie) nie może zepsuć webhooka: brak funkcji →
+ * odpowiedź 200 „ignored”. Błąd PRZEJŚCIOWY (awaria bazy, timeout) → 5xx, żeby Svix
+ * ponowił — odbicie/skarga nie mogą przepaść (review Codexa #3). Nadal nic nie idzie
+ * do rozliczeń legacy.
  */
 export function isMarketingEvent(payload) {
   const tags = payload?.data?.tags;
@@ -27,6 +28,11 @@ export async function ingestMarketingEvent({ supaSvc, eventId, messageId, type, 
     p_occurred_at: occurredAt || null,
     p_payload: payload || {},
   });
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    // [review Codexa #3] brak funkcji w bazie (moduł cofnięty) = trwałe → ignorujemy;
+    // wszystko inne (sieć, timeout, awaria bazy) = przejściowe → webhook odpowie 5xx i Svix ponowi
+    const missing = error.code === "PGRST202" || /could not find the function|does not exist|schema cache/i.test(String(error.message || ""));
+    return { ok: false, missing, error: error.message };
+  }
   return { ok: true, ...(data || {}) };
 }

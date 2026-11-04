@@ -25,7 +25,11 @@ beforeEach(() => {
   state.supa = {
     rpc: vi.fn(async (name, args) => {
       state.calls.push([name, args]);
-      if (name === "marketing_ingest_email_event") return state.failMarketing ? { data: null, error: { message: "no function" } } : { data: { duplicate: false, status: "processed", suppressed: args.p_event_type === "email.bounced" }, error: null };
+      if (name === "marketing_ingest_email_event") {
+        if (state.failMarketing === "missing") return { data: null, error: { code: "PGRST202", message: "Could not find the function public.marketing_ingest_email_event in the schema cache" } };
+        if (state.failMarketing === "transient") return { data: null, error: { message: "connection reset" } };
+        return { data: { duplicate: false, status: "processed", suppressed: args.p_event_type === "email.bounced" }, error: null };
+      }
       if (name === "ingest_legacy_send_email_event") return { data: { duplicate: false, status: "orphan" }, error: null };
       if (name === "finish_legacy_send_email_event") return { data: null, error: null };
       return { data: null, error: null };
@@ -75,11 +79,18 @@ describe("routing", () => {
     expect(state.calls.map(([n]) => n)).toContain("ingest_legacy_send_email_event");
     expect(state.calls.map(([n]) => n)).not.toContain("marketing_ingest_email_event");
   });
-  it("moduł cofnięty (brak RPC) → 200 ignored, bez 500, legacy nietknięte", async () => {
-    state.failMarketing = true;
+  it("moduł cofnięty (brak funkcji w bazie) → 200 ignored, legacy nietknięte", async () => {
+    state.failMarketing = "missing";
     const r = await handler(signed(mk("email.opened", [{ name: "kind", value: "marketing" }])));
     expect(r.statusCode).toBe(200);
-    expect(JSON.parse(r.body)).toMatchObject({ ignored: "marketing_ingest_failed" });
+    expect(JSON.parse(r.body)).toMatchObject({ ignored: "marketing_module_missing" });
     expect(state.calls.map(([n]) => n)).not.toContain("ingest_legacy_send_email_event");
+  });
+  it("[review #3] błąd PRZEJŚCIOWY zapisu (np. odbicie przy awarii bazy) → 500, Svix ponowi; nic do legacy", async () => {
+    state.failMarketing = "transient";
+    const r = await handler(signed(mk("email.bounced", [{ name: "kind", value: "marketing" }])));
+    expect(r.statusCode).toBe(500);
+    expect(JSON.parse(r.body)).toMatchObject({ error: "marketing_ingest_failed" });
+    expect(state.calls.map(([n]) => n)).toEqual(["marketing_ingest_email_event"]);
   });
 });

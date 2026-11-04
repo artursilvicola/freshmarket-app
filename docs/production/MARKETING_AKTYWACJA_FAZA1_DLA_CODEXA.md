@@ -71,3 +71,18 @@ Kolejka z workerem/wstrzymywaniem (zastąpiona dzierżawą i wznowieniem), edyto
 5. Router webhooka ufa tagowi z ładunku Resend (podpis Svix sprawdzony wcześniej). Zdarzenie bez tagu = legacy, jak dotąd.
 6. Szablon nie używa imienia operatora (tylko nazwa firmy) — mniej danych osobowych w treści; do decyzji.
 7. Wdrożenie (po osobnej zgodzie): migracja → deploy → `MARKETING_UNSUBSCRIBE_SECRET` → flip flagi frontu → pilotaż z `MARKETING_SEND_ENABLED=true` tylko na czas wysyłki. Rollback: Publish poprzedniego deployu; tabele zostają (bez wpływu na resztę), endpoint wypisu działa dopóki funkcja istnieje w opublikowanym deployu — przy cofnięciu kodu wypisy przestają działać, dlatego nie wysyłać przed stabilizacją.
+
+## 6. Poprawki po review Codexa (1a6549d → runda 2, 04.11 po południu)
+
+Sześć uwag, wszystkie zasadne, wszystkie poprawione i pokryte testami:
+
+| # | Uwaga | Poprawka | Test |
+|---|---|---|---|
+| 1 P1 | Test na alias kopiował HTML i nagłówek wypisu z wiersza prawdziwego adresata — kliknięcie „wypisz" przez pracownika wykluczyłoby dostawcę | `marketing-send.js`: test renderuje WŁASNĄ treść dla własnego id wiersza (własny link i `List-Unsubscribe`); snapshot wiadomości ma `company_name` i `template_key`. `marketing-unsubscribe.js`: wypis z wiersza `is_test` niczego nie zapisuje | `marketing-send.test.js` (test na alias: link/nagłówek wskazują id wiersza testowego, nie m1), `marketing-unsubscribe.test.js` (wiersz testowy → brak zapisu) |
+| 2 P1 | Wypis w trakcie partii nie zatrzymywał maili z już pobranej listy | nowe RPC `marketing_precheck_message` (FOR UPDATE: stan claimed, zgoda, brak suppresji; przy odrzuceniu oznacza wiersz) wołane TUŻ PRZED każdym POST do Resend; błąd precheck = pominięcie (wiersz zostaje claimed do odzyskania) | smoke SQL 6c; `marketing-send.test.js` (wypis w trakcie partii → 1 mail zamiast 2; awaria precheck → 0 maili) |
+| 3 P1 | Każdy błąd zapisu zdarzenia marketingowego dawał 200 → utrata odbić/skarg przy chwilowej awarii | `marketing-events.js` rozróżnia brak funkcji (PGRST202 / „could not find the function") od błędu przejściowego; `resend-webhook.js`: brak funkcji → 200 `marketing_module_missing`, przejściowy → 500 (Svix ponowi); nadal zero wywołań ścieżki legacy | `marketing-webhook.test.js` (transient → 500; missing → 200) |
+| 4 P1 | SQL szukał adresata w `payload.to`, a webhook zapisuje `payload.data.to`; odbicie sprzed powiązania nie wykluczało adresu | migracja: `coalesce(payload #>> '{data,to,0}', …)`; `marketing_record_result(accepted)` przed dopięciem czekających zdarzeń zapisuje suppresję z odbić/skarg sprzed powiązania | smoke SQL 6b (bounce z `data.to` przed powiązaniem → suppresja; skarga przed powiązaniem → `complaint` przy accepted) |
+| 5 P2 | Dwustopniowy zapis wiadomości („(rendering)" → treść) zostawiał wiersz w połowie przy awarii | `marketing-campaign.js`: id losowane przed zapisem (`randomUUID`), link wypisu w treści, JEDEN insert kompletnej wiadomości; błąd lookupu istniejącego wiersza nie jest ignorowany | `marketing-campaign.test.js` (nowy: kompletny insert z hashem i linkiem dla tego id; brak zgody → 422; istniejący → pominięty; błąd insertu → brak wiersza „(rendering)") |
+| 6 P2 | Błąd końcowego odczytu („co zostało") traktowany jak pusta lista → kampania fałszywie `sent` | błąd → odpowiedź z `remaining: null`, `done: false`, `warning`; kampania zostaje `sending`; błąd zamknięcia też raportowany | `marketing-send.test.js` (failLeft → status `sending`) |
+
+Dodatkowo: wiadomości `is_test` wyłączone z claim (`is_test = false` w claim); precheck dla testu = ok. Smoke SQL: 31 kontroli (było 23). Testy marketingu: 71 (było 45).

@@ -240,6 +240,19 @@ begin
            sent_at = coalesce(sent_at, now()), lease_until = null, last_error = null
      where id = p_message_id;
     if p_resend_message_id is not null then
+      -- [review Codexa #4] odbicie/skarga, które przyszły ZANIM zapisaliśmy id Resend, też wykluczają adres
+      if exists (select 1 from public.marketing_email_events e
+                  where e.resend_message_id = p_resend_message_id and e.status = 'pending'
+                    and e.event_type in ('email.bounced','email.complained')) then
+        insert into public.marketing_suppressions (email, reason, source, campaign_id, profile_id)
+        select lower(btrim(v_row.to_email)),
+               case when bool_or(e.event_type = 'email.complained') then 'complaint' else 'bounce' end,
+               'resend:late-link', v_row.campaign_id, v_row.profile_id
+          from public.marketing_email_events e
+         where e.resend_message_id = p_resend_message_id and e.status = 'pending'
+           and e.event_type in ('email.bounced','email.complained')
+        on conflict (email) do nothing;
+      end if;
       update public.marketing_email_events e
          set message_id = p_message_id, status = 'processed', processed_at = now()
        where e.resend_message_id = p_resend_message_id and e.status = 'pending';
@@ -256,6 +269,33 @@ begin
      where id = p_message_id;
   end if;
   return jsonb_build_object('ok', true, 'state', p_state, 'linked_events', v_events);
+end;
+$$;
+
+-- ── 7b. [review Codexa #2] kontrola dopuszczenia TUŻ PRZED wysyłką ─────────────
+-- Partia jest zajmowana z wyprzedzeniem; wypis/odbicie/cofnięcie zgody w trakcie partii
+-- musi zatrzymać wiadomość. Wołane dla każdego wiersza bezpośrednio przed POST do Resend.
+create or replace function public.marketing_precheck_message(p_message_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_row public.marketing_messages%rowtype;
+begin
+  select * into v_row from public.marketing_messages where id = p_message_id for update;
+  if not found then return jsonb_build_object('ok', false, 'reason', 'not_found'); end if;
+  if v_row.state <> 'claimed' then return jsonb_build_object('ok', false, 'reason', 'not_claimed', 'state', v_row.state); end if;
+  if v_row.is_test then return jsonb_build_object('ok', true, 'test', true); end if;
+  if v_row.consent_source is null or btrim(v_row.consent_source) = '' then
+    update public.marketing_messages set state = 'blocked_no_consent', lease_until = null, last_error = 'consent_source_missing_at_send' where id = p_message_id;
+    return jsonb_build_object('ok', false, 'reason', 'blocked_no_consent');
+  end if;
+  if exists (select 1 from public.marketing_suppressions s where s.email = lower(btrim(v_row.to_email))) then
+    update public.marketing_messages set state = 'suppressed', lease_until = null, last_error = 'suppressed_at_send' where id = p_message_id;
+    return jsonb_build_object('ok', false, 'reason', 'suppressed');
+  end if;
+  return jsonb_build_object('ok', true);
 end;
 $$;
 
@@ -292,7 +332,8 @@ begin
   if found then
     v_email := lower(btrim(v_msg.to_email));
   else
-    v_email := lower(btrim(coalesce(p_payload #>> '{to,0}', p_payload ->> 'to')));
+    -- [review Codexa #4] ładunek webhooka = {type, created_at, data:{to:[...]}} — adresat w data.to
+    v_email := lower(btrim(coalesce(p_payload #>> '{data,to,0}', p_payload #>> '{data,to}', p_payload #>> '{to,0}', p_payload ->> 'to')));
     v_status := 'pending';   -- wiadomość jeszcze niepowiązana — marketing_record_result ją dopnie
   end if;
 
@@ -347,9 +388,11 @@ revoke all on function public.marketing_claim_messages(uuid, integer, integer, i
 revoke all on function public.marketing_record_result(uuid, text, text, text) from public, anon, authenticated;
 revoke all on function public.marketing_ingest_email_event(text, text, text, timestamptz, jsonb) from public, anon, authenticated;
 revoke all on function public.marketing_suppress_email(text, text, text, uuid, uuid) from public, anon, authenticated;
+revoke all on function public.marketing_precheck_message(uuid) from public, anon, authenticated;
 grant execute on function public.marketing_claim_messages(uuid, integer, integer, integer) to service_role;
 grant execute on function public.marketing_record_result(uuid, text, text, text) to service_role;
 grant execute on function public.marketing_ingest_email_event(text, text, text, timestamptz, jsonb) to service_role;
 grant execute on function public.marketing_suppress_email(text, text, text, uuid, uuid) to service_role;
+grant execute on function public.marketing_precheck_message(uuid) to service_role;
 
 commit;

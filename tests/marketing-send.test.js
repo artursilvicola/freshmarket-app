@@ -17,7 +17,8 @@ const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const frozen = (id, over = {}) => {
   const subject = "Masz 5 kredytów", html = "<p>H</p>", text_body = "T";
   return { id, campaign_id: CAMP, company_id: "c1", profile_id: "p" + id, to_email: `op${id}@test.pl`, locale: "pl", segment: "start_with_credits",
-    consent_source: "lista", subject, html, text_body, payload_hash: payloadHash({ subject, html, text: text_body }), idempotency_key: `marketing:${CAMP}:p${id}`, is_test: false, state: "pending", attempts: 0, ...over };
+    consent_source: "lista", snapshot: { company_name: "Sad Kowalski", credits_remaining: 5, nearest_expiry: "2026-12-27", snapshot_at: "2026-11-04T10:00:00Z" },
+    subject, html, text_body, payload_hash: payloadHash({ subject, html, text: text_body }), idempotency_key: `marketing:${CAMP}:p${id}`, is_test: false, state: "pending", attempts: 0, ...over };
 };
 const req = (body) => ({ httpMethod: "POST", headers: { authorization: "Bearer fake" }, body: JSON.stringify(body) });
 
@@ -31,6 +32,15 @@ function service() {
         const rows = db.messages.filter((m) => m.campaign_id === args.p_campaign_id && !m.is_test && (m.state === "pending" || (m.state === "claimed" && m.lease_expired))).slice(0, args.p_limit);
         for (const m of rows) { m.state = "claimed"; m.attempts += 1; m.lease_expired = false; }
         return { data: rows.map((m) => ({ ...m })), error: null };
+      }
+      if (name === "marketing_precheck_message") {
+        if (db.failPrecheck) return { data: null, error: { message: "precheck down" } };
+        const m = db.messages.find((x) => x.id === args.p_message_id);
+        if (!m) return { data: { ok: false, reason: "not_found" }, error: null };
+        if (m.state !== "claimed") return { data: { ok: false, reason: "not_claimed" }, error: null };
+        if (m.is_test) return { data: { ok: true, test: true }, error: null };
+        if ((db.suppressed || []).includes(m.to_email)) { m.state = "suppressed"; return { data: { ok: false, reason: "suppressed" }, error: null }; }
+        return { data: { ok: true }, error: null };
       }
       if (name === "marketing_record_result") {
         if (db.failRecord) return { data: null, error: { message: "record down" } };
@@ -59,11 +69,12 @@ function service() {
         return [];
       };
       q.maybeSingle = async () => {
-        if (q._ins && table === "marketing_messages") { const row = { id: "t-" + (db.messages.length + 1), attempts: 0, ...q._ins }; if (db.messages.some((m) => m.idempotency_key === row.idempotency_key)) return { data: null, error: { message: "duplicate key value violates unique constraint" } }; db.messages.push(row); return { data: row, error: null }; }
+        if (q._ins && table === "marketing_messages") { const row = { attempts: 0, ...q._ins, id: q._ins.id || ("t-" + (db.messages.length + 1)) }; if (db.messages.some((m) => m.idempotency_key === row.idempotency_key)) return { data: null, error: { message: "duplicate key value violates unique constraint" } }; db.messages.push(row); return { data: row, error: null }; }
         return { data: rows()[0] ?? null, error: null };
       };
       q.then = (res, rej) => {
         if (q._upd && table === "marketing_campaigns") { Object.assign(db.campaign, q._upd); return Promise.resolve({ data: null, error: null }).then(res, rej); }
+        if (table === "marketing_messages" && db.failLeft) return Promise.resolve({ data: null, error: { message: "read down" } }).then(res, rej);
         return Promise.resolve({ data: rows(), error: null }).then(res, rej);
       };
       return q;
@@ -153,6 +164,29 @@ describe("batch z rejestru", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(r.body.details[0].error).toMatch(/record_failed/);
   });
+  it("[review #2] wypis w trakcie partii: precheck tuż przed wysyłką zatrzymuje ten mail, reszta idzie", async () => {
+    // suppresja pojawia się PO zajęciu partii (symulacja: precheck widzi ją dopiero przy drugim wierszu)
+    state.db.suppressed = ["opm2@test.pl"];
+    const r = await call({ campaign_id: CAMP });
+    expect(r.body.outcome).toMatchObject({ claimed: 2, accepted: 1, skipped: 1 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(state.fetchCalls[0].body.to).toEqual(["opm1@test.pl"]);
+    expect(state.db.messages[1].state).toBe("suppressed");
+    expect(r.body.details[1]).toMatchObject({ result: "skipped", reason: "suppressed" });
+  });
+  it("[review #2] awaria precheck → wiersz pominięty (zostaje claimed do odzyskania), bez maila", async () => {
+    state.db.failPrecheck = true;
+    const r = await call({ campaign_id: CAMP });
+    expect(r.body.outcome.skipped).toBe(2); expect(fetch).not.toHaveBeenCalled();
+    expect(state.db.messages.every((m) => m.state === "claimed")).toBe(true);
+  });
+  it("[review #6] błąd odczytu pozostałych NIE zamyka kampanii jako wysłanej", async () => {
+    state.db.failLeft = true;
+    const r = await call({ campaign_id: CAMP });
+    expect(r.body.outcome.accepted).toBe(2);
+    expect(r.body.done).toBe(false); expect(r.body.remaining).toBeNull(); expect(r.body.warning).toMatch(/remaining_unknown/);
+    expect(state.db.campaign.status).toBe("sending");
+  });
   it("awaria claim → 500, bez maili", async () => {
     state.db.failClaim = true;
     expect((await call({ campaign_id: CAMP })).status).toBe(500);
@@ -166,9 +200,17 @@ describe("test na alias zespołu", () => {
     expect(r1.status).toBe(200); expect(r1.body.test).toBe(true);
     const t = state.db.messages.find((m) => m.is_test);
     expect(t.to_email).toBe("zespol@test.pl");
-    expect(t.subject).toBe("[TEST] Masz 5 kredytów");
+    expect(t.subject).toMatch(/^\[TEST\] Masz 5 kredytów PreConnect/);
     expect(t.idempotency_key).toMatch(/^marketing-test:m1:zespol@test\.pl:/);
     expect(state.fetchCalls[0].body.to).toEqual(["zespol@test.pl"]);
+    // [review #1] własny link i nagłówek wypisu — żaden nie wskazuje na wiersz prawdziwego adresata (m1)
+    expect(t.id).not.toBe("m1");
+    expect(t.html).toContain(`marketing-unsubscribe?m=${t.id}&amp;t=`);
+    expect(t.html).not.toContain("marketing-unsubscribe?m=m1&");
+    expect(state.fetchCalls[0].body.headers["List-Unsubscribe"]).toMatch(new RegExp(`marketing-unsubscribe\\?m=${t.id}&t=`));
+    expect(state.fetchCalls[0].body.headers["List-Unsubscribe"]).not.toContain("m=m1&");
+    expect(state.fetchCalls[0].body.html).toBe(t.html);
+    expect(t.payload_hash).toBe(payloadHash({ subject: t.subject, html: t.html, text: t.text_body }));
     const r2 = await call({ campaign_id: CAMP, mode: "test", test_to: "zespol@test.pl", message_id: "m1" });
     expect(r2.body.duplicate).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(1);

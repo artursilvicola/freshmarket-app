@@ -43,7 +43,7 @@ export const handler = async (event) => {
   }
 
   const supaSvc = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
-  const { data: msg, error } = await supaSvc.from("marketing_messages").select("id, to_email, locale, campaign_id, profile_id").eq("id", messageId).maybeSingle();
+  const { data: msg, error } = await supaSvc.from("marketing_messages").select("id, to_email, locale, campaign_id, profile_id, is_test").eq("id", messageId).maybeSingle();
   if (error || !msg) return page(404, "Nie znaleziono / Not found", "Nie znaleziono wiadomości, której dotyczy ten link. / The message for this link was not found.");
   const lang = msg.locale === "en" ? "en" : "pl";
 
@@ -59,6 +59,12 @@ export const handler = async (event) => {
   if (event.httpMethod !== "POST") return { statusCode: 405, headers: { Allow: "GET, POST" }, body: "" };
 
   const oneClick = /List-Unsubscribe=One-Click/i.test(String(event.body || ""));
+  // [review Codexa #1] wiadomość testowa (kopia dla zespołu) — wypis nie zapisuje niczego:
+  // ani adresu zespołu, ani (tym bardziej) prawdziwego adresata
+  if (msg.is_test) {
+    if (oneClick) return { statusCode: 200, headers: { "Content-Type": "text/plain; charset=utf-8" }, body: "test message - nothing recorded" };
+    return page(200, lang === "en" ? "Test message" : "Wiadomość testowa", lang === "en" ? "This was a test copy for the team. Nothing has been recorded." : "To była kopia testowa dla zespołu. Nic nie zostało zapisane.", { lang });
+  }
   const { data, error: supErr } = await supaSvc.rpc("marketing_suppress_email", {
     p_email: msg.to_email, p_reason: "unsubscribe", p_source: oneClick ? "one-click" : "page", p_campaign_id: msg.campaign_id, p_profile_id: msg.profile_id,
   });

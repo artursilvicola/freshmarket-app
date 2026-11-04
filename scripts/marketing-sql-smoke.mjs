@@ -101,6 +101,31 @@ const m4 = (await db.query(`insert into public.marketing_messages (campaign_id, 
 const c3 = (await db.query(`select id from public.marketing_claim_messages($1, 50, 900, 82800)`, [camp2])).rows;
 ok(c3.length === 0 && (await db.query(`select state from public.marketing_messages where id=$1`, [m4])).rows[0].state === "needs_review", "stara dzierżawa poza 23 h → needs_review");
 
+console.log("6b. [review #4] odbicie z data.to PRZED powiązaniem → suppresja; skarga przed powiązaniem dopięta przy accepted");
+const evEarly = (await db.query(`select public.marketing_ingest_email_event('svix-early','resend-early','email.bounced',now(),'{"type":"email.bounced","data":{"to":["wczesny@example.invalid"]}}'::jsonb) as r`)).rows[0].r;
+ok(evEarly.status === "pending" && evEarly.suppressed === true, "odbicie przed powiązaniem: pending + adres z data.to w suppresji");
+ok((await db.query(`select 1 from public.marketing_suppressions where email = 'wczesny@example.invalid' and reason = 'bounce'`)).rows.length === 1, "suppresja wczesny@ zapisana");
+const camp3 = (await db.query(`insert into public.marketing_campaigns (name, template_key) values ('Trzecia','start_with_credits') returning id`)).rows[0].id;
+const m5 = (await db.query(`insert into public.marketing_messages (campaign_id, profile_id, to_email, subject, html, text_body, payload_hash, idempotency_key, consent_source) values ($1::uuid,$2::uuid,'Pozny@Example.invalid','S','H','T','h',$3,'lista') returning id`, [camp3, OWNER2, `marketing:${camp3}:${OWNER2}`])).rows[0].id;
+await db.query(`select public.marketing_ingest_email_event('svix-late','resend-late','email.complained',now(),'{"type":"email.complained","data":{}}'::jsonb)`);
+const cl3 = (await db.query(`select id from public.marketing_claim_messages($1, 50, 900, 82800)`, [camp3])).rows;
+ok(cl3.length === 1, "wiersz zajęty");
+const rl = (await db.query(`select public.marketing_record_result($1,'accepted','resend-late',null) as r`, [m5])).rows[0].r;
+ok(rl.linked_events === 1 && (await db.query(`select reason from public.marketing_suppressions where email = 'pozny@example.invalid'`)).rows[0]?.reason === "complaint", "skarga sprzed powiązania → suppresja complaint przy accepted");
+
+console.log("6c. [review #2] precheck tuż przed wysyłką: wypis w trakcie partii zatrzymuje mail");
+const camp4 = (await db.query(`insert into public.marketing_campaigns (name, template_key) values ('Czwarta','start_with_credits') returning id`)).rows[0].id;
+const m6 = (await db.query(`insert into public.marketing_messages (campaign_id, profile_id, to_email, subject, html, text_body, payload_hash, idempotency_key, consent_source) values ($1::uuid,$2::uuid,'partia@example.invalid','S','H','T','h',$3,'lista') returning id`, [camp4, OWNER, `marketing:${camp4}:${OWNER}`])).rows[0].id;
+ok((await db.query(`select id from public.marketing_claim_messages($1, 50, 900, 82800)`, [camp4])).rows.length === 1, "zajęty do partii");
+let pc = (await db.query(`select public.marketing_precheck_message($1) as r`, [m6])).rows[0].r;
+ok(pc.ok === true, "precheck przed wypisem: ok");
+await db.query(`select public.marketing_suppress_email('partia@example.invalid','unsubscribe','one-click',null,null)`);
+pc = (await db.query(`select public.marketing_precheck_message($1) as r`, [m6])).rows[0].r;
+ok(pc.ok === false && ["suppressed", "not_claimed"].includes(pc.reason), "precheck po wypisie w trakcie partii odrzuca (" + pc.reason + ") — mail nie wyjdzie");
+ok((await db.query(`select state from public.marketing_messages where id=$1`, [m6])).rows[0].state === "suppressed", "wiersz oznaczony suppressed");
+pc = (await db.query(`select public.marketing_precheck_message($1) as r`, [m1])).rows[0].r;
+ok(pc.ok === false && pc.reason === "not_claimed", "precheck na wierszu accepted: not_claimed (nie wyśle drugi raz)");
+
 console.log("7. uprawnienia: anon/authenticated bez dostępu do tabel i funkcji; admin czyta przez RLS");
 const can = async (role, sql, sub) => {
   await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${sub || ""}', false); set role ${role};`);
@@ -109,10 +134,11 @@ const can = async (role, sql, sub) => {
 ok(!(await can("anon", "select * from public.marketing_messages")), "anon: brak SELECT na marketing_messages");
 ok(!(await can("authenticated", `select public.marketing_claim_messages('${camp}'::uuid, 1, 1, 1)`, OWNER)), "authenticated: brak EXECUTE na claim");
 ok(!(await can("authenticated", `select public.marketing_suppress_email('x@y.z','manual')`, OWNER)), "authenticated: brak EXECUTE na suppress");
+ok(!(await can("authenticated", `select public.marketing_precheck_message('${m1}'::uuid)`, OWNER)), "authenticated: brak EXECUTE na precheck");
 const rowsSupplier = await (async () => { await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${OWNER}', false); set role authenticated;`); const r = await db.query("select count(*)::int as n from public.marketing_messages"); await db.exec("reset role"); return r.rows[0].n; })();
 ok(rowsSupplier === 0, "dostawca przez RLS widzi 0 wierszy");
 const rowsAdmin = await (async () => { await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${ADMIN}', false); set role authenticated;`); const r = await db.query("select count(*)::int as n from public.marketing_messages"); await db.exec("reset role"); return r.rows[0].n; })();
-ok(rowsAdmin === 4, "admin przez RLS widzi 4 wiersze");
+ok(rowsAdmin === 6, "admin przez RLS widzi 6 wierszy");
 
 console.log("8. nic nie dotknęło rozliczeń");
 const legacy = (await db.query(`select (select count(*) from public.legacy_send_email_events)::int as ev, (select count(*) from public.legacy_send_messages)::int as msgs`)).rows[0];

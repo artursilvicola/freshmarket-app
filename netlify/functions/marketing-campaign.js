@@ -10,9 +10,11 @@
  *  approve → { campaign_id, recipients: [{ company_id, consent_source }] }
  *            ŚWIEŻY odczyt kandydatów → tylko kwalifikujący się z listy → render
  *            PL/EN → ZAMROŻONE wiersze marketing_messages (treść, hash, klucz
- *            idempotencji, snapshot salda, źródło zgody). Wiersz bez consent_source
- *            nie powstaje (422 z listą). Powtórne approve nie dubluje (unikalność
- *            campaign+profile) — dopisuje tylko nowych adresatów.
+ *            idempotencji, snapshot salda, źródło zgody). Id wiersza losowane przed
+ *            zapisem (link wypisu w treści), więc JEDEN insert zapisuje kompletną
+ *            wiadomość — nie ma wiersza „w połowie” (review Codexa #5). Wiersz bez
+ *            consent_source nie powstaje (422 z listą). Powtórne approve nie dubluje
+ *            (unikalność campaign+profile) — dopisuje tylko nowych adresatów.
  *  close   → { campaign_id } → status closed (bez wysyłki)
  *
  * Żadnej wysyłki tutaj. Marketing nie dotyka legacy_sends ani rozliczeń.
@@ -21,6 +23,7 @@ import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketi
 import { computeCandidates, loadCampaign } from "./_shared/marketing-data.js";
 import { renderMarketingTemplate, TEMPLATE_KEYS } from "./_shared/marketing-templates.js";
 import { payloadHash, unsubscribeUrl } from "./_shared/marketing-mailer.js";
+import { randomUUID } from "node:crypto";
 
 const MAX_RECIPIENTS = 200;
 
@@ -96,33 +99,32 @@ export const handler = async (event) => {
         const inserted = [];
         const skipped = [];
         for (const { row, consent, templateKey } of toInsert) {
-          // 1) wiersz bez treści, żeby mieć id do tokenu wypisu; unikalność (campaign, profile) chroni przed dublem
           const key = `marketing:${campaign.id}:${row.profile_id}`;
-          const { data: existing } = await supaSvc.from("marketing_messages").select("id, state").eq("idempotency_key", key).maybeSingle();
+          const { data: existing, error: exErr } = await supaSvc.from("marketing_messages").select("id, state").eq("idempotency_key", key).maybeSingle();
+          if (exErr) throw new Error("lookup message: " + exErr.message);
           if (existing) { skipped.push({ company_id: row.company_id, message_id: existing.id, state: existing.state }); continue; }
-          const base = {
-            campaign_id: campaign.id, company_id: row.company_id, profile_id: row.profile_id, to_email: row.email, locale: row.locale,
-            segment: row.segment, consent_source: consent, snapshot: { ...row.snapshot, snapshot_at: snapshotAt, match: row.match, warnings: row.warnings },
-            subject: "(rendering)", html: "(rendering)", text_body: "(rendering)", payload_hash: "pending", idempotency_key: key, is_test: false, state: "pending",
-          };
-          const { data: created, error: insErr } = await supaSvc.from("marketing_messages").insert(base).select("id").maybeSingle();
-          if (insErr) {
-            if (/duplicate|unique/i.test(insErr.message)) { skipped.push({ company_id: row.company_id, reason: "duplicate" }); continue; }
-            throw new Error("insert message: " + insErr.message);
-          }
-          // 2) zamrożona treść z prawdziwym linkiem wypisu (token po id wiersza)
-          const unsub = unsubscribeUrl({ appUrl: env.b2bAppUrl, messageId: created.id, secret: env.marketingUnsubscribeSecret });
+          // id losowane PRZED zapisem → link wypisu w treści → jeden INSERT z kompletną, zamrożoną treścią
+          const messageId = randomUUID();
+          const unsub = unsubscribeUrl({ appUrl: env.b2bAppUrl, messageId, secret: env.marketingUnsubscribeSecret });
           const rendered = renderMarketingTemplate({
             templateKey, locale: row.locale, companyName: row.company_name,
             creditsRemaining: row.snapshot.credits_remaining, creditsExpiry: row.snapshot.nearest_expiry,
             snapshotAt, appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null,
           });
-          const hash = payloadHash({ subject: rendered.subject, html: rendered.html, text: rendered.text });
-          const { error: updErr } = await supaSvc.from("marketing_messages")
-            .update({ subject: rendered.subject, html: rendered.html, text_body: rendered.text, payload_hash: hash })
-            .eq("id", created.id).eq("payload_hash", "pending");
-          if (updErr) throw new Error("freeze message: " + updErr.message);
-          inserted.push({ company_id: row.company_id, message_id: created.id, to_email: row.email, locale: row.locale });
+          const full = {
+            id: messageId, campaign_id: campaign.id, company_id: row.company_id, profile_id: row.profile_id, to_email: row.email, locale: row.locale,
+            segment: row.segment, consent_source: consent,
+            snapshot: { ...row.snapshot, snapshot_at: snapshotAt, company_name: row.company_name, template_key: templateKey, match: row.match, warnings: row.warnings },
+            subject: rendered.subject, html: rendered.html, text_body: rendered.text,
+            payload_hash: payloadHash({ subject: rendered.subject, html: rendered.html, text: rendered.text }),
+            idempotency_key: key, is_test: false, state: "pending",
+          };
+          const { error: insErr } = await supaSvc.from("marketing_messages").insert(full);
+          if (insErr) {
+            if (/duplicate|unique/i.test(insErr.message)) { skipped.push({ company_id: row.company_id, reason: "duplicate" }); continue; }
+            throw new Error("insert message: " + insErr.message);
+          }
+          inserted.push({ company_id: row.company_id, message_id: messageId, to_email: row.email, locale: row.locale });
         }
         const { error: cErr } = await supaSvc.from("marketing_campaigns")
           .update({ status: "approved", approved_by: caller.id, approved_at: new Date().toISOString(), snapshot_at: snapshotAt })

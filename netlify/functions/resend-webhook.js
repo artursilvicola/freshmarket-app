@@ -119,7 +119,12 @@ export const handler = async (event) => {
       occurredAt: payload?.created_at || null,
       payload: { type, created_at: payload?.created_at || null, data: scrubPayload(payload?.data) },
     });
-    if (!mk.ok) { console.warn("[resend-webhook] marketing ingest failed:", mk.error); return reply(200, { ignored: "marketing_ingest_failed", type }); }
+    if (!mk.ok) {
+      console.warn("[resend-webhook] marketing ingest failed:", mk.error);
+      // [review Codexa #3] brak funkcji = moduł cofnięty → 200 ignored; błąd przejściowy → 500, Svix ponowi
+      if (mk.missing) return reply(200, { ignored: "marketing_module_missing", type });
+      return reply(500, { error: "marketing_ingest_failed", type, detail: mk.error });
+    }
     return reply(200, { ok: true, marketing: true, type, duplicate: !!mk.duplicate, status: mk.status || null });
   }
 

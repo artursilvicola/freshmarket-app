@@ -16,7 +16,7 @@ beforeEach(() => {
   state.env = { supabaseUrl: "https://fake.test", supabaseServiceRoleKey: "svc", marketingUnsubscribeSecret: "sekret" };
   state.suppressed = [];
   state.supa = {
-    from: vi.fn(() => { const q = {}; for (const k of ["select", "eq"]) q[k] = () => q; q.maybeSingle = async () => ({ data: { id: MSG, to_email: "Op@Test.pl", locale: "pl", campaign_id: "camp", profile_id: "p1" }, error: null }); return q; }),
+    from: vi.fn(() => { const q = {}; for (const k of ["select", "eq"]) q[k] = () => q; q.maybeSingle = async () => ({ data: { id: MSG, to_email: "Op@Test.pl", locale: "pl", campaign_id: "camp", profile_id: "p1", is_test: !!state.isTest }, error: null }); return q; }),
     rpc: vi.fn(async (name, args) => { state.suppressed.push([name, args]); return { data: { ok: true, email: "op@test.pl" }, error: null }; }),
   };
 });
@@ -47,6 +47,15 @@ describe("wypis", () => {
     expect((await handler(ev("POST", { m: "nie-uuid", t: unsubscribeToken("sekret", "nie-uuid") }))).statusCode).toBe(400);
     expect((await handler(ev("POST", { m: MSG, t: unsubscribeToken("inny", MSG) }))).statusCode).toBe(400);
     expect(state.suppressed).toEqual([]);
+  });
+  it("[review #1] wypis z wiadomości TESTOWEJ niczego nie zapisuje (strona i one-click)", async () => {
+    state.isTest = true;
+    const r = await handler(ev("POST", { m: MSG, t: unsubscribeToken("sekret", MSG) }, ""));
+    expect(r.statusCode).toBe(200); expect(r.body).toContain("kopia testowa");
+    const r2 = await handler(ev("POST", { m: MSG, t: unsubscribeToken("sekret", MSG) }, "List-Unsubscribe=One-Click"));
+    expect(r2.statusCode).toBe(200);
+    expect(state.suppressed).toEqual([]);
+    state.isTest = false;
   });
   it("brak sekretu w env → 500 (bez wycieku, bez zapisu)", async () => {
     state.env.marketingUnsubscribeSecret = "";
