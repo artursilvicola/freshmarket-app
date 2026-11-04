@@ -104,3 +104,23 @@ Smoke SQL: 40 kontroli (było 31). Testy marketingu: 74 (było 71); cała suita 
 | 1 P2 | Ścieżka „przyjęta po wypisie" kończyła się `return` przed dopięciem czekających zdarzeń — webhook `email.delivered` sprzed zapisu odpowiedzi Resend zostawał `pending` bez `message_id` | `marketing_record_result`: w gałęzi `suppressed` + `accepted` po zapisaniu id i `sent_at` dopina zdarzenia `pending` dla tego id Resend (status `processed`, `message_id`), zwraca `linked_events`; wypis i ochrona przed nadpisaniem id bez zmian | smoke SQL 6d2 (zajęcie → wypis → delivered przed zapisem → accepted: zdarzenie processed z message_id, stan suppressed, id zapisane, powtórka nie nadpisuje, wypis zachowany); skrypt Codexa `1FMK2026/tmp/review-marketing-1272662.mjs` przechodzi |
 
 Sprostowanie do rundy 3 (za Codexem): zamknięta kampania nadal pozwala SQL-owi *zająć* wiadomość (`claim` nie sprawdza statusu kampanii); blokuje dopiero `precheck` tuż przed wysyłką — i to sprawdza test. Smoke SQL: 47 kontroli.
+
+## 9. Odbiór ekranu w przeglądarce — gdzie i co jest potrzebne (stan 04.11 wieczór)
+
+Fakty, które wyznaczają ścieżkę:
+- Aplikacja na `localhost:5173` używa **produkcyjnej** bazy Supabase (jedyny projekt B2B); lokalny `.env` nie ma klucza service_role, więc funkcje Netlify (`marketing-*`) nie uruchomią się lokalnie.
+- Netlify buduje wyłącznie `main` — gałąź `feat/marketing-activation` nie ma deployu podglądowego.
+- Funkcje marketingowe wymagają tabel `marketing_*` z migracji `20261104120000`; bez nich lista kampanii i zatwierdzanie zwracają błąd (odczyt kandydatów czyta także `marketing_suppressions`).
+
+Dwie możliwe ścieżki (decyzja Artura):
+
+**A. Deploy gałęzi na Netlify (zalecane do odbioru bez dotykania main).**
+1. Netlify → Site configuration → Build & deploy → Branches and deploy contexts: dodać `feat/marketing-activation` do branch deploys (Artur, w panelu Netlify). Adres: `feat-marketing-activation--<site>.netlify.app`, te same zmienne env co produkcja.
+2. Migracja `supabase/migrations/20261104120000_marketing_activation.sql` na produkcyjnym Supabase (Artur, SQL Editor, jak dotąd): addytywna, 4 puste tabele, odczyt tylko admin, zapis tylko service_role; nic nie zmienia w istniejących tabelach ani w rozliczeniach.
+3. Zmienna `MARKETING_UNSUBSCRIBE_SECRET` w Netlify (losowy ciąg ≥ 32 znaki; dla kontekstu branch deploy albo wszystkich kontekstów). **`MARKETING_SEND_ENABLED` NIE ustawiać.**
+4. Claude: commit na gałęzi z `ADMIN_MARKETING_ACTIVATION = true` (tylko gałąź; main nietknięty), kontrola w przeglądarce na adresie gałęzi na koncie administratora Artura: lista kampanii, utworzenie, kandydaci (salda = Finanse/Rozliczenia dla 3 firm), podgląd PL/EN, zatwierdzenie z wpisanym źródłem zgody, rejestr `pending`, przycisk testu → 403 `send_disabled`, zamknięcie kampanii.
+5. Po odbiorze: kampania testowa zamknięta/usunięta, flaga z powrotem `false` przed scaleniem do main.
+
+**B. Scalenie do main za flagą `false`.** Moduł niewidoczny dla użytkowników; funkcje wdrożone, ale nieużywane; migracja jak w A.2; odbiór wymaga chwilowego `true` na main — mniej bezpieczne niż A.
+
+W obu ścieżkach: żaden mail nie wyjdzie bez `MARKETING_SEND_ENABLED=true`, a prawdziwy test na adres zespołu to osobna zgoda (Codex, 4.11).
