@@ -158,3 +158,16 @@ Zasada: migracja i dane odbiorowe wyłącznie na osobnej bazie testowej; preview
 | 2 P2 | SQL pliku i wpis do rejestru w osobnych zapytaniach — awaria między nimi = migracja bez wpisu, ponowienie wykonałoby ją drugi raz | każdy plik: `BEGIN` → SQL (własne `begin;`/`commit;` usunięte z pliku) → `INSERT` do rejestru → `COMMIT`; każdy błąd → `ROLLBACK` całości (SQL też wycofany); pliki z rejestru pomijane. `ALTER TYPE … ADD VALUE` (052) jest osobnym plikiem/transakcją, 053 kolejną — zgodne z PG ≥ 12 | ten sam plik testów: sekwencja BEGIN→SQL→INSERT→COMMIT; awaria MIĘDZY SQL a wpisem → `rollback`, brak `commit`, kod 1; zarejestrowane pominięte. **Prawdziwy SQL**: `tests/marketing-test-env.integrated.test.js` (PGlite) — 71 migracji w transakcjach, 3 seedy, stan końcowy, drugi przebieg bez nowych wpisów |
 
 Uwaga do skryptu odtwarzającego Codexa (`review-test-env-0a0865a.mjs`): wycinał on `async function main()` ze starego pliku i wstrzykiwał atrapę — po refaktorze logika jest w module z wstrzykiwanym klientem, więc ten sam scenariusz jest teraz zwykłym testem jednostkowym (`błąd SQL migracji → … JAWNY kod 1`).
+
+### 10c. Przebieg odbioru 04.11 wieczór — ZATRZYMANY na haśle bazy testowej (nic nie wykonano)
+
+Projekt testowy: `rruszzdffclfhbtfeznb` (region eu-west-1). Artur przygotował `.env.test` i wyszedł; Claude działał sam.
+
+| Krok | Wynik |
+|---|---|
+| Walidacja `.env.test` (`validateTestEnv`) | OK: jeden ref dla VITE/SUPABASE/DB, ref produkcji odrzucany, `RESEND_API_KEY` = `re_test_…`, `MARKETING_SEND_ENABLED` ≠ true, sekret wypisu 32 znaki, URL aplikacji = localhost |
+| Klucze anon / service_role wobec REST projektu testowego | uwierzytelniają się (odpowiedź `PGRST205` = tabela nie istnieje, a nie 401) → **baza pusta, bez `public.companies` i bez tabel `marketing_*`** |
+| `node scripts/marketing-test-env.mjs` | **STOP, kod 1**: `password authentication failed for user "postgres"` (28P01) — przed jakąkolwiek migracją, rejestr `_test_env_migrations` nie powstał |
+| Diagnoza (bez wypisywania sekretu) | host = pooler sesyjny `aws-0-eu-west-1`, user `postgres.<ref>`, DB `postgres` — poprawne (pooler znajduje tenanta; inne regiony „tenant not found”). Hasło: 14 znaków, bez `%`, `#`, `?`, `/`, `@`, cudzysłowów i spacji, nie obcinane przez parser URL. To samo hasło odrzucone na :5432, :6543 i po zdekodowaniu. Host bezpośredni `db.<ref>.supabase.co` nie rozwiązuje się (IPv6 bez dodatku IPv4) — pooler jest właściwą drogą. |
+| Wniosek | **hasło w `TEST_DATABASE_URL` nie jest hasłem bazy tego projektu** (najpewniej hasło konta/dashboardu albo hasło sprzed resetu). Do zrobienia przez Artura: Supabase → projekt testowy → Project Settings → Database → *Reset database password*, nowe hasło (najlepiej same litery i cyfry) wkleić w `.env.test` w miejsce starego; reszta URL bez zmian. Potem ponownie `node scripts/marketing-test-env.mjs`. |
+| Produkcja | nietknięta (skrypt odrzuca ref produkcji; żadne polecenie nie poszło do `sklyfuvzjikkqerxtulo`). Wysyłka maili: wyłączona. |
