@@ -70,7 +70,9 @@ export default function MarketingActivation({ fl }) {
     const body = { campaign_id: current.campaign.id, company_id: row.company_id, locale: locale || row.locale };
     if (useEditor && current.campaign.status === "draft") body.content = content; // niezapisana treść z edytora
     const r = await marketingCall("marketing-preview", body);
-    setPreview({ ...r, locale: locale || row.locale, rowRef: row });
+    // znacznik „treść własna" w tytule: w szkicu = edytor różni się od domyślnej, po zatwierdzeniu = zapisana treść własna
+    const custom = current.campaign.status === "draft" ? !sameContent(content, current.default_content || EMPTY_CONTENT) : Object.keys(current.campaign.content || {}).length > 0;
+    setPreview({ ...r, locale: locale || row.locale, rowRef: row, custom });
   });
 
   // wierna kopia z rejestru (to, co wyjdzie/wyszło) — w odróżnieniu od podglądu szablonu z aktualnych danych
@@ -317,7 +319,7 @@ export default function MarketingActivation({ fl }) {
         <div onClick={() => setPreview(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: 12, width: "min(760px, 100%)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", display: "flex", gap: 10, alignItems: "center" }}>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{preview.saved ? tr("saved_preview_title") : tr("preview")} · {preview.locale.toUpperCase()} · {preview.row?.company_name}{preview.saved ? ` · ${preview.to}` : preview.meta?.customContent ? ` · ${tr("content_custom")}` : ""}</div>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{preview.saved ? tr("saved_preview_title") : tr("preview")} · {preview.locale.toUpperCase()} · {preview.row?.company_name}{preview.saved ? ` · ${preview.to}` : preview.custom ? ` · ${tr("content_custom")}` : ""}</div>
               <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                 {!preview.saved && <button style={btn("secondary")} onClick={() => doPreview(preview.rowRef, "pl")}>PL</button>}
                 {!preview.saved && <button style={btn("secondary")} onClick={() => doPreview(preview.rowRef, "en")}>EN</button>}
