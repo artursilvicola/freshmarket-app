@@ -370,3 +370,7 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Testy:** szablony — adres logo z `appUrl`, `width="140"` w czapce i `104` w stopce, „PreConnect” + hasło PL/EN, brak białego pola, własny `logoUrl` escapowany; kampania — zamrożony HTML ma logo i hasło, tekst bez `<img>`.
 
 **Pełny zestaw po 14b:** 104 pliki, 894 testy zaliczone, 2 pominięte.
+
+**Review Codexa 9abdd7e (05.11 ~14:10): przyjęte, 44/44.** Przed prawdziwą wysyłką (poza zakresem prototypu):
+1. logo musi być dostępne pod publicznym adresem HTTPS — `emailLogoUrl(B2B_APP_URL)` da `https://b2b.freshmarket.eu/brand/fm-email-logo-white.png` dopiero po wdrożeniu gałęzi (plik `public/brand/` jedzie z buildem); adres `localhost` działa tylko w demonstracji;
+2. obejrzeć mail testowy w Gmailu i Outlooku, także na telefonie i z zablokowanymi obrazkami (wtedy w czapce zostaje `alt="Fresh Market"` + „PreConnect” i hasło w tekście) — podgląd w przeglądarce tego nie zastępuje; wymaga `MARKETING_SEND_ENABLED=true` i prawdziwego klucza Resend, czyli osobnej zgody.
