@@ -15,6 +15,7 @@ vi.mock("../netlify/functions/_shared/marketing-data.js", () => ({
 }));
 import { handler } from "../netlify/functions/marketing-campaign.js";
 import { payloadHash } from "../netlify/functions/_shared/marketing-mailer.js";
+import { DEFAULT_CONTENT, defaultContent } from "../netlify/functions/_shared/marketing-templates.js";
 
 const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const req = (body) => ({ httpMethod: "POST", headers: { authorization: "Bearer fake" }, body: JSON.stringify(body) });
@@ -105,7 +106,8 @@ describe("approve", () => {
     expect(m.snapshot).toMatchObject({ company_name: "Sad Kowalski", snapshot_at: "2026-11-04T10:00:00Z", template_key: "credits_no_proposal", audience_reason: "q_credits_available_no_history", custom_content: false });
     // [P1 #2] zamrożenie PRZED wiadomościami: jedyny update kampanii, z frozen_content i wersją
     expect(state.updates).toHaveLength(1);
-    expect(state.updates[0]).toMatchObject({ status: "approved", snapshot_at: "2026-11-04T10:00:00Z", frozen_content: {}, frozen_content_version: 1 });
+    expect(state.updates[0]).toMatchObject({ status: "approved", snapshot_at: "2026-11-04T10:00:00Z", frozen_content_version: 1 });
+    expect(state.updates[0].frozen_content).toEqual(defaultContent("credits_no_proposal")); // PEŁNA treść, nie {}
     expect(m.snapshot.content_version).toBe(1);
     expect(r.body.content_version).toBe(1);
   });
@@ -196,5 +198,42 @@ describe("[review Codexa P1] wersja treści i atomowe zamrożenie", () => {
     expect(state.inserts[0].snapshot.content_version).toBe(1);
     // ponowne zatwierdzenie nie zamraża drugi raz (frozen_content zostaje)
     expect(state.updates.at(-1)).not.toHaveProperty("frozen_content");
+  });
+});
+
+describe("[review Codexa P1 #3] domyślny szablon jest zamrażany jako pełna treść", () => {
+  it("domyślna kampania → zamrożenie pełnej treści → awaria drugiego zapisu → zmiana szablonu w kodzie → ponowienie: OBIE wiadomości mają pierwotny szablon", async () => {
+    const orig = DEFAULT_CONTENT.credits_no_proposal.pl.subject;
+    try {
+      state.failInsertAt = 2;
+      let r = await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1", consent_source: "lista" }, { company_id: "c2", consent_source: "lista" }] });
+      expect(r.status).toBe(500);
+      const frozen = state.updates[0].frozen_content;
+      expect(frozen.pl.subject).toBe(orig);
+      expect(frozen.en.subject).toBe(DEFAULT_CONTENT.credits_no_proposal.en.subject);
+      expect(Object.keys(frozen.pl).sort()).toEqual(["body", "cta", "subject"]);
+      expect(state.inserts[0].subject).toBe("Daj się poznać sieciom handlowym — masz 5 kredytów w PreConnect");
+      expect(state.inserts[0].snapshot.custom_content).toBe(false);
+      state.campaign = { ...state.campaign, ...state.updates[0] };
+      // „nowa wersja aplikacji" zmienia domyślny szablon w kodzie
+      DEFAULT_CONTENT.credits_no_proposal.pl.subject = "NOWY SZABLON {{credits}} — nie może trafić do tej kampanii";
+      state.existing[`marketing:${CAMP}:p1`] = { id: "m1", state: "pending" };
+      state.inserts.length = 0; state.failInsertAt = 0;
+      r = await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1", consent_source: "lista" }, { company_id: "c2", consent_source: "lista" }] });
+      expect(r.status).toBe(200);
+      expect(state.inserts).toHaveLength(1);
+      expect(state.inserts[0].company_id).toBe("c2");
+      expect(state.inserts[0].subject).toBe("Daj się poznać sieciom handlowym — masz 5 kredytów w PreConnect"); // pierwotny szablon
+      expect(state.inserts[0].html).not.toContain("NOWY SZABLON");
+      expect(state.updates.at(-1)).not.toHaveProperty("frozen_content"); // nie zamraża drugi raz
+    } finally {
+      DEFAULT_CONTENT.credits_no_proposal.pl.subject = orig;
+    }
+  });
+  it("stare zamrożenie {} (sprzed poprawki) jest traktowane jak brak zamrożenia i uzupełniane pełną treścią", async () => {
+    state.campaign = { ...state.campaign, status: "approved", frozen_content: {}, frozen_content_version: 1 };
+    const r = await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1", consent_source: "lista" }] });
+    expect(r.status).toBe(200);
+    expect(state.updates[0].frozen_content).toEqual(defaultContent("credits_no_proposal"));
   });
 });

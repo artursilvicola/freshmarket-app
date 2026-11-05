@@ -118,10 +118,10 @@ export const handler = async (event) => {
  * wiersza testowego → własny link wypisu i nagłówek List-Unsubscribe). Nic w treści
  * ani nagłówkach nie wskazuje na wiersz prawdziwego adresata.
  */
-/** Treść do renderu testu: zamrożona przy zatwierdzeniu (frozen_content), a gdy jej nie ma — bieżąca. */
+/** Treść do renderu testu: zamrożona przy zatwierdzeniu (frozen_content, kompletna PL/EN); bez niej — bieżąca. */
 function frozenOrLive(campaign) {
-  const src = campaign.frozen_content ?? campaign.content;
-  return src && Object.keys(src).length ? src : null;
+  if (campaign.frozen_content && Object.keys(campaign.frozen_content).length) return campaign.frozen_content;
+  return campaign.content && Object.keys(campaign.content).length ? campaign.content : null;
 }
 
 async function sendTest({ supaSvc, env, caller, campaign, body }) {

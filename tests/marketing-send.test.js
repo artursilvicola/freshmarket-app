@@ -12,6 +12,7 @@ vi.mock("../netlify/functions/_shared/function-env.js", () => ({
 }));
 import { handler } from "../netlify/functions/marketing-send.js";
 import { payloadHash } from "../netlify/functions/_shared/marketing-mailer.js";
+import { DEFAULT_CONTENT, defaultContent } from "../netlify/functions/_shared/marketing-templates.js";
 
 const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const frozen = (id, over = {}) => {
@@ -241,5 +242,24 @@ describe("token wypisu", () => {
     expect(verifyUnsubscribeToken("inny", "m1", t)).toBe(false);
     expect(verifyUnsubscribeToken("sekret", "m2", t)).toBe(false);
     expect(t).toBe(crypto.createHmac("sha256", "sekret").update("m1").digest("base64url"));
+  });
+});
+
+describe("[review Codexa P1 #3] mail testowy renderuje z zamrożonej treści kampanii", () => {
+  it("frozen_content (kompletna treść domyślna z chwili zatwierdzenia) wygrywa ze zmienionym szablonem w kodzie i z bieżącym content", async () => {
+    const orig = DEFAULT_CONTENT.start_with_credits.pl.subject;
+    try {
+      state.db.campaign.frozen_content = defaultContent("start_with_credits");
+      state.db.campaign.content = { pl: { subject: "BIEŻĄCA", body: "b", cta: "c" }, en: { subject: "s", body: "b", cta: "c" } };
+      DEFAULT_CONTENT.start_with_credits.pl.subject = "NOWY SZABLON {{credits}}";
+      const r = await call({ campaign_id: CAMP, mode: "test", test_to: "zespol@test.pl", message_id: "m1" });
+      expect(r.status).toBe(200);
+      const t = state.db.messages.find((m) => m.is_test);
+      expect(t.subject).toBe("[TEST] Masz 5 kredytów PreConnect — najbliższy mailing do kupców 1 grudnia 2026");
+      expect(t.html).not.toContain("NOWY SZABLON");
+      expect(t.html).not.toContain("BIEŻĄCA");
+    } finally {
+      DEFAULT_CONTENT.start_with_credits.pl.subject = orig;
+    }
   });
 });

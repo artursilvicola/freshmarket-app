@@ -28,7 +28,7 @@
  */
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
 import { computeCandidates, loadCampaign } from "./_shared/marketing-data.js";
-import { renderMarketingTemplate, defaultContent, validateContent, AUDIENCE_TEMPLATE_KEYS, TEMPLATE_KEYS } from "./_shared/marketing-templates.js";
+import { renderMarketingTemplate, defaultContent, effectiveContent, validateContent, AUDIENCE_TEMPLATE_KEYS, TEMPLATE_KEYS } from "./_shared/marketing-templates.js";
 import { payloadHash, unsubscribeUrl } from "./_shared/marketing-mailer.js";
 import { randomUUID } from "node:crypto";
 
@@ -131,15 +131,20 @@ export const handler = async (event) => {
         // [P1 #2] ATOMOWE zamrożenie: jeden warunkowy UPDATE (status draft/approved + ta sama wersja treści) ustawia
         // status approved i zapisuje frozen_content; 0 wierszy = ktoś w międzyczasie edytował treść albo zamknął kampanię.
         const nowIso = new Date().toISOString();
-        const firstFreeze = !campaign.frozen_content;
+        // [review Codexa P1 #3] zamrażamy PEŁNĄ efektywną treść PL/EN — także gdy administrator został przy domyślnym
+        // szablonie ({}); inaczej zmiana szablonu w kodzie w kolejnej wersji aplikacji zmieniłaby treść tej samej kampanii
+        // przy ponowieniu, podglądzie i teście. Stare zamrożenie {} (sprzed tej poprawki) traktujemy jak brak zamrożenia.
+        const firstFreeze = !campaign.frozen_content || Object.keys(campaign.frozen_content).length === 0;
         const freezePatch = firstFreeze
-          ? { status: "approved", approved_by: caller.id, approved_at: nowIso, snapshot_at: snapshotAt, frozen_content: campaign.content || {}, frozen_content_version: currentVersion, content_frozen_at: nowIso }
+          ? { status: "approved", approved_by: caller.id, approved_at: nowIso, snapshot_at: snapshotAt, frozen_content: effectiveContent(campaign.template_key, liveContent), frozen_content_version: currentVersion, content_frozen_at: nowIso }
           : { status: "approved", snapshot_at: snapshotAt };
         const { data: frozenCampaign, error: fzErr } = await supaSvc.from("marketing_campaigns").update(freezePatch)
           .eq("id", campaign.id).eq("content_version", currentVersion).in("status", ["draft", "approved"]).select("*").maybeSingle();
         if (fzErr) throw new Error("freeze: " + fzErr.message);
         if (!frozenCampaign) return json(409, { error: "campaign_changed", hint: "treść zmieniona albo kampania zamknięta w innym oknie — odśwież i sprawdź podgląd" });
-        const content = frozenCampaign.frozen_content && Object.keys(frozenCampaign.frozen_content).length ? frozenCampaign.frozen_content : null;
+        const content = frozenCampaign.frozen_content; // zawsze kompletna treść PL/EN zapisana w bazie
+        if (!content || validateContent(content).length) return json(500, { error: "frozen_content_invalid", errors: content ? validateContent(content) : ["missing"] });
+        const customContent = Boolean(liveContent);
 
         const inserted = [];
         const skipped = [];
@@ -160,7 +165,7 @@ export const handler = async (event) => {
           const full = {
             id: messageId, campaign_id: campaign.id, company_id: row.company_id, profile_id: row.profile_id, to_email: row.email, locale: row.locale,
             segment: row.segment, consent_source: consent,
-            snapshot: { ...row.snapshot, snapshot_at: snapshotAt, company_name: row.company_name, template_key: templateKey, audience_reason: row.audience_reason, warnings: row.warnings, custom_content: Boolean(content), content_version: frozenCampaign.frozen_content_version || currentVersion },
+            snapshot: { ...row.snapshot, snapshot_at: snapshotAt, company_name: row.company_name, template_key: templateKey, audience_reason: row.audience_reason, warnings: row.warnings, custom_content: customContent, content_version: frozenCampaign.frozen_content_version || currentVersion },
             subject: rendered.subject, html: rendered.html, text_body: rendered.text,
             payload_hash: payloadHash({ subject: rendered.subject, html: rendered.html, text: rendered.text }),
             idempotency_key: key, is_test: false, state: "pending",

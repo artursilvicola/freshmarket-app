@@ -302,3 +302,15 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Pełny zestaw po poprawkach P1 (05.11 ~11:40):** 103 pliki, **885 testów zaliczonych**, 2 pominięte; migracja 73 przeszła na PGlite i została wykonana na bazie testowej (rejestr 73).
 
 **Próba na żywo 05.11 ~11:50 (podgląd izolowany, baza testowa, DEMO 1):** update_content z expected_version=99 → 409 content_version_conflict; poprawny zapis → wersja 2; approve z wersją 1 → 409 content_version_mismatch (current 2), zero wiadomości; approve z wersją 2 → 200, kampania approved, frozen_content = „WERSJA A {{company}}”, frozen_content_version 2, wiadomość „WERSJA A TEST Sad Kowalski” ze snapshot.content_version 2; edycja po zamrożeniu → 409 content_frozen.
+
+### 12b. Trzeci P1 Codexa: domyślny szablon zamrażany jako PEŁNA treść (05.11 ~12:10)
+
+**Problem:** przy domyślnym szablonie `content = {}` i to `{}` trafiało do `frozen_content`; ponowienie, podgląd i test brały aktualny szablon z kodu, więc zmiana szablonu w kolejnej wersji aplikacji zmieniałaby treść tej samej kampanii.
+
+**Poprawka:** przy pierwszym zatwierdzeniu `frozen_content = effectiveContent(template_key, content)` — kompletna treść PL/EN (temat, treść, przycisk) także dla szablonu domyślnego; nigdy `{}`. Wiadomości, podgląd po zatwierdzeniu i mail testowy renderują wyłącznie z tej zapisanej treści (brakująca/niepoprawna zamrożona treść → 500 `frozen_content_invalid`, bez wiadomości). Zamrożenie `{}` sprzed poprawki (w bazie testowej: kampania DEMO 1) jest traktowane jak brak zamrożenia i uzupełniane pełną treścią przy kolejnym zatwierdzeniu. `snapshot.custom_content` mówi, czy administrator edytował treść (nie: czy treść była przekazana).
+
+**Regresje:** `tests/marketing-campaign.test.js` — domyślna kampania → zamrożenie pełnej treści (= `defaultContent`) → awaria drugiego zapisu → **zmiana domyślnego szablonu w kodzie** (`DEFAULT_CONTENT` mutowany w teście i przywracany) → ponowienie: druga wiadomość ma pierwotny temat, HTML bez „NOWY SZABLON”, bez ponownego zamrożenia; stare `{}` uzupełniane. `tests/marketing-preview.test.js` (nowy) — zatwierdzona kampania: podgląd z `frozen_content` mimo zmienionego szablonu; szkic bez treści: aktualny domyślny; treść z edytora > zapisana; niepoprawna → 422. `tests/marketing-send.test.js` — mail testowy z `frozen_content` wygrywa ze zmienionym szablonem i z bieżącym `content`.
+
+**Sprostowanie do §12:** odczyt kandydatów jest przed zamrożeniem, więc jego awaria nie zostawia zatwierdzonej kampanii; taki stan może powstać tylko przy późniejszym błędzie zapisu wiadomości, a ponowienie zachowuje zamrożoną treść.
+
+**Pełny zestaw po 12b (05.11 ~12:15):** 104 pliki, **890 testów zaliczonych**, 2 pominięte.

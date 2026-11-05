@@ -34,7 +34,7 @@ export const handler = async (event) => {
       const errors = validateContent(body.content);
       if (errors.length) return json(422, { error: "content_invalid", errors });
       content = body.content;
-    } else if (campaign && campaign.status !== "draft" && campaign.frozen_content) content = Object.keys(campaign.frozen_content).length ? campaign.frozen_content : null; // zamrożona wersja
+    } else if (campaign && campaign.status !== "draft" && campaign.frozen_content && Object.keys(campaign.frozen_content).length) content = campaign.frozen_content; // zamrożona, kompletna treść
     else if (campaign?.content && Object.keys(campaign.content).length) content = campaign.content;
     const locale = body.locale === "en" || body.locale === "pl" ? body.locale : row.locale;
     const rendered = renderMarketingTemplate({
