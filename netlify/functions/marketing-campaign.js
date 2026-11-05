@@ -32,7 +32,7 @@
  * Żadnej wysyłki tutaj. Marketing nie dotyka legacy_sends ani rozliczeń.
  */
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
-import { computeCandidates, loadCampaign } from "./_shared/marketing-data.js";
+import { computeCandidates, loadCampaign, loadBrandLogoUrl } from "./_shared/marketing-data.js";
 import { renderMarketingTemplate, defaultContent, effectiveContent, validateContent, AUDIENCE_TEMPLATE_KEYS, TEMPLATE_KEYS } from "./_shared/marketing-templates.js";
 import { payloadHash, unsubscribeUrl } from "./_shared/marketing-mailer.js";
 import { randomUUID } from "node:crypto";
@@ -152,6 +152,7 @@ export const handler = async (event) => {
         if (!content || validateContent(content).length) return json(500, { error: "frozen_content_invalid", errors: content ? validateContent(content) : ["missing"] });
         const customContent = Boolean(liveContent);
 
+        const brandLogoUrl = await loadBrandLogoUrl(supaSvc); // oryginalne logo w czapce (Artur 05.11)
         const inserted = [];
         const skipped = [];
         for (const { row, consent, templateKey } of toInsert) {
@@ -166,7 +167,7 @@ export const handler = async (event) => {
             templateKey, content, locale: row.locale, companyName: row.company_name,
             creditsRemaining: row.snapshot.credits_remaining, creditsAvailable: row.snapshot.credits_available, creditsReserved: row.snapshot.reserved, expiringCredits: row.snapshot.expiring_credits,
             creditsExpiry: row.snapshot.nearest_expiry,
-            snapshotAt, appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null,
+            snapshotAt, appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null, brandLogoUrl,
           });
           const full = {
             id: messageId, campaign_id: campaign.id, company_id: row.company_id, profile_id: row.profile_id, to_email: row.email, locale: row.locale,

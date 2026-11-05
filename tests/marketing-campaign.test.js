@@ -11,6 +11,7 @@ vi.mock("../netlify/functions/_shared/function-env.js", () => ({
 }));
 vi.mock("../netlify/functions/_shared/marketing-data.js", () => ({
   loadCampaign: async () => state.campaign,
+  loadBrandLogoUrl: async () => state.brandLogoUrl || null,
   computeCandidates: async () => ({ snapshot_at: "2026-11-04T10:00:00Z", today: "2026-11-04", rows: state.rows, summary: {} }),
 }));
 import { handler } from "../netlify/functions/marketing-campaign.js";
@@ -34,12 +35,13 @@ beforeEach(() => {
     rpc: vi.fn(),
     from: vi.fn((table) => {
       const q = { _f: [], _ins: null, _upd: null };
-      for (const k of ["select", "order", "limit", "in", "neq"]) q[k] = () => q;
+      for (const k of ["select", "order", "limit", "in", "neq", "not"]) q[k] = () => q;
       q.eq = (c, v) => { q._f.push([c, v]); return q; };
       q.insert = (r) => { q._ins = r; return q; };
       q.update = (p) => { q._upd = p; return q; };
       q.maybeSingle = async () => {
         if (table === "profiles") return { data: { id: "admin", role: "admin", active: true, locale: "pl" }, error: null };
+        if (table === "fm_settings") return { data: state.brandLogoUrl ? { brand_logo_url: state.brandLogoUrl } : null, error: null };
         if (table === "marketing_messages") {
           const id = q._f.find(([c]) => c === "id")?.[1];
           if (id) return { data: state.savedMessages?.[id] || null, error: null };
@@ -115,6 +117,7 @@ describe("approve", () => {
     expect(state.updates[0].frozen_content).toEqual(defaultContent("credits_no_proposal")); // PEŁNA treść, nie {}
     expect(m.snapshot.content_version).toBe(1);
     expect(r.body.content_version).toBe(1);
+    expect(m.html).not.toContain("<img"); // bez logo w brandingu → znak tekstowy
   });
   it("własna treść kampanii trafia do zamrożonej wiadomości (temat i treść z edytora, stopka stała)", async () => {
     state.campaign.content = { pl: { subject: "Własny temat {{credits_n}}", body: "Własna treść {{company}}.", cta: "Idź" }, en: { subject: "Own", body: "Own body", cta: "Go" } };
@@ -254,5 +257,15 @@ describe("[zastrzeżenie Codexa] zapisana wiadomość z rejestru", () => {
     expect(r.body.message).toMatchObject({ subject: "ZAPISANY TEMAT 5 kredytów", html: "<p>ZAPISANY HTML</p>", text_body: "ZAPISANY TEKST", to_email: "op@kowalski.test" });
     expect((await call({ action: "message", campaign_id: CAMP, message_id: "nie-ma" })).status).toBe(404);
     expect((await call({ action: "message", campaign_id: CAMP })).status).toBe(400);
+  });
+});
+
+describe("[Artur 05.11] oryginalne logo w czapce maila", () => {
+  it("approve zamraża w wiadomości HTML z logo z fm_settings.brand_logo_url", async () => {
+    state.brandLogoUrl = "https://brand.test/logo.png";
+    const r = await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1" }] });
+    expect(r.status).toBe(200);
+    expect(state.inserts[0].html).toContain('<img src="https://brand.test/logo.png" alt="Fresh Market" width="170"');
+    expect(state.inserts[0].text_body).not.toContain("<img");
   });
 });

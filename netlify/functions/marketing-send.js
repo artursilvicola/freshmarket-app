@@ -23,7 +23,7 @@
  * Marketing nie woła żadnego RPC rozliczeń i nie dotyka legacy_sends.
  */
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
-import { loadCampaign } from "./_shared/marketing-data.js";
+import { loadCampaign, loadBrandLogoUrl } from "./_shared/marketing-data.js";
 import { sendMarketingMail, unsubscribeUrl, payloadHash } from "./_shared/marketing-mailer.js";
 import { renderMarketingTemplate } from "./_shared/marketing-templates.js";
 
@@ -143,7 +143,7 @@ async function sendTest({ supaSvc, env, caller, campaign, body }) {
     locale: src.locale, companyName: snap.company_name || "",
     creditsRemaining: snap.credits_remaining, creditsAvailable: snap.credits_available, creditsReserved: snap.reserved, expiringCredits: snap.expiring_credits,
     creditsExpiry: snap.nearest_expiry, snapshotAt: snap.snapshot_at || src.created_at,
-    appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null,
+    appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null, brandLogoUrl: await loadBrandLogoUrl(supaSvc),
   });
   const subject = `[TEST] ${rendered.subject}`;
   const now = new Date().toISOString();

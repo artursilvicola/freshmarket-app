@@ -142,7 +142,19 @@ function inlineHtml(s) {
 }
 const stripBold = (s) => String(s).replace(/\*\*([^*\n]+)\*\*/g, "$1");
 
-function shell({ title, body, locale, unsubscribeUrl, replyTo, appUrl }) {
+/** Logo z brandingu (fm_settings.brand_logo_url) jak w mailu do kupców (render-retailer-email.js); bez URL — tekstowy znak. */
+function brandLogoBox(brandLogoUrl, { footer = false } = {}) {
+  if (!brandLogoUrl) {
+    return footer
+      ? `<div style="color:rgba(255,255,255,0.92);font-weight:700;font-size:13px;margin-bottom:4px;">Fresh Market PreConnect</div>`
+      : `<div style="color:white;font-weight:800;font-size:20px;letter-spacing:-0.4px;">Fresh Market <span style="color:rgba(255,255,255,0.6);font-weight:600;font-size:12px;">PreConnect</span></div>`;
+  }
+  return `<div style="display:inline-block;background:rgba(255,255,255,0.96);padding:${footer ? "6px 12px" : "8px 16px"};border-radius:12px;margin-bottom:${footer ? "8px" : "0"};">
+    <img src="${esc(brandLogoUrl)}" alt="Fresh Market" width="${footer ? "130" : "170"}" style="display:block;max-width:${footer ? "130px" : "170px"};height:auto;border:0;outline:none;text-decoration:none;">
+  </div>${footer ? "" : `<div style="color:rgba(255,255,255,0.75);font-weight:600;font-size:12px;margin-top:8px;letter-spacing:0.3px;">PreConnect</div>`}`;
+}
+
+function shell({ title, body, locale, unsubscribeUrl, replyTo, appUrl, brandLogoUrl }) {
   const addr = locale === "en"
     ? "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Poland"
     : "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska";
@@ -157,11 +169,11 @@ function shell({ title, body, locale, unsubscribeUrl, replyTo, appUrl }) {
   <tr><td align="center">
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:white;border-radius:12px;overflow:hidden;">
       <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0d9488 100%);padding:24px 32px;text-align:center;">
-        <div style="color:white;font-weight:800;font-size:20px;letter-spacing:-0.4px;">Fresh Market <span style="color:rgba(255,255,255,0.6);font-weight:600;font-size:12px;">PreConnect</span></div>
+        ${brandLogoBox(brandLogoUrl)}
       </td></tr>
       <tr><td style="padding:28px 32px;font-size:15px;line-height:1.6;">${body}</td></tr>
       <tr><td style="background:#0f172a;padding:18px 28px;text-align:center;">
-        <div style="color:rgba(255,255,255,0.92);font-weight:700;font-size:13px;margin-bottom:4px;">Fresh Market PreConnect</div>
+        ${brandLogoBox(brandLogoUrl, { footer: true })}
         <div style="color:rgba(255,255,255,0.45);font-size:11px;line-height:1.7;">${addr}<br><a href="${esc(appUrl)}" style="color:rgba(255,255,255,0.7);text-decoration:none;">b2b.freshmarket.eu</a></div>
         <div style="color:rgba(255,255,255,0.55);font-size:11px;line-height:1.7;margin-top:10px;">${reply}<br>${unsub}</div>
       </td></tr>
@@ -190,6 +202,7 @@ const cta = (label, url) => `<p style="margin:22px 0 10px;"><a href="${esc(url)}
  * @param {string} d.appUrl
  * @param {string} d.unsubscribeUrl
  * @param {string} [d.replyTo]
+ * @param {string} [d.brandLogoUrl] logo z brandingu (fm_settings.brand_logo_url) — oryginalne logo w czapce i stopce; bez niego znak tekstowy
  */
 export function renderMarketingTemplate(d) {
   const key = TEMPLATE_KEYS.includes(d?.templateKey) ? d.templateKey : null;
@@ -218,7 +231,7 @@ export function renderMarketingTemplate(d) {
   const ctaLabel = stripBold(fill(content.cta, vars)).trim();
   const paras = fill(content.body, vars).split(/\n[ \t]*\n/).map((s) => s.trim()).filter(Boolean);
   const body = paras.map((t) => p(inlineHtml(t))).join("") + cta(ctaLabel, appUrl);
-  const html = shell({ title: subject, body, locale, unsubscribeUrl: d.unsubscribeUrl, replyTo: d.replyTo, appUrl });
+  const html = shell({ title: subject, body, locale, unsubscribeUrl: d.unsubscribeUrl, replyTo: d.replyTo, appUrl, brandLogoUrl: d.brandLogoUrl || null });
   const text = [
     ...paras.map(stripBold), "", `${ctaLabel}: ${appUrl}`, "",
     d.replyTo ? (locale === "en" ? `Reply to this e-mail or write to ${d.replyTo}.` : `Odpowiedz na tę wiadomość albo napisz na ${d.replyTo}.`) : "",

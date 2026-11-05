@@ -343,3 +343,15 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Testy:** kampania — brak `consent_source` → wiersz z `CONSENT_SOURCE_DEFAULT` (zawiera „Regulamin”); komponent — brak pól zgody, nota widoczna, approve wysyła tylko `company_id`.
 
 **Pełny zestaw po §13:**  Test Files 104 passed | 1 skipped (105); Tests 892 passed | 2 skipped (894);
+
+## 14. Oryginalne logo Fresh Market w czapce maila (Artur 05.11)
+
+**Cel:** adresat ma rozpoznać oryginalny mail Fresh Market. Czapka i stopka maila marketingowego pokazują logo z brandingu — to samo źródło co mail do kupców (`render-retailer-email.js`): `fm_settings.brand_logo_url` (logo wgrane przez administratora w Branding; na produkcji `…/brand-assets/brand/logo-1778701288939.png`).
+
+**Wykonanie:** `marketing-templates.js` — `brandLogoBox()` jak w mailu kupca (białe pole, `<img alt="Fresh Market" width="170">` w czapce, `130` w stopce, pod logo podpis „PreConnect”); bez URL — dotychczasowy znak tekstowy. `marketing-data.js` — `loadBrandLogoUrl(supaSvc)` (błąd/brak → null). Logo doładowywane w `approve` (raz na zatwierdzenie; URL obrazka zostaje w zamrożonym HTML wiadomości), w podglądzie i w mailu testowym. Wersja tekstowa bez zmian. Na bazie testowej ustawiono w `fm_settings.brand_logo_url` publiczny adres logo produkcyjnego (to publiczny plik ze storage, żadnych danych).
+
+**Testy:** szablony — z URL: `<img …>` w czapce i stopce, bez znaku tekstowego; bez URL: bez `<img>`, znak tekstowy. Kampania — approve zamraża HTML z logo z `fm_settings`, tekst bez `<img>`.
+
+**Uwaga:** e-mail ładuje obraz z publicznego URL storage Supabase (jak mail do kupców). Klienci pocztowe blokujące obrazy pokażą `alt="Fresh Market"`. Jeśli administrator zmieni logo w Brandingu, nowe kampanie dostaną nowe logo; zamrożone wiadomości zachowują URL z chwili zatwierdzenia.
+
+**Pełny zestaw po §14:**  Test Files 1 failed | 103 passed | 1 skipped (105); Tests 1 failed | 893 passed | 2 skipped (896);

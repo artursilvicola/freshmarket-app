@@ -119,6 +119,15 @@ describe("treść edytowana w panelu (bez HTML)", () => {
     expect(renderMarketingTemplate({ ...base, templateKey: "used_before_free_credits", locale: "en", creditsRemaining: 4, creditsAvailable: 3 }).subject).toBe("Another proposal in PreConnect — you still have 3 credits");
     expect(renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", creditsRemaining: 5 }).subject).toContain("masz 5 kredytów");
   });
+  it("oryginalne logo z brandingu w czapce i stopce (fm_settings.brand_logo_url); bez URL — znak tekstowy", () => {
+    const withLogo = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", brandLogoUrl: "https://x.test/brand/logo.png?a=1&b=2" });
+    expect(withLogo.html).toContain('<img src="https://x.test/brand/logo.png?a=1&amp;b=2" alt="Fresh Market" width="170"');
+    expect(withLogo.html).toContain('width="130"'); // stopka
+    expect(withLogo.html).not.toContain(">Fresh Market <span");
+    const noLogo = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl" });
+    expect(noLogo.html).not.toContain("<img");
+    expect(noLogo.html).toContain(">Fresh Market <span");
+  });
   it("stare szablony (kampanie sprzed 5.11) nadal się renderują z regułą rozliczania", () => {
     for (const key of ["start_with_credits", "return_active"]) {
       const r = renderMarketingTemplate({ ...base, templateKey: key, locale: "pl" });
