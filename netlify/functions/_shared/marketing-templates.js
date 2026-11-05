@@ -53,9 +53,9 @@ const HELP_EN = "If you would like help describing your range or choosing chains
 export const DEFAULT_CONTENT = Object.freeze({
   selected_companies: {
     pl: { subject: "PreConnect: przedstaw swoją firmę sieciom handlowym", cta: "Przejdź do PreConnect",
-      body: `Dzień dobry, {{company}},\n\n${CORE_PL}\n\nSprawdź swoje konto, przygotuj propozycję i wybierz sieci, którym chcesz się zaprezentować.\n\n${RULES_PL}\n\n${MAILING_PL}\n\n${HELP_PL}` },
+      body: `Dzień dobry, {{company}},\n\n${CORE_PL}\n\nSprawdź swoje konto, przygotuj propozycję i wybierz sieci, którym chcesz się zaprezentować.\n\nPrzed zgłoszeniem propozycji sprawdź dostępne kredyty w panelu. Jeśli nie masz wolnych, ważnych kredytów, możesz wybrać odpowiedni pakiet. ${RULES_PL}\n\n${MAILING_PL}\n\n${HELP_PL}` },
     en: { subject: "PreConnect: introduce your company to retail chains", cta: "Go to PreConnect",
-      body: `Hello, {{company}},\n\n${CORE_EN}\n\nCheck your account, prepare a proposal and choose the chains you want to introduce yourself to.\n\n${RULES_EN}\n\n${MAILING_EN}\n\n${HELP_EN}` },
+      body: `Hello, {{company}},\n\n${CORE_EN}\n\nCheck your account, prepare a proposal and choose the chains you want to introduce yourself to.\n\nBefore submitting a proposal, check your available credits in the panel. If you have no free, valid credits, you can choose a suitable package. ${RULES_EN}\n\n${MAILING_EN}\n\n${HELP_EN}` },
   },
   credits_no_proposal: {
     pl: { subject: "Daj się poznać sieciom handlowym — masz {{credits}} w PreConnect", cta: "Przygotuj propozycję",

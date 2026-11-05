@@ -1829,6 +1829,7 @@
       "aud_selected_companies": "Do wybranych firm",
       "aud_desc_selected_companies": "Ręczny wybór firm niezależnie od salda kredytów. Wypisy i pozostałe blokady nadal obowiązują.",
       "r_q_manual_selection": "wybór ręczny",
+      "manual_pick_hint": "Wybór ręczny: zaznacz firmy pojedynczo (wybrano: {{n}}).",
       "automatic_name": "Numer i data zostaną nadane automatycznie przy utworzeniu kampanii.",
       "aud_desc_credits_no_proposal": "Zachęta do pierwszej prezentacji firmy: wolne ważne kredyty, nigdy nie przygotował propozycji ani nic nie wysłał.",
       "aud_desc_credits_proposal_ready": "Zachęta do wyboru sieci: wolne ważne kredyty i przygotowana propozycja, której nie skierował jeszcze do żadnej sieci.",

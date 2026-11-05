@@ -25,4 +25,21 @@ describe.skipIf(!process.env.PGLITE_PATH)("campaign names on PostgreSQL", () => 
       expect((await db.query("insert into marketing_campaigns(name,template_key) values ('','credits_expiring') returning name")).rows[0].name).toContain("Kredyty niedługo wygasają | #");
     } finally { await db.close(); }
   }, 30000);
+  it("[review b279e44 pkt 3] migracja 180000 po 170000: etykieta „propozycję gotową do zgłoszenia” jak w panelu; stare nazwy bez zmian", async () => {
+    const { PGlite } = await import(/* @vite-ignore */ pathToFileURL(process.env.PGLITE_PATH).href);
+    const db = new PGlite();
+    try {
+      await db.exec(`create role anon; create role authenticated; create role service_role;
+        create table marketing_campaigns(name text not null, template_key text not null,
+          constraint marketing_campaigns_template_key_check check(template_key in ('no_valid_credits')));`);
+      await db.exec(readFileSync(new URL("../supabase/migrations/20261105170000_marketing_campaign_names.sql", import.meta.url), "utf8"));
+      const old = (await db.query("insert into marketing_campaigns(name,template_key) values ('','credits_proposal_ready') returning name")).rows[0].name;
+      expect(old).toContain("Mają kredyty i gotową propozycję | #");
+      await db.exec(readFileSync(new URL("../supabase/migrations/20261105180000_marketing_campaign_label_fix.sql", import.meta.url), "utf8"));
+      const fixed = (await db.query("insert into marketing_campaigns(name,template_key) values ('','credits_proposal_ready') returning name")).rows[0].name;
+      expect(fixed).toContain("Mają kredyty i propozycję gotową do zgłoszenia | #");
+      expect((await db.query("select name from marketing_campaigns order by campaign_number")).rows[0].name).toBe(old); // stara nazwa nietknięta
+      expect((await db.query("insert into marketing_campaigns(name,template_key) values ('  Moja lista  ','selected_companies') returning name")).rows[0].name).toMatch(/^Moja lista \| #\d+ \| /);
+    } finally { await db.close(); }
+  }, 30000);
 });

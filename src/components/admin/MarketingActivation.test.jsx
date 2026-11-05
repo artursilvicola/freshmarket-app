@@ -6,13 +6,13 @@ import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
 
-const calls = vi.hoisted(() => ({ list: [], approvedStatus: null }));
+const calls = vi.hoisted(() => ({ list: [], approvedStatus: null, templateKey: null }));
 const DEF = { pl: { subject: "Domyślny PL {{credits}}", body: "Treść PL", cta: "Przygotuj propozycję" }, en: { subject: "Default EN", body: "Body EN", cta: "Prepare a proposal" } };
 vi.mock("../../lib/db.js", () => ({
   marketingCall: vi.fn(async (fn, body) => {
     calls.list.push([fn, body]);
     if (fn === "marketing-campaign" && body.action === "list") return { campaigns: [{ id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: {}, counts: { total: 0 } }] };
-    if (fn === "marketing-campaign" && body.action === "get") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: calls.approvedStatus || "draft", template_key: "credits_no_proposal", content: {}, content_version: 1 }, default_content: DEF, messages: calls.approvedStatus ? [{ id: "m1", to_email: "op@kowalski.test", locale: "pl", subject: "ZAPISANY TEMAT", state: "pending", attempts: 0, consent_source: "lista", is_test: false, snapshot: { company_name: "Sad Kowalski" } }] : [] };
+    if (fn === "marketing-campaign" && body.action === "get") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: calls.approvedStatus || "draft", template_key: calls.templateKey || "credits_no_proposal", content: {}, content_version: 1 }, default_content: DEF, messages: calls.approvedStatus ? [{ id: "m1", to_email: "op@kowalski.test", locale: "pl", subject: "ZAPISANY TEMAT", state: "pending", attempts: 0, consent_source: "lista", is_test: false, snapshot: { company_name: "Sad Kowalski" } }] : [] };
     if (fn === "marketing-campaign" && body.action === "update_content") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: body.content, content_version: 2 }, reset: Object.keys(body.content).length === 0 };
     if (fn === "marketing-campaign" && body.action === "approve") return { approved: 1, skipped: [], content_version: body.content_version };
     if (fn === "marketing-campaign" && body.action === "message") return { saved: true, message: { id: body.message_id, to_email: "op@kowalski.test", locale: "pl", subject: "ZAPISANY TEMAT", html: "<p>ZAPISANY</p>", text_body: "ZAPISANY TEKST", snapshot: { company_name: "Sad Kowalski" } } };
@@ -44,7 +44,7 @@ const openFirst = async (fl = vi.fn()) => {
 };
 let hadWindow, prevConfirm;
 beforeEach(async () => {
-  await i18n.changeLanguage("pl"); calls.list.length = 0; calls.approvedStatus = null;
+  await i18n.changeLanguage("pl"); calls.list.length = 0; calls.approvedStatus = null; calls.templateKey = null;
   hadWindow = "window" in globalThis; if (!hadWindow) globalThis.window = {}; prevConfirm = globalThis.window.confirm;
 });
 afterEach(() => { if (tree) act(() => tree.unmount()); tree = null; globalThis.window.confirm = prevConfirm; if (!hadWindow) delete globalThis.window; });
@@ -62,6 +62,21 @@ describe("Marketing → Aktywacja PreConnect", () => {
     expect(calls.list.length).toBe(before);
     await act(async () => byId("mk-name").props.onChange({ target: { value: "Wybrane firmy" } }));
     expect(byId("mk-create").props.disabled).toBe(false);
+  });
+  it("[review b279e44 pkt 1] kampania „Do wybranych firm”: bez „Zaznacz widoczne”, pojedyncze zaznaczanie i licznik wybranych", async () => {
+    calls.templateKey = "selected_companies";
+    await openFirst();
+    expect(byId("mk-select-visible")).toBeUndefined();
+    expect(out()).toContain("Wybór ręczny: zaznacz firmy pojedynczo (wybrano: 0)");
+    const boxes = tree.root.findAllByType("input").filter((i) => i.props.type === "checkbox" && i.props.onChange && "checked" in i.props);
+    const rowBox = boxes.find((i) => i.props.checked === false && i !== boxes[0]); // pierwszy checkbox = „pokaż pozostałe”
+    await act(async () => { rowBox.props.onChange({ target: { checked: true } }); });
+    expect(out()).toContain("(wybrano: 1)");
+    expect(out()).toContain("Do zatwierdzenia: 1 firm");
+    calls.templateKey = null;
+    await act(() => tree.unmount()); tree = null;
+    await openFirst();
+    expect(byId("mk-select-visible")).toBeDefined(); // w grupach standardowych przycisk zostaje
   });
   it("formularz: grupa odbiorców z opisem, bez pól „potrzeb kupców”; lista kampanii pokazuje grupę", async () => {
     await openFirst();

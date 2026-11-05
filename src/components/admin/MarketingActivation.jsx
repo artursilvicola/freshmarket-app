@@ -128,6 +128,7 @@ export default function MarketingActivation({ fl }) {
   const visibleRows = useMemo(() => (candidates?.rows || []).filter((r) => showOthers || r.eligible), [candidates, showOthers]);
   const selectedCount = selectedRows.length;
   const isDraft = current?.campaign?.status === "draft";
+  const isManual = current?.campaign?.template_key === "selected_companies";
   const editable = current && ["draft", "approved"].includes(current.campaign.status);
   const contentDirty = current && !sameContent(content, contentOf(current));
   const contentIsCustom = current && Object.keys(current.campaign.content || {}).length > 0;
@@ -205,7 +206,9 @@ export default function MarketingActivation({ fl }) {
                   <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>{tr("exclusions_overlap")}: {Object.entries(candidates.summary.by_exclusion || {}).map(([k, v]) => `${tr("ex_" + k)} ${v}`).join(" · ") || "—"}</div>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
                     <label style={{ fontSize: 12 }}><input type="checkbox" checked={showOthers} onChange={(e) => setShowOthers(e.target.checked)} /> {tr("show_others")}</label>
-                    {editable && <button data-testid="mk-select-visible" style={btn("secondary")} onClick={() => { const next = {}; visibleRows.filter((r) => r.eligible).forEach((r) => { next[r.company_id] = true; }); setSelected(next); }}>{tr("select_visible")}</button>}
+                    {/* kampania ręczna („Do wybranych firm"): bez masowego zaznaczania — tylko pojedyncze firmy (review b279e44 pkt 1) */}
+                    {editable && !isManual && <button data-testid="mk-select-visible" style={btn("secondary")} onClick={() => { const next = {}; visibleRows.filter((r) => r.eligible).forEach((r) => { next[r.company_id] = true; }); setSelected(next); }}>{tr("select_visible")}</button>}
+                    {editable && isManual && <span data-testid="mk-manual-hint" style={{ fontSize: 11, color: "#64748b" }}>{tr("manual_pick_hint", { n: selectedCount })}</span>}
                   </div>
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>

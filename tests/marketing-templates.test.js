@@ -133,6 +133,15 @@ describe("treść edytowana w panelu (bez HTML)", () => {
     expect(emailLogoUrl("http://localhost:8888/")).toBe("http://localhost:8888/brand/fm-email-logo-white.png");
     expect(pl.text).not.toContain("<img");
   });
+  it("szablon ręczny („Do wybranych firm”): zdanie o sprawdzeniu kredytów PL/EN, bez twierdzenia, że odbiorca ma kredyty", () => {
+    const pl = renderMarketingTemplate({ ...base, templateKey: "selected_companies", locale: "pl", creditsRemaining: 0, creditsAvailable: 0 });
+    expect(pl.html).toContain("Przed zgłoszeniem propozycji sprawdź dostępne kredyty w panelu. Jeśli nie masz wolnych, ważnych kredytów, możesz wybrać odpowiedni pakiet.");
+    expect(pl.html).not.toMatch(/dostępne są|masz \d+ kredyt/i);
+    const en = renderMarketingTemplate({ ...base, templateKey: "selected_companies", locale: "en", creditsRemaining: 0, creditsAvailable: 0 });
+    expect(en.html).toContain("Before submitting a proposal, check your available credits in the panel. If you have no free, valid credits, you can choose a suitable package.");
+    expect(en.html).not.toMatch(/you have \d+ credit/i);
+    expect(pl.html).not.toMatch(BANNED); expect(en.html).not.toMatch(BANNED);
+  });
   it("stare szablony (kampanie sprzed 5.11) nadal się renderują z regułą rozliczania", () => {
     for (const key of ["start_with_credits", "return_active"]) {
       const r = renderMarketingTemplate({ ...base, templateKey: key, locale: "pl" });

@@ -395,3 +395,19 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Uwaga bezpieczeństwa z raportu:** podczas odczytu konfiguracji Netlify do wyniku narzędzia Codexa trafiły wartości `PAYU_*`, `FM_EXPORT_TOKEN` i `RESEND_WEBHOOK_SECRET` (nie były oznaczone jako secret). Zalecana kontrolowana rotacja (patrz raport w czacie) i oznaczenie jako secret w Netlify. Nic nie zostało zmienione.
 
 **Co dalej:** test prawdziwej poczty (Gmail/Outlook/telefon/obrazki) = osobna zgoda Artura + kontrolowane `MARKETING_SEND_ENABLED=true` na jedną próbę; paragraf regulaminu w `CONSENT_SOURCE_DEFAULT` (§13); obserwacje fazy 2 (§10d, §11.4).
+
+## 16. Commit Codexa b279e44 (auto-nazwy kampanii + grupa „Do wybranych firm”) — review Claude i poprawki (05.11 wieczór)
+
+**b279e44 (Codex, podpis „Claude Agent” = błąd konfiguracji Git, historia nieprzepisywana):** nazwa kampanii nadawana w bazie przez trigger `marketing_campaign_assign_name` + kolumna `campaign_number` (identity, unikalna): `Grupa | #N | DD.MM.YYYY` (czas warszawski); dla grup standardowych pole nazwy znika z formularza; szósta grupa `selected_companies` („Do wybranych firm”): każda firma bez wykluczeń bazowych kwalifikuje się niezależnie od salda, wymagana własna nazwa, osobny generyczny szablon PL/EN. Migracja `20261105170000_marketing_campaign_names.sql` wykonana tylko na bazie testowej. Review Claude: testy 52/52; uwagi 1–5 (patrz czat), Codex zlecił poprawki 1, 3, 4.
+
+**Poprawki Claude (osobny commit):**
+1. Kampania ręczna: brak przycisku „Zaznacz widoczne” (`isManual`), zamiast niego podpowiedź „Wybór ręczny: zaznacz firmy pojedynczo (wybrano: N)”; pojedyncze checkboxy i podsumowanie „Do zatwierdzenia: N firm · PL/EN” bez zmian; w grupach standardowych przycisk zostaje.
+2. Etykieta grupy ujednolicona: migracja `20261105180000_marketing_campaign_label_fix.sql` = `CREATE OR REPLACE` funkcji triggera z etykietą „Mają kredyty i propozycję gotową do zgłoszenia” (jak w panelu); sekwencja/indeks/trigger z 170000 zostają (ta migracja już poszła na bazę testową); istniejące nazwy nietknięte. Wykonana na bazie testowej (rejestr 75).
+3. Szablon ręczny PL/EN: dodane „Przed zgłoszeniem propozycji sprawdź dostępne kredyty w panelu. Jeśli nie masz wolnych, ważnych kredytów, możesz wybrać odpowiedni pakiet.” / „Before submitting a proposal, check your available credits in the panel. If you have no free, valid credits, you can choose a suitable package.” — bez sugestii, że każdy odbiorca ma kredyty (szablon nie używa `{{credits}}`).
+4. Testy: komponent (kampania ręczna bez „Zaznacz widoczne”, licznik po pojedynczym zaznaczeniu, przycisk obecny w grupie standardowej), szablony (zdanie PL/EN, brak „masz N kredytów”, bez zakazanych obietnic), migracje na PGlite (170000 → stara etykieta, potem 180000 → nowa; stara nazwa bez zmian; nazwa własna trimowana), środowisko testowe (75 migracji).
+
+**Warunek wdrożenia (bez zmian):** migracje 170000 i 180000 PRZED publikacją kodu z b279e44 (create wstawia pustą nazwę i liczy na trigger). Bez wdrożenia i bez włączania wysyłki w tej turze.
+
+**Próba prawdziwej poczty:** nadal otwarta; potwierdzony adres `artur.stasiak+dostawca@freshmarket.eu`, bez wysyłki do rzeczywistych dostawców; flaga włącza test i partię naraz — na czas próby: jedna kampania, przycisk Test, flaga z powrotem na false.
+
+**Pełny zestaw po §16:** 105 plików, 900 testów zaliczonych, 2 pominięte.

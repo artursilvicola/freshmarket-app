@@ -1829,6 +1829,7 @@
       "aud_selected_companies": "Selected companies",
       "aud_desc_selected_companies": "Select companies regardless of their credit balance. Unsubscribes and other exclusions still apply.",
       "r_q_manual_selection": "manual selection",
+      "manual_pick_hint": "Manual selection: tick companies one by one (selected: {{n}}).",
       "automatic_name": "The number and date are assigned automatically when the campaign is created.",
       "aud_desc_credits_no_proposal": "Encouragement to present the company for the first time: free valid credits, never prepared a proposal nor sent anything.",
       "aud_desc_credits_proposal_ready": "Encouragement to choose chains: free valid credits and a prepared proposal not yet addressed to any chain.",
