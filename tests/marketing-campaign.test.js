@@ -39,7 +39,11 @@ beforeEach(() => {
       q.update = (p) => { q._upd = p; return q; };
       q.maybeSingle = async () => {
         if (table === "profiles") return { data: { id: "admin", role: "admin", active: true, locale: "pl" }, error: null };
-        if (table === "marketing_messages") { const key = q._f.find(([c]) => c === "idempotency_key")?.[1]; return { data: state.existing[key] || null, error: null }; }
+        if (table === "marketing_messages") {
+          const id = q._f.find(([c]) => c === "id")?.[1];
+          if (id) return { data: state.savedMessages?.[id] || null, error: null };
+          const key = q._f.find(([c]) => c === "idempotency_key")?.[1]; return { data: state.existing[key] || null, error: null };
+        }
         if (table === "marketing_campaigns" && q._ins) { state.campaignInserts.push(q._ins); return { data: { id: "new", ...q._ins }, error: null }; }
         if (table === "marketing_campaigns" && q._upd) {
           state.updates.push(q._upd);
@@ -235,5 +239,17 @@ describe("[review Codexa P1 #3] domyślny szablon jest zamrażany jako pełna tr
     const r = await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1", consent_source: "lista" }] });
     expect(r.status).toBe(200);
     expect(state.updates[0].frozen_content).toEqual(defaultContent("credits_no_proposal"));
+  });
+});
+
+describe("[zastrzeżenie Codexa] zapisana wiadomość z rejestru", () => {
+  it("action=message zwraca DOKŁADNIE zapisany temat/html/tekst wiersza (nie render z aktualnych danych); brak → 404; brak id → 400", async () => {
+    state.savedMessages = { "m1": { id: "m1", campaign_id: CAMP, to_email: "op@kowalski.test", locale: "pl", state: "pending", subject: "ZAPISANY TEMAT 5 kredytów", html: "<p>ZAPISANY HTML</p>", text_body: "ZAPISANY TEKST", snapshot: { company_name: "Sad Kowalski" }, is_test: false } };
+    let r = await call({ action: "message", campaign_id: CAMP, message_id: "m1" });
+    expect(r.status).toBe(200);
+    expect(r.body.saved).toBe(true);
+    expect(r.body.message).toMatchObject({ subject: "ZAPISANY TEMAT 5 kredytów", html: "<p>ZAPISANY HTML</p>", text_body: "ZAPISANY TEKST", to_email: "op@kowalski.test" });
+    expect((await call({ action: "message", campaign_id: CAMP, message_id: "nie-ma" })).status).toBe(404);
+    expect((await call({ action: "message", campaign_id: CAMP })).status).toBe(400);
   });
 });

@@ -75,6 +75,12 @@ export default function MarketingActivation({ fl }) {
     setPreview({ ...r, locale: locale || row.locale, rowRef: row });
   });
 
+  // wierna kopia z rejestru (to, co wyjdzie/wyszło) — w odróżnieniu od podglądu szablonu z aktualnych danych
+  const savedPreview = (m) => current && run("saved", async () => {
+    const r = await marketingCall("marketing-campaign", { action: "message", campaign_id: current.campaign.id, message_id: m.id });
+    setPreview({ subject: r.message.subject, html: r.message.html, text: r.message.text_body, locale: r.message.locale, row: { company_name: r.message.snapshot?.company_name || r.message.to_email }, saved: true, to: r.message.to_email });
+  });
+
   const saveContent = (reset = false) => current && run("content", async () => {
     const r = await marketingCall("marketing-campaign", { action: "update_content", campaign_id: current.campaign.id, content: reset ? {} : content, expected_version: current.campaign.content_version });
     toast(reset ? tr("content_reset") : tr("content_saved"));
@@ -298,7 +304,7 @@ export default function MarketingActivation({ fl }) {
                         <td style={{ padding: 6 }}><span style={tag(stateBg(m.state), stateFg(m.state))}>{tr("st_" + m.state)}</span>{m.last_error && <div style={{ fontSize: 10, color: "#94a3b8" }}>{m.last_error}</div>}</td>
                         <td style={{ padding: 6 }}>{m.attempts}</td>
                         <td style={{ padding: 6, fontSize: 11 }}>{m.sent_at ? new Date(m.sent_at).toLocaleString("pl-PL") : "—"}{m.resend_message_id && <div style={{ color: "#94a3b8", fontSize: 10 }}>{m.resend_message_id}</div>}</td>
-                        <td style={{ padding: 6, whiteSpace: "nowrap" }}>{!m.is_test && current.campaign.status !== "closed" && <button style={btn("secondary")} disabled={!!busy} onClick={() => sendTest(m.id)}>{tr("send_test")}</button>}</td>
+                        <td style={{ padding: 6, whiteSpace: "nowrap" }}><button data-testid="mk-saved-preview" style={btn("secondary")} disabled={!!busy} onClick={() => savedPreview(m)}>{tr("saved_preview")}</button> {!m.is_test && current.campaign.status !== "closed" && <button style={btn("secondary")} disabled={!!busy} onClick={() => sendTest(m.id)}>{tr("send_test")}</button>}</td>
                       </tr>
                     ))}
                     {(current.messages || []).length === 0 && <tr><td colSpan={7} style={{ padding: 12, color: "#94a3b8" }}>{tr("no_messages")}</td></tr>}
@@ -314,13 +320,14 @@ export default function MarketingActivation({ fl }) {
         <div onClick={() => setPreview(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: 12, width: "min(760px, 100%)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", borderBottom: "1px solid #e2e8f0", display: "flex", gap: 10, alignItems: "center" }}>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{tr("preview")} · {preview.locale.toUpperCase()} · {preview.row?.company_name}{preview.meta?.customContent ? ` · ${tr("content_custom")}` : ""}</div>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{preview.saved ? tr("saved_preview_title") : tr("preview")} · {preview.locale.toUpperCase()} · {preview.row?.company_name}{preview.saved ? ` · ${preview.to}` : preview.meta?.customContent ? ` · ${tr("content_custom")}` : ""}</div>
               <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                <button style={btn("secondary")} onClick={() => doPreview(preview.rowRef, "pl")}>PL</button>
-                <button style={btn("secondary")} onClick={() => doPreview(preview.rowRef, "en")}>EN</button>
+                {!preview.saved && <button style={btn("secondary")} onClick={() => doPreview(preview.rowRef, "pl")}>PL</button>}
+                {!preview.saved && <button style={btn("secondary")} onClick={() => doPreview(preview.rowRef, "en")}>EN</button>}
                 <button style={btn("secondary")} onClick={() => setPreview(null)}>✕</button>
               </div>
             </div>
+            {!preview.saved && !isDraft && <div data-testid="mk-preview-live-note" style={{ padding: "6px 16px", fontSize: 11, color: "#92400e", background: "#fef3c7" }}>{tr("preview_live_note")}</div>}
             <div style={{ padding: "8px 16px", fontSize: 12, borderBottom: "1px solid #f1f5f9" }}><b>{tr("m_subject")}:</b> {preview.subject}</div>
             <iframe title="preview" srcDoc={preview.html} sandbox="" style={{ flex: 1, border: "none", minHeight: 420 }} />
             <details style={{ padding: "8px 16px", fontSize: 11, color: "#475569", borderTop: "1px solid #f1f5f9" }}><summary>{tr("text_version")}</summary><pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{preview.text}</pre></details>

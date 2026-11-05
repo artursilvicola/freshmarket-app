@@ -6,15 +6,16 @@ import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
 
-const calls = vi.hoisted(() => ({ list: [] }));
+const calls = vi.hoisted(() => ({ list: [], approvedStatus: null }));
 const DEF = { pl: { subject: "Domyślny PL {{credits}}", body: "Treść PL", cta: "Przygotuj propozycję" }, en: { subject: "Default EN", body: "Body EN", cta: "Prepare a proposal" } };
 vi.mock("../../lib/db.js", () => ({
   marketingCall: vi.fn(async (fn, body) => {
     calls.list.push([fn, body]);
     if (fn === "marketing-campaign" && body.action === "list") return { campaigns: [{ id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: {}, counts: { total: 0 } }] };
-    if (fn === "marketing-campaign" && body.action === "get") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: {}, content_version: 1 }, default_content: DEF, messages: [] };
+    if (fn === "marketing-campaign" && body.action === "get") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: calls.approvedStatus || "draft", template_key: "credits_no_proposal", content: {}, content_version: 1 }, default_content: DEF, messages: calls.approvedStatus ? [{ id: "m1", to_email: "op@kowalski.test", locale: "pl", subject: "ZAPISANY TEMAT", state: "pending", attempts: 0, consent_source: "lista", is_test: false, snapshot: { company_name: "Sad Kowalski" } }] : [] };
     if (fn === "marketing-campaign" && body.action === "update_content") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: body.content, content_version: 2 }, reset: Object.keys(body.content).length === 0 };
     if (fn === "marketing-campaign" && body.action === "approve") return { approved: 1, skipped: [], content_version: body.content_version };
+    if (fn === "marketing-campaign" && body.action === "message") return { saved: true, message: { id: body.message_id, to_email: "op@kowalski.test", locale: "pl", subject: "ZAPISANY TEMAT", html: "<p>ZAPISANY</p>", text_body: "ZAPISANY TEKST", snapshot: { company_name: "Sad Kowalski" } } };
     if (fn === "marketing-preview") return { subject: "Podgląd", html: "<p>x</p>", text: "x", row: { company_name: "Sad Kowalski" }, meta: { customContent: !!body.content } };
     if (fn === "marketing-candidates") return {
       snapshot_at: "2026-11-04T10:00:00Z", summary: { companies: 3, base_ok: 2, eligible: 1, audience: "credits_no_proposal", by_audience: { credits_no_proposal: 1, credits_proposal_ready: 0, used_before_free_credits: 1, credits_expiring: 0, no_valid_credits: 0 }, by_exclusion: { suppressed: 1 }, counts_overlap: true },
@@ -43,7 +44,7 @@ const openFirst = async (fl = vi.fn()) => {
 };
 let hadWindow, prevConfirm;
 beforeEach(async () => {
-  await i18n.changeLanguage("pl"); calls.list.length = 0;
+  await i18n.changeLanguage("pl"); calls.list.length = 0; calls.approvedStatus = null;
   hadWindow = "window" in globalThis; if (!hadWindow) globalThis.window = {}; prevConfirm = globalThis.window.confirm;
 });
 afterEach(() => { if (tree) act(() => tree.unmount()); tree = null; globalThis.window.confirm = prevConfirm; if (!hadWindow) delete globalThis.window; });
@@ -149,6 +150,29 @@ describe("Marketing → Aktywacja PreConnect", () => {
     expect(approve[1].content_version).toBe(2); // wersja po zapisie, ta sama którą pokazał podgląd
     const upd = calls.list.find(([fn, b]) => fn === "marketing-campaign" && b.action === "update_content");
     expect(upd[1].expected_version).toBe(1);
+  });
+
+  it("[zastrzeżenie Codexa] po zatwierdzeniu: podgląd szablonu oznaczony jako „z aktualnych danych”, a „Zapisana wiadomość” pokazuje dokładnie treść z rejestru bez przełącznika PL/EN", async () => {
+    calls.approvedStatus = "approved";
+    await openFirst();
+    const o = out();
+    expect(o).toContain("ZAPISANY TEMAT");
+    expect(o).toContain("Zapisana wiadomość");
+    // podgląd szablonu (aktualne dane) → nota
+    const plBtn = tree.root.findAllByType("button").find((b) => b.children?.[0] === "PL");
+    await act(async () => { await plBtn.props.onClick(); });
+    expect(byId("mk-preview-live-note")).toBeTruthy();
+    expect(out()).toContain("podgląd szablonu z AKTUALNYCH danych");
+    // zapisana wiadomość
+    await act(async () => { await byId("mk-saved-preview").props.onClick(); });
+    const msgCall = calls.list.find(([fn, b]) => fn === "marketing-campaign" && b.action === "message");
+    expect(msgCall[1]).toMatchObject({ campaign_id: "camp-1", message_id: "m1" });
+    const o2 = out();
+    expect(o2).toContain("Zapisana wiadomość z rejestru");
+    expect(o2).toContain("ZAPISANY TEKST");
+    expect(tree.root.findAllByProps({ "data-testid": "mk-preview-live-note" })).toHaveLength(0);
+    const iframe = tree.root.findAllByType("iframe")[0];
+    expect(iframe.props.srcDoc).toBe("<p>ZAPISANY</p>");
   });
 
   it("„Zamknij kampanię”: anulowane potwierdzenie nie woła serwera; potwierdzone woła action=close", async () => {

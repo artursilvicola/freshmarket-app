@@ -316,3 +316,15 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Pełny zestaw po 12b (05.11 ~12:15):** 104 pliki, **890 testów zaliczonych**, 2 pominięte.
 
 **Próba na żywo 12b (05.11 ~12:25, DEMO 3 z domyślnym szablonem):** przed: content {}, frozen null; approve → 200; po: frozen_content ma pl+en z kluczami body/cta/subject, temat PL „Kolejna propozycja w PreConnect — masz jeszcze {{credits}}”, wiadomość „… masz jeszcze 12 kredytów”, snapshot.custom_content=false; podgląd po zatwierdzeniu z zamrożonej treści.
+
+### 12c. Zastrzeżenie Codexa po odbiorze P1 #3: podgląd zatwierdzonej kampanii ≠ kopia maila (05.11 ~12:40)
+
+**Problem:** podgląd kampanii po zatwierdzeniu renderuje zamrożoną treść, ale z AKTUALNYM saldem i datami — to podgląd szablonu, nie wierna kopia wiadomości z rejestru.
+
+**Poprawka (oba warianty z sugestii):**
+- Podgląd szablonu po zatwierdzeniu ma żółtą notę: „To podgląd szablonu z AKTUALNYCH danych (saldo, daty), nie kopia wiadomości z rejestru…”.
+- Nowa akcja `marketing-campaign` → `message { campaign_id, message_id }` zwraca ZAPISANY wiersz rejestru (temat, html, tekst, adres, stan). W rejestrze przy każdym wierszu przycisk **„Zapisana wiadomość”** otwiera modal z dokładnie tą treścią (tytuł „Zapisana wiadomość z rejestru (dokładnie ta treść wyjdzie / wyszła)”, bez przełącznika PL/EN, bez noty o aktualnych danych). Nic nie renderuje ponownie — pokazuje html/tekst z bazy.
+
+**Testy:** `marketing-campaign.test.js` — `message` zwraca dokładnie zapisany temat/html/tekst, 404 dla obcego id, 400 bez id. `MarketingActivation.test.jsx` — po zatwierdzeniu podgląd szablonu pokazuje notę, „Zapisana wiadomość” woła `message` i pokazuje treść z rejestru w iframe bez noty i bez PL/EN.
+
+**Pełny zestaw po 12c:** 104 pliki, **892 testy zaliczone**, 2 pominięte.

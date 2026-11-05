@@ -22,6 +22,8 @@
  *            wypisu w treści), więc JEDEN insert zapisuje kompletną wiadomość (review Codexa #5).
  *            Wiersz bez consent_source nie powstaje (422 z listą). Powtórne approve nie dubluje
  *            (unikalność campaign+profile) — dopisuje tylko nowych adresatów.
+ *  message        → { campaign_id, message_id } → ZAPISANA wiadomość z rejestru (temat, html, tekst) — wierna kopia tego,
+ *                   co wyjdzie/wyszło; podgląd kampanii po zatwierdzeniu to tylko szablon z aktualnych danych
  *  close          → { campaign_id } → status closed (bez wysyłki)
  *
  * Żadnej wysyłki tutaj. Marketing nie dotyka legacy_sends ani rozliczeń.
@@ -178,6 +180,15 @@ export const handler = async (event) => {
           inserted.push({ company_id: row.company_id, message_id: messageId, to_email: row.email, locale: row.locale });
         }
         return json(200, { ok: true, approved: inserted.length, inserted, skipped, problems, snapshot_at: snapshotAt, content_version: frozenCampaign.frozen_content_version || currentVersion });
+      }
+      case "message": {
+        if (!body.campaign_id || !body.message_id) return json(400, { error: "message_id_required" });
+        const { data: msg, error } = await supaSvc.from("marketing_messages")
+          .select("id, campaign_id, to_email, locale, state, subject, html, text_body, payload_hash, snapshot, consent_source, is_test, sent_at, created_at")
+          .eq("id", body.message_id).eq("campaign_id", body.campaign_id).maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!msg) return json(404, { error: "message_not_found" });
+        return json(200, { ok: true, saved: true, message: msg });
       }
       case "close": {
         const campaign = await loadCampaign(supaSvc, body.campaign_id);
