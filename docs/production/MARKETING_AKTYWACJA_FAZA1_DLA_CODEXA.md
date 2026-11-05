@@ -314,3 +314,5 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Sprostowanie do §12:** odczyt kandydatów jest przed zamrożeniem, więc jego awaria nie zostawia zatwierdzonej kampanii; taki stan może powstać tylko przy późniejszym błędzie zapisu wiadomości, a ponowienie zachowuje zamrożoną treść.
 
 **Pełny zestaw po 12b (05.11 ~12:15):** 104 pliki, **890 testów zaliczonych**, 2 pominięte.
+
+**Próba na żywo 12b (05.11 ~12:25, DEMO 3 z domyślnym szablonem):** przed: content {}, frozen null; approve → 200; po: frozen_content ma pl+en z kluczami body/cta/subject, temat PL „Kolejna propozycja w PreConnect — masz jeszcze {{credits}}”, wiadomość „… masz jeszcze 12 kredytów”, snapshot.custom_content=false; podgląd po zatwierdzeniu z zamrożonej treści.
