@@ -374,3 +374,24 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Review Codexa 9abdd7e (05.11 ~14:10): przyjęte, 44/44.** Przed prawdziwą wysyłką (poza zakresem prototypu):
 1. logo musi być dostępne pod publicznym adresem HTTPS — `emailLogoUrl(B2B_APP_URL)` da `https://b2b.freshmarket.eu/brand/fm-email-logo-white.png` dopiero po wdrożeniu gałęzi (plik `public/brand/` jedzie z buildem); adres `localhost` działa tylko w demonstracji;
 2. obejrzeć mail testowy w Gmailu i Outlooku, także na telefonie i z zablokowanymi obrazkami (wtedy w czapce zostaje `alt="Fresh Market"` + „PreConnect” i hasło w tekście) — podgląd w przeglądarce tego nie zastępuje; wymaga `MARKETING_SEND_ENABLED=true` i prawdziwego klucza Resend, czyli osobnej zgody.
+
+## 15. WDROŻENIE NA PRODUKCJĘ (Codex, 05.11 ~15:50 CET, za zgodą Artura) + niezależna kontrola Claude
+
+**Raport Codexa:** `C:/Users/Artur/OneDrive/Dokumenty/1FMK2026/outputs/marketing-deploy-2026-11-05/RAPORT_DLA_CLAUDE.md`. main d61d7e0 → 5f6835f (fast-forward), tag `prod-pre-marketing-2026-11-05` = d61d7e0, Netlify deploy 6aec9785 (ready 14:50:17 UTC), trzy migracje marketingowe wykonane na prod, `VITE_ADMIN_MARKETING_ACTIVATION=true`, `MARKETING_SEND_ENABLED=false`, nowy `MARKETING_UNSUBSCRIBE_SECRET` (secret), legacy_sends 249 wierszy md5 bez zmian, tabele marketingowe puste, RLS/RPC sprawdzone.
+
+**Kontrola Claude (tylko odczyt, bez zmian na prod):**
+| Co | Wynik |
+|---|---|
+| origin/main | 5f6835f (zgodne z raportem); tag `prod-pre-marketing-2026-11-05` → d61d7e0 istnieje na origin |
+| `https://b2b.freshmarket.eu/version.json` | build `5f6835fa5793`, built_at 2026-11-05T14:50:05Z |
+| Netlify deploys | 6aec9785 ready production 5f6835f main (14:50:17 UTC); poprzedni 6ae88196 = d61d7e0 (rollback przez „Publish deploy”) |
+| logo HTTPS | `https://b2b.freshmarket.eu/brand/fm-email-logo-white.png` → 200 image/png 14050 B (kontrola nr 1 z §14b spełniona) |
+| funkcje marketing-* na prod | 401 bez tokenu (auth przed czymkolwiek) |
+| `preview-env-check` na prod | brak funkcji — odpowiedź 200 to fallback SPA (text/html, jak dla każdej nieznanej ścieżki); `.preview-test` nie ma w origin/main |
+| flaga wysyłki / stan bazy prod | NIE sprawdzałem bezpośrednio (brak dostępu service_role do prod z tej sesji — celowo); opieram się na raporcie Codexa i zrzutach `database-verification.png`, `marketing-production.png` |
+
+**Niezweryfikowane przeze mnie:** wartość `MARKETING_SEND_ENABLED` na prod i puste tabele — Artur może potwierdzić w Netlify (Environment variables) i w panelu Marketing (lista kampanii pusta).
+
+**Uwaga bezpieczeństwa z raportu:** podczas odczytu konfiguracji Netlify do wyniku narzędzia Codexa trafiły wartości `PAYU_*`, `FM_EXPORT_TOKEN` i `RESEND_WEBHOOK_SECRET` (nie były oznaczone jako secret). Zalecana kontrolowana rotacja (patrz raport w czacie) i oznaczenie jako secret w Netlify. Nic nie zostało zmienione.
+
+**Co dalej:** test prawdziwej poczty (Gmail/Outlook/telefon/obrazki) = osobna zgoda Artura + kontrolowane `MARKETING_SEND_ENABLED=true` na jedną próbę; paragraf regulaminu w `CONSENT_SOURCE_DEFAULT` (§13); obserwacje fazy 2 (§10d, §11.4).
