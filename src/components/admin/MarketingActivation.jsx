@@ -41,7 +41,8 @@ export default function MarketingActivation({ fl }) {
   const [form, setForm] = useState({ name: "", template_key: AUDIENCES[0], reply_to: "" });
 
   const toast = (msg, kind) => { if (typeof fl === "function") fl(msg, kind); };
-  const run = async (label, fn) => { setBusy(label); try { return await fn(); } catch (e) { toast(e?.message || String(e), "error"); return null; } finally { setBusy(null); } };
+  const errText = (e) => { const code = e?.payload?.error; const key = code ? "err_" + code : null; const msg = key ? t("admin.marketing." + key, { defaultValue: "" }) : ""; return msg || e?.message || String(e); };
+  const run = async (label, fn) => { setBusy(label); try { return await fn(); } catch (e) { toast(errText(e), "error"); return null; } finally { setBusy(null); } };
 
   const loadCampaigns = () => run("list", async () => { const r = await marketingCall("marketing-campaign", { action: "list" }); setCampaigns(r.campaigns || []); return r; });
   useEffect(() => { loadCampaigns(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -75,7 +76,7 @@ export default function MarketingActivation({ fl }) {
   });
 
   const saveContent = (reset = false) => current && run("content", async () => {
-    const r = await marketingCall("marketing-campaign", { action: "update_content", campaign_id: current.campaign.id, content: reset ? {} : content });
+    const r = await marketingCall("marketing-campaign", { action: "update_content", campaign_id: current.campaign.id, content: reset ? {} : content, expected_version: current.campaign.content_version });
     toast(reset ? tr("content_reset") : tr("content_saved"));
     const next = { ...current, campaign: r.campaign };
     setCurrent(next); setContent(contentOf(next));
@@ -87,9 +88,11 @@ export default function MarketingActivation({ fl }) {
     const recipients = selectedRows.map((r) => ({ company_id: r.company_id, consent_source: consent[r.company_id] || bulkConsent || "" }));
     if (!recipients.length) { toast(tr("select_first"), "error"); return; }
     if (recipients.some((r) => !r.consent_source.trim())) { toast(tr("consent_required"), "error"); return; }
+    // [P1 #1] niezapisane zmiany w edytorze: podgląd pokazywał inną treść niż ta w bazie — najpierw zapis
+    if (isDraft && !sameContent(content, contentOf(current))) { toast(tr("save_first"), "error"); return; }
     const pl = selectedRows.filter((r) => r.locale === "pl").length, en = selectedRows.length - pl;
     if (!window.confirm(tr("approve_confirm", { n: recipients.length, pl, en, audience: audLabel(current.campaign.template_key) }))) return;
-    const r = await marketingCall("marketing-campaign", { action: "approve", campaign_id: current.campaign.id, recipients });
+    const r = await marketingCall("marketing-campaign", { action: "approve", campaign_id: current.campaign.id, recipients, content_version: current.campaign.content_version });
     toast(tr("approved", { n: r.approved, skipped: (r.skipped || []).length }));
     await openCampaign(current.campaign.id); await loadCampaigns();
   });
@@ -270,6 +273,7 @@ export default function MarketingActivation({ fl }) {
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                     <input style={{ ...inp, width: 320 }} value={bulkConsent} onChange={(e) => setBulkConsent(e.target.value)} placeholder={tr("consent_bulk_ph")} />
                     <button data-testid="mk-approve" style={btn("primary")} disabled={!!busy || selectedCount === 0} onClick={approve}>{tr("approve", { n: selectedCount })}</button>
+                    {contentDirty && isDraft && <span style={tag("#fee2e2", "#991b1b")}>{tr("save_first")}</span>}
                   </div>
                 </div>
               )}

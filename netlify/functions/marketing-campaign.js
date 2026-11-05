@@ -7,9 +7,15 @@
  *  list           → kampanie z licznikami stanów wiadomości
  *  create         → { name, template_key (= grupa odbiorców), reply_to } — treść = domyślna szablonu
  *  get            → { campaign_id } → kampania (+ domyślna treść szablonu do porównania) + wiadomości (bez html)
- *  update_content → { campaign_id, content: { pl: {subject, body, cta}, en: {...} } } — tylko w szkicu,
- *                   bez HTML (walidacja), pusty obiekt = powrót do domyślnej
- *  approve        → { campaign_id, recipients: [{ company_id, consent_source }] }
+ *  update_content → { campaign_id, content: { pl: {subject, body, cta}, en: {...} }, expected_version? } — tylko w szkicu,
+ *                   bez HTML (walidacja), pusty obiekt = powrót do domyślnej; content_version += 1 warunkowo
+ *                   (inna wersja w bazie = 409 content_version_conflict — edycja w drugim oknie)
+ *  approve        → { campaign_id, content_version, recipients: [{ company_id, consent_source }] }
+ *            content_version MUSI równać się wersji w bazie (tej, którą administrator widział w podglądzie) — inaczej 409.
+ *            Najpierw JEDEN warunkowy UPDATE (status in draft/approved AND content_version = oczekiwana) zamraża treść
+ *            w kampanii (frozen_content) i ustawia status approved; 0 wierszy = równoległa edycja/zamknięcie = 409, nic nie
+ *            powstaje. Dopiero potem wiadomości — renderowane WYŁĄCZNIE z frozen_content, więc awaria w połowie i
+ *            ponowienie dają te same teksty (review Codexa P1 #2).
  *            ŚWIEŻY odczyt kandydatów → tylko kwalifikujący się DO GRUPY KAMPANII z listy → render
  *            PL/EN z treści kampanii → ZAMROŻONE wiersze marketing_messages (treść, hash, klucz
  *            idempotencji, snapshot salda, źródło zgody). Id wiersza losowane przed zapisem (link
@@ -83,11 +89,15 @@ export const handler = async (event) => {
           if (errors.length) return json(422, { error: "content_invalid", errors });
         }
         const clean = reset ? {} : { pl: pickFields(content.pl), en: pickFields(content.en) };
+        const current = Number(campaign.content_version || 1);
+        const expected = body.expected_version == null ? current : Number(body.expected_version);
+        if (expected !== current) return json(409, { error: "content_version_conflict", current, expected });
+        // warunkowo po wersji: dwa okna nie nadpiszą się nawzajem po cichu
         const { data, error } = await supaSvc.from("marketing_campaigns")
-          .update({ content: clean, content_updated_at: new Date().toISOString(), content_updated_by: caller.id })
-          .eq("id", campaign.id).eq("status", "draft").select("*").maybeSingle();
+          .update({ content: clean, content_version: current + 1, content_updated_at: new Date().toISOString(), content_updated_by: caller.id })
+          .eq("id", campaign.id).eq("status", "draft").eq("content_version", current).select("*").maybeSingle();
         if (error) throw new Error(error.message);
-        if (!data) return json(409, { error: "content_frozen" });
+        if (!data) return json(409, { error: "content_version_conflict", current });
         return json(200, { ok: true, campaign: data, reset });
       }
       case "approve": {
@@ -98,8 +108,12 @@ export const handler = async (event) => {
         const wanted = Array.isArray(body.recipients) ? body.recipients.slice(0, MAX_RECIPIENTS) : [];
         if (!wanted.length) return json(400, { error: "recipients_required" });
         const byCompany = new Map(wanted.map((r) => [String(r.company_id), str(r.consent_source)]));
-        const content = campaign.content && Object.keys(campaign.content).length ? campaign.content : null;
-        if (content) { const errors = validateContent(content); if (errors.length) return json(422, { error: "content_invalid", errors }); }
+        // [P1 #1] wersja treści, którą administrator widział w podglądzie, musi być wersją w bazie
+        const currentVersion = Number(campaign.content_version || 1);
+        if (!Number.isInteger(Number(body.content_version))) return json(400, { error: "content_version_required" });
+        if (Number(body.content_version) !== currentVersion) return json(409, { error: "content_version_mismatch", current: currentVersion, sent: Number(body.content_version) });
+        const liveContent = campaign.content && Object.keys(campaign.content).length ? campaign.content : null;
+        if (liveContent) { const errors = validateContent(liveContent); if (errors.length) return json(422, { error: "content_invalid", errors }); }
 
         const result = await computeCandidates(supaSvc, { campaign });
         const snapshotAt = result.snapshot_at;
@@ -113,6 +127,19 @@ export const handler = async (event) => {
           toInsert.push({ row, consent, templateKey: campaign.template_key });
         }
         if (problems.length && body.strict !== false) return json(422, { error: "recipients_rejected", problems, approved: 0 });
+
+        // [P1 #2] ATOMOWE zamrożenie: jeden warunkowy UPDATE (status draft/approved + ta sama wersja treści) ustawia
+        // status approved i zapisuje frozen_content; 0 wierszy = ktoś w międzyczasie edytował treść albo zamknął kampanię.
+        const nowIso = new Date().toISOString();
+        const firstFreeze = !campaign.frozen_content;
+        const freezePatch = firstFreeze
+          ? { status: "approved", approved_by: caller.id, approved_at: nowIso, snapshot_at: snapshotAt, frozen_content: campaign.content || {}, frozen_content_version: currentVersion, content_frozen_at: nowIso }
+          : { status: "approved", snapshot_at: snapshotAt };
+        const { data: frozenCampaign, error: fzErr } = await supaSvc.from("marketing_campaigns").update(freezePatch)
+          .eq("id", campaign.id).eq("content_version", currentVersion).in("status", ["draft", "approved"]).select("*").maybeSingle();
+        if (fzErr) throw new Error("freeze: " + fzErr.message);
+        if (!frozenCampaign) return json(409, { error: "campaign_changed", hint: "treść zmieniona albo kampania zamknięta w innym oknie — odśwież i sprawdź podgląd" });
+        const content = frozenCampaign.frozen_content && Object.keys(frozenCampaign.frozen_content).length ? frozenCampaign.frozen_content : null;
 
         const inserted = [];
         const skipped = [];
@@ -133,7 +160,7 @@ export const handler = async (event) => {
           const full = {
             id: messageId, campaign_id: campaign.id, company_id: row.company_id, profile_id: row.profile_id, to_email: row.email, locale: row.locale,
             segment: row.segment, consent_source: consent,
-            snapshot: { ...row.snapshot, snapshot_at: snapshotAt, company_name: row.company_name, template_key: templateKey, audience_reason: row.audience_reason, warnings: row.warnings, custom_content: Boolean(content) },
+            snapshot: { ...row.snapshot, snapshot_at: snapshotAt, company_name: row.company_name, template_key: templateKey, audience_reason: row.audience_reason, warnings: row.warnings, custom_content: Boolean(content), content_version: frozenCampaign.frozen_content_version || currentVersion },
             subject: rendered.subject, html: rendered.html, text_body: rendered.text,
             payload_hash: payloadHash({ subject: rendered.subject, html: rendered.html, text: rendered.text }),
             idempotency_key: key, is_test: false, state: "pending",
@@ -145,16 +172,12 @@ export const handler = async (event) => {
           }
           inserted.push({ company_id: row.company_id, message_id: messageId, to_email: row.email, locale: row.locale });
         }
-        const { error: cErr } = await supaSvc.from("marketing_campaigns")
-          .update({ status: "approved", approved_by: caller.id, approved_at: new Date().toISOString(), snapshot_at: snapshotAt })
-          .eq("id", campaign.id);
-        if (cErr) throw new Error("campaign update: " + cErr.message);
-        return json(200, { ok: true, approved: inserted.length, inserted, skipped, problems, snapshot_at: snapshotAt });
+        return json(200, { ok: true, approved: inserted.length, inserted, skipped, problems, snapshot_at: snapshotAt, content_version: frozenCampaign.frozen_content_version || currentVersion });
       }
       case "close": {
         const campaign = await loadCampaign(supaSvc, body.campaign_id);
         if (!campaign) return json(404, { error: "campaign_not_found" });
-        const { error } = await supaSvc.from("marketing_campaigns").update({ status: "closed", closed_at: new Date().toISOString() }).eq("id", campaign.id);
+        const { error } = await supaSvc.from("marketing_campaigns").update({ status: "closed", closed_at: new Date().toISOString() }).eq("id", campaign.id).neq("status", "closed");
         if (error) throw new Error(error.message);
         return json(200, { ok: true });
       }

@@ -12,8 +12,9 @@ vi.mock("../../lib/db.js", () => ({
   marketingCall: vi.fn(async (fn, body) => {
     calls.list.push([fn, body]);
     if (fn === "marketing-campaign" && body.action === "list") return { campaigns: [{ id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: {}, counts: { total: 0 } }] };
-    if (fn === "marketing-campaign" && body.action === "get") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: {} }, default_content: DEF, messages: [] };
-    if (fn === "marketing-campaign" && body.action === "update_content") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: body.content }, reset: Object.keys(body.content).length === 0 };
+    if (fn === "marketing-campaign" && body.action === "get") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: {}, content_version: 1 }, default_content: DEF, messages: [] };
+    if (fn === "marketing-campaign" && body.action === "update_content") return { campaign: { id: "camp-1", name: "Aktywacja listopad", status: "draft", template_key: "credits_no_proposal", content: body.content, content_version: 2 }, reset: Object.keys(body.content).length === 0 };
+    if (fn === "marketing-campaign" && body.action === "approve") return { approved: 1, skipped: [], content_version: body.content_version };
     if (fn === "marketing-preview") return { subject: "Podgląd", html: "<p>x</p>", text: "x", row: { company_name: "Sad Kowalski" }, meta: { customContent: !!body.content } };
     if (fn === "marketing-candidates") return {
       snapshot_at: "2026-11-04T10:00:00Z", summary: { companies: 3, base_ok: 2, eligible: 1, audience: "credits_no_proposal", by_audience: { credits_no_proposal: 1, credits_proposal_ready: 0, used_before_free_credits: 1, credits_expiring: 0, no_valid_credits: 0 }, by_exclusion: { suppressed: 1 }, counts_overlap: true },
@@ -122,6 +123,32 @@ describe("Marketing → Aktywacja PreConnect", () => {
     await act(async () => { await byId("mk-approve").props.onClick(); });
     expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("Mają kredyty, brak propozycji"));
     expect(calls.list.some(([fn, b]) => fn === "marketing-campaign" && b.action === "approve")).toBe(false);
+  });
+
+  it("[P1] edycja → podgląd → zatwierdzenie BEZ zapisu = blokada „Najpierw zapisz treść”, serwer nie wołany; po zapisie approve niesie content_version z bazy", async () => {
+    const fl = await openFirst();
+    await act(async () => { byId("mk-subject-pl").props.onChange({ target: { value: "Inny temat" } }); });
+    await act(async () => { await byId("mk-preview-pl").props.onClick(); });
+    await act(async () => { byId("mk-select-visible").props.onClick(); });
+    const consentInput = tree.root.findAllByType("input").find((i) => i.props.placeholder === "źródło zgody");
+    await act(async () => { consentInput.props.onChange({ target: { value: "regulamin 1.0 §9" } }); });
+    expect(out()).toContain("Najpierw zapisz treść");
+    const confirmSpy = vi.fn().mockReturnValue(true); globalThis.window.confirm = confirmSpy;
+    await act(async () => { await byId("mk-approve").props.onClick(); });
+    expect(fl).toHaveBeenCalledWith(expect.stringMatching(/Najpierw zapisz treść/), "error");
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(calls.list.some(([fn, b]) => fn === "marketing-campaign" && b.action === "approve")).toBe(false);
+    await act(async () => { await byId("mk-save-content").props.onClick(); });
+    await flush();
+    await act(async () => { byId("mk-select-visible").props.onClick(); });
+    const consent2 = tree.root.findAllByType("input").find((i) => i.props.placeholder === "źródło zgody");
+    await act(async () => { consent2.props.onChange({ target: { value: "regulamin 1.0 §9" } }); });
+    await act(async () => { await byId("mk-approve").props.onClick(); });
+    await flush();
+    const approve = calls.list.find(([fn, b]) => fn === "marketing-campaign" && b.action === "approve");
+    expect(approve[1].content_version).toBe(2); // wersja po zapisie, ta sama którą pokazał podgląd
+    const upd = calls.list.find(([fn, b]) => fn === "marketing-campaign" && b.action === "update_content");
+    expect(upd[1].expected_version).toBe(1);
   });
 
   it("„Zamknij kampanię”: anulowane potwierdzenie nie woła serwera; potwierdzone woła action=close", async () => {

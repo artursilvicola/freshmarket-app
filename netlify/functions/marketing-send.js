@@ -118,6 +118,12 @@ export const handler = async (event) => {
  * wiersza testowego → własny link wypisu i nagłówek List-Unsubscribe). Nic w treści
  * ani nagłówkach nie wskazuje na wiersz prawdziwego adresata.
  */
+/** Treść do renderu testu: zamrożona przy zatwierdzeniu (frozen_content), a gdy jej nie ma — bieżąca. */
+function frozenOrLive(campaign) {
+  const src = campaign.frozen_content ?? campaign.content;
+  return src && Object.keys(src).length ? src : null;
+}
+
 async function sendTest({ supaSvc, env, caller, campaign, body }) {
   const to = String(body.test_to || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return json(400, { error: "test_to_invalid" });
@@ -133,7 +139,7 @@ async function sendTest({ supaSvc, env, caller, campaign, body }) {
   const key = `marketing-test:${src.id}:${to}:${minute}`;
   const unsub = unsubscribeUrl({ appUrl: env.b2bAppUrl, messageId: testId, secret: env.marketingUnsubscribeSecret });
   const rendered = renderMarketingTemplate({
-    templateKey: campaign.template_key, content: campaign.content && Object.keys(campaign.content).length ? campaign.content : null,
+    templateKey: campaign.template_key, content: frozenOrLive(campaign),
     locale: src.locale, companyName: snap.company_name || "",
     creditsRemaining: snap.credits_remaining, creditsAvailable: snap.credits_available, creditsReserved: snap.reserved, expiringCredits: snap.expiring_credits,
     creditsExpiry: snap.nearest_expiry, snapshotAt: snap.snapshot_at || src.created_at,
