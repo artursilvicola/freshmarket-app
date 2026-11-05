@@ -183,3 +183,33 @@ Projekt testowy: `rruszzdffclfhbtfeznb` (region eu-west-1). Artur przygotował `
 | Przyczyna | w `.env.test` pod `SUPABASE_SERVICE_ROLE_KEY` wklejono **klucz anon** (identyczny z `SUPABASE_ANON_KEY`, rola JWT `anon`) → klient „service” podlega RLS i nie widzi profili. Walidator tego nie wykrywał. |
 | Poprawka | `validateTestEnv`: odmowa gdy `SUPABASE_SERVICE_ROLE_KEY` = anon, gdy JWT ma rolę ≠ `service_role`, oraz gdy pod anon trafi JWT `service_role` (klucze `sb_secret_…` bez JWT przechodzą); helper `jwtRole`; test 9/9 (`tests/marketing-test-env.test.js`). Na aktualnym `.env.test` `dev-test.mjs` i `marketing-test-env.mjs` teraz odmawiają z czytelnym komunikatem. |
 | Do zrobienia przez Artura | Supabase → projekt testowy → Project Settings → API → **service_role** (legacy JWT secret) → wkleić do `.env.test` jako `SUPABASE_SERVICE_ROLE_KEY`. Baza jest już przygotowana — ponowny `marketing-test-env.mjs` nic nie powtórzy (rejestr), wystarczy `preview_start fm-b2b-test`. |
+
+### 10d. ODBIÓR UI WYKONANY 05.11 ~08:05–08:25 na bazie testowej `rruszzdffclfhbtfeznb` (pełny przebieg)
+
+Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service_role`), `netlify dev --offline` na porcie 8888, konto `codex.admin@freshmarket.test`, `MARKETING_SEND_ENABLED` wyłączone, Resend `re_test_…`. Produkcja i `main` nietknięte. Zrzuty: `docs/production/odbior-marketing-2026-11-05/01…06.jpg`.
+
+| Krok §9 | Wynik | Dowód |
+|---|---|---|
+| Lista kampanii | OK — pusta na starcie („Brak kampanii”), potem 1 i 2 pozycje ze statusem, szablonem i licznikiem wiadomości | `marketing-campaign` list → 200 |
+| Utworzenie kampanii | OK — „ODBIÓR test 05.11 — pierwsza propozycja”, szablon start, kategorie owoce/warzywa, słowa jabłka/pomidory, reply-to; wiersz w `marketing_campaigns` (draft) | create → 200; SQL |
+| Kandydaci | OK — 12 firm (9 seed + 3 z seed.sql), **3 kwalifikują się** (Garcia EN powrót+rezerwacja, Kowalski start + „kredyty wygasają <30 dni”, Nowak powrót 13 = 3 bezpł./10 kup., 3 wysyłki/1 odczyt); segmenty start 4 / powrót 2 / tylko czeka 1 / bez kredytów 5; wykluczenia nakładające się (nieaktywne 4, PreConnect wył. 4, brak kredytów 5, brak operatora 2, tylko oczekiwanie 1, wypis 1, konto testowe 1, kilku operatorów 1); „pokaż wykluczone” pokazuje każdą firmę z powodami | 01-kandydaci.jpg |
+| Salda vs baza | **1:1 z `company_capacity`** dla wszystkich 9 firm TEST (qty_remaining, pule free/paid, `Ważne do` = najbliższy termin puli: Nowak 2027-01-03 mimo paid do 2027-08-31); rezerwacje z `legacy_sends` (Garcia approved=1, „Wszystko w toku” 5/5) | SQL |
+| Podgląd PL/EN | OK — Kowalski PL: „Masz 5 kredytów PreConnect — najbliższy mailing do kupców 1 grudnia 2026”, termin 24 listopada 2026, zdania po review r2; EN: „You have 5 credits in PreConnect — next buyer mailing on 1 December 2026”; link wypisu w podglądzie = atrapa `m=PODGLAD` | 02/03-podglad-*.jpg, `marketing-preview` → 200 ×2 |
+| Zatwierdzenie bez źródła zgody | OK — UI zatrzymuje („Każdy adresat musi mieć wpisane źródło zgody…”), serwer nie wołany | brak żądania approve |
+| Zatwierdzenie ze źródłem zgody | OK — zbiorcze źródło „regulamin B2B 1.0 §9 + deklaracja Artura 04.11 (odbiór testowy)”, confirm „Zamrozić treść i listę 3 adresatów?…”, approve → `approved: 3, skipped: [], problems: []`; kampania `approved`, `approved_by` = admin | approve → 200; SQL |
+| Rejestr | OK — 3 wiersze `pending`, 0 prób, tematy per język (Garcia EN „4 credits”, Nowak PL „13 kredytów”), **3 unikalne klucze idempotencji i 3 hashe**, snapshot z `company_name`/`template_key`/`credits_remaining`, `is_test=false` | 04-rejestr-po-zatwierdzeniu.jpg; SQL |
+| Przycisk Test (adres `artur.stasiak+mktest@…`) | OK — **403 `send_disabled`** („MARKETING_SEND_ENABLED nie jest ustawione na true — wysyłka (także testowa) wyłączona…”), toast z tą treścią widoczny u góry ekranu; **żaden mail nie wyszedł** | `marketing-send` → 403 ×3 |
+| „Wyślij z rejestru” | OK — confirm „Wysłać 3 oczekujących wiadomości? Każda idzie raz, pod stałym kluczem.” → **403 `send_disabled`**; rejestr bez zmian (pending, 0 prób, brak claim/lease), 0 zdarzeń webhooka | `marketing-send` → 403; SQL |
+| Zamknięcie kampanii | OK przez funkcję (`action: close` → 200) i — po poprawce niżej — **przyciskiem w UI** (druga kampania „zamknięcie z UI (powrót)”: confirm → `closed`, przycisk znika) | 06-zamkniecie-z-ui.jpg |
+| Trwałość po odświeżeniu | OK — po przeładowaniu strony lista pokazuje „zamknięta · 3 wiad.”, otwarcie kampanii pokazuje kandydatów i rejestr; w kampanii zamkniętej brak „Zaznacz/Zatwierdź/Wyślij” | 05-kampania-zamknieta-po-odswiezeniu.jpg |
+
+**Poprawka po odbiorze (do review Codexa):** §9 pkt 4 obiecywał „zamknięcie kampanii” w UI, a komponent nie miał przycisku (akcja istniała tylko w `marketing-campaign.js`). Dodano `mk-close` „Zamknij kampanię” (widoczny gdy status ≠ closed, `window.confirm` z nazwą kampanii, `action: close`, odświeżenie listy i kampanii) + klucze i18n PL/EN `close_campaign` / `close_confirm` / `closed_toast` + test komponentu (anulowany confirm nie woła serwera; potwierdzony woła `close` z `campaign_id`). Pełny zestaw po zmianie: **102 pliki, 867 zaliczonych, 1 pominięty** (z PGlite).
+
+**Obserwacje do decyzji (nie blokują fazy 1):**
+1. Szablon treści = `campaign.template_key` dla wszystkich zatwierdzonych (podgląd i wysyłka spójne), a segment wiersza (`row.template_key`) jest tylko informacją. W kampanii „powrót” kwalifikuje się także firma „start z kredytami” (Kowalski) i dostałaby treść „powrót”. Administrator musi filtrować po segmencie przed „Zaznacz widoczne”. Propozycja na fazę 2: ostrzeżenie lub blokada przy niezgodności segment ≠ szablon kampanii.
+2. Przyciski „Test” w rejestrze są widoczne także w kampanii zamkniętej (wysyłka testowa z zamkniętej kampanii nadal wymaga flagi; `marketing_precheck_message` dotyczy wierszy prawdziwych). Do rozważenia: ukryć Test po zamknięciu.
+3. `netlify dev --offline` dociąga z lokalnego `.env` zmienne `PAYU_*` (produkcyjne) do procesu podglądu — moduł Marketing ich nie używa i funkcje PayU nie były wołane, ale `buildChildEnv` mógłby je jawnie odciąć (`PAYU_*`), żeby podgląd testowy nie miał żadnego sekretu produkcji.
+4. Toast błędu renderuje się u góry strony; przy przewiniętej tabeli (szerokiej) komunikat `send_disabled` bywa poza ekranem — kosmetyka.
+5. W przeglądarce nie było błędów konsoli z funkcji `marketing-*` (wszystkie 200/403 zgodnie z oczekiwaniem).
+
+**Stan bazy testowej po odbiorze:** 2 kampanie `closed`, 3 wiadomości `pending` (nigdy nie wysłane), 0 zdarzeń. Można zostawić do kolejnych prób albo wyczyścić `delete from marketing_messages; delete from marketing_campaigns;` (tylko baza testowa).

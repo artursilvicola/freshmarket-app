@@ -69,4 +69,28 @@ describe("Marketing → Aktywacja PreConnect", () => {
     expect(fl).toHaveBeenCalledWith(expect.stringMatching(/źródło zgody/), "error");
     expect(calls.list.some(([fn, b]) => fn === "marketing-campaign" && b.action === "approve")).toBe(false);
   });
+
+  it("„Zamknij kampanię”: anulowane potwierdzenie nie woła serwera; potwierdzone woła action=close i odświeża", async () => {
+    const fl = vi.fn();
+    await act(async () => { tree = create(<MarketingActivation fl={fl} />); });
+    await flush();
+    const row = tree.root.findAllByProps({ "data-testid": "mk-campaign" })[0];
+    await act(async () => { row.props.onClick(); });
+    await flush();
+    const close = tree.root.findAllByProps({ "data-testid": "mk-close" })[0];
+    expect(close).toBeTruthy();
+    // środowisko node: brak window — atrapa tylko na czas testu
+    const hadWindow = "window" in globalThis; if (!hadWindow) globalThis.window = {};
+    const prevConfirm = globalThis.window.confirm;
+    const confirmSpy = vi.fn().mockReturnValueOnce(false); globalThis.window.confirm = confirmSpy;
+    await act(async () => { await close.props.onClick(); });
+    expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("Aktywacja listopad"));
+    expect(calls.list.some(([fn, b]) => fn === "marketing-campaign" && b.action === "close")).toBe(false);
+    confirmSpy.mockReturnValueOnce(true);
+    await act(async () => { await close.props.onClick(); });
+    await flush();
+    expect(calls.list.some(([fn, b]) => fn === "marketing-campaign" && b.action === "close" && b.campaign_id === "camp-1")).toBe(true);
+    expect(fl).toHaveBeenCalledWith(expect.stringMatching(/zamknięta/i), undefined);
+    globalThis.window.confirm = prevConfirm; if (!hadWindow) delete globalThis.window;
+  });
 });

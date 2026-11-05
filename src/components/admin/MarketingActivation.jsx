@@ -92,6 +92,11 @@ export default function MarketingActivation({ fl }) {
   }, [candidates, showExcluded, segmentFilter]);
   const selectedCount = Object.values(selected).filter(Boolean).length;
   const editable = current && ["draft", "approved"].includes(current.campaign.status);
+  const closeCampaign = () => current && run("close", async () => {
+    if (!window.confirm(tr("close_confirm", { name: current.campaign.name }))) return;
+    await marketingCall("marketing-campaign", { action: "close", campaign_id: current.campaign.id });
+    toast(tr("closed_toast")); await loadCampaigns(); await openCampaign(current.campaign.id);
+  });
 
   return (
     <div style={{ padding: 20, maxWidth: 1240 }}>
@@ -142,6 +147,7 @@ export default function MarketingActivation({ fl }) {
                   {current.campaign.reply_to && <span style={{ fontSize: 11, color: "#64748b" }}>reply-to: {current.campaign.reply_to}</span>}
                   <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                     <button style={btn("secondary")} disabled={!!busy} onClick={refreshCandidates}>{tr("refresh")}</button>
+                    {current.campaign.status !== "closed" && <button data-testid="mk-close" style={btn("secondary")} disabled={!!busy} onClick={closeCampaign}>{tr("close_campaign")}</button>}
                   </div>
                 </div>
                 {(current.campaign.target_categories?.length || current.campaign.target_keywords?.length) ? (

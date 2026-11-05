@@ -1911,7 +1911,10 @@
       "status_approved": "approved",
       "status_sending": "sending",
       "status_sent": "sent",
-      "status_closed": "closed"
+      "status_closed": "closed",
+      "close_campaign": "Close campaign",
+      "close_confirm": "Close campaign “{{name}}”? Pending messages will not be sent and closing cannot be undone.",
+      "closed_toast": "Campaign closed."
     },
     "settlements": {
       "title": "Supplier settlements",

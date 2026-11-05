@@ -1911,7 +1911,10 @@
       "status_approved": "zatwierdzona",
       "status_sending": "w wysyłce",
       "status_sent": "wysłana",
-      "status_closed": "zamknięta"
+      "status_closed": "zamknięta",
+      "close_campaign": "Zamknij kampanię",
+      "close_confirm": "Zamknąć kampanię „{{name}}”? Oczekujące wiadomości nie zostaną wysłane, a zamknięcia nie można cofnąć.",
+      "closed_toast": "Kampania zamknięta."
     },
     "settlements": {
       "title": "Rozliczenia z dostawcami",
