@@ -10,7 +10,10 @@
  *  update_content → { campaign_id, content: { pl: {subject, body, cta}, en: {...} }, expected_version? } — tylko w szkicu,
  *                   bez HTML (walidacja), pusty obiekt = powrót do domyślnej; content_version += 1 warunkowo
  *                   (inna wersja w bazie = 409 content_version_conflict — edycja w drugim oknie)
- *  approve        → { campaign_id, content_version, recipients: [{ company_id, consent_source }] }
+ *  approve        → { campaign_id, content_version, recipients: [{ company_id, consent_source? }] }
+ *            consent_source: decyzja Artura 05.11 — administrator NIE wpisuje źródła zgody; zgoda marketingowa wynika
+ *            z regulaminu przy rejestracji konta, więc bez podanej wartości serwer zapisuje CONSENT_SOURCE_DEFAULT
+ *            (rejestr nadal ma podstawę per adresat, blokada blocked_no_consent w bazie zostaje).
  *            content_version MUSI równać się wersji w bazie (tej, którą administrator widział w podglądzie) — inaczej 409.
  *            Najpierw JEDEN warunkowy UPDATE (status in draft/approved AND content_version = oczekiwana) zamraża treść
  *            w kampanii (frozen_content) i ustawia status approved; 0 wierszy = równoległa edycja/zamknięcie = 409, nic nie
@@ -20,7 +23,7 @@
  *            PL/EN z treści kampanii → ZAMROŻONE wiersze marketing_messages (treść, hash, klucz
  *            idempotencji, snapshot salda, źródło zgody). Id wiersza losowane przed zapisem (link
  *            wypisu w treści), więc JEDEN insert zapisuje kompletną wiadomość (review Codexa #5).
- *            Wiersz bez consent_source nie powstaje (422 z listą). Powtórne approve nie dubluje
+ *            Wiersz bez consent_source nie powstaje (domyślna podstawa z regulaminu). Powtórne approve nie dubluje
  *            (unikalność campaign+profile) — dopisuje tylko nowych adresatów.
  *  message        → { campaign_id, message_id } → ZAPISANA wiadomość z rejestru (temat, html, tekst) — wierna kopia tego,
  *                   co wyjdzie/wyszło; podgląd kampanii po zatwierdzeniu to tylko szablon z aktualnych danych
@@ -35,6 +38,8 @@ import { payloadHash, unsubscribeUrl } from "./_shared/marketing-mailer.js";
 import { randomUUID } from "node:crypto";
 
 const MAX_RECIPIENTS = 200;
+/** Podstawa zgody zapisywana w rejestrze, gdy panel jej nie podaje (regulamin przy rejestracji — decyzja Artura 05.11). */
+export const CONSENT_SOURCE_DEFAULT = "Regulamin Fresh Market B2B — zgoda na informacje o PreConnect wyrażona przy rejestracji konta";
 
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: MARKETING_CORS };
@@ -109,7 +114,7 @@ export const handler = async (event) => {
         if (!env.marketingUnsubscribeSecret) return json(500, { error: "unsubscribe_secret_missing", hint: "ustaw MARKETING_UNSUBSCRIBE_SECRET — bez linku wypisu nie zatwierdzamy wiadomości" });
         const wanted = Array.isArray(body.recipients) ? body.recipients.slice(0, MAX_RECIPIENTS) : [];
         if (!wanted.length) return json(400, { error: "recipients_required" });
-        const byCompany = new Map(wanted.map((r) => [String(r.company_id), str(r.consent_source)]));
+        const byCompany = new Map(wanted.map((r) => [String(r.company_id), str(r.consent_source) || CONSENT_SOURCE_DEFAULT]));
         // [P1 #1] wersja treści, którą administrator widział w podglądzie, musi być wersją w bazie
         const currentVersion = Number(campaign.content_version || 1);
         if (!Number.isInteger(Number(body.content_version))) return json(400, { error: "content_version_required" });
@@ -125,7 +130,6 @@ export const handler = async (event) => {
           const row = result.rows.find((r) => String(r.company_id) === companyId);
           if (!row) { problems.push({ company_id: companyId, reason: "not_found" }); continue; }
           if (!row.eligible) { problems.push({ company_id: companyId, reason: row.base_ok === false ? "not_eligible" : "not_in_audience", exclusions: row.exclusions, audience_reason: row.audience_reason }); continue; }
-          if (!consent) { problems.push({ company_id: companyId, reason: "consent_source_missing" }); continue; }
           toInsert.push({ row, consent, templateKey: campaign.template_key });
         }
         if (problems.length && body.strict !== false) return json(422, { error: "recipients_rejected", problems, approved: 0 });

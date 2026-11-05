@@ -16,6 +16,7 @@ vi.mock("../netlify/functions/_shared/marketing-data.js", () => ({
 import { handler } from "../netlify/functions/marketing-campaign.js";
 import { payloadHash } from "../netlify/functions/_shared/marketing-mailer.js";
 import { DEFAULT_CONTENT, defaultContent } from "../netlify/functions/_shared/marketing-templates.js";
+import { CONSENT_SOURCE_DEFAULT } from "../netlify/functions/marketing-campaign.js";
 
 const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const req = (body) => ({ httpMethod: "POST", headers: { authorization: "Bearer fake" }, body: JSON.stringify(body) });
@@ -127,9 +128,11 @@ describe("approve", () => {
     state.campaign.content = { pl: { subject: "<x>", body: "b", cta: "c" }, en: { subject: "s", body: "b", cta: "c" } };
     expect((await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1", consent_source: "lista" }] })).status).toBe(422);
   });
-  it("brak źródła zgody → 422; poza grupą → 422 not_in_audience z powodem; wykluczony bazowo → not_eligible", async () => {
+  it("brak źródła zgody → podstawa z regulaminu (decyzja Artura 05.11); poza grupą → 422 not_in_audience z powodem; wykluczony bazowo → not_eligible", async () => {
     let r = await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1", consent_source: "" }] });
-    expect(r.status).toBe(422); expect(r.body.problems[0].reason).toBe("consent_source_missing");
+    expect(r.status).toBe(200); expect(state.inserts[0].consent_source).toBe(CONSENT_SOURCE_DEFAULT);
+    expect(CONSENT_SOURCE_DEFAULT).toMatch(/regulamin/i);
+    state.inserts.length = 0;
     state.rows[0] = row({ eligible: false, in_audience: false, audience_reason: "b_has_sends" });
     r = await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1", consent_source: "lista" }] });
     expect(r.status).toBe(422); expect(r.body.problems[0]).toMatchObject({ reason: "not_in_audience", audience_reason: "b_has_sends" });

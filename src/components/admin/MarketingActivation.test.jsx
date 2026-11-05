@@ -109,21 +109,20 @@ describe("Marketing → Aktywacja PreConnect", () => {
     expect(byId("mk-subject-pl").props.value).toBe("Domyślny PL {{credits}}");
   });
 
-  it("zatwierdzenie: zaznacz widoczne → podsumowanie liczy język i grupę; bez źródła zgody zatrzymane w UI; z confirm=false serwer nie wołany", async () => {
+  it("zatwierdzenie: zaznacz widoczne → podsumowanie liczy język i grupę; bez pól zgody; z confirm=false serwer nie wołany", async () => {
     const fl = await openFirst();
     await act(async () => { byId("mk-select-visible").props.onClick(); });
     expect(out()).toContain("Do zatwierdzenia: 1 firm · PL 1 · EN 0 · grupa: Mają kredyty, brak propozycji");
     const approve = byId("mk-approve");
     expect(approve.props.disabled).toBe(false);
-    await act(async () => { await approve.props.onClick(); });
-    expect(fl).toHaveBeenCalledWith(expect.stringMatching(/źródło zgody/), "error");
-    expect(calls.list.some(([fn, b]) => fn === "marketing-campaign" && b.action === "approve")).toBe(false);
+    // bez pól „źródło zgody” (decyzja Artura 05.11) — podstawę zapisuje serwer
+    expect(tree.root.findAllByType("input").some((i) => /zgody/.test(i.props.placeholder || ""))).toBe(false);
+    expect(out()).toContain("Podstawa zgody: regulamin przy rejestracji konta");
     const confirmSpy = vi.fn().mockReturnValue(false); globalThis.window.confirm = confirmSpy;
-    const consentInput = tree.root.findAllByType("input").find((i) => i.props.placeholder === "źródło zgody");
-    await act(async () => { consentInput.props.onChange({ target: { value: "regulamin 1.0 §9" } }); });
     await act(async () => { await byId("mk-approve").props.onClick(); });
     expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("Mają kredyty, brak propozycji"));
     expect(calls.list.some(([fn, b]) => fn === "marketing-campaign" && b.action === "approve")).toBe(false);
+    expect(fl).not.toHaveBeenCalledWith(expect.stringMatching(/źródło zgody/), "error");
   });
 
   it("[P1] edycja → podgląd → zatwierdzenie BEZ zapisu = blokada „Najpierw zapisz treść”, serwer nie wołany; po zapisie approve niesie content_version z bazy", async () => {
@@ -131,8 +130,6 @@ describe("Marketing → Aktywacja PreConnect", () => {
     await act(async () => { byId("mk-subject-pl").props.onChange({ target: { value: "Inny temat" } }); });
     await act(async () => { await byId("mk-preview-pl").props.onClick(); });
     await act(async () => { byId("mk-select-visible").props.onClick(); });
-    const consentInput = tree.root.findAllByType("input").find((i) => i.props.placeholder === "źródło zgody");
-    await act(async () => { consentInput.props.onChange({ target: { value: "regulamin 1.0 §9" } }); });
     expect(out()).toContain("Najpierw zapisz treść");
     const confirmSpy = vi.fn().mockReturnValue(true); globalThis.window.confirm = confirmSpy;
     await act(async () => { await byId("mk-approve").props.onClick(); });
@@ -142,12 +139,11 @@ describe("Marketing → Aktywacja PreConnect", () => {
     await act(async () => { await byId("mk-save-content").props.onClick(); });
     await flush();
     await act(async () => { byId("mk-select-visible").props.onClick(); });
-    const consent2 = tree.root.findAllByType("input").find((i) => i.props.placeholder === "źródło zgody");
-    await act(async () => { consent2.props.onChange({ target: { value: "regulamin 1.0 §9" } }); });
     await act(async () => { await byId("mk-approve").props.onClick(); });
     await flush();
     const approve = calls.list.find(([fn, b]) => fn === "marketing-campaign" && b.action === "approve");
-    expect(approve[1].content_version).toBe(2); // wersja po zapisie, ta sama którą pokazał podgląd
+    expect(approve[1].content_version).toBe(2);
+    expect(approve[1].recipients[0]).toEqual({ company_id: "c1" }); // bez consent_source — podstawę dopisuje serwer // wersja po zapisie, ta sama którą pokazał podgląd
     const upd = calls.list.find(([fn, b]) => fn === "marketing-campaign" && b.action === "update_content");
     expect(upd[1].expected_version).toBe(1);
   });

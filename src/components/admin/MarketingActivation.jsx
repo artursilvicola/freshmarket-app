@@ -31,8 +31,6 @@ export default function MarketingActivation({ fl }) {
   const [current, setCurrent] = useState(null);           // { campaign, default_content, messages }
   const [candidates, setCandidates] = useState(null);     // { rows, summary, snapshot_at }
   const [selected, setSelected] = useState({});           // company_id -> true
-  const [consent, setConsent] = useState({});             // company_id -> text
-  const [bulkConsent, setBulkConsent] = useState("");
   const [showOthers, setShowOthers] = useState(false);
   const [preview, setPreview] = useState(null);           // { subject, html, text, row, locale }
   const [content, setContent] = useState(EMPTY_CONTENT);  // edytor treści PL/EN
@@ -91,9 +89,9 @@ export default function MarketingActivation({ fl }) {
 
   const selectedRows = useMemo(() => (candidates?.rows || []).filter((r) => selected[r.company_id] && r.eligible), [candidates, selected]);
   const approve = () => current && run("approve", async () => {
-    const recipients = selectedRows.map((r) => ({ company_id: r.company_id, consent_source: consent[r.company_id] || bulkConsent || "" }));
+    // bez pola „źródło zgody” (decyzja Artura 05.11): zgoda z regulaminu przy rejestracji, podstawę zapisuje serwer
+    const recipients = selectedRows.map((r) => ({ company_id: r.company_id }));
     if (!recipients.length) { toast(tr("select_first"), "error"); return; }
-    if (recipients.some((r) => !r.consent_source.trim())) { toast(tr("consent_required"), "error"); return; }
     // [P1 #1] niezapisane zmiany w edytorze: podgląd pokazywał inną treść niż ta w bazie — najpierw zapis
     if (isDraft && !sameContent(content, contentOf(current))) { toast(tr("save_first"), "error"); return; }
     const pl = selectedRows.filter((r) => r.locale === "pl").length, en = selectedRows.length - pl;
@@ -208,7 +206,7 @@ export default function MarketingActivation({ fl }) {
                       <thead><tr style={{ textAlign: "left", color: "#64748b", fontSize: 11 }}>
                         <th style={{ padding: 6 }}></th><th style={{ padding: 6 }}>{tr("c_company")}</th><th style={{ padding: 6 }}>{tr("c_operator")}</th><th style={{ padding: 6 }}>{tr("c_lang")}</th>
                         <th style={{ padding: 6 }}>{tr("c_credits")}</th><th style={{ padding: 6 }}>{tr("c_reserved")}</th><th style={{ padding: 6 }}>{tr("c_expiry")}</th><th style={{ padding: 6 }}>{tr("c_activity")}</th>
-                        <th style={{ padding: 6 }}>{tr("c_reason")}</th><th style={{ padding: 6 }}>{tr("c_consent")}</th><th style={{ padding: 6 }}></th>
+                        <th style={{ padding: 6 }}>{tr("c_reason")}</th><th style={{ padding: 6 }}></th>
                       </tr></thead>
                       <tbody>
                         {visibleRows.map((r) => (
@@ -224,11 +222,10 @@ export default function MarketingActivation({ fl }) {
                             <td style={{ padding: 6 }}>{reasonTag(r)}
                               {r.exclusions.map((x) => <span key={x} style={tag("#fee2e2", "#991b1b")}>{tr("ex_" + x)}</span>)}
                               {r.warnings.map((x) => <span key={x} style={tag("#fef3c7", "#92400e")}>{tr("w_" + x)}</span>)}</td>
-                            <td style={{ padding: 6 }}>{editable && r.eligible ? <input style={{ ...inp, width: 160 }} value={consent[r.company_id] ?? ""} onChange={(e) => setConsent({ ...consent, [r.company_id]: e.target.value })} placeholder={bulkConsent || tr("consent_ph")} /> : null}</td>
                             <td style={{ padding: 6, whiteSpace: "nowrap" }}><button style={btn("secondary")} disabled={!!busy} onClick={() => doPreview(r, "pl")}>PL</button> <button style={btn("secondary")} disabled={!!busy} onClick={() => doPreview(r, "en")}>EN</button></td>
                           </tr>
                         ))}
-                        {visibleRows.length === 0 && <tr><td colSpan={11} style={{ padding: 12, color: "#94a3b8" }}>{tr("no_rows")}</td></tr>}
+                        {visibleRows.length === 0 && <tr><td colSpan={10} style={{ padding: 12, color: "#94a3b8" }}>{tr("no_rows")}</td></tr>}
                       </tbody>
                     </table>
                   </div>
@@ -277,7 +274,7 @@ export default function MarketingActivation({ fl }) {
                   <div style={stepTitle}>{tr("step_approve")}</div>
                   <div style={{ fontSize: 12, marginBottom: 8 }} data-testid="mk-approve-summary">{tr("approve_summary", { n: selectedCount, pl: selectedRows.filter((r) => r.locale === "pl").length, en: selectedRows.filter((r) => r.locale === "en").length, audience: audLabel(current.campaign.template_key) })}</div>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                    <input style={{ ...inp, width: 320 }} value={bulkConsent} onChange={(e) => setBulkConsent(e.target.value)} placeholder={tr("consent_bulk_ph")} />
+                    <span style={{ fontSize: 11, color: "#64748b" }}>{tr("consent_note")}</span>
                     <button data-testid="mk-approve" style={btn("primary")} disabled={!!busy || selectedCount === 0} onClick={approve}>{tr("approve", { n: selectedCount })}</button>
                     {contentDirty && isDraft && <span style={tag("#fee2e2", "#991b1b")}>{tr("save_first")}</span>}
                   </div>

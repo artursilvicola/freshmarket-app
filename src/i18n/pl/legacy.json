@@ -1843,6 +1843,7 @@
       "by_audience": "Firmy bez wykluczeń per grupa (nakładają się)",
       "exclusions_overlap": "Wykluczenia bazowe (nakładają się)",
       "show_others": "pokaż pozostałe firmy z powodem",
+      "consent_note": "Podstawa zgody: regulamin przy rejestracji konta — zapisywana automatycznie w rejestrze, bez dodatkowych pól.",
       "consent_bulk_ph": "Źródło zgody dla zaznaczonych (np. regulamin 1.0 §…, lista X)",
       "consent_ph": "źródło zgody",
       "select_visible": "Zaznacz widoczne",

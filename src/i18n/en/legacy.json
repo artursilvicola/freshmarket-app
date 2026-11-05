@@ -1843,6 +1843,7 @@
       "by_audience": "Companies without exclusions per group (overlapping)",
       "exclusions_overlap": "Base exclusions (overlapping)",
       "show_others": "show the other companies with reason",
+      "consent_note": "Consent basis: the terms accepted at account registration — recorded automatically in the registry, no extra fields.",
       "consent_bulk_ph": "Consent source for selected (e.g. terms 1.0 §…, list X)",
       "consent_ph": "consent source",
       "select_visible": "Select visible",

@@ -328,3 +328,18 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Testy:** `marketing-campaign.test.js` — `message` zwraca dokładnie zapisany temat/html/tekst, 404 dla obcego id, 400 bez id. `MarketingActivation.test.jsx` — po zatwierdzeniu podgląd szablonu pokazuje notę, „Zapisana wiadomość” woła `message` i pokazuje treść z rejestru w iframe bez noty i bez PL/EN.
 
 **Pełny zestaw po 12c:** 104 pliki, **892 testy zaliczone**, 2 pominięte.
+
+## 13. Decyzja Artura 05.11 (w trakcie review): bez pola „Źródło zgody” w panelu
+
+**Decyzja:** „źródło zgody usuń — nie będziemy tego używać. Wszyscy zapisując się dali zgodę na mailing. Lub to zawrzyj w regulaminie, żeby nie było dodatkowych pól.” (Zmienia wcześniejsze ustalenie z 4.11, że administrator wpisuje źródło zgody per adresat; Codex w review 4.11 zalecał rejestrowanie podstawy.)
+
+**Wykonanie (kompromis zachowujący ślad w rejestrze):**
+- Panel nie ma już pól „źródło zgody” (zbiorczego ani per wiersz) ani blokady „każdy adresat musi mieć źródło zgody”. W kroku 3 jest nota: „Podstawa zgody: regulamin przy rejestracji konta — zapisywana automatycznie w rejestrze, bez dodatkowych pól”.
+- Serwer (`approve`) zapisuje w każdym wierszu rejestru stałą podstawę `CONSENT_SOURCE_DEFAULT` = „Regulamin Fresh Market B2B — zgoda na informacje o PreConnect wyrażona przy rejestracji konta” (jeśli klient nie poda innej). Kolumna `consent_source`, RPC `marketing_claim_messages` i stan `blocked_no_consent` zostają bez zmian — wysyłka nadal nie ruszy bez podstawy w wierszu, tylko podstawa jest teraz jedna, z regulaminu.
+- Wypisy (`marketing_suppressions`, link one-click), wykluczenia bazowe i ochrona przed duplikatami bez zmian.
+
+**Do decyzji Artura/Codexa:** dokładne brzmienie i paragraf regulaminu w `CONSENT_SOURCE_DEFAULT` (dziś opis, nie numer paragrafu) oraz czy regulamin faktycznie obejmuje informacje handlowe o PreConnect (jeśli nie — zapis w regulaminie przed pierwszą prawdziwą wysyłką).
+
+**Testy:** kampania — brak `consent_source` → wiersz z `CONSENT_SOURCE_DEFAULT` (zawiera „Regulamin”); komponent — brak pól zgody, nota widoczna, approve wysyła tylko `company_id`.
+
+**Pełny zestaw po §13:**  Test Files 104 passed | 1 skipped (105); Tests 892 passed | 2 skipped (894);
