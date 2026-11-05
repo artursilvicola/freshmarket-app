@@ -10,7 +10,7 @@
  * zatwierdzeniu powstaje prawdziwy token. Nic nie zapisuje, nic nie wysyła.
  */
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
-import { computeCandidates, loadCampaign, loadBrandLogoUrl } from "./_shared/marketing-data.js";
+import { computeCandidates, loadCampaign } from "./_shared/marketing-data.js";
 import { renderMarketingTemplate, validateContent, TEMPLATE_KEYS } from "./_shared/marketing-templates.js";
 
 export const handler = async (event) => {
@@ -49,7 +49,6 @@ export const handler = async (event) => {
       appUrl: auth.env.b2bAppUrl,
       unsubscribeUrl: `${String(auth.env.b2bAppUrl || "").replace(/\/$/, "")}/.netlify/functions/marketing-unsubscribe?m=PODGLAD&t=PODGLAD`,
       replyTo: body.reply_to || campaign?.reply_to || null,
-      brandLogoUrl: await loadBrandLogoUrl(auth.supaSvc),
     });
     return json(200, { ok: true, preview: true, snapshot_at: result.snapshot_at, row, subject: rendered.subject, html: rendered.html, text: rendered.text, meta: rendered.meta });
   } catch (e) {

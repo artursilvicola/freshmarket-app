@@ -1,7 +1,7 @@
 // [feat/marketing-activation] Szablony PL/EN per grupa odbiorców (Artur 5.11): treść domyślna + edycja bez HTML,
 // symbole z danych odczytu, bez obietnic i bez „kupcy szukają”, wypis, wersja tekstowa, determinizm.
 import { describe, it, expect } from "vitest";
-import { renderMarketingTemplate, validateContent, defaultContent, effectiveContent, creditsWord, esc, TEMPLATE_KEYS, AUDIENCE_TEMPLATE_KEYS, PLACEHOLDERS } from "../netlify/functions/_shared/marketing-templates.js";
+import { renderMarketingTemplate, validateContent, defaultContent, effectiveContent, creditsWord, esc, emailLogoUrl, TEMPLATE_KEYS, AUDIENCE_TEMPLATE_KEYS, PLACEHOLDERS } from "../netlify/functions/_shared/marketing-templates.js";
 import { nextBuyerMailingDate, formatLongDate } from "../netlify/functions/_shared/marketing-dates.js";
 
 const base = { companyName: "Sad <Kowalski> & Syn", creditsRemaining: 5, creditsReserved: 1, expiringCredits: 2, creditsExpiry: "2026-12-27", snapshotAt: "2026-11-04T10:00:00Z", now: new Date(2026, 10, 4), appUrl: "https://b2b.freshmarket.eu", unsubscribeUrl: "https://b2b.freshmarket.eu/.netlify/functions/marketing-unsubscribe?m=x&t=y", replyTo: "preconnect@freshmarket.eu" };
@@ -119,14 +119,19 @@ describe("treść edytowana w panelu (bez HTML)", () => {
     expect(renderMarketingTemplate({ ...base, templateKey: "used_before_free_credits", locale: "en", creditsRemaining: 4, creditsAvailable: 3 }).subject).toBe("Another proposal in PreConnect — you still have 3 credits");
     expect(renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", creditsRemaining: 5 }).subject).toContain("masz 5 kredytów");
   });
-  it("oryginalne logo z brandingu w czapce i stopce (fm_settings.brand_logo_url); bez URL — znak tekstowy", () => {
-    const withLogo = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", brandLogoUrl: "https://x.test/brand/logo.png?a=1&b=2" });
-    expect(withLogo.html).toContain('<img src="https://x.test/brand/logo.png?a=1&amp;b=2" alt="Fresh Market" width="170"');
-    expect(withLogo.html).toContain('width="130"'); // stopka
-    expect(withLogo.html).not.toContain(">Fresh Market <span");
-    const noLogo = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl" });
-    expect(noLogo.html).not.toContain("<img");
-    expect(noLogo.html).toContain(">Fresh Market <span");
+  it("czapka v2: białe logo z aplikacji (/brand/fm-email-logo-white.png), „PreConnect” i hasło o łączeniu dostawców z kupcami; stopka z małym logo", () => {
+    const pl = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl" });
+    expect(pl.html).toContain('<img src="https://b2b.freshmarket.eu/brand/fm-email-logo-white.png" alt="Fresh Market" width="140"');
+    expect(pl.html).toContain('width="104"'); // stopka
+    expect(pl.html).toContain(">PreConnect</div>");
+    expect(pl.html).toContain("Łączymy dostawców owoców, warzyw i kwiatów z kupcami sieci handlowych.");
+    expect(pl.html).not.toContain("rgba(255,255,255,0.96)"); // bez białego pola pod logo
+    const en = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "en" });
+    expect(en.html).toContain("We connect fruit, vegetable and flower suppliers with retail chain buyers.");
+    const custom = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", appUrl: "http://localhost:8888/", logoUrl: "https://x.test/w.png?a=1&b=2" });
+    expect(custom.html).toContain('<img src="https://x.test/w.png?a=1&amp;b=2" alt="Fresh Market" width="140"');
+    expect(emailLogoUrl("http://localhost:8888/")).toBe("http://localhost:8888/brand/fm-email-logo-white.png");
+    expect(pl.text).not.toContain("<img");
   });
   it("stare szablony (kampanie sprzed 5.11) nadal się renderują z regułą rozliczania", () => {
     for (const key of ["start_with_credits", "return_active"]) {

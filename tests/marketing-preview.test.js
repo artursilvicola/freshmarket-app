@@ -11,7 +11,6 @@ vi.mock("../netlify/functions/_shared/function-env.js", () => ({
 }));
 vi.mock("../netlify/functions/_shared/marketing-data.js", () => ({
   loadCampaign: async () => state.campaign,
-  loadBrandLogoUrl: async () => state.brandLogoUrl || null,
   computeCandidates: async () => ({ snapshot_at: "2026-11-04T10:00:00Z", today: "2026-11-04", rows: state.rows, summary: {} }),
 }));
 import { handler } from "../netlify/functions/marketing-preview.js";

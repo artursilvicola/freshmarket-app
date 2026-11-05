@@ -11,7 +11,6 @@ vi.mock("../netlify/functions/_shared/function-env.js", () => ({
 }));
 vi.mock("../netlify/functions/_shared/marketing-data.js", () => ({
   loadCampaign: async () => state.campaign,
-  loadBrandLogoUrl: async () => state.brandLogoUrl || null,
   computeCandidates: async () => ({ snapshot_at: "2026-11-04T10:00:00Z", today: "2026-11-04", rows: state.rows, summary: {} }),
 }));
 import { handler } from "../netlify/functions/marketing-campaign.js";
@@ -41,7 +40,6 @@ beforeEach(() => {
       q.update = (p) => { q._upd = p; return q; };
       q.maybeSingle = async () => {
         if (table === "profiles") return { data: { id: "admin", role: "admin", active: true, locale: "pl" }, error: null };
-        if (table === "fm_settings") return { data: state.brandLogoUrl ? { brand_logo_url: state.brandLogoUrl } : null, error: null };
         if (table === "marketing_messages") {
           const id = q._f.find(([c]) => c === "id")?.[1];
           if (id) return { data: state.savedMessages?.[id] || null, error: null };
@@ -117,7 +115,7 @@ describe("approve", () => {
     expect(state.updates[0].frozen_content).toEqual(defaultContent("credits_no_proposal")); // PEŁNA treść, nie {}
     expect(m.snapshot.content_version).toBe(1);
     expect(r.body.content_version).toBe(1);
-    expect(m.html).not.toContain("<img"); // bez logo w brandingu → znak tekstowy
+    expect(m.html).toContain('<img src="https://b2b.test/brand/fm-email-logo-white.png" alt="Fresh Market" width="140"'); // białe logo z aplikacji
   });
   it("własna treść kampanii trafia do zamrożonej wiadomości (temat i treść z edytora, stopka stała)", async () => {
     state.campaign.content = { pl: { subject: "Własny temat {{credits_n}}", body: "Własna treść {{company}}.", cta: "Idź" }, en: { subject: "Own", body: "Own body", cta: "Go" } };
@@ -260,12 +258,12 @@ describe("[zastrzeżenie Codexa] zapisana wiadomość z rejestru", () => {
   });
 });
 
-describe("[Artur 05.11] oryginalne logo w czapce maila", () => {
-  it("approve zamraża w wiadomości HTML z logo z fm_settings.brand_logo_url", async () => {
-    state.brandLogoUrl = "https://brand.test/logo.png";
+describe("[Artur 05.11] logo w czapce maila", () => {
+  it("approve zamraża w wiadomości HTML z białym logo z aplikacji (appUrl + /brand/fm-email-logo-white.png) i hasłem", async () => {
     const r = await call({ action: "approve", campaign_id: CAMP, content_version: 1, recipients: [{ company_id: "c1" }] });
     expect(r.status).toBe(200);
-    expect(state.inserts[0].html).toContain('<img src="https://brand.test/logo.png" alt="Fresh Market" width="170"');
+    expect(state.inserts[0].html).toContain('<img src="https://b2b.test/brand/fm-email-logo-white.png" alt="Fresh Market" width="140"');
+    expect(state.inserts[0].html).toContain("Łączymy dostawców owoców, warzyw i kwiatów z kupcami sieci handlowych.");
     expect(state.inserts[0].text_body).not.toContain("<img");
   });
 });

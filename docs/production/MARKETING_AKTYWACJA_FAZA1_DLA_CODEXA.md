@@ -357,3 +357,16 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Pełny zestaw po §14:** 104 pliki, 893 testy zaliczone, 2 pominięte. W jednym przebiegu całości padł niezwiązany `tests/fm-plan-send.test.mjs` (przypadek 24 h, 5,2 s pod obciążeniem całego zestawu); uruchomiony osobno przechodzi 27/27 — flaky czasowo, kod nietknięty od 22.09 (aaf293d).
 
 **Próba na żywo 05.11 ~13:20 (DEMO 5, podgląd PL):** `<img alt="Fresh Market" width="170">` w czapce i `130` w stopce, obraz z publicznego storage (`sklyfuvzjikkqerxtulo.supabase.co`, 200 image/png), wersja tekstowa bez obrazka.
+
+### 14b. Czapka maila v2 (Artur 05.11): białe, dyskretne logo + hasło obok „PreConnect”
+
+**Uwagi Artura:** logo ma być białe i bardziej dyskretne (bez białego pola), a obok „PreConnect” ma być jasno napisane, że kojarzymy dostawców owoców, warzyw i kwiatów z kupcami sieci handlowych — żeby adresat od razu wiedział, od kogo i o czym jest mail.
+
+**Wykonanie:**
+- Logo: biały logotyp Fresh Market z pliku źródłowego `wdrozenie-2027/fresh-market-logo-bez-roku-white.png` (przezroczyste tło), przeskalowany do `public/brand/fm-email-logo-white.png` (480×192 px, 14 KB; w mailu wyświetlany w szerokości 140 px, w stopce 104 px). Serwowany z aplikacji (`emailLogoUrl(appUrl)` → po deployu `https://b2b.freshmarket.eu/brand/fm-email-logo-white.png`, w podglądzie z localhost). Filtry CSS (wybielanie zielonego logo) odpadły — klienty poczty ich nie obsługują. Logo z brandingu (`fm_settings`) nie jest już używane w mailu marketingowym (jest zielone, pasuje do jasnego tła).
+- Czapka: ciemny gradient, po lewej białe logo bez pola, cienka pionowa linia, po prawej **PreConnect** i hasło: PL „Łączymy dostawców owoców, warzyw i kwiatów z kupcami sieci handlowych.”, EN „We connect fruit, vegetable and flower suppliers with retail chain buyers.” Układ na tabelach (bez flex) — zgodność z klientami poczty; `background` z kolorem bazowym `#0f172a` pod gradientem dla klientów bez gradientów.
+- Stopka: małe białe logo zamiast napisu „Fresh Market PreConnect”, dalej adres, reply-to, wypis bez zmian. Wersja tekstowa bez zmian.
+
+**Testy:** szablony — adres logo z `appUrl`, `width="140"` w czapce i `104` w stopce, „PreConnect” + hasło PL/EN, brak białego pola, własny `logoUrl` escapowany; kampania — zamrożony HTML ma logo i hasło, tekst bez `<img>`.
+
+**Pełny zestaw po 14b:** 104 pliki, 894 testy zaliczone, 2 pominięte.

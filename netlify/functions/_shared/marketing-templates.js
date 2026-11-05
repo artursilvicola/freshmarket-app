@@ -142,19 +142,35 @@ function inlineHtml(s) {
 }
 const stripBold = (s) => String(s).replace(/\*\*([^*\n]+)\*\*/g, "$1");
 
-/** Logo z brandingu (fm_settings.brand_logo_url) jak w mailu do kupców (render-retailer-email.js); bez URL — tekstowy znak. */
-function brandLogoBox(brandLogoUrl, { footer = false } = {}) {
-  if (!brandLogoUrl) {
-    return footer
-      ? `<div style="color:rgba(255,255,255,0.92);font-weight:700;font-size:13px;margin-bottom:4px;">Fresh Market PreConnect</div>`
-      : `<div style="color:white;font-weight:800;font-size:20px;letter-spacing:-0.4px;">Fresh Market <span style="color:rgba(255,255,255,0.6);font-weight:600;font-size:12px;">PreConnect</span></div>`;
-  }
-  return `<div style="display:inline-block;background:rgba(255,255,255,0.96);padding:${footer ? "6px 12px" : "8px 16px"};border-radius:12px;margin-bottom:${footer ? "8px" : "0"};">
-    <img src="${esc(brandLogoUrl)}" alt="Fresh Market" width="${footer ? "130" : "170"}" style="display:block;max-width:${footer ? "130px" : "170px"};height:auto;border:0;outline:none;text-decoration:none;">
-  </div>${footer ? "" : `<div style="color:rgba(255,255,255,0.75);font-weight:600;font-size:12px;margin-top:8px;letter-spacing:0.3px;">PreConnect</div>`}`;
+export const EMAIL_LOGO_PATH = "/brand/fm-email-logo-white.png"; // biały logotyp (public/brand), serwowany z aplikacji
+export const TAGLINE = Object.freeze({
+  pl: "Łączymy dostawców owoców, warzyw i kwiatów z kupcami sieci handlowych.",
+  en: "We connect fruit, vegetable and flower suppliers with retail chain buyers.",
+});
+/** Adres logo do maila: statyczny biały PNG z aplikacji (po deployu b2b.freshmarket.eu/brand/…). */
+export function emailLogoUrl(appUrl) {
+  return String(appUrl || "https://b2b.freshmarket.eu").replace(/\/$/, "") + EMAIL_LOGO_PATH;
 }
 
-function shell({ title, body, locale, unsubscribeUrl, replyTo, appUrl, brandLogoUrl }) {
+/**
+ * Czapka (Artur 05.11): dyskretne białe logo na ciemnym tle, bez białego pola; obok „PreConnect” i hasło,
+ * żeby adresat od razu wiedział, od kogo i o czym jest mail. Tabele zamiast flex — zgodność z klientami poczty.
+ */
+function header({ logoUrl, locale }) {
+  const tagline = TAGLINE[locale] || TAGLINE.pl;
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td valign="middle" style="width:150px;padding-right:18px;"><img src="${esc(logoUrl)}" alt="Fresh Market" width="140" style="display:block;width:140px;max-width:140px;height:auto;border:0;outline:none;text-decoration:none;"></td>
+          <td valign="middle" style="border-left:1px solid rgba(255,255,255,0.28);padding-left:18px;">
+            <div style="color:#ffffff;font-weight:800;font-size:17px;letter-spacing:0.3px;line-height:1.2;">PreConnect</div>
+            <div style="color:rgba(255,255,255,0.80);font-size:12.5px;line-height:1.45;margin-top:4px;">${esc(tagline)}</div>
+          </td>
+        </tr></table>`;
+}
+function footerBrand({ logoUrl }) {
+  return `<img src="${esc(logoUrl)}" alt="Fresh Market" width="104" style="display:inline-block;width:104px;max-width:104px;height:auto;border:0;outline:none;text-decoration:none;opacity:0.9;margin-bottom:6px;">`;
+}
+
+function shell({ title, body, locale, unsubscribeUrl, replyTo, appUrl, logoUrl }) {
   const addr = locale === "en"
     ? "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Poland"
     : "KJOW Sp. z o.o. · ul. Marii 17/25, 05-803 Pruszków, Polska";
@@ -168,12 +184,12 @@ function shell({ title, body, locale, unsubscribeUrl, replyTo, appUrl, brandLogo
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ececec;padding:24px 12px;">
   <tr><td align="center">
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:white;border-radius:12px;overflow:hidden;">
-      <tr><td style="background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0d9488 100%);padding:24px 32px;text-align:center;">
-        ${brandLogoBox(brandLogoUrl)}
+      <tr><td style="background:#0f172a;background-image:linear-gradient(135deg,#0f172a 0%,#1e3a5f 55%,#0d9488 100%);padding:22px 32px;">
+        ${header({ logoUrl, locale })}
       </td></tr>
       <tr><td style="padding:28px 32px;font-size:15px;line-height:1.6;">${body}</td></tr>
       <tr><td style="background:#0f172a;padding:18px 28px;text-align:center;">
-        ${brandLogoBox(brandLogoUrl, { footer: true })}
+        ${footerBrand({ logoUrl })}
         <div style="color:rgba(255,255,255,0.45);font-size:11px;line-height:1.7;">${addr}<br><a href="${esc(appUrl)}" style="color:rgba(255,255,255,0.7);text-decoration:none;">b2b.freshmarket.eu</a></div>
         <div style="color:rgba(255,255,255,0.55);font-size:11px;line-height:1.7;margin-top:10px;">${reply}<br>${unsub}</div>
       </td></tr>
@@ -202,7 +218,7 @@ const cta = (label, url) => `<p style="margin:22px 0 10px;"><a href="${esc(url)}
  * @param {string} d.appUrl
  * @param {string} d.unsubscribeUrl
  * @param {string} [d.replyTo]
- * @param {string} [d.brandLogoUrl] logo z brandingu (fm_settings.brand_logo_url) — oryginalne logo w czapce i stopce; bez niego znak tekstowy
+ * @param {string} [d.logoUrl]  adres białego logo (domyślnie emailLogoUrl(appUrl) → /brand/fm-email-logo-white.png)
  */
 export function renderMarketingTemplate(d) {
   const key = TEMPLATE_KEYS.includes(d?.templateKey) ? d.templateKey : null;
@@ -231,7 +247,7 @@ export function renderMarketingTemplate(d) {
   const ctaLabel = stripBold(fill(content.cta, vars)).trim();
   const paras = fill(content.body, vars).split(/\n[ \t]*\n/).map((s) => s.trim()).filter(Boolean);
   const body = paras.map((t) => p(inlineHtml(t))).join("") + cta(ctaLabel, appUrl);
-  const html = shell({ title: subject, body, locale, unsubscribeUrl: d.unsubscribeUrl, replyTo: d.replyTo, appUrl, brandLogoUrl: d.brandLogoUrl || null });
+  const html = shell({ title: subject, body, locale, unsubscribeUrl: d.unsubscribeUrl, replyTo: d.replyTo, appUrl, logoUrl: d.logoUrl || emailLogoUrl(appUrl) });
   const text = [
     ...paras.map(stripBold), "", `${ctaLabel}: ${appUrl}`, "",
     d.replyTo ? (locale === "en" ? `Reply to this e-mail or write to ${d.replyTo}.` : `Odpowiedz na tę wiadomość albo napisz na ${d.replyTo}.`) : "",

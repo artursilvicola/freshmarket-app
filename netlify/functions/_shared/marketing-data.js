@@ -33,15 +33,6 @@ export async function computeCandidates(supaSvc, opts) {
   return { ...result, snapshot_at: new Date().toISOString() };
 }
 
-/** Logo z brandingu (fm_settings.brand_logo_url) — jak getBrandLogoUrl w send-retailer-batch.js; błąd/brak → null (znak tekstowy). */
-export async function loadBrandLogoUrl(supaSvc) {
-  try {
-    const { data, error } = await supaSvc.from("fm_settings").select("brand_logo_url").not("brand_logo_url", "is", null).limit(1).maybeSingle();
-    if (error) return null;
-    return data?.brand_logo_url || null;
-  } catch { return null; }
-}
-
 export async function loadCampaign(supaSvc, campaignId) {
   if (!campaignId) return null;
   const { data, error } = await supaSvc.from("marketing_campaigns").select("*").eq("id", campaignId).maybeSingle();
