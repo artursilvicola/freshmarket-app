@@ -31,3 +31,7 @@ pl-audit.json
 out/
 # środowisko odbiorowe (klucze projektu TESTOWEGO)
 .env.test
+
+# [feat/marketing-activation] izolowany katalog podglądu odbiorowego + kanarek testu izolacji
+.preview-test/
+.env.development.local

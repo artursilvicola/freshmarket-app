@@ -213,3 +213,22 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 5. W przeglądarce nie było błędów konsoli z funkcji `marketing-*` (wszystkie 200/403 zgodnie z oczekiwaniem).
 
 **Stan bazy testowej po odbiorze:** 2 kampanie `closed`, 3 wiadomości `pending` (nigdy nie wysłane), 0 zdarzeń. Można zostawić do kolejnych prób albo wyczyścić `delete from marketing_messages; delete from marketing_campaigns;` (tylko baza testowa).
+
+### 10e. Izolacja podglądu od plików `.env*` repo (review Codexa 05.11 rano) — WYKONANE
+
+**Problem:** `netlify dev` uruchamiany w katalogu repo wczytuje domyślne `.env`, `.env.local`, `.env.development(.local)` (log z 04.11: „Injected .env file env vars: PAYU_*” — negatywna próba kontrolna), a Vite czyta te same pliki z katalogu projektu. Czyste środowisko procesu potomnego tego nie blokowało.
+
+**Rozwiązanie (bez zmian i bez usuwania plików `.env*`; produkcyjne `netlify.toml`, `vite.config.js`, `.env` nietknięte):**
+- `scripts/lib/preview-isolation.mjs` → `preparePreviewDir()`: katalog `.preview-test/` (git-ignored, własny `.gitignore` `*`) z **własnym `netlify.toml`** (`[dev] framework="#custom"`, `command="node ../scripts/vite-test.mjs"`, `targetPort=5173`, `port=8888`, `envFiles=[".env.preview-none"]` — plik celowo nieistniejący, więc CLI nie wczytuje żadnego `.env*`; `functions` = ścieżka ABSOLUTNA do `.preview-test/functions`, bo `@netlify/config` liczy ścieżki od korzenia repo, nie od CWD), **atrapami funkcji** re-eksportującymi prawdziwe handlery z `netlify/functions/` (29/29: `export { handler }` albo `export { default }` dla funkcji v2; bundler podąża za importami do `_shared/` i `src/`), funkcją diagnostyczną `preview-env-check` (tylko w podglądzie; zwraca obecność/klasy zmiennych, nigdy wartości) i **pustym `vite-env/`**.
+- `scripts/vite-test.mjs`: Vite programowo z `configFile = vite.config.js` repo, `envDir = .preview-test/vite-env` (pusty, odmowa startu gdy leży tam jakiś `.env*`), `open=false`, port 5173 → `VITE_*` wyłącznie z procesu, czyli z `.env.test`.
+- `scripts/dev-test.mjs`: walidacja `.env.test` → `preparePreviewDir` → `netlify dev --offline --port 8888 --no-open` z **CWD = `.preview-test/`**.
+- `.gitignore`: `.preview-test/`, `.env.development.local` (kanarek testu).
+
+**Testy:**
+- `tests/marketing-preview-isolation.test.js` (4): atrapy per styl eksportu (CJS pomijany z ostrzeżeniem), toml z nieistniejącym `envFiles` i `#custom`, ścieżka atrapy rozwiązuje się do prawdziwego pliku, pusty envDir, drugi przebieg usuwa podrzucone `.env*`, pliki env repo nietknięte, funkcja diagnostyczna bez wartości.
+- `tests/marketing-preview-isolation.integrated.test.js` (gated `FM_PREVIEW_ISOLATION_TEST=1`, prawdziwy start): kładzie tymczasowy `.env.development.local` z **kanarkiem** `FM_ISOLATION_CANARY` + `VITE_FM_ISOLATION_CANARY` (odmowa, gdy plik istnieje; usuwany w `finally`), startuje `scripts/dev-test.mjs`, po pełnym starcie: `preview-env-check` → `canary_present=false`, `vite_canary_present=false`, `payu_keys=0`, `supabase_ref`/`vite_supabase_ref` = ref testowy, `service_role_present=true`, `marketing_send_enabled="false"`, `resend_key_prefix="re_test_"`, `netlify_auth_token_present=false`; frontend: wstrzyknięta linia `import.meta.env = {…}` w `/src/config/features.js` zawiera ref testowy i `VITE_ADMIN_MARKETING_ACTIVATION:"true"`, a NIE zawiera kanarka, `PAYU_`, `SERVICE_ROLE` ani ref produkcji; log bez „.env file”. **Przebieg 05.11 ~08:48: PASS (39 s)**, kanarek usunięty, porty zwolnione.
+- Pełny zestaw po zmianach: patrz niżej.
+
+**Ręczna próba 05.11 ~08:44 (przed testem):** 30 funkcji załadowanych z `.preview-test/functions` (w tym 4 v2 z ostrzeżeniem CLI o CommonJS — odpowiadają poprawnie: `staff-login` → własny błąd braku `STAFF_PIN_PEPPER`, `fm-queue-snapshot` → 405 na POST), `marketing-campaign` bez tokenu → 401, log bez „Injected/Ignored .env file”.
+
+**Pełny zestaw po zmianach (05.11 ~08:50):** 103 pliki zaliczone, 1 pominięty (test zintegrowany bez flagi), **871 testów zaliczonych, 2 pominięte**.
