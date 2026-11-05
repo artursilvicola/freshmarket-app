@@ -413,3 +413,17 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Pełny zestaw po §16:** 105 plików, 900 testów zaliczonych, 2 pominięte.
 
 **Review Codexa cfbae71 (05.11 wieczór): przyjęte, 23/23, bez blokerów.** Gotowe do wdrożenia na decyzję Artura: (1) na prod najpierw migracje `20261105170000_marketing_campaign_names.sql` i `20261105180000_marketing_campaign_label_fix.sql` (addytywne; identity + trigger, potem podmiana funkcji), (2) potem merge feat/marketing-activation → main i deploy przez CI, (3) wysyłka nadal `MARKETING_SEND_ENABLED=false` do kontrolowanej próby na `artur.stasiak+dostawca@freshmarket.eu`. Prawdziwy test poczty pozostaje do wykonania.
+
+## 17. Wdrożenie nazw kampanii + grupy „Do wybranych firm” na produkcję (05.11 ~19:35, Claude, na „wdrażaj” Artura)
+
+**Kolejność (warunki Codexa spełnione):**
+1. Fast-forward potwierdzony (`origin/main` 5f6835f przodkiem HEAD, 4 commity: 7df6a34 docs, b279e44 Codex, cfbae71 poprawki, 18f1aee docs).
+2. Tag rollbacku `prod-pre-names-2026-11-05` = 5f6835f utworzony i wypchnięty PRZED przesunięciem main.
+3. Migracje na prod w Supabase SQL Editor, projekt `sklyfuvzjikkqerxtulo` potwierdzony z adresu karty; wklejony SQL = `docs/production/wdrozenie-marketing-nazwy-2026-11-05/01-migracje-nazwy-kampanii.sql` (170000 + 180000 w jednej transakcji), SHA-256 zawartości edytora policzony w przeglądarce = `822c9031a97dd545b408ac68eabd7d10e0bf127d6fb5bd66f0c9f9f4ea668937` (zgodny z plikiem). Run kliknął Artur → „Success. No rows returned”.
+4. Kontrola (`02-kontrola-po-migracji.sql`, tylko odczyt) przed → po: kolumna `campaign_number` 0→1, trigger `marketing_campaign_assign_name` 0→1, funkcja z etykietą „propozycję gotową do zgłoszenia” 0→1, check `template_key` z `selected_companies` 0→1, kampanie w bazie 1→1 (istniejąca nazwa nietknięta), wiadomości w rejestrze 0→0.
+5. `git push origin HEAD:main` (ff 5f6835f→18f1aee), Netlify CI deploy `6aecbe3371397b65ceb3bd44` ready (24 s, published 17:35:15 UTC).
+6. Kontrola wdrożenia: `version.json` build `18f1aeeed8f3`, logo `/brand/fm-email-logo-white.png` 200 (14 050 B), funkcje marketing-campaign/-preview/-send/-candidates bez tokenu 401, `MARKETING_SEND_ENABLED=false`, `VITE_ADMIN_MARKETING_ACTIVATION=true` (wartości sekretów nie odczytywane).
+
+**Rollback:** kod — Netlify „Publish deploy” 6aec9785 (= 5f6835f, tag `prod-pre-names-2026-11-05`); baza — migracje addytywne, NIE cofać (stary kod 5f6835f ignoruje `campaign_number`, trigger działa tylko przy insercie z `name` — wymaga niepustej nazwy jak dotąd, więc stary kod dalej zadziała).
+
+**Wysyłka nadal wyłączona.** Otwarte: kontrola wizualna panelu Marketing → Aktywacja PreConnect na prod (auto-nazwa `Grupa | #N | data` przy nowej kampanii, grupa „Do wybranych firm” bez „Zaznacz widoczne”); próba prawdziwej poczty tylko na `artur.stasiak+dostawca@freshmarket.eu` za osobną zgodą; rotacja sekretów z §15.
