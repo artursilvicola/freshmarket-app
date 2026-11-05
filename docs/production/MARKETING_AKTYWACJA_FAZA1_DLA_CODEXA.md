@@ -354,4 +354,6 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 
 **Uwaga:** e-mail ładuje obraz z publicznego URL storage Supabase (jak mail do kupców). Klienci pocztowe blokujące obrazy pokażą `alt="Fresh Market"`. Jeśli administrator zmieni logo w Brandingu, nowe kampanie dostaną nowe logo; zamrożone wiadomości zachowują URL z chwili zatwierdzenia.
 
-**Pełny zestaw po §14:**  Test Files 1 failed | 103 passed | 1 skipped (105); Tests 1 failed | 893 passed | 2 skipped (896);
+**Pełny zestaw po §14:** 104 pliki, 893 testy zaliczone, 2 pominięte. W jednym przebiegu całości padł niezwiązany `tests/fm-plan-send.test.mjs` (przypadek 24 h, 5,2 s pod obciążeniem całego zestawu); uruchomiony osobno przechodzi 27/27 — flaky czasowo, kod nietknięty od 22.09 (aaf293d).
+
+**Próba na żywo 05.11 ~13:20 (DEMO 5, podgląd PL):** `<img alt="Fresh Market" width="170">` w czapce i `130` w stopce, obraz z publicznego storage (`sklyfuvzjikkqerxtulo.supabase.co`, 200 image/png), wersja tekstowa bez obrazka.
