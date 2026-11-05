@@ -33,5 +33,5 @@ out/
 .env.test
 
 # [feat/marketing-activation] izolowany katalog podglądu odbiorowego + kanarek testu izolacji
-.preview-test/
+.preview-test*/
 .env.development.local

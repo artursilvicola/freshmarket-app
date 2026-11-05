@@ -232,3 +232,19 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Ręczna próba 05.11 ~08:44 (przed testem):** 30 funkcji załadowanych z `.preview-test/functions` (w tym 4 v2 z ostrzeżeniem CLI o CommonJS — odpowiadają poprawnie: `staff-login` → własny błąd braku `STAFF_PIN_PEPPER`, `fm-queue-snapshot` → 405 na POST), `marketing-campaign` bez tokenu → 401, log bez „Injected/Ignored .env file”.
 
 **Pełny zestaw po zmianach (05.11 ~08:50):** 103 pliki zaliczone, 1 pominięty (test zintegrowany bez flagi), **871 testów zaliczonych, 2 pominięte**.
+
+### 10f. Poprawka testu izolacji po review Codexa (P2: test mógł zaliczyć cudzy, wcześniej uruchomiony podgląd)
+
+**Zmiany:**
+- `scripts/dev-test.mjs`: parametry `FM_PREVIEW_PORT` / `FM_PREVIEW_VITE_PORT` / `FM_PREVIEW_DIR` (nazwa musi zaczynać się od `.preview-test`) / `FM_PREVIEW_RUN_ID` (domyślnie losowy UUID). **Zajęty port = odmowa z kodem 4**, skrypt nigdy nie zatrzymuje cudzego podglądu. Identyfikator przebiegu trafia do procesu funkcji (`FM_PREVIEW_RUN_ID`) i do frontendu (`VITE_FM_PREVIEW_RUN_ID`, tylko podgląd testowy).
+- `scripts/lib/preview-isolation.mjs`: `preview-env-check` zwraca `run_id`; nowy `isPortFree(port)` — próba POŁĄCZENIA na 127.0.0.1 i ::1 (sukces = zajęty) oraz próba nasłuchu na 127.0.0.1/0.0.0.0/::1/:: (błąd = zajęty), bo Windows pozwala nasłuchiwać na 0.0.0.0 obok cudzego nasłuchu na 127.0.0.1.
+- `scripts/vite-test.mjs`: `cacheDir` per katalog podglądu (drugi podgląd nie przebudowuje `node_modules/.vite` działającego).
+- `.gitignore`: `.preview-test*/`.
+- Test zintegrowany: WŁASNE porty 18888/15173 i katalog `.preview-test-canary` (może biec obok prezentacji), **odmowa gdy port zajęty** (bez zabijania), losowy `runId` nadany przez test i porównany w odpowiedzi funkcji (`run_id`) oraz w `import.meta.env` frontendu (`VITE_FM_PREVIEW_RUN_ID`), **zakończenie procesu przed gotowością = błąd z ogonem logu**, log musi zawierać katalog i run_id tego przebiegu, proces żyje w chwili asercji.
+- Testy jednostkowe (6): + `run_id` w diagnostyce, `isPortFree` (zajęty → false bez zabijania, zwolniony → true), katalog o innej nazwie z własnymi portami nie dotyka domyślnego.
+
+**Przebiegi 05.11 ~09:20 przy DZIAŁAJĄCEJ prezentacji na 8888:**
+- test z kanarkiem na 18888/15173: **PASS (73 s)**, run_id zgodny w funkcji i froncie, kanarek nieobecny, PAYU 0, ref testowy; po teście porty testu wolne, kanarek usunięty, prezentacja na 8888 nadal odpowiada.
+- próba kontrolna: `node scripts/dev-test.mjs` na domyślnych portach → `ODMOWA: port 8888 (netlify dev) jest zajęty…`, kod 4, prezentacja nietknięta.
+- pełny zestaw:  Test Files 103 passed | 1 skipped (104); Tests 873 passed | 2 skipped (875);
+- Uwaga: podgląd prezentacyjny na 8888 wystartował PRZED tą zmianą (bez `run_id`); po restarcie będzie go zwracał. Katalog `.preview-test-canary/` zostaje (git-ignored).

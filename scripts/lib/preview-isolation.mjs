@@ -16,6 +16,7 @@
 // (prawdziwy start podglądu): tests/marketing-preview-isolation.integrated.test.js.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import net from "node:net";
 
 export const PREVIEW_DIRNAME = ".preview-test";
 export const VITE_ENV_DIRNAME = "vite-env";
@@ -70,10 +71,35 @@ export const handler = async () => {
     marketing_send_enabled: env.MARKETING_SEND_ENABLED ?? null,
     resend_key_prefix: String(env.RESEND_API_KEY || "").slice(0, 8),
     netlify_auth_token_present: Boolean(env.NETLIFY_AUTH_TOKEN),
+    run_id: env.FM_PREVIEW_RUN_ID || null, // identyfikator przebiegu: test porównuje go z tym, który sam nadał
   };
   return { statusCode: 200, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }, body: JSON.stringify(body) };
 };
 `;
+}
+
+/**
+ * Czy port TCP jest wolny. Windows pozwala nasłuchiwać na 0.0.0.0 obok cudzego nasłuchu na 127.0.0.1,
+ * dlatego sprawdzamy DWIE rzeczy: próbę połączenia na 127.0.0.1 i ::1 (udane połączenie = zajęty)
+ * oraz próbę nasłuchu na 127.0.0.1, 0.0.0.0, ::1 i :: (błąd = zajęty). Nigdy niczego nie zabija.
+ */
+export async function isPortFree(port) {
+  const canConnect = (host) => new Promise((resolve) => {
+    const sock = net.connect({ port, host });
+    sock.setTimeout(700);
+    sock.once("connect", () => { sock.destroy(); resolve(true); });
+    sock.once("timeout", () => { sock.destroy(); resolve(false); });
+    sock.once("error", () => resolve(false));
+  });
+  const canListen = (host) => new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.once("error", (e) => resolve(e.code === "EADDRNOTAVAIL" || e.code === "EAFNOSUPPORT")); // brak IPv6 ≠ zajęty
+    srv.listen({ port, host, exclusive: true }, () => srv.close(() => resolve(true)));
+  });
+  for (const h of ["127.0.0.1", "::1"]) if (await canConnect(h)) return false;
+  for (const h of ["127.0.0.1", "0.0.0.0", "::1", "::"]) if (!(await canListen(h))) return false;
+  return true;
 }
 
 /**

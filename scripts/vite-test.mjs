@@ -14,11 +14,14 @@ const leftovers = readdirSync(envDir).filter((f) => f.startsWith(".env"));
 if (leftovers.length) { console.error(`vite-test: envDir musi być pusty, znaleziono: ${leftovers.join(", ")}`); process.exit(2); }
 
 const port = Number(process.env.FM_PREVIEW_VITE_PORT || 5173);
+// osobny cache zależności per katalog podglądu: drugi podgląd (np. test z kanarkiem) nie przebudowuje node_modules/.vite działającego
+const cacheDir = process.env.FM_PREVIEW_VITE_CACHE_DIR || path.join(path.dirname(envDir), "vite-cache");
 const server = await createServer({
   configFile: path.join(root, "vite.config.js"),
   root,
   envDir,
+  cacheDir,
   server: { port, strictPort: true, open: false, host: "127.0.0.1" },
 });
 await server.listen();
-console.log(`vite-test: envDir=${path.relative(root, envDir)} (pusty) | VITE_* tylko z procesu | http://127.0.0.1:${port}/`);
+console.log(`vite-test: envDir=${path.relative(root, envDir)} (pusty) | cacheDir=${path.relative(root, cacheDir)} | VITE_* tylko z procesu | http://127.0.0.1:${port}/`);

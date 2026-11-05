@@ -4,7 +4,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { preparePreviewDir, stubFor, renderNetlifyToml, renderEnvCheckFunction, NO_ENV_FILE, CANARY_KEY, ENV_CHECK_FUNCTION } from "../scripts/lib/preview-isolation.mjs";
+import net from "node:net";
+import { preparePreviewDir, stubFor, renderNetlifyToml, renderEnvCheckFunction, isPortFree, NO_ENV_FILE, CANARY_KEY, ENV_CHECK_FUNCTION } from "../scripts/lib/preview-isolation.mjs";
 
 let root;
 beforeEach(() => {
@@ -83,5 +84,27 @@ describe("preparePreviewDir — katalog izolowany", () => {
     expect(src).not.toMatch(/env\.SUPABASE_SERVICE_ROLE_KEY[^)]*\}/); // tylko Boolean(...)
     expect(src).toContain("Boolean(env.SUPABASE_SERVICE_ROLE_KEY)");
     expect(renderNetlifyToml()).toContain('node_bundler = "esbuild"');
+    expect(src).toContain("run_id: env.FM_PREVIEW_RUN_ID || null"); // identyfikator przebiegu do porównania w teście
+  });
+
+  it("isPortFree: zajęty port (nasłuch na 127.0.0.1) → false, po zwolnieniu → true; niczego nie zabija", async () => {
+    const srv = net.createServer();
+    await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+    const { port } = srv.address();
+    expect(await isPortFree(port)).toBe(false);
+    expect(srv.listening).toBe(true); // cudzy nasłuch nietknięty
+    await new Promise((r) => srv.close(r));
+    expect(await isPortFree(port)).toBe(true);
+  });
+
+  it("katalog podglądu o innej nazwie (test z kanarkiem obok prezentacji) dostaje własne atrapy i toml z własnymi portami", () => {
+    const r = preparePreviewDir({ root, previewDir: path.join(root, ".preview-test-canary"), port: 18888, targetPort: 15173 });
+    expect(r.previewDir).toBe(path.join(root, ".preview-test-canary"));
+    const toml = readFileSync(path.join(r.previewDir, "netlify.toml"), "utf8");
+    expect(toml).toContain("port = 18888");
+    expect(toml).toContain("targetPort = 15173");
+    const rel = /from "([^"]+)"/.exec(readFileSync(path.join(r.functionsDir, "alpha.js"), "utf8"))[1];
+    expect(path.resolve(r.functionsDir, rel)).toBe(path.join(root, "netlify", "functions", "alpha.js"));
+    expect(existsSync(path.join(root, ".preview-test"))).toBe(false); // domyślny katalog nietknięty
   });
 });
