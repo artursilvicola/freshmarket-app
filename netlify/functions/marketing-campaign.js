@@ -67,10 +67,12 @@ export const handler = async (event) => {
       }
       case "create": {
         const name = String(body.name || "").trim();
-        if (!name) return json(400, { error: "name_required" });
+        if (body.template_key === "selected_companies" && !name) return json(400, { error: "name_required" });
+        if (name.length > 160) return json(400, { error: "name_too_long" });
         // nowe kampanie tylko z grupą odbiorców; stare klucze zostają wyłącznie dla istniejących wierszy
         if (!AUDIENCE_TEMPLATE_KEYS.includes(body.template_key)) return json(400, { error: "template_key_invalid", allowed: AUDIENCE_TEMPLATE_KEYS });
-        const row = { name, template_key: body.template_key, content: {}, reply_to: emailOrNull(body.reply_to), created_by: caller.id };
+        // The database assigns the immutable sequence number, date and standard name.
+        const row = { name: body.template_key === "selected_companies" ? name : "", template_key: body.template_key, content: {}, reply_to: emailOrNull(body.reply_to), created_by: caller.id };
         const { data, error } = await supaSvc.from("marketing_campaigns").insert(row).select("*").maybeSingle();
         if (error) throw new Error(error.message);
         return json(200, { ok: true, campaign: data, default_content: defaultContent(body.template_key) });

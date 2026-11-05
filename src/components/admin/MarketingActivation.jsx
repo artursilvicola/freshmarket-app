@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { marketingCall } from "../../lib/db.js";
 
-export const AUDIENCES = ["credits_no_proposal", "credits_proposal_ready", "used_before_free_credits", "credits_expiring", "no_valid_credits"];
+export const AUDIENCES = ["credits_no_proposal", "credits_proposal_ready", "used_before_free_credits", "credits_expiring", "no_valid_credits", "selected_companies"];
 const EMPTY_CONTENT = { pl: { subject: "", body: "", cta: "" }, en: { subject: "", body: "", cta: "" } };
 const box = { background: "white", border: "1px solid #e2e8f0", borderRadius: 12, padding: 16, marginBottom: 14 };
 const btn = (variant = "primary") => ({
@@ -55,6 +55,7 @@ export default function MarketingActivation({ fl }) {
   });
 
   const createCampaign = () => run("create", async () => {
+    if (form.template_key === "selected_companies" && !form.name.trim()) return;
     const r = await marketingCall("marketing-campaign", { action: "create", ...form });
     toast(tr("created")); await loadCampaigns(); await openCampaign(r.campaign.id);
   });
@@ -156,16 +157,19 @@ export default function MarketingActivation({ fl }) {
           </div>
           <div style={box}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{tr("new_campaign")}</div>
-            <label style={{ fontSize: 11, color: "#64748b" }}>{tr("f_name")}</label>
-            <input style={inp} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={tr("f_name_ph")} />
+            {form.template_key === "selected_companies" && <>
+              <label htmlFor="mk-campaign-name" style={{ fontSize: 11, color: "#64748b" }}>{tr("f_name")}</label>
+              <input id="mk-campaign-name" data-testid="mk-name" maxLength={160} style={inp} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={tr("f_name_ph")} />
+            </>}
             <label style={{ fontSize: 11, color: "#64748b", marginTop: 8, display: "block" }}>{tr("f_audience")}</label>
             <select data-testid="mk-audience" style={inp} value={form.template_key} onChange={(e) => setForm({ ...form, template_key: e.target.value })}>
               {AUDIENCES.map((k) => <option key={k} value={k}>{tr("aud_" + k)}</option>)}
             </select>
             <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>{tr("aud_desc_" + form.template_key)}</div>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>{tr("automatic_name")}</div>
             <label style={{ fontSize: 11, color: "#64748b", marginTop: 8, display: "block" }}>{tr("f_reply_to")}</label>
             <input style={inp} value={form.reply_to} onChange={(e) => setForm({ ...form, reply_to: e.target.value })} placeholder="preconnect@freshmarket.eu" />
-            <button data-testid="mk-create" style={{ ...btn("primary"), marginTop: 10 }} disabled={!!busy || !form.name.trim()} onClick={createCampaign}>{tr("create")}</button>
+            <button data-testid="mk-create" style={{ ...btn("primary"), marginTop: 10 }} disabled={!!busy || (form.template_key === "selected_companies" && !form.name.trim())} onClick={createCampaign}>{tr("create")}</button>
           </div>
         </div>
 

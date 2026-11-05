@@ -68,12 +68,15 @@ describe("create / update_content", () => {
   it("create tylko z grupą odbiorców (stare klucze odrzucane), treść pusta = domyślna; zwraca default_content", async () => {
     const r = await call({ action: "create", name: "Listopad", template_key: "credits_expiring", reply_to: "A@B.pl" });
     expect(r.status).toBe(200);
-    expect(state.campaignInserts[0]).toMatchObject({ name: "Listopad", template_key: "credits_expiring", content: {}, reply_to: "a@b.pl", created_by: "admin" });
+    expect(state.campaignInserts[0]).toMatchObject({ name: "", template_key: "credits_expiring", content: {}, reply_to: "a@b.pl", created_by: "admin" });
     expect(state.campaignInserts[0]).not.toHaveProperty("target_categories");
     expect(r.body.default_content.pl.cta).toBe("Przygotuj propozycję");
     expect((await call({ action: "create", name: "X", template_key: "start_with_credits" })).status).toBe(400);
     expect((await call({ action: "create", name: "X", template_key: "sprzedaz" })).status).toBe(400);
-    expect((await call({ action: "create", name: "", template_key: "credits_expiring" })).status).toBe(400);
+    expect((await call({ action: "create", name: "", template_key: "credits_expiring" })).status).toBe(200);
+    expect((await call({ action: "create", name: "", template_key: "selected_companies" })).status).toBe(400);
+    expect((await call({ action: "create", name: "Wybrane firmy", template_key: "selected_companies" })).status).toBe(200);
+    expect(state.campaignInserts.at(-1).name).toBe("Wybrane firmy");
   });
   it("update_content: walidacja bez HTML → 422 z listą; poprawna → zapis tylko 3 pól per język; {} = reset; poza szkicem → 409", async () => {
     const bad = { pl: { subject: "<b>x</b>", body: "ok", cta: "ok" }, en: { subject: "ok", body: "{{nope}}", cta: "ok" } };

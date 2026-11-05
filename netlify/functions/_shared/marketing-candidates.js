@@ -32,6 +32,7 @@ export const AUDIENCES = Object.freeze({
   USED_BEFORE_FREE_CREDITS: "used_before_free_credits",
   CREDITS_EXPIRING: "credits_expiring",
   NO_VALID_CREDITS: "no_valid_credits",
+  SELECTED_COMPANIES: "selected_companies",
 });
 export const AUDIENCE_KEYS = Object.freeze(Object.values(AUDIENCES));
 export const EXPIRING_DAYS = 30;
@@ -52,6 +53,7 @@ export const EXCLUSION_REASONS = Object.freeze([
 
 /** Powody kwalifikacji (q_*) i niekwalifikacji (b_*) do grupy — do pokazania administratorowi. */
 export const AUDIENCE_REASONS = Object.freeze([
+  "q_manual_selection",
   "q_credits_available_no_history", "q_credits_available_offer_not_sent", "q_used_before_credits_available", "q_credits_expiring", "q_no_valid_credits",
   "b_no_valid_credits", "b_all_reserved", "b_has_sends", "b_has_offers", "b_no_offers", "b_no_sends", "b_no_expiry", "b_expiry_far", "b_has_valid_credits", "b_reserved_pending",
 ]);
@@ -101,6 +103,8 @@ export function summarizePools(packages, todayISO) {
 export function qualifyAudience(key, f) {
   const noCredits = () => (f.remaining <= 0 ? "b_no_valid_credits" : "b_all_reserved");
   switch (key) {
+    case AUDIENCES.SELECTED_COMPANIES:
+      return { ok: true, reason: "q_manual_selection" };
     case AUDIENCES.CREDITS_NO_PROPOSAL:
       if (f.available <= 0) return { ok: false, reason: noCredits() };
       if (f.sends_total > 0) return { ok: false, reason: "b_has_sends" };

@@ -50,6 +50,11 @@ describe("saldo i rezerwacje = te same reguły co panel", () => {
 });
 
 describe("grupy odbiorców — dokładna kwalifikacja z powodem", () => {
+  it("manual selection accepts any balance but never bypasses exclusions", () => {
+    expect(forAud(AUDIENCES.SELECTED_COMPANIES, { packages: [] }).eligible).toBe(true);
+    expect(forAud(AUDIENCES.SELECTED_COMPANIES, { suppressions: [{ email: "op@kowalski.test" }] }).eligible).toBe(false);
+    expect(forAud(AUDIENCES.SELECTED_COMPANIES, { companies: [co({ account_status: "suspended" })] }).eligible).toBe(false);
+  });
   it("qualifyAudience: pięć grup, powody q_/b_", () => {
     const f = (o) => ({ remaining: 5, reserved: 0, available: 5, sends_total: 0, offers_total: 0, nearest_expiry: "2026-12-27", expiring_soon: false, ...o });
     expect(qualifyAudience(AUDIENCES.CREDITS_NO_PROPOSAL, f())).toEqual({ ok: true, reason: "q_credits_available_no_history" });
@@ -68,7 +73,7 @@ describe("grupy odbiorców — dokładna kwalifikacja z powodem", () => {
     expect(qualifyAudience(AUDIENCES.CREDITS_NO_PROPOSAL, f({ remaining: 0, available: 0 }))).toEqual({ ok: false, reason: "b_no_valid_credits" });
     expect(qualifyAudience(AUDIENCES.CREDITS_NO_PROPOSAL, f({ remaining: 2, reserved: 2, available: 0 }))).toEqual({ ok: false, reason: "b_all_reserved" });
     expect(qualifyAudience("sprzedaz", f()).ok).toBe(false);
-    expect(AUDIENCE_KEYS).toHaveLength(5);
+    expect(AUDIENCE_KEYS).toHaveLength(6);
   });
   it("firma z kredytami zarezerwowanymi przy oczekujących propozycjach NIGDY nie trafia do „brak kredytów”", () => {
     // wygasły pakiet (remaining 0), ale wysyłka w toku → rezerwacja 1
@@ -76,17 +81,17 @@ describe("grupy odbiorców — dokładna kwalifikacja z powodem", () => {
     expect(r.in_audience).toBe(false);
     expect(r.audience_reason).toBe("b_reserved_pending");
     expect(r.eligible).toBe(false);
-    expect(r.audiences).toEqual([]);
+    expect(r.audiences).toEqual([AUDIENCES.SELECTED_COMPANIES]);
     // wszystkie ważne kredyty zarezerwowane → też nie „kup pakiet” i nie „masz kredyty”
     const all = run({ campaign: { template_key: AUDIENCES.USED_BEFORE_FREE_CREDITS }, sends: [1, 2, 3, 4, 5].map((i) => send({ created_at: `2026-11-0${i}T10:00:00Z` })) }).rows[0];
-    expect(all.audiences).toEqual([]);
+    expect(all.audiences).toEqual([AUDIENCES.SELECTED_COMPANIES]);
     expect(all.audience_reason).toBe("b_all_reserved");
     expect(all.audience_reasons.no_valid_credits).toBe("b_has_valid_credits");
     expect(all.segment).toBe(SEGMENTS.IN_PROCESS_ONLY);
   });
   it("firma może kwalifikować się do kilku grup (np. brak propozycji + wygasające); kampania wybiera jedną", () => {
     const r = forAud(AUDIENCES.CREDITS_NO_PROPOSAL, { packages: [pkg({ expires_at: "2026-11-20" })] });
-    expect(r.audiences).toEqual([AUDIENCES.CREDITS_NO_PROPOSAL, AUDIENCES.CREDITS_EXPIRING]);
+    expect(r.audiences).toEqual([AUDIENCES.CREDITS_NO_PROPOSAL, AUDIENCES.CREDITS_EXPIRING, AUDIENCES.SELECTED_COMPANIES]);
     expect(r.eligible).toBe(true);
     expect(r.audience_reason).toBe("q_credits_available_no_history");
     expect(r.warnings).toContain("credits_expire_soon");

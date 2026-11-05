@@ -50,11 +50,24 @@ beforeEach(async () => {
 afterEach(() => { if (tree) act(() => tree.unmount()); tree = null; globalThis.window.confirm = prevConfirm; if (!hadWindow) delete globalThis.window; });
 
 describe("Marketing → Aktywacja PreConnect", () => {
+  it("only selected-company campaigns require a typed name", async () => {
+    await openFirst();
+    expect(byId("mk-name")).toBeUndefined();
+    expect(byId("mk-create").props.disabled).toBe(false);
+    await act(async () => byId("mk-audience").props.onChange({ target: { value: "selected_companies" } }));
+    expect(byId("mk-name")).toBeDefined();
+    expect(byId("mk-create").props.disabled).toBe(true);
+    const before = calls.list.length;
+    await act(async () => byId("mk-create").props.onClick());
+    expect(calls.list.length).toBe(before);
+    await act(async () => byId("mk-name").props.onChange({ target: { value: "Wybrane firmy" } }));
+    expect(byId("mk-create").props.disabled).toBe(false);
+  });
   it("formularz: grupa odbiorców z opisem, bez pól „potrzeb kupców”; lista kampanii pokazuje grupę", async () => {
     await openFirst();
     const o = out();
     expect(byId("mk-audience").props.value).toBe("credits_no_proposal");
-    expect(AUDIENCES).toHaveLength(5);
+    expect(AUDIENCES).toHaveLength(6);
     expect(o).toContain("Mają kredyty, brak propozycji");
     expect(o).toContain("Zachęta do pierwszej prezentacji firmy");
     expect(o).not.toContain("Potrzeby kupców");
