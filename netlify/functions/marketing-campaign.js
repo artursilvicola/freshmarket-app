@@ -126,7 +126,7 @@ export const handler = async (event) => {
           const unsub = unsubscribeUrl({ appUrl: env.b2bAppUrl, messageId, secret: env.marketingUnsubscribeSecret });
           const rendered = renderMarketingTemplate({
             templateKey, content, locale: row.locale, companyName: row.company_name,
-            creditsRemaining: row.snapshot.credits_remaining, creditsReserved: row.snapshot.reserved, expiringCredits: row.snapshot.expiring_credits,
+            creditsRemaining: row.snapshot.credits_remaining, creditsAvailable: row.snapshot.credits_available, creditsReserved: row.snapshot.reserved, expiringCredits: row.snapshot.expiring_credits,
             creditsExpiry: row.snapshot.nearest_expiry,
             snapshotAt, appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null,
           });

@@ -1903,7 +1903,7 @@
       "w_credits_expire_soon": "kredyty wygasają <30 dni",
       "content_title": "Treść kampanii",
       "content_hint": "Zwykły tekst, bez HTML. Akapity oddziel pustą linią, **pogrubienie** w gwiazdkach. Nagłówek, stopka, adres i link wypisu są stałe.",
-      "placeholders_help": "Symbole: {{company}} nazwa firmy · {{credits}} wolne kredyty ze słowem · {{credits_n}} sama liczba · {{expiry}} najbliższy termin ważności · {{expiring_credits}} kredyty z tym terminem · {{reserved_n}} rezerwacje · {{mailing_date}} najbliższy mailing do kupców · {{snapshot_date}} data odczytu danych.",
+      "placeholders_help": "Symbole: {{company}} nazwa firmy · {{credits}} wolne kredyty ze słowem (ważne minus rezerwacje) · {{credits_n}} sama liczba · {{valid_credits}} wszystkie ważne kredyty · {{expiry}} najbliższy termin ważności · {{expiring_credits}} kredyty z tym terminem · {{reserved_n}} rezerwacje · {{mailing_date}} najbliższy mailing do kupców · {{snapshot_date}} data odczytu danych.",
       "f_subject": "Temat",
       "f_body": "Treść",
       "f_cta": "Przycisk",

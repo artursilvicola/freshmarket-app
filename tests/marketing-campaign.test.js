@@ -92,7 +92,7 @@ describe("approve", () => {
     expect(m.state).toBe("pending");
     expect(m.payload_hash).toBe(payloadHash({ subject: m.subject, html: m.html, text: m.text_body }));
     expect(m.html).toContain(`marketing-unsubscribe?m=${m.id}&amp;t=`);
-    expect(m.subject).toBe("Daj się poznać sieciom handlowym — masz 5 kredytów w PreConnect");
+    expect(m.subject).toBe("Daj się poznać sieciom handlowym — masz 5 kredytów w PreConnect"); // {{credits}} = credits_available
     expect(m.idempotency_key).toBe(`marketing:${CAMP}:p1`);
     expect(m.consent_source).toBe("regulamin 1.0 — potwierdzone 4.11");
     expect(m.snapshot).toMatchObject({ company_name: "Sad Kowalski", snapshot_at: "2026-11-04T10:00:00Z", template_key: "credits_no_proposal", audience_reason: "q_credits_available_no_history", custom_content: false });

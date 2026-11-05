@@ -1903,7 +1903,7 @@
       "w_credits_expire_soon": "credits expire <30 days",
       "content_title": "Campaign content",
       "content_hint": "Plain text, no HTML. Separate paragraphs with an empty line, **bold** in asterisks. Header, footer, address and unsubscribe link are fixed.",
-      "placeholders_help": "Placeholders: {{company}} company name · {{credits}} free credits with the word · {{credits_n}} number only · {{expiry}} nearest expiry · {{expiring_credits}} credits with that expiry · {{reserved_n}} reservations · {{mailing_date}} next buyer mailing · {{snapshot_date}} data read date.",
+      "placeholders_help": "Placeholders: {{company}} company name · {{credits}} free credits with the word (valid minus reservations) · {{credits_n}} number only · {{valid_credits}} all valid credits · {{expiry}} nearest expiry · {{expiring_credits}} credits with that expiry · {{reserved_n}} reservations · {{mailing_date}} next buyer mailing · {{snapshot_date}} data read date.",
       "f_subject": "Subject",
       "f_body": "Body",
       "f_cta": "Button",

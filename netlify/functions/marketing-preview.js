@@ -40,6 +40,7 @@ export const handler = async (event) => {
       templateKey: key, content, locale,
       companyName: row.company_name,
       creditsRemaining: row.snapshot.credits_remaining,
+      creditsAvailable: row.snapshot.credits_available,
       creditsReserved: row.snapshot.reserved,
       expiringCredits: row.snapshot.expiring_credits,
       creditsExpiry: row.snapshot.nearest_expiry,

@@ -8,8 +8,8 @@
  *
  * Każda grupa ma DOMYŚLNĄ treść PL i EN (temat, treść, etykieta przycisku). Administrator może
  * ją edytować w panelu BEZ HTML: zwykły tekst, akapity rozdzielone pustą linią, `**pogrubienie**`,
- * symbole {{company}}, {{credits}}, {{credits_n}}, {{expiry}}, {{expiring_credits}}, {{reserved_n}},
- * {{mailing_date}}, {{snapshot_date}}. Wszystko jest ESCAPOWANE — `<`/`>` są odrzucane przy walidacji.
+ * symbole {{company}}, {{credits}} (WOLNE = ważne − rezerwacje), {{credits_n}}, {{valid_credits}} (wszystkie ważne),
+ * {{expiry}}, {{expiring_credits}}, {{reserved_n}}, {{mailing_date}}, {{snapshot_date}}. Wszystko jest ESCAPOWANE — `<`/`>` są odrzucane przy walidacji.
  * Stałe elementy (nagłówek, stopka, adres, link wypisu, reply-to) są poza edycją.
  *
  * Każdy render zwraca { subject, html, text, meta } — wersja tekstowa jest pełna.
@@ -21,7 +21,7 @@ export const AUDIENCE_TEMPLATE_KEYS = Object.freeze(["credits_no_proposal", "cre
 /** Stare klucze zostają, żeby dało się renderować/pokazać wcześniejsze kampanie testowe. */
 export const LEGACY_TEMPLATE_KEYS = Object.freeze(["start_with_credits", "return_active"]);
 export const TEMPLATE_KEYS = Object.freeze([...AUDIENCE_TEMPLATE_KEYS, ...LEGACY_TEMPLATE_KEYS]);
-export const PLACEHOLDERS = Object.freeze(["company", "credits", "credits_n", "expiry", "expiring_credits", "reserved_n", "mailing_date", "snapshot_date"]);
+export const PLACEHOLDERS = Object.freeze(["company", "credits", "credits_n", "valid_credits", "expiry", "expiring_credits", "reserved_n", "mailing_date", "snapshot_date"]);
 export const LIMITS = Object.freeze({ subject: 200, body: 4000, cta: 60 });
 
 export function esc(v) {
@@ -180,7 +180,8 @@ const cta = (label, url) => `<p style="margin:22px 0 10px;"><a href="${esc(url)}
  * @param {object} [d.content]     treść z kampanii { pl: {subject, body, cta}, en: {...} } (domyślna, gdy brak/niepoprawna)
  * @param {string} d.locale        pl | en
  * @param {string} d.companyName
- * @param {number} d.creditsRemaining  ważne kredyty w chwili odczytu ({{credits}})
+ * @param {number} d.creditsRemaining  wszystkie ważne kredyty w chwili odczytu ({{valid_credits}})
+ * @param {number} [d.creditsAvailable] WOLNE kredyty = ważne − rezerwacje ({{credits}}, {{credits_n}}); domyślnie = creditsRemaining
  * @param {number} [d.creditsReserved] rezerwacje ({{reserved_n}})
  * @param {number} [d.expiringCredits] kredyty z najbliższym terminem ({{expiring_credits}}; domyślnie = creditsRemaining)
  * @param {string|null} d.creditsExpiry 'YYYY-MM-DD' najbliższy termin ważności (null = „—”)
@@ -197,6 +198,7 @@ export function renderMarketingTemplate(d) {
   if (!d.unsubscribeUrl) throw new Error("unsubscribe_url_required");
   const n = Math.max(0, Number(d.creditsRemaining) || 0);
   const reserved = Math.max(0, Number(d.creditsReserved) || 0);
+  const avail = d.creditsAvailable == null ? n : Math.max(0, Number(d.creditsAvailable) || 0);
   const expiringN = d.expiringCredits == null ? n : Math.max(0, Number(d.expiringCredits) || 0);
   const mailing = nextBuyerMailingDate(d.now || new Date());
   const mailingLabel = formatLongDate(mailing, locale);
@@ -208,7 +210,7 @@ export function renderMarketingTemplate(d) {
   const appUrl = d.appUrl || "https://b2b.freshmarket.eu";
   const content = effectiveContent(key, d.content)[locale];
   const vars = {
-    company, credits: `${n} ${creditsWord(n, locale)}`, credits_n: String(n),
+    company, credits: `${avail} ${creditsWord(avail, locale)}`, credits_n: String(avail), valid_credits: `${n} ${creditsWord(n, locale)}`,
     expiry: expiryLabel, expiring_credits: `${expiringN} ${creditsWord(expiringN, locale)}`, reserved_n: String(reserved),
     mailing_date: mailingLabel, snapshot_date: snapshotLabel,
   };
@@ -222,5 +224,5 @@ export function renderMarketingTemplate(d) {
     d.replyTo ? (locale === "en" ? `Reply to this e-mail or write to ${d.replyTo}.` : `Odpowiedz na tę wiadomość albo napisz na ${d.replyTo}.`) : "",
     locale === "en" ? `Unsubscribe from PreConnect information: ${d.unsubscribeUrl}` : `Wypisz się z informacji o PreConnect: ${d.unsubscribeUrl}`,
   ].filter((l) => l !== null).join("\n");
-  return { subject, html, text, meta: { locale, templateKey: key, mailingDate: mailingLabel, creditsRemaining: n, creditsExpiry: expiry ? expiryLabel : null, customContent: Boolean(d.content && validateContent(d.content).length === 0) } };
+  return { subject, html, text, meta: { locale, templateKey: key, mailingDate: mailingLabel, creditsRemaining: n, creditsAvailable: avail, creditsExpiry: expiry ? expiryLabel : null, customContent: Boolean(d.content && validateContent(d.content).length === 0) } };
 }

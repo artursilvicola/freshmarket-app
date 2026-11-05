@@ -95,7 +95,7 @@ describe("treść edytowana w panelu (bez HTML)", () => {
     expect(validateContent(long)).toEqual(expect.arrayContaining(["pl.body.too_long", "en.subject.multiline"]));
     const missing = { pl: custom().pl };
     expect(validateContent(missing)).toContain("en.missing");
-    expect(PLACEHOLDERS).toEqual(["company", "credits", "credits_n", "expiry", "expiring_credits", "reserved_n", "mailing_date", "snapshot_date"]);
+    expect(PLACEHOLDERS).toEqual(["company", "credits", "credits_n", "valid_credits", "expiry", "expiring_credits", "reserved_n", "mailing_date", "snapshot_date"]);
   });
   it("niepoprawna zapisana treść nie psuje renderu — używana jest domyślna; defaultContent zwraca kopię", () => {
     const r = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", content: { pl: { subject: "<x>" } } });
@@ -112,6 +112,12 @@ describe("treść edytowana w panelu (bez HTML)", () => {
     const a = renderMarketingTemplate({ ...base, templateKey: "used_before_free_credits", locale: "pl" });
     const b = renderMarketingTemplate({ ...base, templateKey: "used_before_free_credits", locale: "pl" });
     expect(a.html).toBe(b.html); expect(a.text).toBe(b.text); expect(a.subject).toBe(b.subject);
+  });
+  it("{{credits}} = WOLNE kredyty (ważne − rezerwacje), {{valid_credits}} = wszystkie ważne; bez creditsAvailable = ważne", () => {
+    const r = renderMarketingTemplate({ ...base, templateKey: "used_before_free_credits", locale: "pl", creditsRemaining: 4, creditsAvailable: 3, creditsReserved: 1, content: { pl: { subject: "wolne {{credits}} / ważne {{valid_credits}} / rez {{reserved_n}} / n {{credits_n}}", body: "x", cta: "y" }, en: { subject: "s", body: "b", cta: "c" } } });
+    expect(r.subject).toBe("wolne 3 kredyty / ważne 4 kredyty / rez 1 / n 3");
+    expect(renderMarketingTemplate({ ...base, templateKey: "used_before_free_credits", locale: "en", creditsRemaining: 4, creditsAvailable: 3 }).subject).toBe("Another proposal in PreConnect — you still have 3 credits");
+    expect(renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", creditsRemaining: 5 }).subject).toContain("masz 5 kredytów");
   });
   it("stare szablony (kampanie sprzed 5.11) nadal się renderują z regułą rozliczania", () => {
     for (const key of ["start_with_credits", "return_active"]) {
