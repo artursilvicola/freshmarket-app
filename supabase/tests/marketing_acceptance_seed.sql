@@ -22,7 +22,9 @@ values
   ('a0000000-0000-4000-8000-000000000006', 'TEST Oczekująca',          'PL0000000006', 'PL', 'Płock',    array['owoce'],           'śliwki', 'Fikcyjna — konto czeka na zatwierdzenie.', 'pending_review', false, 'sup-t6'),
   ('a0000000-0000-4000-8000-000000000007', 'TEST Dwóch operatorów',    'PL0000000007', 'PL', 'Toruń',    array['kwiaty'],          'tulipany', 'Fikcyjna — dwa aktywne profile dostawcy (do wyjaśnienia).', 'active', true,  'sup-t7'),
   ('a0000000-0000-4000-8000-000000000008', 'TEST Wypisana',            'PL0000000008', 'PL', 'Opole',    array['owoce'],           'wiśnie', 'Fikcyjna — adres operatora w suppresji.', 'active', true,  'sup-t8'),
-  ('a0000000-0000-4000-8000-000000000009', 'ZZZ TEST Dostawca seed',   'PL0000000009', 'PL', 'Test',     array['owoce'],           'test', 'Konto testowe — wykluczone z marketingu po nazwie.', 'active', true,  'sup-t9')
+  ('a0000000-0000-4000-8000-000000000009', 'ZZZ TEST Dostawca seed',   'PL0000000009', 'PL', 'Test',     array['owoce'],           'test', 'Konto testowe — wykluczone z marketingu po nazwie.', 'active', true,  'sup-t9'),
+  ('a0000000-0000-4000-8000-000000000010', 'TEST Propozycja gotowa',   'PL0000000010', 'PL', 'Sandomierz', array['owoce'],         'maliny, borówki', 'Fikcyjna — ma przygotowaną propozycję (legacy_offers), nic jeszcze nie wysłała → grupa „propozycja gotowa”.', 'active', true,  'sup-t10'),
+  ('a0000000-0000-4000-8000-000000000011', 'TEST Rezerwacja bez kredytów', 'PL0000000011', 'PL', 'Lublin', array['warzywa'],       'marchew', 'Fikcyjna — prezent wygasł, ale propozycja czeka na odczyt (rezerwacja) → NIGDY „kup pakiet”.', 'active', true,  'sup-t11')
 on conflict (id) do update set name = excluded.name, categories = excluded.categories, products = excluded.products,
   account_status = excluded.account_status, preconnect_enabled = excluded.preconnect_enabled, legacy_supplier_id = excluded.legacy_supplier_id;
 
@@ -42,7 +44,9 @@ begin
     ('b0000000-0000-4000-8000-000000000007'::uuid, 'operator.dwa.a@example.test',    'Adam Dwa (TEST)',       'pl', 'a0000000-0000-4000-8000-000000000007'::uuid),
     ('b0000000-0000-4000-8000-000000000017'::uuid, 'operator.dwa.b@example.test',    'Beata Dwa (TEST)',      'pl', 'a0000000-0000-4000-8000-000000000007'::uuid),
     ('b0000000-0000-4000-8000-000000000008'::uuid, 'operator.wypisana@example.test', 'Zofia Wypis (TEST)',    'pl', 'a0000000-0000-4000-8000-000000000008'::uuid),
-    ('b0000000-0000-4000-8000-000000000009'::uuid, 'operator.zzz@example.test',      'ZZZ Operator (TEST)',   'pl', 'a0000000-0000-4000-8000-000000000009'::uuid)
+    ('b0000000-0000-4000-8000-000000000009'::uuid, 'operator.zzz@example.test',      'ZZZ Operator (TEST)',   'pl', 'a0000000-0000-4000-8000-000000000009'::uuid),
+    ('b0000000-0000-4000-8000-000000000010'::uuid, 'operator.gotowa@example.test',   'Marta Gotowa (TEST)',   'pl', 'a0000000-0000-4000-8000-000000000010'::uuid),
+    ('b0000000-0000-4000-8000-000000000011'::uuid, 'operator.rezerwacja@example.test', 'Rafał Rezerwa (TEST)', 'pl', 'a0000000-0000-4000-8000-000000000011'::uuid)
   ) as t(id, email, name, locale, company_id)
   loop
     if not exists (select 1 from auth.users where id = r.id) then
@@ -75,7 +79,7 @@ declare
 begin
   insert into public.package_grant_batches (idempotency_key, created_by, qty, reason, message, note, expires_at, company_ids, company_count)
   values ('seed-marketing-acceptance', v_admin, 5, 'registration', 'Seed odbiorowy (baza testowa)', 'marketing_acceptance_seed.sql', (current_date + 45)::date,
-          array['a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000002','a0000000-0000-4000-8000-000000000003','a0000000-0000-4000-8000-000000000004','a0000000-0000-4000-8000-000000000005','a0000000-0000-4000-8000-000000000007','a0000000-0000-4000-8000-000000000008','a0000000-0000-4000-8000-000000000009']::uuid[], 8)
+          array['a0000000-0000-4000-8000-000000000001','a0000000-0000-4000-8000-000000000002','a0000000-0000-4000-8000-000000000003','a0000000-0000-4000-8000-000000000004','a0000000-0000-4000-8000-000000000005','a0000000-0000-4000-8000-000000000007','a0000000-0000-4000-8000-000000000008','a0000000-0000-4000-8000-000000000009','a0000000-0000-4000-8000-000000000010','a0000000-0000-4000-8000-000000000011']::uuid[], 10)
   on conflict (idempotency_key) do update set note = excluded.note
   returning id into v_batch;
   insert into public.packages (company_id, plan, qty_total, qty_used, source, expires_at, purchased_at, grant_reason, grant_batch_id, granted_at, granted_by)
@@ -87,14 +91,16 @@ begin
     ('a0000000-0000-4000-8000-000000000005', 'grant_5', 5, 0, 'grant', (current_date - 10)::date, now() - interval '100 days', 'registration', v_batch, now() - interval '100 days', v_admin),  -- wygasły
     ('a0000000-0000-4000-8000-000000000007', 'grant_5', 5, 0, 'grant', (current_date + 45)::date, now(), 'registration', v_batch, now(), v_admin),
     ('a0000000-0000-4000-8000-000000000008', 'grant_5', 5, 0, 'grant', (current_date + 45)::date, now(), 'registration', v_batch, now(), v_admin),
-    ('a0000000-0000-4000-8000-000000000009', 'grant_5', 5, 0, 'grant', (current_date + 45)::date, now(), 'registration', v_batch, now(), v_admin);
+    ('a0000000-0000-4000-8000-000000000009', 'grant_5', 5, 0, 'grant', (current_date + 45)::date, now(), 'registration', v_batch, now(), v_admin),
+    ('a0000000-0000-4000-8000-000000000010', 'grant_5', 5, 0, 'grant', (current_date + 45)::date, now(), 'registration', v_batch, now(), v_admin),  -- propozycja gotowa, nic nie wysłała
+    ('a0000000-0000-4000-8000-000000000011', 'grant_5', 5, 0, 'grant', (current_date - 10)::date, now() - interval '100 days', 'registration', v_batch, now() - interval '100 days', v_admin);  -- wygasły, ale rezerwacja w toku
   -- zakup (pakiet Standard) dla firmy „powrót"
   insert into public.packages (company_id, plan, qty_total, qty_used, source, expires_at, purchased_at, price_paid, currency)
   values ('a0000000-0000-4000-8000-000000000002', 'std_10', 10, 0, 'purchase', (current_date + 300)::date, now(), 0, 'EUR');
 end $$;
 
 -- ── wysyłki (rezerwacje / odczyty) ──────────────────────────────────────────
-delete from public.legacy_sends where supplier_legacy_id in ('sup-t2','sup-t3','sup-t4');
+delete from public.legacy_sends where supplier_legacy_id in ('sup-t2','sup-t3','sup-t4','sup-t11');
 insert into public.legacy_sends (legacy_id, supplier_legacy_id, offer_legacy_id, retailer_id, status, data, created_at, updated_at)
 values
   (770001, 'sup-t2', null, 100, 'unread_expired', '{"supplierId":"sup-t2","status":"unread_expired"}', now() - interval '40 days', now() - interval '26 days'),
@@ -105,7 +111,13 @@ values
   (770006, 'sup-t4', null, 101, 'sent',           '{"supplierId":"sup-t4","status":"sent"}',           now() - interval '3 days',  now() - interval '3 days'),
   (770007, 'sup-t4', null, 102, 'pending_moderation', '{"supplierId":"sup-t4","status":"pending_moderation"}', now() - interval '1 day', now() - interval '1 day'),
   (770008, 'sup-t4', null, 103, 'sent',           '{"supplierId":"sup-t4","status":"sent"}',           now() - interval '3 days',  now() - interval '3 days'),
-  (770009, 'sup-t4', null, 104, 'sent',           '{"supplierId":"sup-t4","status":"sent"}',           now() - interval '3 days',  now() - interval '3 days');
+  (770009, 'sup-t4', null, 104, 'sent',           '{"supplierId":"sup-t4","status":"sent"}',           now() - interval '3 days',  now() - interval '3 days'),
+  (770011, 'sup-t11', null, 100, 'sent',          '{"supplierId":"sup-t11","status":"sent"}',          now() - interval '4 days',  now() - interval '4 days');  -- rezerwacja przy wygasłym pakiecie
+
+-- ── propozycje (legacy_offers): przygotowana propozycja bez wysyłek → grupa „propozycja gotowa” ─────
+delete from public.legacy_offers where legacy_id in (880010);
+insert into public.legacy_offers (legacy_id, supplier_legacy_id, status, category, origin, data, created_at, updated_at)
+values (880010, 'sup-t10', 'active', 'owoce', 'PL', '{"supplierId":"sup-t10","status":"active","title":"Maliny i borówki (TEST)"}', now() - interval '6 days', now() - interval '6 days');
 
 -- ── wypis (suppresja) ───────────────────────────────────────────────────────
 insert into public.marketing_suppressions (email, reason, source)

@@ -14,7 +14,7 @@ function fakeClient({ registryExists = false, companiesExist = false, registered
       if (sql.includes(`to_regclass('${REGISTRY}')`)) return { rows: [{ ok: registryExists }] };
       if (sql.includes("to_regclass('public.companies')")) return { rows: [{ ok: companiesExist }] };
       if (sql === `select filename from ${REGISTRY}`) return { rows: registered.map((filename) => ({ filename })) };
-      if (sql.startsWith("select\n    (select count(*)::int from public.companies")) return { rows: [state || { test_companies: 9, test_operators: 10, admins: 1, packages: 9, suppressions: 1, marketing_tables: true, migrations_registered: 2 }] };
+      if (sql.startsWith("select\n    (select count(*)::int from public.companies")) return { rows: [state || { test_companies: 11, test_operators: 12, admins: 1, packages: 9, suppressions: 1, marketing_tables: true, migrations_registered: 2 }] };
       return { rows: [] };
     },
   };
@@ -82,7 +82,7 @@ describe("prepareTestDatabase", () => {
     expect(c.calls[c.calls.length - 1]).toBe("rollback");
     const c2 = fakeClient({ state: { test_companies: 8, test_operators: 10, marketing_tables: true, migrations_registered: 2 } });
     expect(await run(c2)).toBe(1);
-    const c3 = fakeClient({ state: { test_companies: 9, test_operators: 10, marketing_tables: true, migrations_registered: 1 } });
+    const c3 = fakeClient({ state: { test_companies: 11, test_operators: 12, marketing_tables: true, migrations_registered: 1 } });
     expect(await run(c3)).toBe(1);
   });
 });

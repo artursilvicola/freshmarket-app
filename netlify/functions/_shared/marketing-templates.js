@@ -1,20 +1,28 @@
 /**
- * [feat/marketing-activation] Szablony kampanii aktywizacyjnej PreConnect (PL/EN).
+ * [feat/marketing-activation] Szablony kampanii aktywizacyjnej PreConnect (PL/EN) — po grupie odbiorców.
  *
- * Dwa szablony (decyzja Artura 4.11): `start_with_credits` (pierwsza propozycja)
- * i `return_active` (powrót z nowym asortymentem). Treść proponuje pomoc, nie
- * obiecuje odczytu, spotkania ani zakupu. Liczba kredytów i daty pochodzą z danych
- * odczytanych tuż przed zatwierdzeniem (snapshot) — nigdy wpisane na sztywno.
+ * Główna wartość komunikatu (Artur 5.11): daj się poznać sieciom handlowym, przedstaw kupcom
+ * swoje produkty i możliwości firmy — PreConnect pomaga zrobić pierwszy krok do współpracy.
+ * Kredyty wspierają ten przekaz, nie zastępują go. Treść nie obiecuje odczytu, odpowiedzi ani
+ * umowy, nie twierdzi, że „kupcy właśnie szukają”, ani że sieć jest „nowa dla tej firmy”.
  *
- * Każdy render zwraca { subject, html, text } — wersja tekstowa jest pełna.
- * Stopka: wypis (link one-click) + adres do odpowiedzi. Układ HTML jak w
- * supplier-email-templates.js (tabele, bez CSS w <head>).
+ * Każda grupa ma DOMYŚLNĄ treść PL i EN (temat, treść, etykieta przycisku). Administrator może
+ * ją edytować w panelu BEZ HTML: zwykły tekst, akapity rozdzielone pustą linią, `**pogrubienie**`,
+ * symbole {{company}}, {{credits}}, {{credits_n}}, {{expiry}}, {{expiring_credits}}, {{reserved_n}},
+ * {{mailing_date}}, {{snapshot_date}}. Wszystko jest ESCAPOWANE — `<`/`>` są odrzucane przy walidacji.
+ * Stałe elementy (nagłówek, stopka, adres, link wypisu, reply-to) są poza edycją.
  *
- * Szablony są w kodzie (nie w UI) — zmiana = zmiana w repo + review.
+ * Każdy render zwraca { subject, html, text, meta } — wersja tekstowa jest pełna.
+ * Liczby i daty pochodzą z danych odczytanych tuż przed zatwierdzeniem (snapshot) — nigdy na sztywno.
  */
 import { formatLongDate, nextBuyerMailingDate, parseISODate } from "./marketing-dates.js";
 
-export const TEMPLATE_KEYS = Object.freeze(["start_with_credits", "return_active"]);
+export const AUDIENCE_TEMPLATE_KEYS = Object.freeze(["credits_no_proposal", "credits_proposal_ready", "used_before_free_credits", "credits_expiring", "no_valid_credits"]);
+/** Stare klucze zostają, żeby dało się renderować/pokazać wcześniejsze kampanie testowe. */
+export const LEGACY_TEMPLATE_KEYS = Object.freeze(["start_with_credits", "return_active"]);
+export const TEMPLATE_KEYS = Object.freeze([...AUDIENCE_TEMPLATE_KEYS, ...LEGACY_TEMPLATE_KEYS]);
+export const PLACEHOLDERS = Object.freeze(["company", "credits", "credits_n", "expiry", "expiring_credits", "reserved_n", "mailing_date", "snapshot_date"]);
+export const LIMITS = Object.freeze({ subject: 200, body: 4000, cta: 60 });
 
 export function esc(v) {
   return String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -25,13 +33,114 @@ function pickLocale(input) {
   return raw === "en" ? "en" : "pl";
 }
 
-function creditsWord(n, locale) {
+export function creditsWord(n, locale) {
   if (locale === "en") return n === 1 ? "credit" : "credits";
   const t = n % 10, h = n % 100;
   if (n === 1) return "kredyt";
   if (t >= 2 && t <= 4 && !(h >= 12 && h <= 14)) return "kredyty";
   return "kredytów";
 }
+
+const CORE_PL = "PreConnect pomaga zrobić pierwszy krok do współpracy z sieciami handlowymi: przedstawiasz kupcom swoje produkty i możliwości firmy, a my dostarczamy propozycję do wybranych sieci w najbliższym mailingu. Nawiązanie współpracy zwykle wymaga kilku prezentacji, rozmów i próbek — PreConnect pomaga się zaprezentować, nie zastępuje tych etapów.";
+const RULES_PL = "Jedna propozycja do jednej sieci to jeden kredyt. Kredyt rozliczamy dopiero po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca. Kredyty przypisane do propozycji, które czekają na odczyt, pozostają zarezerwowane do rozliczenia.";
+const MAILING_PL = "Najbliższy mailing do kupców: **{{mailing_date}}**. Propozycje kwalifikujemy do wysyłki zgodnie z ich aktualnym statusem.";
+const HELP_PL = "Jeżeli chcesz pomocy w opisaniu asortymentu albo wyborze sieci, odpowiedz na tę wiadomość.";
+const CORE_EN = "PreConnect helps you take the first step towards working with retail chains: you present your products and your company's capabilities to buyers, and we deliver the proposal to the selected chains in the next mailing. Starting a cooperation usually takes several presentations, conversations and samples — PreConnect helps you introduce yourself, it does not replace those steps.";
+const RULES_EN = "One proposal to one retail chain uses one credit. A credit is settled only after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel. Credits assigned to proposals that are still waiting to be read stay reserved until settlement.";
+const MAILING_EN = "Next buyer mailing: **{{mailing_date}}**. Proposals qualify for the mailing according to their current status.";
+const HELP_EN = "If you would like help describing your range or choosing chains, reply to this e-mail.";
+
+export const DEFAULT_CONTENT = Object.freeze({
+  credits_no_proposal: {
+    pl: { subject: "Daj się poznać sieciom handlowym — masz {{credits}} w PreConnect", cta: "Przygotuj propozycję",
+      body: `Dzień dobry, {{company}},\n\n${CORE_PL}\n\nW Twoim koncie Fresh Market B2B dostępne są **{{credits}}** (stan na {{snapshot_date}}). ${RULES_PL}\n\n${MAILING_PL}\n\nJeżeli nie wiesz, jak przygotować pierwszą propozycję lub do kogo ją skierować, odpowiedz na tę wiadomość. Pomożemy Ci zacząć.` },
+    en: { subject: "Introduce your company to retail chains — you have {{credits}} in PreConnect", cta: "Prepare a proposal",
+      body: `Hello, {{company}},\n\n${CORE_EN}\n\nYour Fresh Market B2B account has **{{credits}}** available (as of {{snapshot_date}}). ${RULES_EN}\n\n${MAILING_EN}\n\nIf you are not sure how to prepare your first proposal or which chains to address, reply to this e-mail. We will help you start.` },
+  },
+  credits_proposal_ready: {
+    pl: { subject: "Twoja propozycja czeka na sieci — wybierz odbiorców w PreConnect", cta: "Wybierz sieci",
+      body: `Dzień dobry, {{company}},\n\nMasz w PreConnect przygotowaną propozycję asortymentową, która nie została jeszcze skierowana do żadnej sieci. ${CORE_PL}\n\nWybierz sieci, do których chcesz ją skierować. W Twoim koncie dostępne są **{{credits}}** (stan na {{snapshot_date}}). ${RULES_PL}\n\n${MAILING_PL}\n\n${HELP_PL}` },
+    en: { subject: "Your proposal is waiting for retail chains — choose recipients in PreConnect", cta: "Choose chains",
+      body: `Hello, {{company}},\n\nYou have a product proposal prepared in PreConnect that has not been addressed to any retail chain yet. ${CORE_EN}\n\nChoose the chains you want to address. Your account has **{{credits}}** available (as of {{snapshot_date}}). ${RULES_EN}\n\n${MAILING_EN}\n\n${HELP_EN}` },
+  },
+  used_before_free_credits: {
+    pl: { subject: "Kolejna propozycja w PreConnect — masz jeszcze {{credits}}", cta: "Przygotuj propozycję",
+      body: `Dzień dobry, {{company}},\n\nKorzystałeś już z PreConnect. Jeżeli masz nowy produkt, aktualny program dostaw albo chcesz przedstawić się innym sieciom, przygotuj kolejną propozycję. ${CORE_PL}\n\nW Twoim koncie dostępne są **{{credits}}** (stan na {{snapshot_date}}). ${RULES_PL} W panelu sprawdzisz stan dotychczasowych wysyłek.\n\n${MAILING_PL}\n\n${HELP_PL}` },
+    en: { subject: "Another proposal in PreConnect — you still have {{credits}}", cta: "Prepare a proposal",
+      body: `Hello, {{company}},\n\nYou have used PreConnect before. If you have a new product, an up-to-date supply programme or want to introduce yourself to other chains, prepare another proposal. ${CORE_EN}\n\nYour account has **{{credits}}** available (as of {{snapshot_date}}). ${RULES_EN} In the panel you can check the state of your previous sendings.\n\n${MAILING_EN}\n\n${HELP_EN}` },
+  },
+  credits_expiring: {
+    pl: { subject: "Twoje kredyty PreConnect wygasają {{expiry}}", cta: "Przygotuj propozycję",
+      body: `Dzień dobry, {{company}},\n\nW Twoim koncie Fresh Market B2B **{{expiring_credits}}** PreConnect ma termin ważności do **{{expiry}}** (łącznie dostępne: {{credits}}, stan na {{snapshot_date}}). Po tym terminie niewykorzystane kredyty z tej puli przepadają.\n\n${CORE_PL}\n\n${RULES_PL}\n\n${MAILING_PL} Przygotuj propozycję wcześniej, żeby zdążyć przed terminem ważności.\n\n${HELP_PL}` },
+    en: { subject: "Your PreConnect credits expire on {{expiry}}", cta: "Prepare a proposal",
+      body: `Hello, {{company}},\n\nIn your Fresh Market B2B account **{{expiring_credits}}** in PreConnect are valid until **{{expiry}}** (available in total: {{credits}}, as of {{snapshot_date}}). After that date the unused credits from this pool are lost.\n\n${CORE_EN}\n\n${RULES_EN}\n\n${MAILING_EN} Prepare your proposal earlier to make it before the expiry date.\n\n${HELP_EN}` },
+  },
+  no_valid_credits: {
+    pl: { subject: "PreConnect: pakiet kredytów na propozycje do sieci handlowych", cta: "Sprawdź pakiety",
+      body: `Dzień dobry, {{company}},\n\nObecnie w Twoim koncie Fresh Market B2B nie ma ważnych kredytów PreConnect (stan na {{snapshot_date}}). ${CORE_PL}\n\nJeżeli chcesz przedstawić swoje produkty kupcom sieci handlowych, możesz kupić pakiet kredytów w panelu. ${RULES_PL}\n\n${MAILING_PL}\n\n${HELP_PL}` },
+    en: { subject: "PreConnect: a credit package for proposals to retail chains", cta: "See packages",
+      body: `Hello, {{company}},\n\nYour Fresh Market B2B account currently has no valid PreConnect credits (as of {{snapshot_date}}). ${CORE_EN}\n\nIf you want to present your products to retail chain buyers, you can buy a credit package in the panel. ${RULES_EN}\n\n${MAILING_EN}\n\n${HELP_EN}` },
+  },
+  // stare szablony (kampanie sprzed 5.11) — treść jak dotąd, w nowej strukturze
+  start_with_credits: {
+    pl: { subject: "Masz {{credits}} PreConnect — najbliższy mailing do kupców {{mailing_date}}", cta: "Przejdź do panelu",
+      body: `Dzień dobry, {{company}},\n\nW Twoim koncie Fresh Market B2B dostępne są **{{credits}}** PreConnect (stan na {{snapshot_date}}), najbliższy termin ważności: **{{expiry}}**. Jedna propozycja asortymentowa do jednej sieci = jeden kredyt. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.\n\nPrzygotuj propozycję przed najbliższym mailingiem do kupców **{{mailing_date}}**. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem.\n\nJeżeli nie wiesz, jak przygotować propozycję lub do kogo ją skierować, odpowiedz na tę wiadomość. Pomożemy Ci zacząć.` },
+    en: { subject: "You have {{credits}} in PreConnect — next buyer mailing on {{mailing_date}}", cta: "Open the panel",
+      body: `Hello, {{company}},\n\nYour Fresh Market B2B account has **{{credits}}** available in PreConnect (as of {{snapshot_date}}), the nearest expiry date is **{{expiry}}**. One product proposal to one retail chain uses one credit. The credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.\n\nPrepare your proposal before the next buyer mailing on **{{mailing_date}}**. Proposals qualify for the mailing according to their current status.\n\nIf you are not sure how to prepare a proposal or which chain to address, reply to this e-mail. We will help you start.` },
+  },
+  return_active: {
+    pl: { subject: "Mailing do kupców {{mailing_date}} — dodasz nową propozycję w PreConnect?", cta: "Przejdź do PreConnect",
+      body: `Dzień dobry, {{company}},\n\nJeżeli masz nowy produkt lub aktualny program dostaw, możesz przygotować kolejną propozycję w PreConnect. W Twoim koncie dostępne są **{{credits}}** (stan na {{snapshot_date}}), najbliższy termin ważności: **{{expiry}}**. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.\n\nPrzygotuj propozycję przed najbliższym mailingiem do kupców **{{mailing_date}}**. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem. W panelu sprawdzisz stan dotychczasowych wysyłek.\n\nJeżeli chcesz pomocy w wyborze sieci albo opisaniu asortymentu, odpowiedz na tę wiadomość.` },
+    en: { subject: "Buyer mailing on {{mailing_date}} — add a new proposal in PreConnect?", cta: "Go to PreConnect",
+      body: `Hello, {{company}},\n\nIf you have a new product or an up-to-date supply programme, you can prepare another proposal in PreConnect. Your account has **{{credits}}** available (as of {{snapshot_date}}), nearest expiry **{{expiry}}**. A credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.\n\nPrepare your proposal before the next buyer mailing on **{{mailing_date}}**. Proposals qualify for the mailing according to their current status. In the panel you can check the state of your previous sendings.\n\nIf you would like help choosing a chain or describing your range, reply to this e-mail.` },
+  },
+});
+
+/** Domyślna treść PL+EN dla szablonu (kopia). */
+export function defaultContent(templateKey) {
+  const d = DEFAULT_CONTENT[templateKey];
+  if (!d) throw new Error("unknown_template:" + String(templateKey));
+  return { pl: { ...d.pl }, en: { ...d.en } };
+}
+
+/**
+ * Walidacja treści z panelu: { pl: {subject, body, cta}, en: {...} }. Zwraca listę błędów (pusta = OK).
+ * Bez HTML (`<`/`>` odrzucane), limity długości, tylko znane symbole {{...}}.
+ */
+export function validateContent(content) {
+  const errors = [];
+  if (!content || typeof content !== "object") return ["content_required"];
+  for (const locale of ["pl", "en"]) {
+    const c = content[locale];
+    if (!c || typeof c !== "object") { errors.push(`${locale}.missing`); continue; }
+    for (const field of ["subject", "body", "cta"]) {
+      const v = String(c[field] ?? "");
+      if (!v.trim()) errors.push(`${locale}.${field}.empty`);
+      if (v.length > LIMITS[field]) errors.push(`${locale}.${field}.too_long`);
+      if (/[<>]/.test(v)) errors.push(`${locale}.${field}.html_not_allowed`);
+      if (field !== "body" && /\n/.test(v)) errors.push(`${locale}.${field}.multiline`);
+      for (const m of v.matchAll(/\{\{\s*([a-z_]*)\s*\}\}/g)) if (!PLACEHOLDERS.includes(m[1])) errors.push(`${locale}.${field}.unknown_placeholder:${m[1] || "?"}`);
+      if (/\{\{(?![^{}]*\}\})/.test(v.replace(/\{\{\s*[a-z_]+\s*\}\}/g, ""))) errors.push(`${locale}.${field}.unclosed_placeholder`);
+    }
+  }
+  return errors;
+}
+
+/** Treść do renderu: zapisana w kampanii (jeśli poprawna) albo domyślna dla szablonu. */
+export function effectiveContent(templateKey, saved) {
+  const base = defaultContent(templateKey);
+  if (saved && typeof saved === "object" && validateContent(saved).length === 0) return { pl: { ...base.pl, ...saved.pl }, en: { ...base.en, ...saved.en } };
+  return base;
+}
+
+function fill(template, vars) {
+  return String(template || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (_, k) => (k in vars ? String(vars[k]) : ""));
+}
+/** Escapuje tekst i zamienia **x** na <strong>, pojedyncze nowe linie na <br>. */
+function inlineHtml(s) {
+  return esc(s).replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>");
+}
+const stripBold = (s) => String(s).replace(/\*\*([^*\n]+)\*\*/g, "$1");
 
 function shell({ title, body, locale, unsubscribeUrl, replyTo, appUrl }) {
   const addr = locale === "en"
@@ -67,13 +176,16 @@ const cta = (label, url) => `<p style="margin:22px 0 10px;"><a href="${esc(url)}
 
 /**
  * @param {object} d
- * @param {string} d.templateKey  start_with_credits | return_active
- * @param {string} d.locale       pl | en
+ * @param {string} d.templateKey   grupa/szablon (TEMPLATE_KEYS)
+ * @param {object} [d.content]     treść z kampanii { pl: {subject, body, cta}, en: {...} } (domyślna, gdy brak/niepoprawna)
+ * @param {string} d.locale        pl | en
  * @param {string} d.companyName
- * @param {number} d.creditsRemaining  ważne kredyty w chwili odczytu
- * @param {string|null} d.creditsExpiry 'YYYY-MM-DD' najbliższy termin ważności (null = bez terminu)
- * @param {string} d.snapshotAt   ISO chwila odczytu danych
- * @param {Date}   [d.now]        do wyliczenia najbliższego mailingu (test)
+ * @param {number} d.creditsRemaining  ważne kredyty w chwili odczytu ({{credits}})
+ * @param {number} [d.creditsReserved] rezerwacje ({{reserved_n}})
+ * @param {number} [d.expiringCredits] kredyty z najbliższym terminem ({{expiring_credits}}; domyślnie = creditsRemaining)
+ * @param {string|null} d.creditsExpiry 'YYYY-MM-DD' najbliższy termin ważności (null = „—”)
+ * @param {string} d.snapshotAt    ISO chwila odczytu danych
+ * @param {Date}   [d.now]         do wyliczenia najbliższego mailingu (test)
  * @param {string} d.appUrl
  * @param {string} d.unsubscribeUrl
  * @param {string} [d.replyTo]
@@ -82,69 +194,33 @@ export function renderMarketingTemplate(d) {
   const key = TEMPLATE_KEYS.includes(d?.templateKey) ? d.templateKey : null;
   if (!key) throw new Error("unknown_template:" + String(d?.templateKey));
   const locale = pickLocale(d.locale);
+  if (!d.unsubscribeUrl) throw new Error("unsubscribe_url_required");
   const n = Math.max(0, Number(d.creditsRemaining) || 0);
+  const reserved = Math.max(0, Number(d.creditsReserved) || 0);
+  const expiringN = d.expiringCredits == null ? n : Math.max(0, Number(d.expiringCredits) || 0);
   const mailing = nextBuyerMailingDate(d.now || new Date());
   const mailingLabel = formatLongDate(mailing, locale);
   const expiry = parseISODate(d.creditsExpiry);
-  const expiryLabel = expiry ? formatLongDate(expiry, locale) : null;
+  const expiryLabel = expiry ? formatLongDate(expiry, locale) : "—";
   const snapshot = d.snapshotAt ? new Date(d.snapshotAt) : new Date();
   const snapshotLabel = formatLongDate(snapshot, locale);
   const company = String(d.companyName || "").trim();
   const appUrl = d.appUrl || "https://b2b.freshmarket.eu";
-  if (!d.unsubscribeUrl) throw new Error("unsubscribe_url_required");
-
-  let subject, paras, ctaLabel;
-  if (locale === "en") {
-    const credits = `${n} ${creditsWord(n, "en")}`;
-    if (key === "start_with_credits") {
-      subject = `You have ${credits} in PreConnect — next buyer mailing on ${mailingLabel}`;
-      paras = [
-        `Hello${company ? ", " + esc(company) : ""},`,
-        `Your Fresh Market B2B account has <strong>${credits}</strong> available in PreConnect (as of ${snapshotLabel})${expiryLabel ? `, the nearest expiry date is <strong>${expiryLabel}</strong>` : ""}. One product proposal to one retail chain uses one credit. The credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.`,
-        `Prepare your proposal before the next buyer mailing on <strong>${mailingLabel}</strong>. Proposals qualify for the mailing according to their current status.`,
-        `If you are not sure how to prepare a proposal or which chain to address, reply to this e-mail. We will help you start.`,
-      ];
-      ctaLabel = "Open the panel";
-    } else {
-      subject = `Buyer mailing on ${mailingLabel} — add a new proposal in PreConnect?`;
-      paras = [
-        `Hello${company ? ", " + esc(company) : ""},`,
-        `If you have a new product or an up-to-date supply programme, you can prepare another proposal in PreConnect. Your account has <strong>${credits}</strong> available (as of ${snapshotLabel})${expiryLabel ? `, nearest expiry <strong>${expiryLabel}</strong>` : ""}. A credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.`,
-        `Prepare your proposal before the next buyer mailing on <strong>${mailingLabel}</strong>. Proposals qualify for the mailing according to their current status. In the panel you can check the state of your previous sendings.`,
-        `If you would like help choosing a chain or describing your range, reply to this e-mail.`,
-      ];
-      ctaLabel = "Go to PreConnect";
-    }
-  } else {
-    const credits = `${n} ${creditsWord(n, "pl")}`;
-    if (key === "start_with_credits") {
-      subject = `Masz ${credits} PreConnect — najbliższy mailing do kupców ${mailingLabel}`;
-      paras = [
-        `Dzień dobry${company ? ", " + esc(company) : ""},`,
-        `W Twoim koncie Fresh Market B2B dostępne są <strong>${credits}</strong> PreConnect (stan na ${snapshotLabel})${expiryLabel ? `, najbliższy termin ważności: <strong>${expiryLabel}</strong>` : ""}. Jedna propozycja asortymentowa do jednej sieci = jeden kredyt. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.`,
-        `Przygotuj propozycję przed najbliższym mailingiem do kupców <strong>${mailingLabel}</strong>. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem.`,
-        `Jeżeli nie wiesz, jak przygotować propozycję lub do kogo ją skierować, odpowiedz na tę wiadomość. Pomożemy Ci zacząć.`,
-      ];
-      ctaLabel = "Przejdź do panelu";
-    } else {
-      subject = `Mailing do kupców ${mailingLabel} — dodasz nową propozycję w PreConnect?`;
-      paras = [
-        `Dzień dobry${company ? ", " + esc(company) : ""},`,
-        `Jeżeli masz nowy produkt lub aktualny program dostaw, możesz przygotować kolejną propozycję w PreConnect. W Twoim koncie dostępne są <strong>${credits}</strong> (stan na ${snapshotLabel})${expiryLabel ? `, najbliższy termin ważności: <strong>${expiryLabel}</strong>` : ""}. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.`,
-        `Przygotuj propozycję przed najbliższym mailingiem do kupców <strong>${mailingLabel}</strong>. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem. W panelu sprawdzisz stan dotychczasowych wysyłek.`,
-        `Jeżeli chcesz pomocy w wyborze sieci albo opisaniu asortymentu, odpowiedz na tę wiadomość.`,
-      ];
-      ctaLabel = "Przejdź do PreConnect";
-    }
-  }
-
-  const body = paras.map(p).join("") + cta(ctaLabel, appUrl);
+  const content = effectiveContent(key, d.content)[locale];
+  const vars = {
+    company, credits: `${n} ${creditsWord(n, locale)}`, credits_n: String(n),
+    expiry: expiryLabel, expiring_credits: `${expiringN} ${creditsWord(expiringN, locale)}`, reserved_n: String(reserved),
+    mailing_date: mailingLabel, snapshot_date: snapshotLabel,
+  };
+  const subject = stripBold(fill(content.subject, vars)).replace(/\s+/g, " ").trim();
+  const ctaLabel = stripBold(fill(content.cta, vars)).trim();
+  const paras = fill(content.body, vars).split(/\n[ \t]*\n/).map((s) => s.trim()).filter(Boolean);
+  const body = paras.map((t) => p(inlineHtml(t))).join("") + cta(ctaLabel, appUrl);
   const html = shell({ title: subject, body, locale, unsubscribeUrl: d.unsubscribeUrl, replyTo: d.replyTo, appUrl });
-  const strip = (s) => s.replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
   const text = [
-    ...paras.map(strip), "", `${ctaLabel}: ${appUrl}`, "",
+    ...paras.map(stripBold), "", `${ctaLabel}: ${appUrl}`, "",
     d.replyTo ? (locale === "en" ? `Reply to this e-mail or write to ${d.replyTo}.` : `Odpowiedz na tę wiadomość albo napisz na ${d.replyTo}.`) : "",
     locale === "en" ? `Unsubscribe from PreConnect information: ${d.unsubscribeUrl}` : `Wypisz się z informacji o PreConnect: ${d.unsubscribeUrl}`,
   ].filter((l) => l !== null).join("\n");
-  return { subject, html, text, meta: { locale, templateKey: key, mailingDate: mailingLabel, creditsRemaining: n, creditsExpiry: expiryLabel } };
+  return { subject, html, text, meta: { locale, templateKey: key, mailingDate: mailingLabel, creditsRemaining: n, creditsExpiry: expiry ? expiryLabel : null, customContent: Boolean(d.content && validateContent(d.content).length === 0) } };
 }

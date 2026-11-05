@@ -39,7 +39,7 @@ describe.skipIf(!PGLITE_PATH)("środowisko odbiorowe — przygotowanie bazy na p
     // drugi przebieg: zero migracji (tylko seedy, które są idempotentne) i zero nowych wpisów
     expect(calls.slice(before).filter((s) => s.startsWith(`insert into ${REGISTRY}`))).toHaveLength(0);
     expect((await db.query(`select count(*)::int as n from ${REGISTRY}`)).rows[0].n).toBe(files.length);
-    expect((await db.query(`select count(*)::int as n from public.companies where name like 'TEST %'`)).rows[0].n).toBe(8);
+    expect((await db.query(`select count(*)::int as n from public.companies where name like 'TEST %'`)).rows[0].n).toBe(10);
     await db.close();
   }, 240_000);
 });

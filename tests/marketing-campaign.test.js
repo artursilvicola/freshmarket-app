@@ -1,6 +1,6 @@
-// [feat/marketing-activation] Zatwierdzenie kampanii: świeży odczyt, JEDEN insert kompletnej
-// wiadomości (id losowane przed zapisem → link wypisu w treści), brak zgody → 422,
-// istniejący wiersz → pominięty (bez dubla). Review Codexa #5.
+// [feat/marketing-activation] Kampania: create tylko z grupą odbiorców, update_content (walidacja, tylko szkic, reset),
+// approve = świeży odczyt, tylko kwalifikujący się DO GRUPY, JEDEN insert kompletnej wiadomości z treścią kampanii
+// (id losowane przed zapisem → link wypisu), brak zgody → 422, istniejący wiersz → pominięty. Review Codexa #5.
 import { beforeEach, describe, it, expect, vi } from "vitest";
 
 const state = vi.hoisted(() => ({}));
@@ -19,14 +19,14 @@ import { payloadHash } from "../netlify/functions/_shared/marketing-mailer.js";
 const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const req = (body) => ({ httpMethod: "POST", headers: { authorization: "Bearer fake" }, body: JSON.stringify(body) });
 const call = async (body) => { const r = await handler(req(body)); return { status: r.statusCode, body: JSON.parse(r.body) }; };
-const row = (over = {}) => ({ company_id: "c1", company_name: "Sad Kowalski", profile_id: "p1", email: "op@kowalski.test", locale: "pl", segment: "start_with_credits", template_key: "start_with_credits", eligible: true, exclusions: [], warnings: [], match: { status: "n/a" }, snapshot: { credits_remaining: 5, nearest_expiry: "2026-12-27" }, ...over });
+const row = (over = {}) => ({ company_id: "c1", company_name: "Sad Kowalski", profile_id: "p1", email: "op@kowalski.test", locale: "pl", segment: "start_with_credits", template_key: "credits_no_proposal", base_ok: true, in_audience: true, audience_reason: "q_credits_available_no_history", eligible: true, exclusions: [], warnings: [], snapshot: { credits_remaining: 5, credits_available: 5, reserved: 0, expiring_credits: 5, nearest_expiry: "2026-12-27" }, ...over });
 
 beforeEach(() => {
   state.env = { supabaseUrl: "https://fake.test", supabaseAnonKey: "anon", supabaseServiceRoleKey: "svc", b2bAppUrl: "https://b2b.test", marketingUnsubscribeSecret: "sekret" };
   state.user = { auth: { getUser: async () => ({ data: { user: { id: "admin" } } }) } };
-  state.campaign = { id: CAMP, status: "draft", template_key: "start_with_credits", reply_to: "preconnect@test.pl" };
+  state.campaign = { id: CAMP, status: "draft", template_key: "credits_no_proposal", content: {}, reply_to: "preconnect@test.pl" };
   state.rows = [row(), row({ company_id: "c2", company_name: "Inna", profile_id: "p2", email: "inna@test.pl" })];
-  state.inserts = []; state.updates = []; state.existing = {};
+  state.inserts = []; state.updates = []; state.campaignInserts = []; state.existing = {};
   state.service = {
     rpc: vi.fn(),
     from: vi.fn((table) => {
@@ -38,6 +38,8 @@ beforeEach(() => {
       q.maybeSingle = async () => {
         if (table === "profiles") return { data: { id: "admin", role: "admin", active: true, locale: "pl" }, error: null };
         if (table === "marketing_messages") { const key = q._f.find(([c]) => c === "idempotency_key")?.[1]; return { data: state.existing[key] || null, error: null }; }
+        if (table === "marketing_campaigns" && q._ins) { state.campaignInserts.push(q._ins); return { data: { id: "new", ...q._ins }, error: null }; }
+        if (table === "marketing_campaigns" && q._upd) { state.updates.push(q._upd); return { data: { ...state.campaign, ...q._upd }, error: null }; }
         return { data: null, error: null };
       };
       q.then = (res, rej) => {
@@ -50,8 +52,37 @@ beforeEach(() => {
   };
 });
 
+describe("create / update_content", () => {
+  it("create tylko z grupą odbiorców (stare klucze odrzucane), treść pusta = domyślna; zwraca default_content", async () => {
+    const r = await call({ action: "create", name: "Listopad", template_key: "credits_expiring", reply_to: "A@B.pl" });
+    expect(r.status).toBe(200);
+    expect(state.campaignInserts[0]).toMatchObject({ name: "Listopad", template_key: "credits_expiring", content: {}, reply_to: "a@b.pl", created_by: "admin" });
+    expect(state.campaignInserts[0]).not.toHaveProperty("target_categories");
+    expect(r.body.default_content.pl.cta).toBe("Przygotuj propozycję");
+    expect((await call({ action: "create", name: "X", template_key: "start_with_credits" })).status).toBe(400);
+    expect((await call({ action: "create", name: "X", template_key: "sprzedaz" })).status).toBe(400);
+    expect((await call({ action: "create", name: "", template_key: "credits_expiring" })).status).toBe(400);
+  });
+  it("update_content: walidacja bez HTML → 422 z listą; poprawna → zapis tylko 3 pól per język; {} = reset; poza szkicem → 409", async () => {
+    const bad = { pl: { subject: "<b>x</b>", body: "ok", cta: "ok" }, en: { subject: "ok", body: "{{nope}}", cta: "ok" } };
+    let r = await call({ action: "update_content", campaign_id: CAMP, content: bad });
+    expect(r.status).toBe(422); expect(r.body.errors).toEqual(expect.arrayContaining(["pl.subject.html_not_allowed", "en.body.unknown_placeholder:nope"]));
+    expect(state.updates).toHaveLength(0);
+    const good = { pl: { subject: "T {{company}}", body: "B", cta: "C", extra: "x" }, en: { subject: "T", body: "B", cta: "C" } };
+    r = await call({ action: "update_content", campaign_id: CAMP, content: good });
+    expect(r.status).toBe(200);
+    expect(state.updates[0].content).toEqual({ pl: { subject: "T {{company}}", body: "B", cta: "C" }, en: { subject: "T", body: "B", cta: "C" } });
+    expect(state.updates[0].content_updated_by).toBe("admin");
+    r = await call({ action: "update_content", campaign_id: CAMP, content: {} });
+    expect(r.status).toBe(200); expect(r.body.reset).toBe(true); expect(state.updates[1].content).toEqual({});
+    state.campaign.status = "approved";
+    r = await call({ action: "update_content", campaign_id: CAMP, content: good });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("content_frozen");
+  });
+});
+
 describe("approve", () => {
-  it("zapisuje KOMPLETNĄ wiadomość jednym insertem: id, zamrożona treść z linkiem wypisu dla TEGO id, hash, klucz, snapshot z nazwą firmy", async () => {
+  it("zapisuje KOMPLETNĄ wiadomość jednym insertem: id, zamrożona treść z linkiem wypisu dla TEGO id, hash, klucz, snapshot z nazwą firmy i powodem kwalifikacji", async () => {
     const r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1", consent_source: "regulamin 1.0 — potwierdzone 4.11" }] });
     expect(r.status).toBe(200);
     expect(r.body.approved).toBe(1);
@@ -60,19 +91,32 @@ describe("approve", () => {
     expect(m.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(m.state).toBe("pending");
     expect(m.payload_hash).toBe(payloadHash({ subject: m.subject, html: m.html, text: m.text_body }));
-    expect(m.payload_hash).not.toBe("pending");
     expect(m.html).toContain(`marketing-unsubscribe?m=${m.id}&amp;t=`);
+    expect(m.subject).toBe("Daj się poznać sieciom handlowym — masz 5 kredytów w PreConnect");
     expect(m.idempotency_key).toBe(`marketing:${CAMP}:p1`);
     expect(m.consent_source).toBe("regulamin 1.0 — potwierdzone 4.11");
-    expect(m.snapshot.company_name).toBe("Sad Kowalski");
-    expect(m.snapshot.snapshot_at).toBe("2026-11-04T10:00:00Z");
-    expect(state.service.from.mock.calls.filter(([t]) => t === "marketing_messages").length).toBeGreaterThan(0);
-    expect(state.updates[0]).toMatchObject({ status: "approved", snapshot_at: "2026-11-04T10:00:00Z" });
+    expect(m.snapshot).toMatchObject({ company_name: "Sad Kowalski", snapshot_at: "2026-11-04T10:00:00Z", template_key: "credits_no_proposal", audience_reason: "q_credits_available_no_history", custom_content: false });
+    expect(state.updates.at(-1)).toMatchObject({ status: "approved", snapshot_at: "2026-11-04T10:00:00Z" });
   });
-  it("brak źródła zgody → 422 i zero insertów; niekwalifikujący się → 422 z powodami", async () => {
+  it("własna treść kampanii trafia do zamrożonej wiadomości (temat i treść z edytora, stopka stała)", async () => {
+    state.campaign.content = { pl: { subject: "Własny temat {{credits_n}}", body: "Własna treść {{company}}.", cta: "Idź" }, en: { subject: "Own", body: "Own body", cta: "Go" } };
+    const r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1", consent_source: "lista" }] });
+    expect(r.status).toBe(200);
+    const m = state.inserts[0];
+    expect(m.subject).toBe("Własny temat 5");
+    expect(m.html).toContain("Własna treść Sad Kowalski.");
+    expect(m.html).toContain("Wypisz się z informacji o PreConnect");
+    expect(m.snapshot.custom_content).toBe(true);
+    state.campaign.content = { pl: { subject: "<x>", body: "b", cta: "c" }, en: { subject: "s", body: "b", cta: "c" } };
+    expect((await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1", consent_source: "lista" }] })).status).toBe(422);
+  });
+  it("brak źródła zgody → 422; poza grupą → 422 not_in_audience z powodem; wykluczony bazowo → not_eligible", async () => {
     let r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1", consent_source: "" }] });
     expect(r.status).toBe(422); expect(r.body.problems[0].reason).toBe("consent_source_missing");
-    state.rows[0].eligible = false; state.rows[0].exclusions = ["suppressed"];
+    state.rows[0] = row({ eligible: false, in_audience: false, audience_reason: "b_has_sends" });
+    r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1", consent_source: "lista" }] });
+    expect(r.status).toBe(422); expect(r.body.problems[0]).toMatchObject({ reason: "not_in_audience", audience_reason: "b_has_sends" });
+    state.rows[0] = row({ eligible: false, base_ok: false, exclusions: ["suppressed"] });
     r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1", consent_source: "lista" }] });
     expect(r.status).toBe(422); expect(r.body.problems[0]).toMatchObject({ reason: "not_eligible", exclusions: ["suppressed"] });
     expect(state.inserts).toHaveLength(0);
@@ -84,17 +128,13 @@ describe("approve", () => {
     state.inserts.length = 0; state.failInsert = true;
     const r2 = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c2", consent_source: "lista" }] });
     expect(r2.status).toBe(500);
-    expect(state.inserts).toHaveLength(1); // jedna próba, kompletna treść — nic „(rendering)”
+    expect(state.inserts).toHaveLength(1);
     expect(state.inserts[0].subject).not.toBe("(rendering)");
   });
-  it("bez sekretu wypisu nie da się zatwierdzić", async () => {
+  it("bez sekretu wypisu nie da się zatwierdzić; nie-admin → 403", async () => {
     state.env.marketingUnsubscribeSecret = "";
     const r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1", consent_source: "lista" }] });
     expect(r.status).toBe(500); expect(r.body.error).toBe("unsubscribe_secret_missing");
-  });
-  it("create waliduje szablon i nazwę; nie-admin → 403", async () => {
-    expect((await call({ action: "create", name: "X", template_key: "sprzedaz" })).status).toBe(400);
-    expect((await call({ action: "create", name: "", template_key: "start_with_credits" })).status).toBe(400);
     state.service.from = vi.fn(() => { const q = {}; for (const k of ["select", "eq"]) q[k] = () => q; q.maybeSingle = async () => ({ data: { role: "supplier", active: true } }); return q; });
     expect((await call({ action: "list" })).status).toBe(403);
   });

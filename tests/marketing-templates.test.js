@@ -1,9 +1,11 @@
-// [feat/marketing-activation] Szablony PL/EN: dane z odczytu, daty, wypis, wersja tekstowa.
+// [feat/marketing-activation] Szablony PL/EN per grupa odbiorców (Artur 5.11): treść domyślna + edycja bez HTML,
+// symbole z danych odczytu, bez obietnic i bez „kupcy szukają”, wypis, wersja tekstowa, determinizm.
 import { describe, it, expect } from "vitest";
-import { renderMarketingTemplate, TEMPLATE_KEYS, esc } from "../netlify/functions/_shared/marketing-templates.js";
+import { renderMarketingTemplate, validateContent, defaultContent, effectiveContent, creditsWord, esc, TEMPLATE_KEYS, AUDIENCE_TEMPLATE_KEYS, PLACEHOLDERS } from "../netlify/functions/_shared/marketing-templates.js";
 import { nextBuyerMailingDate, formatLongDate } from "../netlify/functions/_shared/marketing-dates.js";
 
-const base = { companyName: "Sad <Kowalski> & Syn", creditsRemaining: 5, creditsExpiry: "2026-12-27", snapshotAt: "2026-11-04T10:00:00Z", now: new Date(2026, 10, 4), appUrl: "https://b2b.freshmarket.eu", unsubscribeUrl: "https://b2b.freshmarket.eu/.netlify/functions/marketing-unsubscribe?m=x&t=y", replyTo: "preconnect@freshmarket.eu" };
+const base = { companyName: "Sad <Kowalski> & Syn", creditsRemaining: 5, creditsReserved: 1, expiringCredits: 2, creditsExpiry: "2026-12-27", snapshotAt: "2026-11-04T10:00:00Z", now: new Date(2026, 10, 4), appUrl: "https://b2b.freshmarket.eu", unsubscribeUrl: "https://b2b.freshmarket.eu/.netlify/functions/marketing-unsubscribe?m=x&t=y", replyTo: "preconnect@freshmarket.eu" };
+const BANNED = /gwarant|na pewno przeczyta|guarantee|właśnie szukają|are looking for your|nowej dla|new to your company|zamówieni[ea] gwarantowan/i;
 
 describe("daty", () => {
   it("pierwszy wtorek: 4.11.2026 → 1 grudnia 2026 (nie 2 grudnia); 3.11.2026 (wtorek) → 3 listopada", () => {
@@ -13,57 +15,109 @@ describe("daty", () => {
   });
 });
 
-describe("render", () => {
-  it("PL start: temat z liczbą kredytów i datą mailingu, treść z terminem ważności, bez obietnic odczytu", () => {
-    const r = renderMarketingTemplate({ ...base, templateKey: "start_with_credits", locale: "pl" });
-    expect(r.subject).toBe("Masz 5 kredytów PreConnect — najbliższy mailing do kupców 1 grudnia 2026");
-    expect(r.html).toContain("27 grudnia 2026");
-    expect(r.html).toContain("Sad &lt;Kowalski&gt; &amp; Syn");
-    expect(r.html).not.toContain("<Kowalski>");
-    expect(r.html).toContain(esc(base.unsubscribeUrl)); // w HTML & jest zakodowane
-    expect(r.html).toContain("Wypisz się");
-    expect(r.text).toContain("Wypisz się z informacji o PreConnect: " + base.unsubscribeUrl);
-    expect(r.text).toContain("preconnect@freshmarket.eu");
-    expect(r.html.toLowerCase()).not.toMatch(/gwarant|na pewno przeczyta|guarantee/);
-    // [r3 #3] rozliczanie opisane zgodnie z regułami (e-mail LUB lista w panelu), bez obietnicy wysyłki
-    expect(r.html).toContain("Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.");
-    expect(r.html).toContain("Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem.");
-    expect(r.html).not.toMatch(/dopiero wtedy, gdy kupiec otworzy|trafią do najbliższego mailingu/);
-  });
-  it("[r3 #3] EN i szablon powrotu mają tę samą regułę rozliczania", () => {
-    for (const templateKey of ["start_with_credits", "return_active"]) {
-      const en = renderMarketingTemplate({ ...base, templateKey, locale: "en" });
-      expect(en.html).toContain("The credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.".replace("The credit", templateKey === "return_active" ? "A credit" : "The credit"));
-      expect(en.html).toContain("Proposals qualify for the mailing according to their current status.");
-      expect(en.html).not.toMatch(/charged only when a buyer opens|go out in the next/);
-      const pl = renderMarketingTemplate({ ...base, templateKey, locale: "pl" });
-      expect(pl.html).toContain("Kredyt rozliczamy po zarejestrowanym odczycie");
+describe("pięć grup — domyślna treść PL i EN", () => {
+  it("każda grupa renderuje się w PL i EN z głównym przekazem, regułą rozliczania, wypisem i bez zakazanych obietnic", () => {
+    for (const key of AUDIENCE_TEMPLATE_KEYS) {
+      for (const locale of ["pl", "en"]) {
+        const r = renderMarketingTemplate({ ...base, templateKey: key, locale });
+        expect(r.subject.length).toBeGreaterThan(10);
+        expect(r.html).toContain(locale === "pl" ? "PreConnect pomaga zrobić pierwszy krok" : "PreConnect helps you take the first step");
+        expect(r.text).toContain(locale === "pl" ? "przedstawiasz kupcom swoje produkty i możliwości firmy" : "you present your products and your company's capabilities"); // w HTML apostrof jest escapowany
+        expect(r.html).toContain(locale === "pl" ? "Kredyt rozliczamy dopiero po zarejestrowanym odczycie" : "A credit is settled only after a registered read");
+        expect(r.html).toContain(locale === "pl" ? "pozostają zarezerwowane" : "stay reserved");
+        expect(r.html).toContain("1 grudnia 2026".replace("grudnia", locale === "pl" ? "grudnia" : "December"));
+        expect(r.html).toContain("Sad &lt;Kowalski&gt; &amp; Syn");
+        expect(r.html).not.toContain("<Kowalski>");
+        expect(r.html).toContain(esc(base.unsubscribeUrl));
+        expect(r.text).toContain(locale === "pl" ? "Wypisz się z informacji o PreConnect: " + base.unsubscribeUrl : "Unsubscribe from PreConnect information: " + base.unsubscribeUrl);
+        expect(r.html).not.toMatch(BANNED);
+        expect(r.text).not.toMatch(BANNED);
+        expect(r.html).not.toContain("{{");
+        expect(r.text).not.toContain("**");
+        expect(r.meta).toMatchObject({ locale, templateKey: key, customContent: false });
+      }
     }
+    expect(TEMPLATE_KEYS).toEqual([...AUDIENCE_TEMPLATE_KEYS, "start_with_credits", "return_active"]);
   });
-  it("EN return: temat i CTA po angielsku, odmiana credits", () => {
-    const r = renderMarketingTemplate({ ...base, templateKey: "return_active", locale: "en", creditsRemaining: 1, creditsExpiry: null });
-    expect(r.subject).toBe("Buyer mailing on 1 December 2026 — add a new proposal in PreConnect?");
-    expect(r.html).toContain("<strong>1 credit</strong>");
-    expect(r.html).not.toContain("nearest expiry");
-    expect(r.text).toContain("Go to PreConnect: https://b2b.freshmarket.eu");
+  it("wezwania per grupa: przygotuj propozycję / wybierz sieci / sprawdź pakiety; grupa „wygasają” ma prawdziwą datę i liczbę z tym terminem", () => {
+    const cta = (key, locale) => renderMarketingTemplate({ ...base, templateKey: key, locale }).text.split("\n").find((l) => l.includes(": https://b2b.freshmarket.eu"));
+    expect(cta("credits_no_proposal", "pl")).toBe("Przygotuj propozycję: https://b2b.freshmarket.eu");
+    expect(cta("credits_proposal_ready", "pl")).toBe("Wybierz sieci: https://b2b.freshmarket.eu");
+    expect(cta("no_valid_credits", "en")).toBe("See packages: https://b2b.freshmarket.eu");
+    const exp = renderMarketingTemplate({ ...base, templateKey: "credits_expiring", locale: "pl" });
+    expect(exp.subject).toBe("Twoje kredyty PreConnect wygasają 27 grudnia 2026");
+    expect(exp.html).toContain("<strong>2 kredyty</strong> PreConnect ma termin ważności do <strong>27 grudnia 2026</strong>");
+    expect(exp.html).toContain("łącznie dostępne: 5 kredytów");
+    const none = renderMarketingTemplate({ ...base, templateKey: "no_valid_credits", locale: "pl", creditsRemaining: 0, creditsExpiry: null, expiringCredits: 0 });
+    expect(none.html).toContain("nie ma ważnych kredytów PreConnect");
+    expect(none.html).toContain("możesz kupić pakiet kredytów w panelu");
   });
-  it("odmiana PL: 1 kredyt, 2 kredyty, 5 kredytów, 12 kredytów, 22 kredyty", () => {
-    const s = (n) => renderMarketingTemplate({ ...base, templateKey: "start_with_credits", locale: "pl", creditsRemaining: n }).subject;
-    expect(s(1)).toContain("Masz 1 kredyt ");
-    expect(s(2)).toContain("Masz 2 kredyty ");
-    expect(s(5)).toContain("Masz 5 kredytów ");
-    expect(s(12)).toContain("Masz 12 kredytów ");
-    expect(s(22)).toContain("Masz 22 kredyty ");
+  it("odmiana: 1 kredyt, 2 kredyty, 5 kredytów, 12 kredytów, 22 kredyty; EN credit/credits", () => {
+    const s = (n) => renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", creditsRemaining: n }).subject;
+    expect(s(1)).toContain("masz 1 kredyt ");
+    expect(s(2)).toContain("masz 2 kredyty ");
+    expect(s(5)).toContain("masz 5 kredytów ");
+    expect(s(12)).toContain("masz 12 kredytów ");
+    expect(s(22)).toContain("masz 22 kredyty ");
+    expect(creditsWord(1, "en")).toBe("credit"); expect(creditsWord(3, "en")).toBe("credits");
   });
-  it("brak linku wypisu = błąd; nieznany szablon = błąd; nieznany język → pl", () => {
-    expect(() => renderMarketingTemplate({ ...base, templateKey: "start_with_credits", unsubscribeUrl: "" })).toThrow(/unsubscribe_url_required/);
+});
+
+describe("treść edytowana w panelu (bez HTML)", () => {
+  const custom = () => ({
+    pl: { subject: "Hej {{company}} — {{credits}} do {{expiry}}", body: "Akapit pierwszy z **pogrubieniem**.\n\nDrugi akapit, mailing {{mailing_date}},\nnowa linia w akapicie.", cta: "Wejdź" },
+    en: { subject: "Hi {{company}}", body: "One.\n\nTwo {{credits_n}}.", cta: "Enter" },
+  });
+  it("własna treść: symbole podstawione z danych, akapity → <p>, ** → <strong>, nowa linia → <br>, wszystko escapowane", () => {
+    const r = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", content: custom() });
+    expect(r.subject).toBe("Hej Sad <Kowalski> & Syn — 5 kredytów do 27 grudnia 2026");
+    expect(r.html).toContain("<p style=\"margin:0 0 14px;\">Akapit pierwszy z <strong>pogrubieniem</strong>.</p>");
+    expect(r.html).toContain("Drugi akapit, mailing 1 grudnia 2026,<br>nowa linia w akapicie.");
+    expect(r.html).toContain(">Wejdź</a>");
+    expect(r.text).toContain("Akapit pierwszy z pogrubieniem.");
+    expect(r.text).toContain("Wejdź: https://b2b.freshmarket.eu");
+    expect(r.html).toContain("Wypisz się z informacji o PreConnect"); // stopka stała
+    expect(r.meta.customContent).toBe(true);
+    const en = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "en", content: custom() });
+    expect(en.subject).toBe("Hi Sad <Kowalski> & Syn");
+    expect(en.html).toContain("<p style=\"margin:0 0 14px;\">Two 5.</p>");
+  });
+  it("walidacja: puste pola, HTML, nieznany symbol, niedomknięty symbol, za długie, wieloliniowy temat", () => {
+    expect(validateContent(custom())).toEqual([]);
+    expect(validateContent(null)).toEqual(["content_required"]);
+    const bad = custom(); bad.pl.subject = ""; bad.en.body = "<b>x</b>"; bad.pl.cta = "{{kredyty}}"; bad.en.cta = "{{credits";
+    const errs = validateContent(bad);
+    expect(errs).toContain("pl.subject.empty");
+    expect(errs).toContain("en.body.html_not_allowed");
+    expect(errs).toContain("pl.cta.unknown_placeholder:kredyty");
+    expect(errs).toContain("en.cta.unclosed_placeholder");
+    const long = custom(); long.pl.body = "x".repeat(4001); long.en.subject = "a\nb";
+    expect(validateContent(long)).toEqual(expect.arrayContaining(["pl.body.too_long", "en.subject.multiline"]));
+    const missing = { pl: custom().pl };
+    expect(validateContent(missing)).toContain("en.missing");
+    expect(PLACEHOLDERS).toEqual(["company", "credits", "credits_n", "expiry", "expiring_credits", "reserved_n", "mailing_date", "snapshot_date"]);
+  });
+  it("niepoprawna zapisana treść nie psuje renderu — używana jest domyślna; defaultContent zwraca kopię", () => {
+    const r = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", content: { pl: { subject: "<x>" } } });
+    expect(r.meta.customContent).toBe(false);
+    expect(r.subject).toBe("Daj się poznać sieciom handlowym — masz 5 kredytów w PreConnect");
+    const d = defaultContent("credits_expiring"); d.pl.subject = "zmienione";
+    expect(defaultContent("credits_expiring").pl.subject).not.toBe("zmienione");
+    expect(effectiveContent("credits_expiring", null).pl.cta).toBe("Przygotuj propozycję");
+  });
+  it("brak linku wypisu = błąd; nieznany szablon = błąd; nieznany język → pl; determinizm", () => {
+    expect(() => renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", unsubscribeUrl: "" })).toThrow(/unsubscribe_url_required/);
     expect(() => renderMarketingTemplate({ ...base, templateKey: "sprzedaz" })).toThrow(/unknown_template/);
-    expect(renderMarketingTemplate({ ...base, templateKey: "start_with_credits", locale: "de" }).meta.locale).toBe("pl");
-    expect(TEMPLATE_KEYS).toEqual(["start_with_credits", "return_active"]);
-  });
-  it("ten sam wynik dla tych samych danych (treść da się zamrozić i sprawdzić hashem)", () => {
-    const a = renderMarketingTemplate({ ...base, templateKey: "start_with_credits", locale: "pl" });
-    const b = renderMarketingTemplate({ ...base, templateKey: "start_with_credits", locale: "pl" });
+    expect(renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "de" }).meta.locale).toBe("pl");
+    const a = renderMarketingTemplate({ ...base, templateKey: "used_before_free_credits", locale: "pl" });
+    const b = renderMarketingTemplate({ ...base, templateKey: "used_before_free_credits", locale: "pl" });
     expect(a.html).toBe(b.html); expect(a.text).toBe(b.text); expect(a.subject).toBe(b.subject);
+  });
+  it("stare szablony (kampanie sprzed 5.11) nadal się renderują z regułą rozliczania", () => {
+    for (const key of ["start_with_credits", "return_active"]) {
+      const r = renderMarketingTemplate({ ...base, templateKey: key, locale: "pl" });
+      expect(r.html).toContain("Kredyt rozliczamy po zarejestrowanym odczycie");
+      expect(r.html).toContain("27 grudnia 2026");
+    }
   });
 });

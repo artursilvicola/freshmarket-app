@@ -19,7 +19,7 @@ export function stripTxWrappers(sql) {
   return String(sql || "").split(/\r?\n/).filter((l) => !/^\s*(begin|commit)\s*;\s*(--.*)?$/i.test(l)).join("\n").replace(/\s+$/, "");
 }
 
-export const EXPECTED_STATE = Object.freeze({ test_companies: 9, test_operators: 10, marketing_tables: true });
+export const EXPECTED_STATE = Object.freeze({ test_companies: 11, test_operators: 12, marketing_tables: true });
 
 /**
  * @param {object} a

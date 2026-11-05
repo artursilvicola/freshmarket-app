@@ -133,8 +133,10 @@ async function sendTest({ supaSvc, env, caller, campaign, body }) {
   const key = `marketing-test:${src.id}:${to}:${minute}`;
   const unsub = unsubscribeUrl({ appUrl: env.b2bAppUrl, messageId: testId, secret: env.marketingUnsubscribeSecret });
   const rendered = renderMarketingTemplate({
-    templateKey: campaign.template_key, locale: src.locale, companyName: snap.company_name || "",
-    creditsRemaining: snap.credits_remaining, creditsExpiry: snap.nearest_expiry, snapshotAt: snap.snapshot_at || src.created_at,
+    templateKey: campaign.template_key, content: campaign.content && Object.keys(campaign.content).length ? campaign.content : null,
+    locale: src.locale, companyName: snap.company_name || "",
+    creditsRemaining: snap.credits_remaining, creditsReserved: snap.reserved, expiringCredits: snap.expiring_credits,
+    creditsExpiry: snap.nearest_expiry, snapshotAt: snap.snapshot_at || src.created_at,
     appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null,
   });
   const subject = `[TEST] ${rendered.subject}`;

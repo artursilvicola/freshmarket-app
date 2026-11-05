@@ -1,31 +1,59 @@
 /**
  * [feat/marketing-activation] Kandydaci do kampanii aktywizacyjnej PreConnect.
  *
- * CZYSTA funkcja: dostaje wiersze z bazy (firmy, profile, pakiety, wysyłki, szkice,
- * suppresje, ostatnie wysyłki marketingowe), oddaje listę firm z segmentem, saldem,
- * rezerwacjami, terminami ważności, dopasowaniem do potrzeb kupców i powodami
- * wykluczenia. Żadnych zapisów, żadnych przeliczeń salda „po swojemu”:
+ * CZYSTA funkcja: dostaje wiersze z bazy (firmy, profile, pakiety, wysyłki, propozycje,
+ * suppresje, ostatnie wysyłki marketingowe), oddaje listę firm z saldem, rezerwacjami,
+ * terminami ważności, GRUPAMI ODBIORCÓW (z powodem zakwalifikowania / niezakwalifikowania)
+ * i powodami wykluczenia. Żadnych zapisów, żadnych przeliczeń salda „po swojemu”:
  *   - saldo = wiersze `packages` dokładnie jak company_capacity / summarizeCreditPools
  *     (src/lib/db.js): tylko niewygasłe, remaining = qty_total − qty_used, pule po `source`;
  *   - rezerwacje = `legacy_sends` tak jak describeCreditUsage (src/lib/preconnect-credit-usage.js):
- *     statusy poza rejected/refunded/queued/unread_expired, bez pobrania, bez odczytu.
+ *     statusy poza rejected/refunded/queued/unread_expired, bez pobrania, bez odczytu;
+ *   - propozycje = `legacy_offers` firmy (istnienie przygotowanej propozycji).
  *
- * Kryteria Artura (4.11): dostępne WAŻNE kredyty, poprawny adres operatora, brak
- * wypisu, brak trwającego procesu wymagającego tylko oczekiwania, dopasowanie
- * asortymentu do potrzeb kupców (Oksana). Ostateczny wybór zatwierdza człowiek.
+ * Założenia Artura (5.11): PreConnect pomaga dostawcy zaprezentować się sieciom i zacząć
+ * relację z kupcem — nie sprzedajemy wysyłki e-maila ani nie obiecujemy zamówienia. Nie znamy
+ * bieżących potrzeb kupców, więc NIE ma dopasowania do potrzeb; dostawca przedstawia to, co ma.
+ * Grupy odbiorców (jedna kampania = jedna grupa; firma może kwalifikować się do kilku):
+ *   credits_no_proposal      — ma wolne ważne kredyty, nigdy nie przygotował propozycji ani nic nie wysłał
+ *   credits_proposal_ready   — ma wolne ważne kredyty i przygotowaną propozycję, której nie skierował jeszcze do żadnej sieci
+ *   used_before_free_credits — korzystał wcześniej (wysyłał) i ma wolne ważne kredyty
+ *   credits_expiring         — ma wolne ważne kredyty, których najbliższy termin ważności mija w ciągu EXPIRING_DAYS
+ *   no_valid_credits         — nie ma żadnych ważnych kredytów I nie ma rezerwacji przy oczekujących propozycjach
+ * „Wolne” = ważne kredyty minus rezerwacje. Firma z kredytami zarezerwowanymi przy oczekujących
+ * propozycjach nigdy nie trafia do „brak kredytów” (powód: b_reserved_pending / b_all_reserved).
+ * Ostateczny wybór zatwierdza człowiek.
  */
 import { usesPreconnectCredit, hasCreditCharge } from "../../../src/lib/preconnect-credit-usage.js";
 
+export const AUDIENCES = Object.freeze({
+  CREDITS_NO_PROPOSAL: "credits_no_proposal",
+  CREDITS_PROPOSAL_READY: "credits_proposal_ready",
+  USED_BEFORE_FREE_CREDITS: "used_before_free_credits",
+  CREDITS_EXPIRING: "credits_expiring",
+  NO_VALID_CREDITS: "no_valid_credits",
+});
+export const AUDIENCE_KEYS = Object.freeze(Object.values(AUDIENCES));
+export const EXPIRING_DAYS = 30;
+
+/** Opisowy segment (informacyjnie, do kolumny `segment` w rejestrze) — nie decyduje o kwalifikacji. */
 export const SEGMENTS = Object.freeze({
-  START_WITH_CREDITS: "start_with_credits",   // kredyty są, nigdy nic nie wysłał
-  RETURN_ACTIVE: "return_active",             // kredyty są, wysyłał wcześniej
-  IN_PROCESS_ONLY: "in_process_only",         // wszystko zarezerwowane — tylko czekać → wykluczony
-  NO_CREDITS: "no_credits",                   // brak ważnych kredytów → poza fazą 1
+  START_WITH_CREDITS: "start_with_credits",   // wolne kredyty, nigdy nic nie wysłał
+  RETURN_ACTIVE: "return_active",             // wolne kredyty, wysyłał wcześniej
+  IN_PROCESS_ONLY: "in_process_only",         // wszystko zarezerwowane — tylko czekać
+  NO_CREDITS: "no_credits",                   // brak ważnych kredytów
 });
 
+/** Wykluczenia BAZOWE (niezależne od grupy). */
 export const EXCLUSION_REASONS = Object.freeze([
   "account_not_active", "preconnect_disabled", "test_account", "no_operator", "multiple_operators",
-  "email_invalid", "email_shared", "suppressed", "recent_campaign", "in_process_only", "no_credits",
+  "email_invalid", "email_shared", "suppressed", "recent_campaign",
+]);
+
+/** Powody kwalifikacji (q_*) i niekwalifikacji (b_*) do grupy — do pokazania administratorowi. */
+export const AUDIENCE_REASONS = Object.freeze([
+  "q_credits_available_no_history", "q_credits_available_offer_not_sent", "q_used_before_credits_available", "q_credits_expiring", "q_no_valid_credits",
+  "b_no_valid_credits", "b_all_reserved", "b_has_sends", "b_has_offers", "b_no_offers", "b_no_sends", "b_no_expiry", "b_expiry_far", "b_has_valid_credits", "b_reserved_pending",
 ]);
 
 const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -34,7 +62,7 @@ const TEST_NAME_RX = /^zzz test/i;
 function norm(s) { return String(s || "").trim().toLowerCase(); }
 function dateOnly(s) { const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(s || "")); return m ? m[1] : null; }
 
-/** Klucze, po których wysyłki/szkice dopasowują się do firmy (jak legacyKeyMatchesCompany w UI). */
+/** Klucze, po których wysyłki/propozycje dopasowują się do firmy (jak legacyKeyMatchesCompany w UI). */
 export function companyKeys(co) {
   const keys = new Set();
   if (co?.id) keys.add(String(co.id));
@@ -64,17 +92,41 @@ export function summarizePools(packages, todayISO) {
   return pools;
 }
 
-/** Dopasowanie asortymentu do potrzeb kupców: kategorie (dokładnie) + słowa kluczowe (w produktach/nazwie/opisie). */
-export function matchNeeds(co, campaign) {
-  const cats = (campaign?.target_categories || []).map(norm).filter(Boolean);
-  const kws = (campaign?.target_keywords || []).map(norm).filter(Boolean);
-  if (!cats.length && !kws.length) return { status: "n/a", score: 0, categories: [], keywords: [] };
-  const own = (co?.categories || []).map(norm);
-  const hitCats = cats.filter((c) => own.includes(c));
-  const hay = norm([co?.products, co?.name, co?.description, co?.description_short].filter(Boolean).join(" "));
-  const hitKws = kws.filter((k) => hay.includes(k));
-  const score = hitCats.length + hitKws.length;
-  return { status: score > 0 ? "yes" : "no", score, categories: hitCats, keywords: hitKws };
+/**
+ * Kwalifikacja do jednej grupy na podstawie faktów firmy.
+ * @param {string} key grupa
+ * @param {object} f { remaining, reserved, available, sends_total, offers_total, nearest_expiry, expiring_soon }
+ * @returns {{ ok: boolean, reason: string }}
+ */
+export function qualifyAudience(key, f) {
+  const noCredits = () => (f.remaining <= 0 ? "b_no_valid_credits" : "b_all_reserved");
+  switch (key) {
+    case AUDIENCES.CREDITS_NO_PROPOSAL:
+      if (f.available <= 0) return { ok: false, reason: noCredits() };
+      if (f.sends_total > 0) return { ok: false, reason: "b_has_sends" };
+      if (f.offers_total > 0) return { ok: false, reason: "b_has_offers" };
+      return { ok: true, reason: "q_credits_available_no_history" };
+    case AUDIENCES.CREDITS_PROPOSAL_READY:
+      if (f.available <= 0) return { ok: false, reason: noCredits() };
+      if (f.sends_total > 0) return { ok: false, reason: "b_has_sends" };
+      if (f.offers_total <= 0) return { ok: false, reason: "b_no_offers" };
+      return { ok: true, reason: "q_credits_available_offer_not_sent" };
+    case AUDIENCES.USED_BEFORE_FREE_CREDITS:
+      if (f.available <= 0) return { ok: false, reason: noCredits() };
+      if (f.sends_total <= 0) return { ok: false, reason: "b_no_sends" };
+      return { ok: true, reason: "q_used_before_credits_available" };
+    case AUDIENCES.CREDITS_EXPIRING:
+      if (f.available <= 0) return { ok: false, reason: noCredits() };
+      if (!f.nearest_expiry) return { ok: false, reason: "b_no_expiry" };
+      if (!f.expiring_soon) return { ok: false, reason: "b_expiry_far" };
+      return { ok: true, reason: "q_credits_expiring" };
+    case AUDIENCES.NO_VALID_CREDITS:
+      if (f.remaining > 0) return { ok: false, reason: "b_has_valid_credits" };
+      if (f.reserved > 0) return { ok: false, reason: "b_reserved_pending" }; // kredyty przy oczekujących propozycjach — NIE „kup pakiet”
+      return { ok: true, reason: "q_no_valid_credits" };
+    default:
+      return { ok: false, reason: "b_unknown_audience" };
+  }
 }
 
 /**
@@ -86,12 +138,13 @@ export function matchNeeds(co, campaign) {
  * @param {Array} input.offers      supplier_legacy_id, status, created_at, updated_at
  * @param {Array} input.suppressions email
  * @param {Array} input.recentMessages profile_id, company_id, sent_at, state  (wysłane w ostatnich 30 dniach)
- * @param {object} input.campaign   target_categories, target_keywords
+ * @param {object} input.campaign   template_key = grupa odbiorców (AUDIENCE_KEYS) — decyduje o `in_audience`/`eligible`
  * @param {string} input.todayISO   'YYYY-MM-DD' (dzień biznesowy)
  */
 export function buildCandidates(input) {
   const { companies = [], profiles = [], packages = [], sends = [], offers = [], suppressions = [], recentMessages = [], campaign = null, todayISO } = input;
   const today = todayISO || new Date().toISOString().slice(0, 10);
+  const audience = AUDIENCE_KEYS.includes(campaign?.template_key) ? campaign.template_key : null;
   const suppressed = new Set(suppressions.map((s) => norm(s.email)).filter(Boolean));
 
   // operatorzy: aktywne profile dostawców per firma; adresy współdzielone między firmami
@@ -108,6 +161,7 @@ export function buildCandidates(input) {
   for (const pk of packages) { const k = String(pk?.company_id || ""); if (!k) continue; (packagesByCompany.get(k) || packagesByCompany.set(k, []).get(k)).push(pk); }
   const recentByCompany = new Map();
   for (const m of recentMessages) { if (m?.company_id) recentByCompany.set(String(m.company_id), m); }
+  const expiringLimit = shiftDays(today, EXPIRING_DAYS);
 
   const rows = [];
   for (const co of companies) {
@@ -117,6 +171,9 @@ export function buildCandidates(input) {
     const pools = summarizePools(packagesByCompany.get(String(co.id)) || [], today);
     const reserved = ownSends.filter((s) => usesPreconnectCredit(s) && !hasCreditCharge(s) && !["opened", "read", "read_manual"].includes(s.status)).length;
     const reads = ownSends.filter((s) => ["opened", "read", "read_manual"].includes(s.status) || hasCreditCharge(s)).length;
+    const available = Math.max(0, pools.remaining - reserved);
+    const expiringSoon = Boolean(pools.nearest_expiry && pools.nearest_expiry <= expiringLimit);
+    const expiringCredits = pools.expiring.filter((e) => e.expiry === pools.nearest_expiry).reduce((a, e) => a + e.remaining, 0);
     const lastSendAt = ownSends.map((s) => s.created_at).filter(Boolean).sort().pop() || null;
     const lastOfferAt = ownOffers.map((o) => o.updated_at || o.created_at).filter(Boolean).sort().pop() || null;
     const lastRejected = ownSends.filter((s) => s.status === "rejected").map((s) => s.updated_at || s.created_at).filter(Boolean).sort().pop() || null;
@@ -136,19 +193,32 @@ export function buildCandidates(input) {
     if (email && suppressed.has(email)) exclusions.push("suppressed");
     if (recentByCompany.has(String(co.id))) exclusions.push("recent_campaign");
 
+    // opisowy segment (informacja, nie kwalifikacja)
     let segment;
-    if (pools.remaining <= 0) { segment = SEGMENTS.NO_CREDITS; exclusions.push("no_credits"); }
-    else if (reserved > 0 && pools.remaining <= reserved) { segment = SEGMENTS.IN_PROCESS_ONLY; exclusions.push("in_process_only"); }
+    if (pools.remaining <= 0) segment = SEGMENTS.NO_CREDITS;
+    else if (available <= 0) segment = SEGMENTS.IN_PROCESS_ONLY;
     else if (ownSends.length === 0) segment = SEGMENTS.START_WITH_CREDITS;
     else segment = SEGMENTS.RETURN_ACTIVE;
 
+    const facts = { remaining: pools.remaining, reserved, available, sends_total: ownSends.length, offers_total: ownOffers.length, nearest_expiry: pools.nearest_expiry, expiring_soon: expiringSoon };
+    const audiences = [];
+    const audienceReasons = {};
+    for (const key of AUDIENCE_KEYS) {
+      const q = qualifyAudience(key, facts);
+      audienceReasons[key] = q.reason;
+      if (q.ok) audiences.push(key);
+    }
+    // kampania bez grupy (stare szablony) → wolne kredyty wystarczą
+    const inAudience = audience ? audiences.includes(audience) : available > 0;
+    const audienceReason = audience ? audienceReasons[audience] : (available > 0 ? "q_credits_available" : (pools.remaining <= 0 ? "b_no_valid_credits" : "b_all_reserved"));
+
     if (segment === SEGMENTS.RETURN_ACTIVE && reads === 0) warnings.push("sent_no_reads");
     if (lastRejected && lastRejected.slice(0, 10) >= shiftDays(today, -30)) warnings.push("recent_rejection");
-    if (reserved > 0 && !exclusions.includes("in_process_only")) warnings.push("has_reservations");
+    if (reserved > 0 && available > 0) warnings.push("has_reservations");
     if (operator && norm(co.country) && norm(co.country) !== "pl" && norm(operator.locale || "pl") === "pl") warnings.push("locale_pl_foreign_country");
-    if (pools.nearest_expiry && pools.nearest_expiry <= shiftDays(today, 30)) warnings.push("credits_expire_soon");
+    if (expiringSoon && available > 0 && audience !== AUDIENCES.CREDITS_EXPIRING) warnings.push("credits_expire_soon");
 
-    const match = matchNeeds(co, campaign);
+    const baseOk = exclusions.length === 0;
     rows.push({
       company_id: co.id,
       company_name: co.name,
@@ -159,28 +229,37 @@ export function buildCandidates(input) {
       email: email || null,
       locale: norm(operator?.locale).split(/[-_]/)[0] === "en" ? "en" : "pl",
       segment,
-      template_key: segment === SEGMENTS.START_WITH_CREDITS ? "start_with_credits" : segment === SEGMENTS.RETURN_ACTIVE ? "return_active" : null,
-      eligible: exclusions.length === 0,
+      template_key: audience || (segment === SEGMENTS.START_WITH_CREDITS ? "start_with_credits" : segment === SEGMENTS.RETURN_ACTIVE ? "return_active" : null),
+      audiences,
+      audience_reasons: audienceReasons,
+      in_audience: inAudience,
+      audience_reason: audienceReason,
+      base_ok: baseOk,
+      eligible: baseOk && inAudience,
       exclusions,
       warnings,
-      match,
       snapshot: {
         credits_free: pools.free, credits_paid: pools.paid, credits_legacy: pools.legacy, credits_remaining: pools.remaining,
+        credits_available: available, expiring_credits: expiringCredits,
         nearest_expiry: pools.nearest_expiry, expiring: pools.expiring,
-        reserved, sends_total: ownSends.length, reads_total: reads,
+        reserved, sends_total: ownSends.length, reads_total: reads, offers_total: ownOffers.length,
         last_send_at: lastSendAt, last_offer_at: lastOfferAt, last_rejected_at: lastRejected,
         operators: ops.length,
       },
     });
   }
-  rows.sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.match.score - a.match.score || String(a.company_name).localeCompare(String(b.company_name)));
+  rows.sort((a, b) => Number(b.eligible) - Number(a.eligible) || Number(b.base_ok) - Number(a.base_ok) || String(a.company_name).localeCompare(String(b.company_name)));
+  const byAudience = {};
+  for (const key of AUDIENCE_KEYS) byAudience[key] = rows.filter((r) => r.base_ok && r.audiences.includes(key)).length;
   const summary = {
     companies: rows.length,
+    base_ok: rows.filter((r) => r.base_ok).length,
     eligible: rows.filter((r) => r.eligible).length,
+    audience,
+    by_audience: byAudience,          // firmy bez wykluczeń bazowych per grupa (nakładają się)
     by_segment: countBy(rows, (r) => r.segment),
     by_exclusion: countBy(rows.flatMap((r) => r.exclusions), (x) => x),
-    matched: rows.filter((r) => r.eligible && r.match.status === "yes").length,
-    counts_overlap: true, // powody wykluczeń nakładają się — nie sumować
+    counts_overlap: true, // powody wykluczeń i grupy nakładają się — nie sumować
   };
   return { rows, summary, today };
 }
