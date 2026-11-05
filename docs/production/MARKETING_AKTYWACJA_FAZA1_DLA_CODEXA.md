@@ -411,3 +411,5 @@ Warunki: `.env.test` z poprawnym `service_role` (walidator OK, rola JWT `service
 **Próba prawdziwej poczty:** nadal otwarta; potwierdzony adres `artur.stasiak+dostawca@freshmarket.eu`, bez wysyłki do rzeczywistych dostawców; flaga włącza test i partię naraz — na czas próby: jedna kampania, przycisk Test, flaga z powrotem na false.
 
 **Pełny zestaw po §16:** 105 plików, 900 testów zaliczonych, 2 pominięte.
+
+**Review Codexa cfbae71 (05.11 wieczór): przyjęte, 23/23, bez blokerów.** Gotowe do wdrożenia na decyzję Artura: (1) na prod najpierw migracje `20261105170000_marketing_campaign_names.sql` i `20261105180000_marketing_campaign_label_fix.sql` (addytywne; identity + trigger, potem podmiana funkcji), (2) potem merge feat/marketing-activation → main i deploy przez CI, (3) wysyłka nadal `MARKETING_SEND_ENABLED=false` do kontrolowanej próby na `artur.stasiak+dostawca@freshmarket.eu`. Prawdziwy test poczty pozostaje do wykonania.
