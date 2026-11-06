@@ -1,21 +1,30 @@
 -- ============================================================================
--- PRZED PRÓBĄ mail v2 (07.11.2026): REAKTYWACJA kont próbnych na PRODUKCJI (sklyfuvzjikkqerxtulo)
--- Odwrotność `04-po-probie.sql` v3 z pakietu 06.11, z TĄ SAMĄ kontrolą tożsamości: każda DOKŁADNA para
--- konto–firma (UUID użytkownika, adres, rola supplier, firma z właściwą nazwą), porównania odporne na NULL;
--- każda niezgodność = wyjątek = cała transakcja wycofana, nic nie zmienione.
--- Uruchamia ARTUR po akceptacji wyglądu i „wdrażaj”, PRZED ustawieniem MARKETING_SEND_ENABLED=true.
--- Zmiany: operator → active=true, firma → active + PreConnect włączony, USUNIĘCIE dokładnie dwóch wpisów wypisu
--- (adresy z próby 06.11 wypisały się świadomie; to własne skrzynki Artura — bez tego nowa kampania oznaczy je `suppressed`).
--- Nie dotyka rejestru wiadomości, zdarzeń ani innych wypisów.
+-- PRZED PRÓBĄ mail v2: REAKTYWACJA kont próbnych na PRODUKCJI (sklyfuvzjikkqerxtulo) — wersja 2
+-- Odwrotność `03-po-probie.sql`, z TĄ SAMĄ kontrolą tożsamości: każda DOKŁADNA para konto–firma, porównania odporne na NULL,
+-- każda niezgodność = wyjątek = cała transakcja wycofana.
+--
+-- WARUNEK: Artur napisał w czacie dokładnie zdanie z `v_consent`. Dopiero wtedy `v_consent_confirmed` zmienia się na true
+-- i uzupełnia się `v_consent_source`. Samo „wdrażaj” nie cofa wypisu (review Codexa 07.11). Przy false skrypt nic nie zmienia.
+-- Wypisy z 06.11 NIE znikają bez śladu: marketing_lift_suppression() zapisuje kopię wypisu i zgodę w marketing_suppression_lifts.
+-- Działa tylko na dwa adresy próbne. Lista MARKETING_SEND_ALLOWLIST nadal blokuje wszystkich pozostałych odbiorców.
 -- ============================================================================
 begin;
 
 do $$
 declare
+  v_consent_confirmed boolean := false;  -- true dopiero po zdaniu Artura w czacie
+  v_consent text := 'Zgadzam się ponownie otrzymać testowe maile na spiker.artur@gmail.com i artur.silvicola@gmail.com.';
+  v_consent_source text := 'UZUPEŁNIĆ: czat Claude Code, data i godzina zgody';
   r record;
   n_bad integer;
-  n_sup integer;
 begin
+  if v_consent_confirmed is not true then
+    raise exception 'BRAK POTWIERDZONEJ ZGODY: ustaw v_consent_confirmed dopiero po zdaniu Artura w czacie — przerwano bez zmian';
+  end if;
+  if v_consent_source like 'UZUPEŁNIĆ%' then
+    raise exception 'BRAK ŹRÓDŁA ZGODY: uzupełnij v_consent_source — przerwano bez zmian';
+  end if;
+
   -- ── 1. KONTROLA DOKŁADNYCH PAR (bez zapisu) ──────────────────────────────────
   for r in select * from (values
       ('d0ffee00-0000-4000-8000-000000000001'::uuid, 'spiker.artur@gmail.com',    'c0ffee00-0000-4000-8000-000000000001'::uuid, 'Próba marketingu PL (Artur)'),
@@ -55,12 +64,9 @@ begin
      and ((p.id = 'd0ffee00-0000-4000-8000-000000000001' and lower(u.email) = 'spiker.artur@gmail.com'    and p.company_id = 'c0ffee00-0000-4000-8000-000000000001')
        or (p.id = 'd0ffee00-0000-4000-8000-000000000002' and lower(u.email) = 'artur.silvicola@gmail.com' and p.company_id = 'c0ffee00-0000-4000-8000-000000000002'));
 
-  -- ── 3. WYPISY z próby 06.11 — tylko te dwa adresy (własne skrzynki Artura) ───
-  delete from public.marketing_suppressions where lower(email) in ('spiker.artur@gmail.com', 'artur.silvicola@gmail.com');
-  get diagnostics n_sup = row_count;
-  if n_sup > 2 then
-    raise exception 'KONTROLA: usunięto by % wpisów wypisu (oczekiwano ≤ 2) — przerwano, zmiany wycofane', n_sup;
-  end if;
+  -- ── 3. ZNIESIENIE WYPISÓW z zachowaniem historii i zgody ─────────────────────
+  perform public.marketing_lift_suppression('spiker.artur@gmail.com',    v_consent, v_consent_source, 'Artur Stasiak (właściciel skrzynki)');
+  perform public.marketing_lift_suppression('artur.silvicola@gmail.com', v_consent, v_consent_source, 'Artur Stasiak (właściciel skrzynki)');
 
   -- ── 4. KONTROLA KOŃCOWEGO STANU ────────────────────────────────────────────
   select count(*) into n_bad from (values
@@ -73,15 +79,16 @@ begin
   if n_bad <> 0 then
     raise exception 'KONTROLA KOŃCOWA: % konto/konta próbne nie są aktywne w całości — przerwano, zmiany wycofane', n_bad;
   end if;
-  if exists (select 1 from public.marketing_suppressions where lower(email) in ('spiker.artur@gmail.com', 'artur.silvicola@gmail.com')) then
+  if exists (select 1 from public.marketing_suppressions where email in ('spiker.artur@gmail.com', 'artur.silvicola@gmail.com')) then
     raise exception 'KONTROLA KOŃCOWA: wypis adresu próbnego nadal istnieje — przerwano, zmiany wycofane';
   end if;
-  raise notice 'reaktywowano 2 firmy i 2 operatorów próbnych; usunięto % wpisów wypisu', n_sup;
+  raise notice 'reaktywowano 2 firmy i 2 operatorów próbnych; zgoda zapisana w marketing_suppression_lifts';
 end $$;
 
--- kontrola (oczekiwane: 2 wiersze, firma active / preconnect true / operator active=true, wypisy 0)
+-- kontrola (oczekiwane: 2 wiersze, firma active / preconnect true / operator active=true, wypisy 0, zapisane zgody >= 1)
 select u.email, p.active as operator_active, c.name as firma, c.account_status, c.preconnect_enabled,
-       (select count(*) from public.marketing_suppressions s where lower(s.email) = lower(u.email)) as wypisy
+       (select count(*) from public.marketing_suppressions s where s.email = lower(u.email)) as wypisy,
+       (select count(*) from public.marketing_suppression_lifts l where l.email = lower(u.email)) as zapisane_zgody
   from auth.users u join public.profiles p on p.id = u.id join public.companies c on c.id = p.company_id
  where u.id in ('d0ffee00-0000-4000-8000-000000000001', 'd0ffee00-0000-4000-8000-000000000002')
  order by u.email;

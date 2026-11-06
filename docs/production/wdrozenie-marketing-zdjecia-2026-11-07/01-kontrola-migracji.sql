@@ -1,6 +1,6 @@
--- Kontrola PRZED / PO migracjach biblioteki zdjęć (TYLKO ODCZYT). SQL Editor projektu PRODUKCYJNEGO sklyfuvzjikkqerxtulo.
+-- Kontrola PRZED / PO migracjach biblioteki zdjęć i rejestru zgód (TYLKO ODCZYT). SQL Editor projektu PRODUKCYJNEGO sklyfuvzjikkqerxtulo.
 -- Ten sam plik działa przed i po migracjach (brakujące obiekty dają NULL/0 zamiast błędu). Wynik: jedna tabela.
--- Kolumna `po_migracji` = oczekiwana wartość po 6 migracjach; `przed` opisane w kolumnie `przed_migracja`.
+-- Kolumna `po_migracji` = oczekiwana wartość po 7 migracjach; `przed` opisane w kolumnie `przed_migracja`.
 with k(co, jest, przed_migracja, po_migracji) as (
   values
   ('postgres >= 15 (security_invoker)', (current_setting('server_version_num')::int >= 150000)::text, 'true', 'true'),
@@ -20,6 +20,9 @@ with k(co, jest, przed_migracja, po_migracji) as (
   ('bucket marketing-photos publiczny', coalesce((select public::text from storage.buckets where id='marketing-photos'), 'brak'), 'brak', 'true'),
   ('bucket marketing-photos-pending publiczny', coalesce((select public::text from storage.buckets where id='marketing-photos-pending'), 'brak'), 'brak', 'false'),
   ('polityki storage marketing_photos*', (select count(*)::text from pg_policy where polrelid='storage.objects'::regclass and polname like 'marketing_photos%'), '0', '1'),
+  ('tabela marketing_suppression_lifts', (to_regclass('public.marketing_suppression_lifts') is not null)::text, 'false', 'true'),
+  ('RPC lift_suppression', (select count(*)::text from pg_proc where proname='marketing_lift_suppression'), '0', '1'),
+  ('trigger ochrony wypisów', (select count(*)::text from pg_trigger where tgname='trg_marketing_suppressions_no_silent_delete'), '0', '1'),
   ('service_role DELETE na wersjach (ma NIE być)', case when to_regclass('public.marketing_photo_versions') is null then 'brak' else has_table_privilege('service_role','public.marketing_photo_versions','delete')::text end, 'brak', 'false'),
   ('kampanie razem (bez zmian)', (select count(*)::text from public.marketing_campaigns), 'zapisz', 'jak przed'),
   ('wiadomości razem (bez zmian)', (select count(*)::text from public.marketing_messages), 'zapisz', 'jak przed'),
