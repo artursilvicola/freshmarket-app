@@ -43,10 +43,18 @@ try {
   if (!photo) photo = (await S.query(`insert into public.marketing_photos (title, alt_pl, alt_en, status, source_sha256, review_note, created_by) values ('ZZZ TEST wyścig blokad', 'test', 'test', 'pending', $1, 'wiersz testu wyścigu transakcji (scripts/marketing-photos-race-test.mjs) — bez pliku w Storage', $2) returning id`, [SHA, admin])).rows[0].id;
   let v = (await S.query(`select * from public.marketing_photo_versions where photo_id = $1 order by version_no desc limit 1`, [photo])).rows[0];
   if (!v) v = (await S.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, width, height, bytes, mime, sha256, published_at, created_by) values ($1::uuid, 1, 'marketing-photos', 'photos/'||$1::text||'/v1-race.jpg', 'https://race.invalid/'||$1::text||'/v1-race.jpg', 1200, 800, 100000, 'image/jpeg', $2::text, now(), $3::uuid) returning *`, [photo, "e".repeat(64), admin])).rows[0];
-  // stan wyjściowy: opublikowana, niezajęta, nieprzypisana, niezatwierdzona
-  await S.query(`select public.marketing_photo_version_release_unpublish($1)`, [v.id]);
-  await S.query(`update public.marketing_photos set approved_version_id = null, current_version_id = $2, status = 'pending' where id = $1`, [photo, v.id]);
-  await S.query(`update public.marketing_campaigns set photo_version_id = null, photo_id = null where photo_version_id = $1`, [v.id]);
+  // stan wyjściowy: opublikowana, niezajęta, nieprzypisana, niezatwierdzona. Ręcznego zwalniania NIE MA (review Codexa 6):
+  // zajęty stan kończy tylko dokończone wycofanie (published_at → NULL), więc reset = wycofanie + ponowna publikacja (wiersz logiczny bez pliku)
+  const resetVersion = async () => {
+    await S.query(`update public.marketing_campaigns set photo_version_id = null, photo_id = null where photo_version_id = $1::uuid`, [v.id]);
+    await S.query(`update public.marketing_photos set approved_version_id = null where approved_version_id = $1::uuid`, [v.id]);
+    const cur = (await S.query(`select published_at, unpublishing_at from public.marketing_photo_versions where id = $1::uuid`, [v.id])).rows[0];
+    if (cur.unpublishing_at) await S.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1::uuid`, [v.id]);
+    const now = (await S.query(`select published_at from public.marketing_photo_versions where id = $1::uuid`, [v.id])).rows[0];
+    if (!now.published_at) await S.query(`update public.marketing_photo_versions set published_at = now(), public_url = 'https://race.invalid/'||photo_id::text||'/v1-race.jpg', storage_bucket = 'marketing-photos' where id = $1::uuid`, [v.id]);
+  };
+  await resetVersion();
+  await S.query(`update public.marketing_photos set current_version_id = $2, status = 'pending' where id = $1`, [photo, v.id]);
   let camp = (await S.query(`select id from public.marketing_campaigns where name = 'ZZZ TEST wyścig blokad'`)).rows[0]?.id;
   if (!camp) camp = (await S.query(`insert into public.marketing_campaigns (name, template_key, created_by, layout_version, status) values ('ZZZ TEST wyścig blokad', 'selected_companies', $1, 2, 'draft') returning id`, [admin])).rows[0].id;
   await S.query(`update public.marketing_campaigns set status = 'draft', photo_version_id = null, frozen_photo = null where id = $1`, [camp]);
@@ -68,7 +76,7 @@ try {
   await errOf(B.query("rollback"));
   let s = await state();
   ok(s.claimed === true && !s.assigned, `stan: zajęte=${s.claimed}, przypisane=${s.assigned}`);
-  await S.query(`select public.marketing_photo_version_release_unpublish($1)`, [v.id]);
+  await resetVersion();
 
   // ── scenariusz 2: przypisanie trwa (B nie zatwierdzone), A próbuje zająć → A czeka → B commit → A dostaje false ──
   console.log("2. B przypisuje (bez commitu) → A zajmuje → A czeka → B commit → A = false");
@@ -85,7 +93,7 @@ try {
   await A.query("commit");
   s = await state();
   ok(s.assigned === true && s.claimed === false, `stan: przypisane=${s.assigned}, zajęte=${s.claimed}`);
-  await S.query(`update public.marketing_campaigns set photo_version_id = null, photo_id = null where id = $1`, [camp]);
+  await resetVersion();
 
   // ── scenariusz 3: zajęcie trwa, B próbuje ZATWIERDZIĆ wersję (approved_version_id) → czeka → odrzucone ──
   console.log("3. A zajmuje (bez commitu) → B zatwierdza wersję → B czeka → A commit → B odrzucone");
@@ -102,7 +110,7 @@ try {
   await errOf(B.query("rollback"));
   s = await state();
   ok(s.claimed === true && !s.approved, `stan: zajęte=${s.claimed}, zatwierdzone=${s.approved}`);
-  await S.query(`select public.marketing_photo_version_release_unpublish($1)`, [v.id]);
+  await resetVersion();
 
   // ── scenariusz 4: zatwierdzenie trwa (B), A zajmuje → czeka → B commit → A = false ──
   console.log("4. B zatwierdza (bez commitu) → A zajmuje → A czeka → B commit → A = false");
@@ -119,7 +127,7 @@ try {
 
   // ── scenariusz 5: dwa równoległe zajęcia tej samej wersji → oba true (ponawialność), bez zakleszczenia ──
   console.log("5. A i B zajmują równolegle → oba true, drugie czeka na pierwsze");
-  await S.query(`update public.marketing_photos set approved_version_id = null, status = 'pending' where id = $1`, [photo]);
+  await resetVersion(); await S.query(`update public.marketing_photos set status = 'pending' where id = $1`, [photo]);
   await A.query("begin"); await B.query("begin");
   const c1 = (await A.query(`select public.marketing_photo_version_claim_unpublish($1, null) as ok`, [v.id])).rows[0].ok;
   let c2done = false; const c2P = B.query(`select public.marketing_photo_version_claim_unpublish($1, null) as ok`, [v.id]).then((r) => { c2done = true; return r.rows[0].ok; });
@@ -128,7 +136,7 @@ try {
   await A.query("commit");
   ok((await c2P) === true, "B: po commicie A też true (ponowne zajęcie = sukces)");
   await B.query("commit");
-  await S.query(`select public.marketing_photo_version_release_unpublish($1)`, [v.id]);
+  await resetVersion();
 } catch (e) {
   fails++; console.error("STOP: nieoczekiwany błąd:", e?.message || e);
 } finally {
@@ -136,7 +144,8 @@ try {
   // porządki: wiersze zostają (wersji nie da się usunąć), ale w stanie nieszkodliwym
   await errOf(S.query(`update public.marketing_campaigns set photo_version_id = null, photo_id = null, status = 'closed', closed_at = now() where name = 'ZZZ TEST wyścig blokad'`));
   await errOf(S.query(`update public.marketing_photos set approved_version_id = null, status = 'disabled', disabled_at = now() where title = 'ZZZ TEST wyścig blokad'`));
-  await errOf(S.query(`select public.marketing_photo_version_release_unpublish(v.id) from public.marketing_photo_versions v join public.marketing_photos p on p.id = v.photo_id where p.title = 'ZZZ TEST wyścig blokad'`));
+  // wiersz testowy kończy jako WYCOFANY (bez pliku, bez publicznego adresu) — jedyny sposób zakończenia zajętego stanu
+  await errOf(S.query(`update public.marketing_photo_versions v set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' from public.marketing_photos p where p.id = v.photo_id and p.title = 'ZZZ TEST wyścig blokad' and v.unpublishing_at is not null`));
   for (const c of [A, B, S]) await c.end().catch(() => {});
 }
 console.log(fails ? `\n${fails} FAIL` : "\nWSZYSTKO OK");

@@ -192,6 +192,25 @@ z wiersza; gdy go nie ma (jednoznaczny not-found), a jest kopia prywatna z popra
 ODMOWA (stan zostaje zajęty, trzeba dokończyć wycofanie skryptem). Regresje w `tests/marketing-photo-data.test.js`: przywrócenie
 z kopii prywatnej, odmowa bez kopii, zły sha256 kopii, 503, zły sha256 publicznego, wersja niezajęta.
 
+## 12. Poprawki po review Codexa e4513f2 (szósta runda: koniec `--release`)
+
+Zgodnie z zaleceniem: bezpieczne zwalnianie nie jest teraz potrzebne, więc `--release` zostało USUNIĘTE w całości — z kodu
+(`releaseUnpublish`), ze skryptu porządkowego i z bazy (migracja `20261107140000_marketing_photo_drop_release.sql`, tylko baza testowa:
+`drop function marketing_photo_version_release_unpublish`). Stan `unpublishing_at` kończy WYŁĄCZNIE dokończone wycofanie publikacji
+(trigger zeruje go przy `published_at → NULL`); wycofanie jest idempotentne i ponawialne, więc „utknięty” stan rozwiązuje ponowne
+uruchomienie skryptu, nigdy wyzerowanie znacznika. Dodatkowo: service_role straciło UPDATE kolumn `unpublishing_at/by` (ustawia je tylko
+RPC claim), a trigger niezmienności odrzuca wyzerowanie albo zmianę ustawionego `unpublishing_at` nawet dla właściciela bazy.
+
+**Regresja wzajemnego wykluczania (dwa przebiegi tej samej wersji, `tests/marketing-photo-data.test.js`):**
+* zatrzymanie pierwszego przebiegu PRZED usunięciem publicznego → równoległy drugi przebieg (ponowne zajęcie = sukces) kończy wycofanie →
+  wznowienie pierwszego: usuwa (obiektu już nie ma), kontrola potwierdza brak, zapis wiersza = 0 wierszy → błąd „row not updated”,
+  stan końcowy spójny (plik tylko prywatny, wiersz wycofany, nic nie odblokowane);
+* zatrzymanie PO usunięciu, przed zapisem wiersza → drugi przebieg domyka z kopii prywatnej → wznowienie pierwszego nie zmienia stanu;
+* bezpośrednie wyzerowanie `unpublishing_at` odrzucone (mock triggera), stan kończy tylko `unpublishVersion`.
+SQL smoke: funkcja release nie istnieje, wyzerowanie/zmiana `unpublishing_at` odrzucone triggerem, service_role bez UPDATE na tych kolumnach,
+wyścig po przypisaniu nadal zamknięty. Test wyścigu dwóch połączeń (`marketing-photos-race-test.mjs`) resetuje stan między scenariuszami
+przez dokończenie wycofania i ponowną publikację wiersza logicznego; wiersz testowy kończy jako wycofany.
+
 ## 7. Otwarte / poza zakresem
 * `MARKETING_SEND_ALLOWLIST` nadal ustawiona na prod (zdjąć przed prawdziwą kampanią) — bez związku z tą gałęzią.
 * Instrukcja administratora (rozdział Marketing) nie opisuje jeszcze biblioteki zdjęć — do uzupełnienia po akceptacji wyglądu.

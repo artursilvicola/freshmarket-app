@@ -4,17 +4,16 @@
 // zdjęcia i NIE są użyte przez żadną kampanię (szkic/zamrożenie), wracają do prywatnego bucketa marketing-photos-pending
 // (public_url = null). Wersje użyte przez kampanie albo zatwierdzone zostają nietknięte (trigger i tak by odmówił).
 //
-//   node scripts/marketing-photos-unpublish-pending.mjs [--dry-run] [--release <version_id>]
+//   node scripts/marketing-photos-unpublish-pending.mjs [--dry-run]
 // Przebieg per wersja (review Codexa 4): zajęcie stanu w bazie (odmowa, gdy wersja używana/zatwierdzona) → kopia → usunięcie
-// publicznego (tylko jednoznaczny not-found = brak pliku; 503/403 = STOP ze stanem zajętym) → wiersz. --release zwalnia stan
-// wersji po nieudanej próbie — ale tylko po sprawdzeniu, że publiczny plik istnieje i zgadza się sha256 (gdy brak — przywraca
-// z kopii prywatnej i weryfikuje; gdy nie może — odmawia; review Codexa 5/P2).
+// publicznego (tylko jednoznaczny not-found = brak pliku; 503/403 = STOP ze stanem zajętym) → wiersz. Stan zajęty po nieudanej
+// próbie rozwiązuje WYŁĄCZNIE ponowne uruchomienie (wycofanie jest idempotentne); ręcznego zwalniania nie ma (review Codexa 6/P1).
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { parseDotenv, validateTestEnv, PROD_REF } from "./lib/test-env.mjs";
-import { unpublishVersion, releaseUnpublish } from "../netlify/functions/_shared/marketing-photo-data.js";
+import { unpublishVersion } from "../netlify/functions/_shared/marketing-photo-data.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
@@ -28,12 +27,6 @@ const check = validateTestEnv(env);
 if (!check.ok) { console.error("ODMOWA (.env.test):\n - " + check.errors.join("\n - ")); process.exit(3); }
 if (String(env.SUPABASE_URL).includes(PROD_REF)) { console.error("ODMOWA: SUPABASE_URL wskazuje na produkcję."); process.exit(3); }
 const supa = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
-const relIdx = process.argv.indexOf("--release");
-if (relIdx >= 0) {
-  const id = process.argv[relIdx + 1];
-  try { const r = await releaseUnpublish(supa, id); console.log(r.released ? `zwolniono stan wycofywania: ${id}${r.restored ? " (publiczny plik PRZYWRÓCONY z kopii prywatnej i zweryfikowany)" : " (publiczny plik zweryfikowany)"}` : `nic do zwolnienia: ${id} (${r.reason})`); process.exit(r.released ? 0 : 1); }
-  catch (e) { console.error("ODMOWA zwolnienia:", e.message); process.exit(1); }
-}
 
 const { data: photos } = await supa.from("marketing_photos").select("id, title, status, approved_version_id, current_version_id");
 const { data: versions } = await supa.from("marketing_photo_versions").select("*");
