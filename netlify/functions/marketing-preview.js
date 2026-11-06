@@ -18,6 +18,7 @@ import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketi
 import { computeCandidates, loadCampaign } from "./_shared/marketing-data.js";
 import { renderMarketingTemplate, validateContent, normalizeLayoutVersion, DEFAULT_LAYOUT_VERSION, TEMPLATE_KEYS } from "./_shared/marketing-templates.js";
 import { loadPhoto, loadPhotoVersion, resolveCampaignPhoto, isPublished } from "./_shared/marketing-photo-data.js";
+import { LOGO_GREEN_DATA_URI, LOGO_WHITE_DATA_URI } from "./_shared/marketing-logo-data.js";
 
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: MARKETING_CORS };
@@ -58,8 +59,12 @@ export const handler = async (event) => {
       unsubscribeUrl: `${String(auth.env.b2bAppUrl || "").replace(/\/$/, "")}/.netlify/functions/marketing-unsubscribe?m=PODGLAD&t=PODGLAD`,
       replyTo: body.reply_to || campaign?.reply_to || null,
       layoutVersion, photo,
+      // TYLKO PODGLĄD: logotypy osadzone jako data URI — ramka podglądu w panelu (iframe sandbox) nie może pobierać obrazków
+      // z localhost/sieci prywatnej, więc na środowisku testowym logo nie wczytywało się. Prawdziwy mail (approve/test/batch)
+      // nadal dostaje adres HTTPS z aplikacji.
+      logoGreenUrl: LOGO_GREEN_DATA_URI, logoUrl: LOGO_WHITE_DATA_URI,
     });
-    return json(200, { ok: true, preview: true, snapshot_at: result.snapshot_at, row, subject: rendered.subject, html: rendered.html, text: rendered.text, meta: rendered.meta, layout_version: layoutVersion, photo: photo ? { photo_id: photo.photo_id, version_id: photo.version_id, frozen: !!photo.frozen } : null });
+    return json(200, { ok: true, preview: true, logo_inline: true, snapshot_at: result.snapshot_at, row, subject: rendered.subject, html: rendered.html, text: rendered.text, meta: rendered.meta, layout_version: layoutVersion, photo: photo ? { photo_id: photo.photo_id, version_id: photo.version_id, frozen: !!photo.frozen } : null });
   } catch (e) {
     console.error("[marketing-preview]", e?.message || e);
     return json(500, { error: "preview_failed", detail: String(e?.message || e) });

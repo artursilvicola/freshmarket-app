@@ -28,6 +28,19 @@ beforeEach(() => {
   state.campaign = { id: CAMP, status: "draft", template_key: "credits_no_proposal", content: {}, content_version: 1, frozen_content: null, reply_to: "preconnect@test.pl" };
 });
 
+describe("logo w podglądzie", () => {
+  it("podgląd osadza logo jako data URI (ramka sandbox nie pobierze obrazka z localhost), bez adresu /brand/ w treści; układ 2 = zielone, układ 1 = białe", async () => {
+    state.campaign = { ...state.campaign, layout_version: 2, photo_id: null, frozen_photo: null };
+    let r = await call({ campaign_id: CAMP, company_id: "c1", locale: "pl" });
+    expect(r.status).toBe(200); expect(r.body.logo_inline).toBe(true);
+    expect(r.body.html.match(/src="data:image\/png;base64,/g)).toHaveLength(2); // nagłówek + stopka
+    expect(r.body.html).not.toContain("/brand/fm-email-logo");
+    state.campaign = { ...state.campaign, layout_version: 1 };
+    r = await call({ campaign_id: CAMP, company_id: "c1", locale: "pl" });
+    expect(r.status).toBe(200); expect(r.body.html.match(/src="data:image\/png;base64,/g)).toHaveLength(2);
+  });
+});
+
 describe("podgląd a zamrożona treść", () => {
   it("zatwierdzona kampania: podgląd z frozen_content, nawet gdy domyślny szablon w kodzie się zmienił; szkic bez treści: domyślny", async () => {
     const orig = DEFAULT_CONTENT.credits_no_proposal.pl.subject;

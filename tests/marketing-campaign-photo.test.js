@@ -128,7 +128,8 @@ describe("approve — zamrożenie zdjęcia", () => {
     const pl = state.inserts.find((m) => m.locale === "pl"), en = state.inserts.find((m) => m.locale === "en");
     expect(pl.html).toContain(`src="${URL1}"`); expect(pl.html).toContain('alt="Rozmowy przy stoliku"'); expect(pl.html).toContain("Zdjęcie archiwalne 2026");
     expect(en.html).toContain('alt="Table talks"'); expect(en.html).toContain("Archive photo 2026"); expect(en.html).toContain("The first step towards a new retail chain.");
-    expect(pl.html).toContain("fm-email-logo-green.png"); expect(pl.html).not.toContain("linear-gradient");
+    expect(pl.html).toContain("https://b2b.test/brand/fm-email-logo-green.png"); expect(pl.html).not.toContain("linear-gradient");
+    expect(pl.html).not.toContain("data:image"); // osadzone logo TYLKO w podglądzie — mail w rejestrze ma adres HTTPS
     expect(pl.snapshot).toMatchObject({ layout_version: 2, photo_id: "ph-1", photo_version_id: "v-ph-1" });
   });
   it("zdjęcie wyłączone w międzyczasie → 409 photo_not_ready, nic nie zamrożone, 0 wiadomości; zdjęcie bez pliku → 409 photo_missing", async () => {

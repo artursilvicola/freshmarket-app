@@ -273,7 +273,7 @@ function shellV2({ title, locale, paras, ctaLabel, appUrl, mailingLabel, unsubsc
     <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
       <tr><td style="padding:18px 28px;border-bottom:1px solid #e2e8f0;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-          <td valign="middle" style="width:150px;"><img src="${esc(logoUrl)}" alt="Fresh Market" width="120" height="48" style="display:block;width:120px;height:48px;border:0;"></td>
+          <td valign="middle" style="width:150px;"><img src="${esc(logoUrl)}" alt="Fresh Market" width="120" height="48" style="display:block;width:120px;height:48px;border:0;color:#15803d;font-size:15px;font-weight:800;line-height:48px;"></td>
           <td valign="middle" align="right" style="font-size:16px;font-weight:800;color:${V2_TEAL};letter-spacing:0.3px;">PreConnect</td>
         </tr></table>
       </td></tr>${photoBlock}
@@ -297,7 +297,7 @@ function shellV2({ title, locale, paras, ctaLabel, appUrl, mailingLabel, unsubsc
         </tr></table>
       </td></tr>
       <tr><td style="background:#f1f5f9;border-top:1px solid #e2e8f0;padding:16px 28px;text-align:center;">
-        <img src="${esc(logoUrl)}" alt="Fresh Market" width="90" height="36" style="display:inline-block;width:90px;height:36px;border:0;opacity:0.85;margin-bottom:6px;">
+        <img src="${esc(logoUrl)}" alt="Fresh Market" width="90" height="36" style="display:inline-block;width:90px;height:36px;border:0;opacity:0.85;margin-bottom:6px;color:#475569;font-size:11px;font-weight:700;line-height:36px;white-space:nowrap;">
         <div style="color:#64748b;font-size:11px;line-height:1.7;">${addr}<br><a href="${esc(appUrl)}" style="color:#475569;text-decoration:none;">b2b.freshmarket.eu</a></div>
         <div style="color:#64748b;font-size:11px;line-height:1.7;margin-top:10px;">${reply}${reply ? "<br>" : ""}${unsub}</div>
       </td></tr>

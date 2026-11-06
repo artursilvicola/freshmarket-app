@@ -1,4 +1,4 @@
-# Wdrożenie: mail v2 + biblioteka zdjęć (szkic — czeka na akceptację wyglądu przez Artura)
+# Wdrożenie: mail v2 + biblioteka zdjęć (wygląd zaakceptowany przez Artura 06.11, zgoda „możesz wdrażać”)
 
 Kod: gałąź `feat/marketing-photos` (ostatni commit po review Codexa: e3a27a6 + poprawka wyszukiwania kampanii w teście wyścigu).
 Stan: review Codexa ZAMKNIĘTY (7 rund). Wygląd maila (PL/EN, komputer i telefon) i wybór zdjęcia pokazane Arturowi 07.11
@@ -10,7 +10,7 @@ Run w SQL Editor i kliknięcia „Zatwierdź”/„Wyślij” klika Artur. Produ
 Zrzuty: `mail-pl-komputer-640.png`, `mail-en-komputer-640.png`, `mail-pl-telefon-375.png`, `mail-en-telefon-375.png`, `app-wybor-zdjecia.jpg`,
 `app-kampania-kafelek.jpg`. Do decyzji także: tematy zostawione z układu 1, treści domyślne skrócone do powitania + dwóch zdań, podpis archiwalny per rocznik.
 
-## Krok 1 — migracje (PRZED kodem; 6 plików, w tej kolejności, każdy osobno w SQL Editor prod)
+## Krok 1 — migracje (PRZED kodem; 6 plików w tej kolejności, złożone 1:1 w `04-migracje-razem.sql`, jeden Run w SQL Editor prod)
 | # | plik | SHA-256 (pierwsze 16) | linii |
 |---|---|---|---|
 | 1 | `20261107100000_marketing_photos.sql` | `953943331e29bdfe` | 172 |
