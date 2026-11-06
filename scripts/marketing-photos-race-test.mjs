@@ -61,8 +61,9 @@ try {
   };
   await resetVersion();
   await S.query(`update public.marketing_photos set current_version_id = $2, status = 'pending' where id = $1`, [photo, v.id]);
-  let camp = (await S.query(`select id from public.marketing_campaigns where name = 'ZZZ TEST wyścig blokad'`)).rows[0]?.id;
-  if (!camp) camp = (await S.query(`insert into public.marketing_campaigns (name, template_key, created_by, layout_version, status) values ('ZZZ TEST wyścig blokad', 'selected_companies', $1, 2, 'draft') returning id`, [admin])).rows[0].id;
+  // baza nadaje kampaniom własną nazwę (Grupa | #N | data), więc wiersz testowy rozpoznajemy po needs_note — jeden na bazę, nie jeden na przebieg
+  let camp = (await S.query(`select id from public.marketing_campaigns where needs_note = 'ZZZ TEST wyścig blokad' order by created_at limit 1`)).rows[0]?.id;
+  if (!camp) camp = (await S.query(`insert into public.marketing_campaigns (name, template_key, created_by, layout_version, status, needs_note) values ('ZZZ TEST wyścig blokad', 'selected_companies', $1, 2, 'draft', 'ZZZ TEST wyścig blokad') returning id`, [admin])).rows[0].id;
   await S.query(`update public.marketing_campaigns set status = 'draft', photo_version_id = null, frozen_photo = null where id = $1`, [camp]);
   const state = async () => (await S.query(`select (select unpublishing_at is not null from public.marketing_photo_versions where id = $1::uuid) as claimed, (select photo_version_id = $1::uuid from public.marketing_campaigns where id = $2::uuid) as assigned, (select approved_version_id = $1::uuid from public.marketing_photos where id = $3::uuid) as approved`, [v.id, camp, photo])).rows[0];
 
@@ -148,7 +149,7 @@ try {
 } finally {
   for (const c of [A, B]) { await errOf(c.query("rollback")); }
   // porządki: wiersze zostają (wersji nie da się usunąć), ale w stanie nieszkodliwym
-  await errOf(S.query(`update public.marketing_campaigns set photo_version_id = null, photo_id = null, status = 'closed', closed_at = now() where name = 'ZZZ TEST wyścig blokad'`));
+  await errOf(S.query(`update public.marketing_campaigns set photo_version_id = null, photo_id = null, status = 'closed', closed_at = now() where needs_note = 'ZZZ TEST wyścig blokad' or name like 'ZZZ TEST wyścig%'`));
   await errOf(S.query(`update public.marketing_photos set approved_version_id = null, status = 'disabled', disabled_at = now() where title = 'ZZZ TEST wyścig blokad'`));
   // WSZYSTKIE wersje testowe kończą jako WYCOFANE (wiersze logiczne bez pliku; zajęcie w bazie, potem dokończenie) — skrypt porządkowy
   // nie ma potem nic do roboty, a wycofanie jest nieodwracalne, więc kolejny przebieg zakłada nową wersję
