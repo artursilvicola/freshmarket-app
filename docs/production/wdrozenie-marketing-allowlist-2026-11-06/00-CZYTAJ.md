@@ -17,7 +17,11 @@ Każdy krok ze zmianą produkcji wykonuje się dopiero po „wdrażaj” Artura;
 
 ## Krok 3 — konta próbne
 - Kontrola 06.11 (tylko odczyt): `spiker.artur@gmail.com` i `artur.silvicola@gmail.com` nie istnieją w auth.users / profiles / marketing_suppressions (0 wierszy).
-- `03-konta-probne.sql` (Artur, SQL Editor prod): 2 firmy (PL/NL, active, PreConnect włączony, bez kredytów) + 2 operatorzy (pl/en, hasło losowe nieznane — logowanie tylko przez reset/magic link). Nie nadpisuje istniejących adresów. Nazwy bez „ZZZ TEST”, żeby silnik ich nie wykluczył.
+- `03-konta-probne.sql` v2 (Artur, SQL Editor prod): 2 firmy (PL/NL, active, PreConnect włączony, bez kredytów) + 2 operatorzy (pl/en, hasło losowe nieznane — logowanie tylko przez reset/magic link). Nazwy bez „ZZZ TEST”, żeby silnik ich nie wykluczył.
+  - Review Codexa P1: PRZED zapisem kontrola tożsamości (UUID firm, UUID użytkowników, adresy, profile, tożsamości auth); każdy konflikt = `RAISE EXCEPTION` = cała transakcja wycofana, nic nie zmienione. Ponowienie dozwolone tylko dla potwierdzonych kont tej próby (UUID + adres + firma). Kontrola końcowa: dokładnie 2 kompletne konta, inaczej wycofanie.
+  - Oczekiwany wynik Run: 2 wiersze (supplier / active=true / pl|en / firma active + preconnect). Każdy komunikat „KONFLIKT…” = stop i decyzja Artura.
+  - PO utworzeniu sprawdzić OSOBNO logowanie Supabase (PGlite z atrapą `auth.identities` tego nie potwierdza — Codex): na b2b.freshmarket.eu „nie pamiętam hasła” / magic link na `spiker.artur@gmail.com` → mail → zalogowanie jako dostawca firmy „Próba marketingu PL (Artur)”. To jest mail usługowy Supabase, nie marketingowy — nie wymaga flagi wysyłki.
+- `05-przebieg-probny-pglite.mjs` v2 (Codex P2): 23 asercje (konflikty A–C przerywają bez zmian, D czysta baza + idempotencja, E 04 na obcych wierszach przerywa, F 04 zawiesza tylko 2+2, G kontrola 02); nieudana asercja = kod wyjścia 1 (`--self-test-fail` sprawdzony = 1).
 
 ## Krok 4 — lista + flaga (Netlify, kontekst production) → redeploy
 - `MARKETING_SEND_ALLOWLIST=spiker.artur@gmail.com,artur.silvicola@gmail.com` (bez spacji, małe litery; wpis bez `@` = 403 `allowlist_invalid`).
@@ -33,5 +37,5 @@ Każdy krok ze zmianą produkcji wykonuje się dopiero po „wdrażaj” Artura;
 
 ## Krok 6 — po próbie
 - `MARKETING_SEND_ENABLED=false` + redeploy (lista może zostać do pierwszej prawdziwej wysyłki; wtedy ZDJĄĆ, inaczej partia pominie wszystkich).
-- `04-po-probie.sql` (zawieszenie firm i operatorów; wypisy zostają). Kampanię próbną zamknąć w panelu.
+- `04-po-probie.sql` v2 (zawieszenie TYLKO potwierdzonych kont próbnych: UUID + adres + firma; niezgodność = przerwanie bez zmian; >2 wierszy = wycofanie; wypisy zostają). Kampanię próbną zamknąć w panelu.
 - Memory + §20 dokumentu głównego.
