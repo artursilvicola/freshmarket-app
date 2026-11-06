@@ -39,9 +39,21 @@ export async function loadPhotoVersion(supaSvc, id) {
   return data || null;
 }
 
-/** Wersja opublikowana = ma published_at i adres HTTPS (tylko taka może trafić do kampanii / maila). */
+/** Wersja opublikowana = ma published_at i adres HTTPS i NIE jest w trakcie wycofywania (tylko taka może trafić do kampanii / maila). */
 export function isPublished(version) {
-  return Boolean(version && version.published_at && /^https:\/\//i.test(String(version.public_url || "")));
+  return Boolean(version && version.published_at && !version.unpublishing_at && /^https:\/\//i.test(String(version.public_url || "")));
+}
+
+/**
+ * [review Codexa 4/P2] Jednoznaczny „obiekt nie istnieje” w Storage. Supabase odpowiada na brak obiektu statusCode "404" /
+ * komunikatem "Object not found"; timeout, 403, 5xx i każdy inny błąd NIE oznacza braku pliku — operacja ma się zatrzymać.
+ */
+export function isNotFoundError(err) {
+  if (!err) return false;
+  const code = String(err.statusCode ?? err.status ?? "");
+  if (code === "404") return true;
+  if (/^(5\d\d|403|401|408|429)$/.test(code)) return false;
+  return /\bobject not found\b|\bnot[_ ]found\b/i.test(String(err.message || ""));
 }
 
 /**
@@ -74,8 +86,15 @@ export async function suggestPhoto(supaSvc, { campaignId = null, preferPhotoId =
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
 async function readObject(supaSvc, bucket, path) {
   const dl = await supaSvc.storage.from(bucket).download(path);
-  if (dl.error) throw new Error(`storage download ${bucket}/${path}: ${dl.error.message}`);
+  if (dl.error) { const e = new Error(`storage download ${bucket}/${path}: ${dl.error.message}`); e.notFound = isNotFoundError(dl.error); e.cause = dl.error; throw e; }
   return Buffer.from(await dl.data.arrayBuffer());
+}
+/** true = obiekt na pewno nie istnieje; false = istnieje; każdy inny błąd Storage (503, 403, timeout) → wyjątek. */
+async function objectMissing(supaSvc, bucket, path) {
+  const dl = await supaSvc.storage.from(bucket).download(path);
+  if (!dl.error) return false;
+  if (isNotFoundError(dl.error)) return true;
+  throw new Error(`storage check ${bucket}/${path}: ${dl.error.message}`);
 }
 async function writeObject(supaSvc, bucket, path, bytes, mime) {
   // nigdy nie nadpisujemy (upsert: false); plik już istniejący pod TĄ ścieżką musi mieć te same bajty (ścieżka zawiera sha12)
@@ -112,29 +131,45 @@ export async function publishVersion(supaSvc, version, callerId = null) {
  * Cofnięcie publikacji (TYLKO porządki, np. pliki pending opublikowane przed migracją 20261107110000): publiczny → prywatny,
  * public_url = null. Trigger odrzuca, gdy wersję używa jakakolwiek kampania albo jest zatwierdzoną wersją zdjęcia.
  */
-export async function unpublishVersion(supaSvc, version) {
+export async function unpublishVersion(supaSvc, version, callerId = null) {
   if (!version || !version.published_at) return { version, unpublished: false };
+  // [review Codexa 4/P1] NAJPIERW trwały, atomowy stan w bazie: marketing_photo_version_claim_unpublish() zajmuje wersję tylko,
+  // gdy nie jest używana przez żadną kampanię ani zatwierdzona; od tej chwili triggery blokują nowe przypisania i zatwierdzenia.
+  // Dopiero potem dotykamy plików. Ponowne zajęcie już zajętej wersji = sukces (ponawialność po przerwanej próbie).
+  const claim = await supaSvc.rpc("marketing_photo_version_claim_unpublish", { p_version_id: version.id, p_by: callerId });
+  if (claim.error) throw new Error("unpublish claim: " + claim.error.message);
+  if (claim.data !== true) throw new Error("unpublish: version is referenced by a campaign or approved photo (claim refused): " + version.id);
   // [review Codexa 3/P2] kolejność PONAWIALNA: 1) kopia do prywatnego, 2) usunięcie publicznego, 3) dopiero wtedy wiersz.
-  // Gdy krok 2 zawiedzie, wiersz zostaje „published” i kolejne uruchomienie wraca do tej wersji; gdy publiczny obiekt już
-  // nie istnieje (poprzednia próba usunęła go, a zapis wiersza padł), bajty bierzemy z kopii prywatnej.
+  // [review Codexa 4/P2] „brak pliku” = WYŁĄCZNIE jednoznaczny not-found; 503/403/timeout zatrzymują operację (stan zostaje zajęty).
   let bytes = null, publicExists = true;
   try { bytes = await readObject(supaSvc, PHOTO_BUCKET, version.storage_path); }
-  catch (e) { publicExists = false; bytes = await readObject(supaSvc, PENDING_BUCKET, version.storage_path).catch(() => { throw new Error("unpublish: object missing in both buckets: " + version.storage_path + " (" + e.message + ")"); }); }
+  catch (e) {
+    if (!e.notFound) throw new Error("unpublish: public object check failed (not a not-found): " + e.message);
+    publicExists = false;
+    try { bytes = await readObject(supaSvc, PENDING_BUCKET, version.storage_path); }
+    catch (e2) { throw new Error("unpublish: object missing in both buckets: " + version.storage_path + " (" + e2.message + ")"); }
+  }
   if (sha256(bytes) !== version.sha256) throw new Error("unpublish: sha256 mismatch for " + version.storage_path);
   await writeObject(supaSvc, PENDING_BUCKET, version.storage_path, bytes, version.mime);
   if (publicExists) {
     const rm = await supaSvc.storage.from(PHOTO_BUCKET).remove([version.storage_path]);
     if (rm.error) throw new Error("unpublish: remove public object: " + rm.error.message);
-    // Storage potrafi odpowiedzieć 200 bez usunięcia (brak uprawnień/ścieżki) — sprawdzamy, że obiektu już nie ma
-    const still = await supaSvc.storage.from(PHOTO_BUCKET).download(version.storage_path);
-    if (!still.error) throw new Error("unpublish: public object still present after remove: " + version.storage_path);
+    // Storage potrafi odpowiedzieć 200 bez usunięcia — obiektu ma na pewno nie być (inny błąd niż not-found = STOP)
+    if (!(await objectMissing(supaSvc, PHOTO_BUCKET, version.storage_path))) throw new Error("unpublish: public object still present after remove: " + version.storage_path);
   }
   const { data, error } = await supaSvc.from("marketing_photo_versions")
     .update({ storage_bucket: PENDING_BUCKET, public_url: null, published_at: null, published_by: null })
-    .eq("id", version.id).select("*").maybeSingle();
+    .eq("id", version.id).not("unpublishing_at", "is", null).select("*").maybeSingle();
   if (error) throw new Error("unpublish version: " + error.message);
-  if (!data) throw new Error("unpublish version: row not updated");
+  if (!data) throw new Error("unpublish version: row not updated (claim lost?)");
   return { version: data, unpublished: true };
+}
+
+/** Zwolnienie stanu wycofywania (plik nadal publiczny) — ręczne odblokowanie po nieudanej próbie. */
+export async function releaseUnpublish(supaSvc, versionId) {
+  const r = await supaSvc.rpc("marketing_photo_version_release_unpublish", { p_version_id: versionId });
+  if (r.error) throw new Error("release unpublish: " + r.error.message);
+  return r.data === true;
 }
 
 /**

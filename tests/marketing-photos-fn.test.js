@@ -142,6 +142,11 @@ describe("upload", () => {
     // wersja innego zdjęcia → 404
     const other = await call({ action: "upload", ...META, title: "Inne", mime: "image/jpeg", data_base64: b64(jpegHeader(1200, 800, 90_000)), source_sha256: "c".repeat(64) });
     expect((await call({ action: "approve", photo_id: first.body.photo.id, version_id: other.body.version.id })).status).toBe(404);
+    // [review 4] wersja w trakcie wycofywania publikacji: approve → 409, lista nie pokazuje jej jako zatwierdzonej
+    state.versions[0].unpublishing_at = "2026-11-06T12:00:00Z"; state.photos[0].approved_version_id = null; state.photos[0].status = "pending";
+    const blocked = await call({ action: "approve", photo_id: first.body.photo.id, version_id: first.body.version.id });
+    expect(blocked.status).toBe(409); expect(blocked.body.error).toBe("version_unpublishing");
+    expect((await call({ action: "list" })).body.photos[0].approved_version).toBeNull();
   });
   it("[review 3/P2] lista daje administratorowi PODGLĄD kadru oczekującego: podpisany adres z prywatnego bucketa (10 min), nigdy publiczny; preview_version to samo dla jednej wersji", async () => {
     const up = await call({ action: "upload", ...META, mime: "image/jpeg", data_base64: b64(jpegHeader(1200, 800, 50_000)) });

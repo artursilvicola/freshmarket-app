@@ -35,7 +35,7 @@ for (const f of files) {
 console.log(`migracje: ${files.length} OK (ostatnia ${files[files.length - 1]})`);
 ok(files.includes("20261107100000_marketing_photos.sql"), "migracja biblioteki zdjęć w łańcuchu");
 console.log("idempotencja: migracja zdjęć drugi raz");
-let twice = null; try { for (const f of ["20261107100000_marketing_photos.sql", "20261107110000_marketing_photo_versions_approval.sql"]) await db.exec(patch(read("supabase/migrations/" + f))); } catch (e) { twice = e.message; }
+let twice = null; try { for (const f of ["20261107100000_marketing_photos.sql", "20261107110000_marketing_photo_versions_approval.sql", "20261107120000_marketing_photo_unpublish_state.sql"]) await db.exec(patch(read("supabase/migrations/" + f))); } catch (e) { twice = e.message; }
 ok(!twice, "druga aplikacja obu migracji zdjęć (w kolejności) bez błędu" + (twice ? ": " + twice : ""));
 
 const ADMIN = "11111111-1111-4111-8111-111111111111", OWNER = "55555555-5555-4555-8555-555555555555";
@@ -107,12 +107,32 @@ const fz = (await db.query(`select frozen_photo->>'url' as url from public.marke
 ok(fz.url === "https://x/v1-abc.jpg", "wyłączone zdjęcie: zamrożenie kampanii bez zmian");
 e = await fails_with(() => db.query(`delete from public.marketing_photos where id = $1`, [ph]), /foreign key|violates|restrict/i);
 ok(e && !e.startsWith("INNY"), "zdjęcia z wersjami nie da się skasować (FK restrict)");
-// cofnięcie publikacji: v1 użyta przez kampanię (i zatwierdzona) → odmowa; v2 po publikacji bez użycia → wolno
-e = await fails_with(() => db.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1`, [v1]), /referenced/);
-ok(e && !e.startsWith("INNY"), "cofnięcie publikacji wersji użytej w kampanii / zatwierdzonej → odmowa");
+// [review Codexa 4] stan wycofywania: zajęcie atomowe tylko dla nieużywanej; blokady przypisań/zatwierdzeń; cofnięcie tylko po zajęciu
+const claim = async (id) => (await db.query(`select public.marketing_photo_version_claim_unpublish($1::uuid, $2::uuid) as ok`, [id, ADMIN])).rows[0].ok;
+ok((await claim(v1)) === false, "zajęcie stanu dla v1 (użyta przez kampanię + zatwierdzona) → odmowa");
+e = await fails_with(() => db.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1`, [v1]), /prior claim|referenced/);
+ok(e && !e.startsWith("INNY"), "cofnięcie publikacji bez zajęcia stanu → odmowa triggera");
 await db.query(`update public.marketing_photo_versions set storage_bucket = 'marketing-photos', public_url = 'https://x/v2-def.jpg', published_at = now() where id = $1`, [v2]);
+e = await fails_with(() => db.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1`, [v2]), /prior claim/);
+ok(e && !e.startsWith("INNY"), "cofnięcie publikacji v2 bez zajęcia → odmowa (wymagany claim)");
+ok((await claim(v2)) === true && (await claim(v2)) === true, "zajęcie stanu dla v2 (nieużywana) przechodzi i jest ponawialne");
+e = await fails_with(() => db.query(`update public.marketing_campaigns set photo_version_id = $2 where id = $1`, [camp.id, v2]), /being unpublished|not published/);
+ok(e && !e.startsWith("INNY"), "przypisanie v2 do kampanii w trakcie wycofywania → odmowa triggera");
+e = await fails_with(() => db.query(`update public.marketing_photos set approved_version_id = $2 where id = $1`, [ph, v2]), /being unpublished|must be published/);
+ok(e && !e.startsWith("INNY"), "zatwierdzenie v2 w trakcie wycofywania → odmowa triggera");
+e = await fails_with(() => db.query(`insert into public.marketing_campaigns (name, template_key, created_by, layout_version, photo_id, photo_version_id) values ('Nowa', 'credits_no_proposal', $1::uuid, 2, $2::uuid, $3::uuid)`, [ADMIN, ph, v2]), /being unpublished|not published/);
+ok(e && !e.startsWith("INNY"), "nowa kampania z v2 w trakcie wycofywania → odmowa triggera");
+const unpubV = (await db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,3,'marketing-photos-pending','photos/'||$1::text||'/v3-ghi.jpg',null,1200,800,100000,'image/jpeg',repeat('d',64)) returning id`, [ph])).rows[0].id;
+e = await fails_with(() => db.query(`update public.marketing_campaigns set photo_version_id = $2 where id = $1`, [camp.id, unpubV]), /not published/);
+ok(e && !e.startsWith("INNY"), "przypisanie wersji NIEOPUBLIKOWANEJ do kampanii → odmowa triggera (poziom bazy)");
+ok((await db.query(`select public.marketing_photo_version_release_unpublish($1::uuid) as ok`, [v2])).rows[0].ok === true, "zwolnienie stanu v2 przechodzi");
+await db.query(`update public.marketing_campaigns set photo_version_id = $2 where id = $1`, [camp.id, v2]);
+ok((await claim(v2)) === false, "po przypisaniu v2 do kampanii ponowne zajęcie → odmowa (wyścig zamknięty w bazie)");
+await db.query(`update public.marketing_campaigns set photo_version_id = $2 where id = $1`, [camp.id, v1]);
+ok((await claim(v2)) === true, "po zdjęciu przypisania zajęcie v2 znów przechodzi");
 await db.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1`, [v2]);
-ok((await db.query(`select public_url from public.marketing_photo_versions where id = $1`, [v2])).rows[0].public_url === null, "cofnięcie publikacji nieużywanej wersji (porządki) przeszło");
+const v2row = (await db.query(`select public_url, unpublishing_at from public.marketing_photo_versions where id = $1`, [v2])).rows[0];
+ok(v2row.public_url === null && v2row.unpublishing_at === null, "cofnięcie publikacji nieużywanej, zajętej wersji przeszło; stan zwolniony");
 
 console.log("4. uprawnienia");
 const can = async (role, sql, params = []) => { await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false); set role ${role};`); try { await db.query(sql, params); await db.exec("reset role"); return true; } catch { await db.exec("reset role"); return false; } };
@@ -123,6 +143,9 @@ ok(!(await can("authenticated", `insert into public.marketing_photo_versions (ph
 ok(!(await can("service_role", `delete from public.marketing_photos where id = $1`, [ph])), "service_role: brak DELETE na marketing_photos");
 ok(!(await can("service_role", `update public.marketing_photo_versions set bytes = 1 where id = $1`, [v1])), "service_role: brak UPDATE kolumn pliku w wersjach");
 ok(!(await can("service_role", `delete from public.marketing_photo_versions where id = $1`, [v1])), "service_role: brak DELETE na wersje");
+ok(!(await can("authenticated", `select public.marketing_photo_version_claim_unpublish($1::uuid, null)`, [v1])), "authenticated: brak EXECUTE na claim_unpublish");
+ok(!(await can("anon", `select public.marketing_photo_version_release_unpublish($1::uuid)`, [v1])), "anon: brak EXECUTE na release_unpublish");
+ok(await can("service_role", `select public.marketing_photo_version_claim_unpublish($1::uuid, null)`, [v1]), "service_role: EXECUTE na claim_unpublish");
 ok(await can("service_role", `select count(*) from public.marketing_photo_usage`), "service_role: czyta widok użycia");
 let rows = await asUser(OWNER, `select count(*)::int as n from public.marketing_photos`);
 let viewRows = await asUser(OWNER, `select count(*)::int as n from public.marketing_photo_usage`);

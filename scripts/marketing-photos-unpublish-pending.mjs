@@ -4,13 +4,16 @@
 // zdjęcia i NIE są użyte przez żadną kampanię (szkic/zamrożenie), wracają do prywatnego bucketa marketing-photos-pending
 // (public_url = null). Wersje użyte przez kampanie albo zatwierdzone zostają nietknięte (trigger i tak by odmówił).
 //
-//   node scripts/marketing-photos-unpublish-pending.mjs [--dry-run]
+//   node scripts/marketing-photos-unpublish-pending.mjs [--dry-run] [--release <version_id>]
+// Przebieg per wersja (review Codexa 4): zajęcie stanu w bazie (odmowa, gdy wersja używana/zatwierdzona) → kopia → usunięcie
+// publicznego (tylko jednoznaczny not-found = brak pliku; 503/403 = STOP ze stanem zajętym) → wiersz. --release zwalnia stan
+// wersji po nieudanej próbie (plik nadal publiczny).
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { parseDotenv, validateTestEnv, PROD_REF } from "./lib/test-env.mjs";
-import { unpublishVersion } from "../netlify/functions/_shared/marketing-photo-data.js";
+import { unpublishVersion, releaseUnpublish } from "../netlify/functions/_shared/marketing-photo-data.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
@@ -24,6 +27,8 @@ const check = validateTestEnv(env);
 if (!check.ok) { console.error("ODMOWA (.env.test):\n - " + check.errors.join("\n - ")); process.exit(3); }
 if (String(env.SUPABASE_URL).includes(PROD_REF)) { console.error("ODMOWA: SUPABASE_URL wskazuje na produkcję."); process.exit(3); }
 const supa = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY);
+const relIdx = process.argv.indexOf("--release");
+if (relIdx >= 0) { const id = process.argv[relIdx + 1]; const ok = await releaseUnpublish(supa, id); console.log(ok ? "zwolniono stan wycofywania: " + id : "nic do zwolnienia: " + id); process.exit(ok ? 0 : 1); }
 
 const { data: photos } = await supa.from("marketing_photos").select("id, title, status, approved_version_id, current_version_id");
 const { data: versions } = await supa.from("marketing_photo_versions").select("*");
@@ -38,6 +43,7 @@ for (const v of versions || []) {
   if (!v.published_at) continue;
   const photo = (photos || []).find((p) => p.id === v.photo_id);
   const uses = usedBy.get(String(v.id)) || [];
+  if (v.unpublishing_at) console.log(`  (stan wycofywania zajęty od ${v.unpublishing_at} — ponawiam)`);
   if (approvedIds.has(String(v.id)) || uses.length) { kept++; console.log(`  zostaje  ${photo?.title || v.photo_id} v${v.version_no}: ${approvedIds.has(String(v.id)) ? "zatwierdzona" : ""} ${uses.length ? "użyta: " + uses.join("; ") : ""}`); continue; }
   console.log(`  ${DRY ? "[dry] cofam" : "cofam  "} ${photo?.title || v.photo_id} v${v.version_no} (status zdjęcia: ${photo?.status})`);
   if (DRY) { done++; continue; }

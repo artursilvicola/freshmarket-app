@@ -138,6 +138,33 @@ miniatury, osobny przycisk zatwierdzenia nowego kadru, miniatura z v1).
    Regresje w `tests/marketing-photo-data.test.js` (10 testów): idempotencja publikacji, plik już w publicznym, sha256, nieudane usunięcie
    + ponowienie, Storage „OK bez usunięcia”, awaria zapisu wiersza + ponowienie, brak obiektu, podpisane podglądy.
 
+## 10. Poprawki po review Codexa e3f14b3 (czwarta runda, narzędzie porządkowe: P1 + P2)
+
+**Trwały, ponawialny stan wycofywania publikacji (migracja `20261107120000_marketing_photo_unpublish_state.sql`, tylko baza testowa):**
+* `marketing_photo_versions.unpublishing_at/by` — stan „wycofywanie w toku”.
+* `marketing_photo_version_claim_unpublish(version_id, by)` — JEDEN atomowy UPDATE: zajmuje tylko wersję opublikowaną, nieużywaną przez
+  żadną kampanię (`photo_version_id`, `frozen_photo`) i niebędącą zatwierdzoną wersją zdjęcia; ponowne zajęcie już zajętej = sukces
+  (ponawialność). `marketing_photo_version_release_unpublish` zwalnia stan (plik nadal publiczny). Obie tylko dla service_role.
+* Triggery w bazie na czas zajęcia: `marketing_campaigns` (insert/update `photo_version_id`) i `marketing_photos` (`approved_version_id`)
+  odrzucają wersję nieopublikowaną albo wycofywaną — wyścig „kampania przypisała zdjęcie po wstępnej kontroli skryptu” jest zamknięty
+  w bazie, nie w kodzie. Cofnięcie publikacji (`published_at → NULL`) wymaga wcześniejszego zajęcia (trigger niezmienności); po cofnięciu
+  stan jest zerowany.
+* Kolejność w `unpublishVersion`: **zajęcie w bazie → kopia do prywatnego → usunięcie publicznego → kontrola → wiersz**. Plik jest dotykany
+  dopiero po zajęciu. `isPublished()` zwraca false dla wersji wycofywanej, więc `set_photo`, zatwierdzenie kampanii, podgląd i `approve`
+  wersji (409 `version_unpublishing`) odmawiają także po stronie funkcji.
+
+**Klasyfikacja błędów Storage (`isNotFoundError`):** za „brak pliku” uchodzi wyłącznie jednoznaczny not-found (statusCode/status 404 albo
+komunikat „Object not found”/„not_found”); 401/403/408/429/5xx, timeout i każdy inny błąd zatrzymują operację ze stanem zajętym do ponowienia
+(`--release <version_id>` w skrypcie zwalnia ręcznie). Ta sama zasada dotyczy kontroli po usunięciu.
+
+**Regresje:** `tests/marketing-photo-data.test.js` (15): wyścig z przypisaniem → odmowa zajęcia, plik nietknięty; 503 przy pobraniu →
+STOP i ponowienie po ustąpieniu awarii; 403 przy kontroli po usunięciu → STOP; cofnięcie bez zajęcia odrzucone; release; klasyfikacja
+błędów. SQL smoke na PGlite: zajęcie odmówione dla użytej/zatwierdzonej, blokady przypisania/zatwierdzenia/nowej kampanii w trakcie
+wycofywania, przypisanie wersji nieopublikowanej odrzucone na poziomie bazy, wyścig po przypisaniu, zwolnienie i domknięcie stanu,
+uprawnienia RPC. Funkcja: `approve` wersji wycofywanej = 409.
+
+Baza testowa po migracji: 79 migracji w rejestrze, skrypt porządkowy nie ma nic do cofnięcia (18 opublikowanych i zatwierdzonych, 20 prywatnych).
+
 ## 7. Otwarte / poza zakresem
 * `MARKETING_SEND_ALLOWLIST` nadal ustawiona na prod (zdjąć przed prawdziwą kampanią) — bez związku z tą gałęzią.
 * Instrukcja administratora (rozdział Marketing) nie opisuje jeszcze biblioteki zdjęć — do uzupełnienia po akceptacji wyglądu.

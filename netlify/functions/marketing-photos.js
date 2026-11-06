@@ -130,6 +130,7 @@ export const handler = async (event) => {
         const version = await loadPhotoVersion(supaSvc, versionId);
         if (!version || String(version.photo_id) !== String(photo.id)) return json(404, { error: "version_not_found" });
         if (String(photo.approved_version_id || "") === String(version.id) && photo.status === "ready") return json(409, { error: "version_already_approved" });
+        if (version.unpublishing_at) return json(409, { error: "version_unpublishing", hint: "wersja jest w trakcie wycofywania publikacji — zwolnij stan (release) albo poczekaj na koniec porządków" });
         const pub = await publishVersion(supaSvc, version, caller.id);
         const nowIso = new Date().toISOString();
         const { data, error } = await supaSvc.from("marketing_photos")
