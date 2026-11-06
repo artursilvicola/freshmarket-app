@@ -74,3 +74,11 @@ Do kroku 4 `MARKETING_SEND_ENABLED=false`. Przed włączeniem flagi `netlify env
 * 20 zdjęć zapasowych (po przeglądzie Artura — wgrać tym samym trybem, zatwierdzić kadr po kadrze).
 * Rozdział „Biblioteka zdjęć” w instrukcji administratora (do dopisania po akceptacji wyglądu).
 * Wiersze testowe „ZZZ TEST wyścig blokad” istnieją tylko na bazie testowej.
+
+## Dziennik wdrożenia (06.11.2026 wieczór)
+* Codex: runda 1 NO-GO (3×P2), po poprawkach runda 2 GO dla kroku 1 (72a2a4a).
+* Krok 1: kontrola przed = 28/28 zgodnych; 8 migracji (Run: Artur) Success; kontrola po = 28/28, 4 kampanie / 2 wiadomości / 2 wypisy bez zmian.
+* Krok 2: tag `prod-pre-photos-2026-11-07` = 2447650, main = 72a2a4a, `version.json` 72a2a4a19f04; marketing-* bez tokenu 401; logo 200; flaga false; lista = 2 adresy próbne.
+* Krok 3: 18 zdjęć w panelu; opublikowane 17, każde HTTP 200 anonimowo, JPEG 1200×800, max 153 KB, 0 metadanych; `niezgodne_wersje` 0. 2026/0173 (pion) ZOSTAJE prywatny: kadr ucina głowę, decyzja Artura.
+* Krok 4: zgoda Artura w czacie 06.11 ok. 21:32. `02a-reaktywacja-ze-zgoda-06-11.sql` = 02 + dwie linie (flaga, źródło zgody), wklejony do SQL Editora, czeka na Run Artura.
+* Do poprawy po próbie: tekst ostrzeżenia w bibliotece mówi „każdy plik publiczny”, a oczekujące są prywatne.
