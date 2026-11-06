@@ -165,6 +165,8 @@ async function sendTest({ supaSvc, env, caller, campaign, body }) {
     creditsRemaining: snap.credits_remaining, creditsAvailable: snap.credits_available, creditsReserved: snap.reserved, expiringCredits: snap.expiring_credits,
     creditsExpiry: snap.nearest_expiry, snapshotAt: snap.snapshot_at || src.created_at,
     appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null,
+    // [feat/marketing-photos] układ i zdjęcie jak w rejestrze: zamrożone przy zatwierdzeniu (frozen_photo), nigdy „aktualne”
+    layoutVersion: campaign.layout_version || 1, photo: campaign.frozen_photo || null,
   });
   const subject = `[TEST] ${rendered.subject}`;
   const now = new Date().toISOString();

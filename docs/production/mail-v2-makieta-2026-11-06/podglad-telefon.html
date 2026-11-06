@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<!-- Ramka 375 px do zrzutu „telefon”: bezgłowy Chrome ma minimalną szerokość okna, więc mail renderuje się w iframe o szerokości telefonu.
+     Otwórz: podglad-telefon.html?pl albo ?en (serwer makiety, port 8765). -->
+<meta charset="utf-8"><title>Podgląd telefon 375</title>
+<body style="margin:0;background:#fff">
+<iframe id="f" width="375" height="2300" style="border:0;display:block" title="mail"></iframe>
+<script>document.getElementById("f").src = "podglad-testowy-" + (location.search.replace("?", "") || "pl") + ".html";</script>
+</body>

@@ -7,6 +7,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { marketingCall } from "../../lib/db.js";
+import MarketingPhotoLibrary, { Modal } from "./MarketingPhotoLibrary.jsx";
 
 export const AUDIENCES = ["credits_no_proposal", "credits_proposal_ready", "used_before_free_credits", "credits_expiring", "no_valid_credits", "selected_companies"];
 const EMPTY_CONTENT = { pl: { subject: "", body: "", cta: "" }, en: { subject: "", body: "", cta: "" } };
@@ -37,6 +38,8 @@ export default function MarketingActivation({ fl }) {
   const [testTo, setTestTo] = useState("");
   const [busy, setBusy] = useState(null);
   const [form, setForm] = useState({ name: "", template_key: AUDIENCES[0], reply_to: "" });
+  const [tab, setTab] = useState("campaigns");          // campaigns | photos  [feat/marketing-photos]
+  const [picker, setPicker] = useState(null);             // { photos } — okno wyboru zdjęcia kampanii
 
   const toast = (msg, kind) => { if (typeof fl === "function") fl(msg, kind); };
   const errText = (e) => { const code = e?.payload?.error; const key = code ? "err_" + code : null; const msg = key ? t("admin.marketing." + key, { defaultValue: "" }) : ""; return msg || e?.message || String(e); };
@@ -57,7 +60,24 @@ export default function MarketingActivation({ fl }) {
   const createCampaign = () => run("create", async () => {
     if (form.template_key === "selected_companies" && !form.name.trim()) return;
     const r = await marketingCall("marketing-campaign", { action: "create", ...form });
-    toast(tr("created")); await loadCampaigns(); await openCampaign(r.campaign.id);
+    toast(tr("created"));
+    // [feat/marketing-photos] zdjęcie przypisane automatycznie z rotacji — powód / ostrzeżenie dla administratora
+    if (r.photo_pick?.reason) toast(tr("photo_reason_" + r.photo_pick.reason, { defaultValue: r.photo_pick.reason }), r.photo_pick.reason.endsWith("fallback") || r.photo_pick.reason === "no_ready_photos" ? "error" : "info");
+    await loadCampaigns(); await openCampaign(r.campaign.id);
+  });
+
+  // [feat/marketing-photos] zdjęcie kampanii: wybór ręczny / propozycja z rotacji / bez zdjęcia — tylko w szkicu, podbija content_version
+  const setPhoto = (payload) => current && run("photo", async () => {
+    const r = await marketingCall("marketing-campaign", { action: "set_photo", campaign_id: current.campaign.id, expected_version: current.campaign.content_version, ...payload });
+    toast(tr("photo_set"));
+    if (r.photo_pick?.reason) toast(tr("photo_reason_" + r.photo_pick.reason, { defaultValue: r.photo_pick.reason }), r.photo_pick.reason.endsWith("fallback") ? "error" : "info");
+    setPicker(null);
+    setCurrent({ ...current, campaign: r.campaign, photo: r.photo });
+    await loadCampaigns();
+  });
+  const openPicker = () => current && run("picker", async () => {
+    const r = await marketingCall("marketing-photos", { action: "list" });
+    setPicker({ photos: (r.photos || []).filter((p) => p.status === "ready" && p.current_version) });
   });
 
   const refreshCandidates = () => current && run("candidates", async () => { const c = await marketingCall("marketing-candidates", { campaign_id: current.campaign.id }); setCandidates(c); setSelected({}); toast(tr("refreshed", { at: new Date(c.snapshot_at).toLocaleTimeString("pl-PL") })); });
@@ -146,7 +166,13 @@ export default function MarketingActivation({ fl }) {
       <a href="/admin/instrukcja/preconnect#instr-preconnect-admin-marketing" style={{ display: "inline-block", marginBottom: 8, fontSize: 13, color: "#0d9488" }}>{tr("guide_link")}</a>
       <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14 }}>{tr("subtitle")}</div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14 }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        <button data-testid="mk-tab-campaigns" style={btn(tab === "campaigns" ? "primary" : "secondary")} onClick={() => setTab("campaigns")}>{tr("tab_campaigns")}</button>
+        <button data-testid="mk-tab-photos" style={btn(tab === "photos" ? "primary" : "secondary")} onClick={() => setTab("photos")}>{tr("tab_photos")}</button>
+      </div>
+      {tab === "photos" && <MarketingPhotoLibrary fl={fl} />}
+
+      <div style={{ display: tab === "campaigns" ? "grid" : "none", gridTemplateColumns: "320px 1fr", gap: 14 }}>
         <div>
           <div style={box}>
             <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{tr("campaigns")}</div>
@@ -243,6 +269,35 @@ export default function MarketingActivation({ fl }) {
                 </div>
               )}
 
+              {/* [feat/marketing-photos] zdjęcie kampanii (układ 2): kafelek + wybór / propozycja / bez zdjęcia; po zatwierdzeniu zamrożone */}
+              <div style={box} data-testid="mk-photo-box">
+                <div style={{ ...stepTitle, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span>{tr("photo_step")}</span>
+                  {current.photo?.frozen && <span style={tag("#e2e8f0", "#0f172a")}>{tr("content_frozen")}</span>}
+                </div>
+                {(current.campaign.layout_version || 1) < 2 ? <div style={{ fontSize: 12, color: "#64748b" }}>{tr("photo_layout1")}</div> : (
+                  <div style={{ display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+                    {current.photo ? (
+                      <img data-testid="mk-photo-img" src={current.photo.url} alt={current.photo.alt_pl || ""} style={{ width: 240, aspectRatio: "3 / 2", objectFit: "cover", borderRadius: 8, background: "#e2e8f0" }} />
+                    ) : <div data-testid="mk-photo-none" style={{ width: 240, aspectRatio: "3 / 2", borderRadius: 8, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "#94a3b8" }}>{tr("photo_none")}</div>}
+                    <div style={{ flex: 1, minWidth: 220, fontSize: 12 }}>
+                      {current.photo && <>
+                        <div style={{ fontWeight: 700 }}>{current.photo.title || "—"}</div>
+                        <div style={{ color: "#475569", marginTop: 2 }}>{current.photo.caption_pl || current.photo.alt_pl}</div>
+                        <div style={{ color: "#94a3b8", marginTop: 2 }}>{tr("photo_version", { n: current.photo.version_no ?? "?", w: current.photo.width, h: current.photo.height })}</div>
+                      </>}
+                      {isDraft ? (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                          <button data-testid="mk-photo-pick" style={btn("secondary")} disabled={!!busy} onClick={openPicker}>{tr("photo_pick")}</button>
+                          <button data-testid="mk-photo-auto" style={btn("secondary")} disabled={!!busy} onClick={() => setPhoto({ auto: true })}>{tr("photo_auto")}</button>
+                          {current.photo && <button data-testid="mk-photo-remove" style={btn("secondary")} disabled={!!busy} onClick={() => setPhoto({ photo_id: null })}>{tr("photo_remove")}</button>}
+                        </div>
+                      ) : <div style={{ color: "#64748b", marginTop: 8 }}>{tr("photo_frozen_note")}</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div style={box}>
                 <div style={{ ...stepTitle, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <span>{tr("step_content")}</span>
@@ -323,6 +378,27 @@ export default function MarketingActivation({ fl }) {
           )}
         </div>
       </div>
+
+      {picker && (
+        <Modal onClose={() => setPicker(null)} title={tr("photo_picker_title")} width={900}>
+          <div style={{ fontSize: 11, color: "#64748b", marginBottom: 10 }}>{tr("photo_picker_hint")}</div>
+          {picker.photos.length === 0 && <div style={{ fontSize: 12, color: "#94a3b8" }}>{tr("photo_picker_empty")}</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+            {picker.photos.map((p) => {
+              const u = p.usage || {}; const selected = current?.campaign?.photo_id === p.id;
+              return (
+                <div key={p.id} data-testid="mk-picker-photo" onClick={() => !busy && setPhoto({ photo_id: p.id })} style={{ border: "2px solid " + (selected ? "#0d9488" : u.sent_campaigns ? "#e2e8f0" : "#86efac"), borderRadius: 10, overflow: "hidden", cursor: "pointer" }}>
+                  <img src={p.current_version.public_url} alt={p.alt_pl} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", background: "#e2e8f0" }} />
+                  <div style={{ padding: 8, fontSize: 11 }}>
+                    <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.title}>{p.title}</div>
+                    <div style={{ color: u.sent_campaigns ? "#475569" : "#166534", marginTop: 2 }}>{u.sent_campaigns ? tr("ph_last_used", { at: u.last_sent_at ? new Date(u.last_sent_at).toLocaleDateString("pl-PL") : "—" }) : tr("ph_never")}{u.open_assignments ? ` · ${tr("ph_open_assign", { n: u.open_assignments })}` : ""}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
 
       {preview && (
         <div onClick={() => setPreview(null)} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>

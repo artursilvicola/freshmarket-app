@@ -29,11 +29,24 @@
  *                   co wyjdzie/wyszło; podgląd kampanii po zatwierdzeniu to tylko szablon z aktualnych danych
  *  close          → { campaign_id } → status closed (bez wysyłki)
  *
+ * [feat/marketing-photos] Układ v2 + zdjęcie z biblioteki (jedno na kampanię, wspólne PL/EN):
+ *  create         → layout_version = 2, zdjęcie przypisane AUTOMATYCZNIE z rotacji (nigdy niewysłane → najdawniej wysłane,
+ *                   omija 4 ostatnie kampanie, które faktycznie wysyłały, i zdjęcia innych otwartych kampanii); brak gotowych
+ *                   zdjęć = kampania bez zdjęcia + ostrzeżenie
+ *  set_photo      → { campaign_id, photo_id | null, auto?, expected_version? } — tylko w szkicu; zdjęcie musi być `ready`
+ *                   z aktualną wersją; zapisuje photo_id + photo_version_id (konkretny plik) i podbija content_version
+ *                   (zdjęcie jest częścią tego, co administrator widział w podglądzie przed zatwierdzeniem)
+ *  approve        → przy PIERWSZYM zamrożeniu zapisuje frozen_photo (id zdjęcia i wersji, adres HTTPS, alt/podpis PL/EN,
+ *                   wymiary) razem z frozen_content; wiadomości renderowane z zamrożenia — wyłączenie zdjęcia albo nowa
+ *                   wersja pliku nie zmienia ani tej kampanii, ani starych maili. Zdjęcie wyłączone w międzyczasie = 409.
+ *
  * Żadnej wysyłki tutaj. Marketing nie dotyka legacy_sends ani rozliczeń.
  */
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
 import { computeCandidates, loadCampaign } from "./_shared/marketing-data.js";
-import { renderMarketingTemplate, defaultContent, effectiveContent, validateContent, AUDIENCE_TEMPLATE_KEYS, TEMPLATE_KEYS } from "./_shared/marketing-templates.js";
+import { renderMarketingTemplate, defaultContent, effectiveContent, validateContent, normalizeLayoutVersion, AUDIENCE_TEMPLATE_KEYS, TEMPLATE_KEYS, DEFAULT_LAYOUT_VERSION } from "./_shared/marketing-templates.js";
+import { freezePhoto, validateFrozenPhoto } from "./_shared/marketing-photos.js";
+import { loadPhoto, loadPhotoVersion, resolveCampaignPhoto, suggestPhoto } from "./_shared/marketing-photo-data.js";
 import { payloadHash, unsubscribeUrl } from "./_shared/marketing-mailer.js";
 import { randomUUID } from "node:crypto";
 
@@ -72,10 +85,14 @@ export const handler = async (event) => {
         // nowe kampanie tylko z grupą odbiorców; stare klucze zostają wyłącznie dla istniejących wierszy
         if (!AUDIENCE_TEMPLATE_KEYS.includes(body.template_key)) return json(400, { error: "template_key_invalid", allowed: AUDIENCE_TEMPLATE_KEYS });
         // The database assigns the immutable sequence number, date and standard name.
-        const row = { name: body.template_key === "selected_companies" ? name : "", template_key: body.template_key, content: {}, reply_to: emailOrNull(body.reply_to), created_by: caller.id };
+        // [feat/marketing-photos] nowe kampanie w układzie 2 ze zdjęciem z rotacji (brak gotowych zdjęć = bez zdjęcia + ostrzeżenie)
+        const layoutVersion = DEFAULT_LAYOUT_VERSION;
+        const pick = await suggestPhoto(supaSvc, {});
+        const row = { name: body.template_key === "selected_companies" ? name : "", template_key: body.template_key, content: {}, reply_to: emailOrNull(body.reply_to), created_by: caller.id,
+          layout_version: layoutVersion, photo_id: pick.photo?.id || null, photo_version_id: pick.version?.id || null };
         const { data, error } = await supaSvc.from("marketing_campaigns").insert(row).select("*").maybeSingle();
         if (error) throw new Error(error.message);
-        return json(200, { ok: true, campaign: data, default_content: defaultContent(body.template_key) });
+        return json(200, { ok: true, campaign: data, default_content: defaultContent(body.template_key, layoutVersion), photo: await resolveCampaignPhoto(supaSvc, data), photo_pick: pickInfo(pick) });
       }
       case "get": {
         const campaign = await loadCampaign(supaSvc, body.campaign_id);
@@ -84,8 +101,8 @@ export const handler = async (event) => {
           .select("id, company_id, profile_id, to_email, locale, segment, consent_source, snapshot, subject, state, attempts, first_claim_at, claimed_at, lease_until, resend_message_id, sent_at, last_error, is_test, created_at")
           .eq("campaign_id", campaign.id).order("created_at", { ascending: true });
         if (error) throw new Error(error.message);
-        const defaults = TEMPLATE_KEYS.includes(campaign.template_key) ? defaultContent(campaign.template_key) : null;
-        return json(200, { ok: true, campaign, default_content: defaults, messages: messages || [] });
+        const defaults = TEMPLATE_KEYS.includes(campaign.template_key) ? defaultContent(campaign.template_key, campaign.layout_version) : null;
+        return json(200, { ok: true, campaign, default_content: defaults, messages: messages || [], photo: await resolveCampaignPhoto(supaSvc, campaign) });
       }
       case "update_content": {
         const campaign = await loadCampaign(supaSvc, body.campaign_id);
@@ -108,6 +125,32 @@ export const handler = async (event) => {
         if (error) throw new Error(error.message);
         if (!data) return json(409, { error: "content_version_conflict", current });
         return json(200, { ok: true, campaign: data, reset });
+      }
+      case "set_photo": {
+        const campaign = await loadCampaign(supaSvc, body.campaign_id);
+        if (!campaign) return json(404, { error: "campaign_not_found" });
+        if (campaign.status !== "draft") return json(409, { error: "photo_frozen", status: campaign.status, hint: "zdjęcie zmieniasz tylko w szkicu; po zatwierdzeniu jest zamrożone" });
+        if (normalizeLayoutVersion(campaign.layout_version) !== 2) return json(409, { error: "layout_without_photo", layout_version: campaign.layout_version });
+        const current = Number(campaign.content_version || 1);
+        const expected = body.expected_version == null ? current : Number(body.expected_version);
+        if (expected !== current) return json(409, { error: "content_version_conflict", current, expected });
+        let photoId = null, versionId = null, pick = null;
+        if (body.auto === true) {
+          pick = await suggestPhoto(supaSvc, { campaignId: campaign.id });
+          if (!pick.photo || !pick.version) return json(409, { error: "no_ready_photos", warnings: pick.warnings });
+          photoId = pick.photo.id; versionId = pick.version.id;
+        } else if (body.photo_id) {
+          const photo = await loadPhoto(supaSvc, body.photo_id);
+          if (!photo) return json(404, { error: "photo_not_found" });
+          if (photo.status !== "ready" || !photo.current_version_id) return json(409, { error: "photo_not_ready", status: photo.status });
+          photoId = photo.id; versionId = photo.current_version_id;
+        } // photo_id: null = świadomie bez zdjęcia
+        const { data, error } = await supaSvc.from("marketing_campaigns")
+          .update({ photo_id: photoId, photo_version_id: versionId, content_version: current + 1, content_updated_at: new Date().toISOString(), content_updated_by: caller.id })
+          .eq("id", campaign.id).eq("status", "draft").eq("content_version", current).select("*").maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!data) return json(409, { error: "content_version_conflict", current });
+        return json(200, { ok: true, campaign: data, photo: await resolveCampaignPhoto(supaSvc, data), photo_pick: pick ? pickInfo(pick) : null });
       }
       case "approve": {
         const campaign = await loadCampaign(supaSvc, body.campaign_id);
@@ -143,8 +186,19 @@ export const handler = async (event) => {
         // szablonie ({}); inaczej zmiana szablonu w kodzie w kolejnej wersji aplikacji zmieniłaby treść tej samej kampanii
         // przy ponowieniu, podglądzie i teście. Stare zamrożenie {} (sprzed tej poprawki) traktujemy jak brak zamrożenia.
         const firstFreeze = !campaign.frozen_content || Object.keys(campaign.frozen_content).length === 0;
+        const layoutVersion = normalizeLayoutVersion(campaign.layout_version);
+        // [feat/marketing-photos] zamrożenie zdjęcia razem z treścią: konkretna wersja pliku (adres HTTPS) + alt/podpis PL/EN.
+        // Zdjęcie wyłączone albo bez pliku w chwili zatwierdzenia = STOP (administrator wybiera inne), nie „bez zdjęcia po cichu”.
+        let frozenPhoto = null;
+        if (firstFreeze && layoutVersion === 2 && campaign.photo_id) {
+          const photo = await loadPhoto(supaSvc, campaign.photo_id);
+          const version = photo ? await loadPhotoVersion(supaSvc, campaign.photo_version_id || photo.current_version_id) : null;
+          if (!photo || !version) return json(409, { error: "photo_missing", hint: "zdjęcie kampanii nie istnieje albo nie ma pliku — wybierz inne zdjęcie w szkicu" });
+          if (photo.status !== "ready") return json(409, { error: "photo_not_ready", status: photo.status, hint: "zdjęcie zostało wyłączone — wybierz inne" });
+          frozenPhoto = freezePhoto(photo, version);
+        }
         const freezePatch = firstFreeze
-          ? { status: "approved", approved_by: caller.id, approved_at: nowIso, snapshot_at: snapshotAt, frozen_content: effectiveContent(campaign.template_key, liveContent), frozen_content_version: currentVersion, content_frozen_at: nowIso }
+          ? { status: "approved", approved_by: caller.id, approved_at: nowIso, snapshot_at: snapshotAt, frozen_content: effectiveContent(campaign.template_key, liveContent, layoutVersion), frozen_content_version: currentVersion, content_frozen_at: nowIso, frozen_photo: frozenPhoto }
           : { status: "approved", snapshot_at: snapshotAt };
         const { data: frozenCampaign, error: fzErr } = await supaSvc.from("marketing_campaigns").update(freezePatch)
           .eq("id", campaign.id).eq("content_version", currentVersion).in("status", ["draft", "approved"]).select("*").maybeSingle();
@@ -152,6 +206,9 @@ export const handler = async (event) => {
         if (!frozenCampaign) return json(409, { error: "campaign_changed", hint: "treść zmieniona albo kampania zamknięta w innym oknie — odśwież i sprawdź podgląd" });
         const content = frozenCampaign.frozen_content; // zawsze kompletna treść PL/EN zapisana w bazie
         if (!content || validateContent(content).length) return json(500, { error: "frozen_content_invalid", errors: content ? validateContent(content) : ["missing"] });
+        const photoFrozen = frozenCampaign.frozen_photo || null; // zamrożone zdjęcie (null = kampania bez zdjęcia / układ 1)
+        if (photoFrozen && validateFrozenPhoto(photoFrozen).length) return json(500, { error: "frozen_photo_invalid", errors: validateFrozenPhoto(photoFrozen) });
+        const frozenLayout = normalizeLayoutVersion(frozenCampaign.layout_version);
         const customContent = Boolean(liveContent);
 
         const inserted = [];
@@ -169,11 +226,12 @@ export const handler = async (event) => {
             creditsRemaining: row.snapshot.credits_remaining, creditsAvailable: row.snapshot.credits_available, creditsReserved: row.snapshot.reserved, expiringCredits: row.snapshot.expiring_credits,
             creditsExpiry: row.snapshot.nearest_expiry,
             snapshotAt, appUrl: env.b2bAppUrl, unsubscribeUrl: unsub, replyTo: campaign.reply_to || null,
+            layoutVersion: frozenLayout, photo: photoFrozen,
           });
           const full = {
             id: messageId, campaign_id: campaign.id, company_id: row.company_id, profile_id: row.profile_id, to_email: row.email, locale: row.locale,
             segment: row.segment, consent_source: consent,
-            snapshot: { ...row.snapshot, snapshot_at: snapshotAt, company_name: row.company_name, template_key: templateKey, audience_reason: row.audience_reason, warnings: row.warnings, custom_content: customContent, content_version: frozenCampaign.frozen_content_version || currentVersion },
+            snapshot: { ...row.snapshot, snapshot_at: snapshotAt, company_name: row.company_name, template_key: templateKey, audience_reason: row.audience_reason, warnings: row.warnings, custom_content: customContent, content_version: frozenCampaign.frozen_content_version || currentVersion, layout_version: frozenLayout, photo_id: photoFrozen?.photo_id || null, photo_version_id: photoFrozen?.version_id || null },
             subject: rendered.subject, html: rendered.html, text_body: rendered.text,
             payload_hash: payloadHash({ subject: rendered.subject, html: rendered.html, text: rendered.text }),
             idempotency_key: key, is_test: false, state: "pending",
@@ -185,7 +243,7 @@ export const handler = async (event) => {
           }
           inserted.push({ company_id: row.company_id, message_id: messageId, to_email: row.email, locale: row.locale });
         }
-        return json(200, { ok: true, approved: inserted.length, inserted, skipped, problems, snapshot_at: snapshotAt, content_version: frozenCampaign.frozen_content_version || currentVersion });
+        return json(200, { ok: true, approved: inserted.length, inserted, skipped, problems, snapshot_at: snapshotAt, content_version: frozenCampaign.frozen_content_version || currentVersion, layout_version: frozenLayout, photo: photoFrozen ? { photo_id: photoFrozen.photo_id, version_id: photoFrozen.version_id, url: photoFrozen.url } : null });
       }
       case "message": {
         if (!body.campaign_id || !body.message_id) return json(400, { error: "message_id_required" });
@@ -212,6 +270,7 @@ export const handler = async (event) => {
   }
 };
 
+function pickInfo(pick) { return { reason: pick.reason, warnings: pick.warnings, pool: pick.pool, photo_id: pick.photo?.id || null }; }
 function pickFields(c) { return { subject: String(c?.subject ?? ""), body: String(c?.body ?? ""), cta: String(c?.cta ?? "") }; }
 function str(v) { const s = String(v ?? "").trim(); return s ? s.slice(0, 500) : null; }
 function emailOrNull(v) { const s = str(v); return s && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) ? s.toLowerCase() : null; }
