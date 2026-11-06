@@ -19,5 +19,5 @@ git diff e3a27a6..origin/feat/marketing-photos
 * `scripts/marketing-photos-deploy-check.mjs` na schemacie sprzed wdrożenia (76 migracji, dane jak na prod): kontrola przed, plik łączony, kontrola po, liczby bez zmian, drugi Run, ochrona wypisów, reaktywacja z historią, ponowny wypis, sprzątanie: WSZYSTKO OK.
 * Baza testowa: 83 migracje, kontrola po: bez różnic.
 
-## Otwarte, poza kodem
-`netlify env:get MARKETING_SEND_ALLOWLIST` zwraca brak wartości we wszystkich kontekstach, choć notatki z 06.11 mówiły, że lista została. `MARKETING_SEND_ENABLED=false` w production. Przed włączeniem flagi lista musi zostać ustawiona i sprawdzona (krok 4).
+## Stan blokady wysyłki na produkcji (odczyt 06.11)
+`MARKETING_SEND_ENABLED=false`. `MARKETING_SEND_ALLOWLIST` zawiera dokładnie dwa adresy próbne (`netlify env:list --context production --json`; `env:get` tej zmiennej zwraca fałszywy brak wartości).

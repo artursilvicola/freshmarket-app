@@ -49,7 +49,7 @@ Zrzuty: `mail-pl-komputer-640.png`, `mail-en-komputer-640.png`, `mail-pl-telefon
 * WARUNEK: Artur pisze w czacie zdanie: „Zgadzam się ponownie otrzymać testowe maile na spiker.artur@gmail.com i artur.silvicola@gmail.com.” Samo „wdrażaj” nie cofa wypisu (review Codexa 07.11).
 * Konta z próby 06.11 są na prod zawieszone i mają wypis. `02-konta-probne-reaktywacja.sql` (Artur, SQL Editor prod): w repo stoi z flagą `false` i bez źródła zgody, więc bez potwierdzenia przerywa bez zmian. Po zdaniu Artura: flaga `true` + data i miejsce zgody w `v_consent_source`.
 * Skrypt: kontrola tożsamości (każdy konflikt = wyjątek = nic nie zmienione) → konta aktywne → `marketing_lift_suppression()` dla dokładnie dwóch adresów. Historia zostaje w `marketing_suppression_lifts` (kopia wypisu + dosłowna zgoda, tylko dopisywanie). Znieść można tylko wypis `unsubscribe`, nigdy odbicie ani skargę.
-* Netlify (kontekst production): NAJPIERW `MARKETING_SEND_ALLOWLIST=spiker.artur@gmail.com,artur.silvicola@gmail.com` (06.11 wieczorem `netlify env:get` zwrócił brak wartości, mimo że notatka mówiła o zostawieniu listy; ustawić i odczytać), DOPIERO POTEM `MARKETING_SEND_ENABLED=true` → `netlify api createSiteBuild` → kontrola obu zmiennych.
+* Netlify (kontekst production): NAJPIERW kontrola `MARKETING_SEND_ALLOWLIST` przez `netlify env:list --context production --json` (06.11: zawiera dokładnie dwa adresy próbne; `netlify env:get` tej zmiennej zwraca fałszywy brak wartości, nie używać), DOPIERO POTEM `MARKETING_SEND_ENABLED=true` → `netlify api createSiteBuild` → kontrola obu zmiennych.
 
 ## Krok 5 — próba (panel, Artur klika; wyłącznie 2 adresy)
 1. Marketing → Kampanie → grupa „Do wybranych firm”, nazwa „Próba mail v2 07.11” → kampania dostaje zdjęcie z rotacji (kafelek + powód) — można zmienić
@@ -67,7 +67,7 @@ Zrzuty: `mail-pl-komputer-640.png`, `mail-en-komputer-640.png`, `mail-pl-telefon
 * Pliki zdjęć zostają (adresy w wysłanych mailach muszą działać). Zdjęcia nie kasujemy — tylko „Wyłącz”, gdy trzeba.
 
 ## Blokada wysyłki (obowiązuje przez całe wdrożenie)
-Do kroku 4 `MARKETING_SEND_ENABLED=false`. Przed włączeniem flagi `netlify env:get MARKETING_SEND_ALLOWLIST` musi zwrócić dokładnie dwa adresy próbne. Lista odrzuca innych adresatów przy zajmowaniu wiadomości w bazie i przy transporcie. Flaga wraca na `false` zaraz po próbie. Listę zdejmuje dopiero osobna decyzja o pierwszej prawdziwej kampanii.
+Do kroku 4 `MARKETING_SEND_ENABLED=false`. Przed włączeniem flagi `netlify env:list --context production --json` musi pokazać na liście dokładnie dwa adresy próbne. Lista odrzuca innych adresatów przy zajmowaniu wiadomości w bazie i przy transporcie. Flaga wraca na `false` zaraz po próbie. Listę zdejmuje dopiero osobna decyzja o pierwszej prawdziwej kampanii.
 
 ## Co NIE wchodzi w to wdrożenie
 * 20 zdjęć zapasowych (po przeglądzie Artura — wgrać tym samym trybem, zatwierdzić kadr po kadrze).
