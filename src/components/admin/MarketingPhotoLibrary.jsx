@@ -187,14 +187,22 @@ export default function MarketingPhotoLibrary({ fl }) {
             return (
               <div key={p.id} data-testid="ph-card" style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", opacity: p.status === "disabled" ? 0.6 : 1 }}>
                 {/* [review Codexa P1] miniatura tylko z OPUBLIKOWANEJ (zatwierdzonej) wersji; kadr oczekujący leży w prywatnym buckecie bez adresu */}
-                {p.approved_version ? <img src={p.approved_version.public_url} alt={p.alt_pl} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", background: "#e2e8f0" }} /> : <div data-testid="ph-private" style={{ aspectRatio: "3 / 2", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#94a3b8", textAlign: "center", padding: 8 }}>{tr("ph_private_pending")}</div>}
+                {p.approved_version ? <img src={p.approved_version.public_url} alt={p.alt_pl} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", background: "#e2e8f0" }} />
+                  : p.pending_version?.preview?.url ? <img data-testid="ph-pending-preview" src={p.pending_version.preview.url} alt={p.alt_pl} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", background: "#e2e8f0" }} />
+                  : <div data-testid="ph-private" style={{ aspectRatio: "3 / 2", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#94a3b8", textAlign: "center", padding: 8 }}>{tr("ph_private_pending")}</div>}
                 <div style={{ padding: 10 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <div style={{ fontWeight: 700, fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.title}>{p.title}</div>
                     <span style={tag(bg, fg)}>{tr("ph_status_" + p.status)}</span>
                   </div>
                   <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{p.year || "—"} · {tr("kind_" + (p.kind || "authentic"))}{p.approved_version ? ` · ${tr("ph_version", { n: p.approved_version.version_no })} · ${p.approved_version.width}×${p.approved_version.height} · ${fmtBytes(p.approved_version.bytes)}` : ""}</div>
-                  {p.approved_version && p.pending_version && <div data-testid="ph-pending-version" style={{ fontSize: 11, color: "#92400e", background: "#fef3c7", borderRadius: 6, padding: "3px 6px", marginTop: 4 }}>{tr("ph_new_version_pending", { n: p.pending_version.version_no })}</div>}
+                  {p.approved_version && p.pending_version && <div data-testid="ph-pending-version" style={{ fontSize: 11, color: "#92400e", background: "#fef3c7", borderRadius: 6, padding: "3px 6px", marginTop: 4 }}>
+                    {tr("ph_new_version_pending", { n: p.pending_version.version_no })}
+                    {/* [review Codexa 3/P2] kadr, który zatwierdzam, musi być widoczny — podpisany podgląd prywatnej wersji */}
+                    {p.pending_version.preview?.url && <img data-testid="ph-pending-preview" src={p.pending_version.preview.url} alt={tr("ph_pending_preview_alt", { n: p.pending_version.version_no })} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", borderRadius: 6, marginTop: 6, background: "#e2e8f0" }} />}
+                  </div>}
+                  {p.pending_version?.published && <div data-testid="ph-pending-published" style={{ fontSize: 11, color: "#991b1b", background: "#fee2e2", borderRadius: 6, padding: "3px 6px", marginTop: 4 }}>{tr("ph_pending_published_unapproved", { n: p.pending_version.version_no })}</div>}
+                  {p.pending_version?.preview?.signed && <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 2 }}>{tr("ph_preview_signed_note")}</div>}
                   <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{p.caption_pl || p.alt_pl}</div>
                   {p.review_note && <div style={{ fontSize: 11, color: "#92400e", marginTop: 2 }}>{p.review_note}</div>}
                   <div style={{ fontSize: 11, color: u.sent_campaigns ? "#475569" : "#166534", marginTop: 4 }}>

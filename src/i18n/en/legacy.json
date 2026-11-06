@@ -2080,7 +2080,11 @@
       "err_version_not_found": "This file version was not found.",
       "err_version_already_approved": "This version is already approved.",
       "err_photo_without_approved_version": "The photo has no approved version — approve the crop instead of enabling.",
-      "err_photo_version_not_approved": "The selected file version is not approved — choose the photo again."
+      "err_photo_version_not_approved": "The selected file version is not approved — choose the photo again.",
+      "ph_pending_preview_alt": "Preview of the pending crop (version {{n}})",
+      "ph_pending_published_unapproved": "Version {{n}} is already published but the approval was not saved (interrupted). Click “Approve” again — the publication will not repeat.",
+      "ph_preview_signed_note": "The pending-crop preview is a protected address valid for 10 minutes, visible only to the administrator; refresh the list once it expires.",
+      "err_preview_unavailable": "The preview of this version is unavailable."
     },
     "settlements": {
       "title": "Supplier settlements",

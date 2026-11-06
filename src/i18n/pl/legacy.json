@@ -2080,7 +2080,11 @@
       "err_version_not_found": "Nie znaleziono tej wersji pliku.",
       "err_version_already_approved": "Ta wersja jest już zatwierdzona.",
       "err_photo_without_approved_version": "Zdjęcie nie ma zatwierdzonej wersji — zatwierdź kadr zamiast włączać.",
-      "err_photo_version_not_approved": "Wybrana wersja pliku nie jest zatwierdzona — wybierz zdjęcie ponownie."
+      "err_photo_version_not_approved": "Wybrana wersja pliku nie jest zatwierdzona — wybierz zdjęcie ponownie.",
+      "ph_pending_preview_alt": "Podgląd kadru oczekującego (wersja {{n}})",
+      "ph_pending_published_unapproved": "Wersja {{n}} jest już opublikowana, ale zatwierdzenie nie zostało zapisane (przerwane). Kliknij „Zatwierdź” jeszcze raz — publikacja się nie powtórzy.",
+      "ph_preview_signed_note": "Podgląd kadru oczekującego to chroniony adres ważny 10 minut, widoczny tylko dla administratora; odśwież listę, gdy wygaśnie.",
+      "err_preview_unavailable": "Podgląd tej wersji jest niedostępny."
     },
     "settlements": {
       "title": "Rozliczenia z dostawcami",

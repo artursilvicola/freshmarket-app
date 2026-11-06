@@ -20,7 +20,10 @@
  *             Nowe zdjęcie = status pending; nowa wersja istniejącego zdjęcia NIE dziedziczy zatwierdzenia: zdjęcie zostaje
  *             przy approved_version_id (stary kadr w rotacji), nowy kadr czeka na approve (review Codexa P2).
  *  approve  → { photo_id, version_id? (domyślnie ostatnio wgrana) } → publikacja tej wersji (kopia pod niezmienny adres
- *             w publicznym buckecie, sha256 sprawdzony), approved_version_id = ta wersja, status ready
+ *             w publicznym buckecie, sha256 sprawdzony), approved_version_id = ta wersja, status ready.
+ *             [review Codexa 3] przerwane zatwierdzenie (plik opublikowany, zapis approved_version_id padł) = wersja nadal
+ *             „oczekująca” na liście (pending_version z published=true) i ten sam approve ponawia bezpiecznie (publikacja idempotentna).
+ *  preview_version → { version_id } → chroniony podgląd KONKRETNEJ wersji (prywatna: podpisany adres 10 min, tylko admin)
  *  update   → { photo_id, title?, alt_pl?, alt_en?, caption_pl?, caption_en?, kind?, source?, rights?, categories?, year?, review_note? }
  *             metadane; zamrożone kampanie mają własną kopię (frozen_photo), więc zmiana nie dotyka starych maili
  *  disable  → { photo_id } → status disabled (plik zostaje, stare maile nietknięte); enable → ready
@@ -32,7 +35,7 @@
 import { createHash } from "node:crypto";
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
 import { ALLOWED_MIME, PHOTO_BUCKET, PENDING_BUCKET, hammingHex, pickPhoto, validateMailImage, versionPath } from "./_shared/marketing-photos.js";
-import { loadLibrary, loadPhoto, loadPhotoVersion, isPublished, publishVersion } from "./_shared/marketing-photo-data.js";
+import { loadLibrary, loadPhoto, loadPhotoVersion, isPublished, publishVersion, previewUrls } from "./_shared/marketing-photo-data.js";
 
 const MAX_BASE64 = 600_000; // ~450 KB po dekodowaniu; twardy limit danych wejściowych
 const SIMILAR_MAX_DISTANCE = 6;
@@ -54,6 +57,9 @@ export const handler = async (event) => {
         const { photos, versions, usage } = await loadLibrary(supaSvc);
         const byPhoto = groupUsage(usage);
         const rows = photos.map((p) => decorate(p, versions, byPhoto));
+        // [review Codexa 3/P2] administrator widzi KADR, który zatwierdza: podpisany adres prywatnej wersji (10 min) przy każdej oczekującej
+        const previews = await previewUrls(supaSvc, rows.map((r) => r.pending_version).filter(Boolean));
+        for (const r of rows) if (r.pending_version) r.pending_version = { ...r.pending_version, preview: previews[r.pending_version.id] || null };
         const readyCount = rows.filter((r) => r.status === "ready" && r.approved_version).length;
         return json(200, { ok: true, photos: rows, ready_count: readyCount, pending_versions: rows.filter((r) => r.pending_version).length, warnings: readyCount < 5 ? ["pool_small"] : [], bucket: PHOTO_BUCKET, pending_bucket: PENDING_BUCKET, public_read: true });
       }
@@ -165,6 +171,13 @@ export const handler = async (event) => {
         const byPhoto = groupUsage(usage);
         return json(200, { ok: true, photo: pick.photo ? decorate(pick.photo, versions, byPhoto) : null, reason: pick.reason, warnings: pick.warnings, pool: pick.pool, ranked: pick.ranked });
       }
+      case "preview_version": {
+        const version = await loadPhotoVersion(supaSvc, body.version_id);
+        if (!version) return json(404, { error: "version_not_found" });
+        const map = await previewUrls(supaSvc, [version]);
+        if (!map[version.id]) return json(404, { error: "preview_unavailable" });
+        return json(200, { ok: true, version_id: version.id, version_no: version.version_no, published: isPublished(version), ...map[version.id] });
+      }
       case "usage": {
         if (!body.photo_id) return json(400, { error: "photo_id_required" });
         const { data, error } = await supaSvc.from("marketing_photo_usage").select("*").eq("photo_id", body.photo_id).order("created_at", { ascending: false });
@@ -196,8 +209,9 @@ function groupUsage(usage) {
 function decorate(p, versions, byPhoto) {
   const current = versions.find((v) => String(v.id) === String(p.current_version_id)) || null;
   const approved = versions.find((v) => String(v.id) === String(p.approved_version_id)) || null;
-  // nowy kadr czeka na akceptację: ostatnio wgrana wersja ≠ zatwierdzona i jeszcze nieopublikowana
-  const pending = current && (!approved || String(current.id) !== String(approved.id)) && !isPublished(current) ? current : null;
+  // nowy kadr czeka na akceptację: ostatnio wgrana wersja ≠ zatwierdzona. Dotyczy TAKŻE wersji już opublikowanej, której
+  // zapis approved_version_id padł (przerwane zatwierdzenie) — inaczej zniknąłby przycisk ponowienia (review Codexa 3/P2).
+  const pending = current && (!approved || String(current.id) !== String(approved.id)) ? { ...current, published: isPublished(current) } : null;
   return { ...p, current_version: current, approved_version: isPublished(approved) ? approved : null, pending_version: pending, versions_count: versions.filter((v) => String(v.photo_id) === String(p.id)).length, usage: byPhoto.get(String(p.id)) || { campaigns: 0, sent_campaigns: 0, last_sent_at: null, open_assignments: 0 } };
 }
 

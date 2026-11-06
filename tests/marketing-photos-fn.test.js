@@ -23,12 +23,13 @@ const b64 = (buf) => buf.toString("base64");
 beforeEach(() => {
   state.env = { supabaseUrl: "https://fake.supabase.co", supabaseAnonKey: "anon", supabaseServiceRoleKey: "svc", b2bAppUrl: "https://b2b.test" };
   state.user = { auth: { getUser: async () => ({ data: { user: { id: "admin" } } }) } };
-  state.photos = []; state.versions = []; state.usage = []; state.uploads = []; state.updates = []; state.objects = {}; state.removed = [];
+  state.photos = []; state.versions = []; state.usage = []; state.uploads = []; state.updates = []; state.objects = {}; state.removed = []; state.signed = []; state.failPhotoUpdateOnce = false;
   let seq = 0;
   state.service = {
     storage: { from: (bucket) => ({
       upload: async (path, bytes, opts) => { const k = bucket + "/" + path; state.uploads.push({ bucket, path, bytes: bytes.length, opts }); if (state.objects[k]) return { error: { message: "The resource already exists" } }; state.objects[k] = Buffer.from(bytes); return { data: { path }, error: null }; },
       download: async (path) => { const b = state.objects[bucket + "/" + path]; return b ? { data: { arrayBuffer: async () => b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) }, error: null } : { data: null, error: { message: "Object not found" } }; },
+      createSignedUrls: async (paths, ttl) => { state.signed.push({ bucket, paths, ttl }); return { data: paths.map((p) => ({ path: p, signedUrl: `https://fake.supabase.co/storage/v1/object/sign/${bucket}/${p}?token=SIGNED`, error: null })), error: null }; },
       remove: async (paths) => { for (const p of paths) { state.removed.push(bucket + "/" + p); delete state.objects[bucket + "/" + p]; } return { data: [], error: null }; },
       getPublicUrl: (path) => ({ data: { publicUrl: `https://fake.supabase.co/storage/v1/object/public/${bucket}/${path}` } }),
     }) },
@@ -43,7 +44,7 @@ beforeEach(() => {
       q.maybeSingle = async () => {
         if (table === "profiles") return { data: { id: "admin", role: "admin", active: true }, error: null };
         if (q._ins) { const row = { id: `${table}-${++seq}`, created_at: new Date(2026, 10, 6, 10, seq).toISOString(), ...q._ins }; rows().push(row); return { data: row, error: null }; }
-        if (q._upd) { const id = q._f.find(([c]) => c === "id")?.[1]; const row = rows().find((r) => r.id === id); if (!row) return { data: null, error: null }; if (q._is && (row[q._is[0]] ?? null) !== q._is[1]) return { data: null, error: null }; Object.assign(row, q._upd); state.updates.push({ table, id, patch: q._upd }); return { data: { ...row }, error: null }; }
+        if (q._upd) { if (table === "marketing_photos" && state.failPhotoUpdateOnce) { state.failPhotoUpdateOnce = false; return { data: null, error: { message: "connection reset" } }; } const id = q._f.find(([c]) => c === "id")?.[1]; const row = rows().find((r) => r.id === id); if (!row) return { data: null, error: null }; if (q._is && (row[q._is[0]] ?? null) !== q._is[1]) return { data: null, error: null }; Object.assign(row, q._upd); state.updates.push({ table, id, patch: q._upd }); return { data: { ...row }, error: null }; }
         const id = q._f.find(([c]) => c === "id")?.[1]; return { data: rows().find((r) => r.id === id) || null, error: null };
       };
       q.then = (res, rej) => { let data = rows(); for (const [c, v] of q._f) data = data.filter((r) => String(r[c]) === String(v)); return Promise.resolve({ data: [...data], error: null }).then(res, rej); };
@@ -141,6 +142,44 @@ describe("upload", () => {
     // wersja innego zdjęcia → 404
     const other = await call({ action: "upload", ...META, title: "Inne", mime: "image/jpeg", data_base64: b64(jpegHeader(1200, 800, 90_000)), source_sha256: "c".repeat(64) });
     expect((await call({ action: "approve", photo_id: first.body.photo.id, version_id: other.body.version.id })).status).toBe(404);
+  });
+  it("[review 3/P2] lista daje administratorowi PODGLĄD kadru oczekującego: podpisany adres z prywatnego bucketa (10 min), nigdy publiczny; preview_version to samo dla jednej wersji", async () => {
+    const up = await call({ action: "upload", ...META, mime: "image/jpeg", data_base64: b64(jpegHeader(1200, 800, 50_000)) });
+    const l = await call({ action: "list" });
+    const row = l.body.photos[0];
+    expect(row.approved_version).toBeNull();
+    expect(row.pending_version.preview).toMatchObject({ signed: true, url: `https://fake.supabase.co/storage/v1/object/sign/marketing-photos-pending/${up.body.version.storage_path}?token=SIGNED` });
+    expect(row.pending_version.preview.expires_at).toBeTruthy();
+    expect(state.signed).toEqual([{ bucket: "marketing-photos-pending", paths: [up.body.version.storage_path], ttl: 600 }]);
+    const pv = await call({ action: "preview_version", version_id: up.body.version.id });
+    expect(pv.status).toBe(200); expect(pv.body).toMatchObject({ version_no: 1, published: false, signed: true }); expect(pv.body.url).toContain("/sign/marketing-photos-pending/");
+    expect((await call({ action: "preview_version", version_id: "nie-ma" })).status).toBe(404);
+    // po zatwierdzeniu: podgląd = stały adres publiczny, bez podpisu
+    await call({ action: "approve", photo_id: up.body.photo.id });
+    const pv2 = await call({ action: "preview_version", version_id: up.body.version.id });
+    expect(pv2.body).toMatchObject({ published: true, signed: false, url: `https://fake.supabase.co/storage/v1/object/public/marketing-photos/${up.body.version.storage_path}` });
+    expect((await call({ action: "list" })).body.photos[0].pending_version).toBeNull();
+  });
+  it("[review 3/P2] przerwane zatwierdzenie (plik opublikowany, zapis approved_version_id padł): wersja nadal oczekująca z flagą published, ten sam approve ponawia BEZ drugiej publikacji", async () => {
+    const up = await call({ action: "upload", ...META, mime: "image/jpeg", data_base64: b64(jpegHeader(1200, 800, 50_000)) });
+    state.failPhotoUpdateOnce = true;
+    const broken = await call({ action: "approve", photo_id: up.body.photo.id });
+    expect(broken.status).toBe(500);
+    // stan po awarii: plik publiczny, wiersz wersji opublikowany, zdjęcie nadal pending bez approved_version_id
+    expect(state.objects["marketing-photos/" + up.body.version.storage_path]).toBeTruthy();
+    expect(state.versions[0].published_at).toBeTruthy();
+    expect(state.photos[0].status).toBe("pending"); expect(state.photos[0].approved_version_id ?? null).toBeNull();
+    const l = await call({ action: "list" });
+    expect(l.body.photos[0].pending_version).toMatchObject({ id: up.body.version.id, published: true });
+    expect(l.body.photos[0].pending_version.preview).toMatchObject({ signed: false, url: expect.stringContaining("/public/marketing-photos/") });
+    expect(l.body.photos[0].approved_version).toBeNull();
+    const uploadsBefore = state.uploads.length;
+    const retry = await call({ action: "approve", photo_id: up.body.photo.id });
+    expect(retry.status, JSON.stringify(retry.body)).toBe(200);
+    expect(retry.body.published).toBe(false); // publikacja idempotentna — nic nie wgrywa drugi raz
+    expect(state.uploads.length).toBe(uploadsBefore);
+    expect(state.photos[0]).toMatchObject({ status: "ready", approved_version_id: up.body.version.id });
+    expect((await call({ action: "list" })).body.photos[0].pending_version).toBeNull();
   });
 });
 

@@ -121,6 +121,23 @@ zatwierdzenie kampanii z wersją nieopublikowaną / inną niż zatwierdzona = 40
 odrzucona, nowy kadr nie zmienia approved, cofnięcie publikacji wersji użytej odrzucone, prywatny bucket), komponent (kadr prywatny bez
 miniatury, osobny przycisk zatwierdzenia nowego kadru, miniatura z v1).
 
+## 9. Poprawki po review Codexa 31ba803 (trzecia runda, 3 luki P2)
+
+1. **Podgląd kadru przed zatwierdzeniem.** `list` zwraca przy każdej wersji oczekującej `pending_version.preview`: dla wersji prywatnej
+   podpisany adres z bucketa `marketing-photos-pending` (TTL 600 s, tworzony service_role wyłącznie po `requireAdmin`), dla wersji
+   opublikowanej stały adres publiczny. Nowa akcja `preview_version { version_id }` robi to samo dla jednej wersji. Panel: zdjęcie
+   oczekujące pokazuje prawdziwy kadr zamiast szarego pola; przy podmianie karta pokazuje miniaturę zatwierdzonej v1 ORAZ podgląd
+   nowego kadru v2 obok ostrzeżenia i przycisku „Zatwierdź nowy kadr (v2)”. Notka o 10-minutowej ważności adresu.
+2. **Przerwane zatwierdzenie.** Wersja ≠ `approved_version_id` jest „oczekująca” także wtedy, gdy jest już opublikowana
+   (`pending_version.published = true`): przycisk zatwierdzenia nie znika, panel pokazuje czerwoną notkę „opublikowana, ale zatwierdzenie
+   nie zostało zapisane”, a ponowny `approve` nie wgrywa pliku drugi raz (`publishVersion` idempotentna) i tylko domyka
+   `approved_version_id`. Regresja: awaria zapisu zdjęcia po publikacji → 500 → lista z `published:true` → ponowienie 200 bez uploadu.
+3. **Sprzątanie ponawialne.** `unpublishVersion`: kopia do prywatnego → usunięcie publicznego (z kontrolą, że obiekt faktycznie zniknął) →
+   dopiero wtedy zapis wiersza. Nieudane usunięcie zostawia wiersz `published`, więc kolejne uruchomienie skryptu wraca do wersji; gdy
+   publiczny obiekt już nie istnieje po częściowej próbie, bajty idą z kopii prywatnej; brak obiektu w obu bucketach = STOP.
+   Regresje w `tests/marketing-photo-data.test.js` (10 testów): idempotencja publikacji, plik już w publicznym, sha256, nieudane usunięcie
+   + ponowienie, Storage „OK bez usunięcia”, awaria zapisu wiersza + ponowienie, brak obiektu, podpisane podglądy.
+
 ## 7. Otwarte / poza zakresem
 * `MARKETING_SEND_ALLOWLIST` nadal ustawiona na prod (zdjąć przed prawdziwą kampanią) — bez związku z tą gałęzią.
 * Instrukcja administratora (rozdział Marketing) nie opisuje jeszcze biblioteki zdjęć — do uzupełnienia po akceptacji wyglądu.

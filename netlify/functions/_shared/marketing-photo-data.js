@@ -114,15 +114,50 @@ export async function publishVersion(supaSvc, version, callerId = null) {
  */
 export async function unpublishVersion(supaSvc, version) {
   if (!version || !version.published_at) return { version, unpublished: false };
-  const bytes = await readObject(supaSvc, PHOTO_BUCKET, version.storage_path);
+  // [review Codexa 3/P2] kolejność PONAWIALNA: 1) kopia do prywatnego, 2) usunięcie publicznego, 3) dopiero wtedy wiersz.
+  // Gdy krok 2 zawiedzie, wiersz zostaje „published” i kolejne uruchomienie wraca do tej wersji; gdy publiczny obiekt już
+  // nie istnieje (poprzednia próba usunęła go, a zapis wiersza padł), bajty bierzemy z kopii prywatnej.
+  let bytes = null, publicExists = true;
+  try { bytes = await readObject(supaSvc, PHOTO_BUCKET, version.storage_path); }
+  catch (e) { publicExists = false; bytes = await readObject(supaSvc, PENDING_BUCKET, version.storage_path).catch(() => { throw new Error("unpublish: object missing in both buckets: " + version.storage_path + " (" + e.message + ")"); }); }
   if (sha256(bytes) !== version.sha256) throw new Error("unpublish: sha256 mismatch for " + version.storage_path);
   await writeObject(supaSvc, PENDING_BUCKET, version.storage_path, bytes, version.mime);
+  if (publicExists) {
+    const rm = await supaSvc.storage.from(PHOTO_BUCKET).remove([version.storage_path]);
+    if (rm.error) throw new Error("unpublish: remove public object: " + rm.error.message);
+    // Storage potrafi odpowiedzieć 200 bez usunięcia (brak uprawnień/ścieżki) — sprawdzamy, że obiektu już nie ma
+    const still = await supaSvc.storage.from(PHOTO_BUCKET).download(version.storage_path);
+    if (!still.error) throw new Error("unpublish: public object still present after remove: " + version.storage_path);
+  }
   const { data, error } = await supaSvc.from("marketing_photo_versions")
     .update({ storage_bucket: PENDING_BUCKET, public_url: null, published_at: null, published_by: null })
     .eq("id", version.id).select("*").maybeSingle();
   if (error) throw new Error("unpublish version: " + error.message);
   if (!data) throw new Error("unpublish version: row not updated");
-  const rm = await supaSvc.storage.from(PHOTO_BUCKET).remove([version.storage_path]);
-  if (rm.error) throw new Error("unpublish: remove public object: " + rm.error.message);
   return { version: data, unpublished: true };
+}
+
+/**
+ * [review Codexa 3/P2] Chroniony podgląd KONKRETNEJ wersji dla administratora: wersja opublikowana → stały adres publiczny;
+ * wersja prywatna → podpisany adres z prywatnego bucketa, ważny `ttlSeconds` (domyślnie 10 min), tworzony service_role
+ * wyłącznie po requireAdmin. Nic nie publikuje. Zwraca mapę version_id → { url, signed, expires_at }.
+ */
+export async function previewUrls(supaSvc, versions, ttlSeconds = 600) {
+  const out = {};
+  const pending = [];
+  for (const v of versions || []) {
+    if (!v) continue;
+    if (isPublished(v)) out[v.id] = { url: v.public_url, signed: false, expires_at: null };
+    else pending.push(v);
+  }
+  if (pending.length) {
+    const { data, error } = await supaSvc.storage.from(PENDING_BUCKET).createSignedUrls(pending.map((v) => v.storage_path), ttlSeconds);
+    if (error) throw new Error("signed preview: " + error.message);
+    const expires = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+    for (const v of pending) {
+      const hit = (data || []).find((d) => d.path === v.storage_path || d.signedUrl?.includes(encodeURI(v.storage_path)) || d.signedUrl?.includes(v.storage_path));
+      if (hit && hit.signedUrl && !hit.error) out[v.id] = { url: hit.signedUrl, signed: true, expires_at: expires };
+    }
+  }
+  return out;
 }
