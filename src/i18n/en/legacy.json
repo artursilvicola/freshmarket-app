@@ -1955,6 +1955,7 @@
       "test_note": "A test is a real e-mail (requires the send flag); it does not count towards the recipient's history.",
       "test_to_required": "Enter a test address.",
       "send_allowlist_note": "Allowed-address list (trial) is active: {{n}} addresses outside the list were skipped — they remain to be sent once the list is removed.",
+      "err_allowlist_invalid": "The allowed-address list (MARKETING_SEND_ALLOWLIST) contains an invalid entry — sending and test are stopped until the configuration is fixed.",
       "err_test_to_not_allowed": "Allowed-address list (trial) is active — test only to addresses on the list.",
       "send_test": "Test",
       "test_sent": "Test sent to {{to}}.",

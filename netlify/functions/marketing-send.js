@@ -24,14 +24,20 @@
  * niepusta, batch wysyła TYLKO do adresów z listy — pozostałe zajęte wiersze są pomijane
  * (`skipped`, reason `allowlist`, zostają claimed → po zdjęciu listy odzyska je kolejna
  * partia pod tym samym kluczem), a test na adres spoza listy = 403 `test_to_not_allowed`.
- * Odpowiedź niesie `allowlist: { active, blocked }`. Lista nie zastępuje flagi: bez
+ * [review Codexa 10a0c6a] P2: filtr adresów działa już w SQL (`marketing_claim_messages`,
+ * parametr `p_allowed_emails`) — wiersze spoza listy NIE są zajmowane (bez attempts+1 i bez
+ * first_claim_at, więc okno 23 h nie rusza; po zdjęciu listy idą normalnie); pętla ma tylko
+ * zaporę awaryjną. P1: lista ustawiona, ale błędna (wpis bez `@`) → 403 `allowlist_invalid`
+ * dla partii i testu, PRZED jakimkolwiek zajęciem — zła konfiguracja zatrzymuje, nie otwiera.
+ * Odpowiedź niesie `allowlist: { active, blocked, waiting }` (blocked = zapora w pętli,
+ * waiting = oczekujące wiersze spoza listy). Lista nie zastępuje flagi: bez
  * MARKETING_SEND_ENABLED=true nadal 403 dla wszystkiego.
  *
  * Marketing nie woła żadnego RPC rozliczeń i nie dotyka legacy_sends.
  */
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
 import { loadCampaign } from "./_shared/marketing-data.js";
-import { sendMarketingMail, unsubscribeUrl, payloadHash, sendAllowlistActive, allowedBySendAllowlist } from "./_shared/marketing-mailer.js";
+import { sendMarketingMail, unsubscribeUrl, payloadHash, sendAllowlistActive, sendAllowlistInvalid, allowedBySendAllowlist, claimAllowlistParam } from "./_shared/marketing-mailer.js";
 import { renderMarketingTemplate } from "./_shared/marketing-templates.js";
 
 const TIME_BUDGET_MS = 20_000;     // Netlify: 26 s limitu — zostaw zapas na odpowiedź
@@ -52,6 +58,8 @@ export const handler = async (event) => {
     return json(403, { error: "send_disabled", hint: "MARKETING_SEND_ENABLED nie jest ustawione na true — wysyłka (także testowa) wyłączona na tym środowisku" });
   }
   if (!env.marketingUnsubscribeSecret) return json(500, { error: "unsubscribe_secret_missing" });
+  // [review Codexa P1] błędna lista dozwolonych adresów zatrzymuje wszystko PRZED odczytem kampanii i zajęciem wierszy
+  if (sendAllowlistInvalid(env)) return json(403, { error: "allowlist_invalid", hint: "MARKETING_SEND_ALLOWLIST zawiera błędny wpis (np. adres bez @) — wysyłka i test zatrzymane; popraw listę albo usuń zmienną" });
 
   try {
     const campaign = await loadCampaign(supaSvc, body.campaign_id);
@@ -69,10 +77,11 @@ export const handler = async (event) => {
     const started = Date.now();
     const outcome = { claimed: 0, accepted: 0, rejected: 0, uncertain: 0, skipped: 0 };
     const details = [];
-    const allowlistInfo = { active: sendAllowlistActive(env), blocked: 0 };
+    const allowlistInfo = { active: sendAllowlistActive(env), blocked: 0, waiting: 0 };
 
     const { data: claimed, error: claimErr } = await supaSvc.rpc("marketing_claim_messages", {
       p_campaign_id: campaign.id, p_limit: limit, p_lease_seconds: LEASE_SECONDS, p_window_seconds: WINDOW_SECONDS,
+      p_allowed_emails: claimAllowlistParam(env), // [P2] filtr w SQL: wiersze spoza listy nie są zajmowane
     });
     if (claimErr) throw new Error("claim: " + claimErr.message);
     const rows = Array.isArray(claimed) ? claimed : [];
@@ -85,7 +94,7 @@ export const handler = async (event) => {
         await supaSvc.rpc("marketing_record_result", { p_message_id: m.id, p_state: "rejected", p_resend_message_id: null, p_error: "payload_hash_mismatch" });
         outcome.rejected += 1; details.push({ id: m.id, result: "rejected", error: "payload_hash_mismatch" }); continue;
       }
-      // lista dozwolonych adresów (próba): adres spoza listy nie idzie — wiersz zostaje claimed do odzyskania
+      // zapora awaryjna (filtr jest w SQL; tu tylko gdyby claim oddał wiersz spoza listy) — bez maila, wiersz zostaje claimed do odzyskania
       if (!allowedBySendAllowlist(env, m.to_email)) { outcome.skipped += 1; allowlistInfo.blocked += 1; details.push({ id: m.id, result: "skipped", reason: "allowlist" }); continue; }
       // [review Codexa #2] ponowna kontrola dopuszczenia w bazie TUŻ PRZED wysyłką
       // (wypis / odbicie / cofnięta zgoda w trakcie partii zatrzymują ten mail)
@@ -109,9 +118,10 @@ export const handler = async (event) => {
     }
 
     // [review Codexa #6] co zostało? Błąd odczytu NIE zamyka kampanii — zostaje `sending`.
-    const { data: left, error: leftErr } = await supaSvc.from("marketing_messages").select("id, state").eq("campaign_id", campaign.id).eq("is_test", false).in("state", ["pending", "claimed"]);
+    const { data: left, error: leftErr } = await supaSvc.from("marketing_messages").select("id, state, to_email").eq("campaign_id", campaign.id).eq("is_test", false).in("state", ["pending", "claimed"]);
     if (leftErr) return json(200, { ok: true, outcome, allowlist: allowlistInfo, remaining: null, done: false, details, warning: "remaining_unknown:" + leftErr.message });
     const remaining = Array.isArray(left) ? left.length : null;
+    if (allowlistInfo.active && Array.isArray(left)) allowlistInfo.waiting = left.filter((r) => r.state === "pending" && !allowedBySendAllowlist(env, r.to_email)).length;
     if (remaining === 0) {
       const { error: doneErr } = await supaSvc.from("marketing_campaigns").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", campaign.id).eq("status", "sending");
       if (doneErr) return json(200, { ok: true, outcome, allowlist: allowlistInfo, remaining, done: false, details, warning: "campaign_close_failed:" + doneErr.message });

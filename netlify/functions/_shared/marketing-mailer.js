@@ -42,16 +42,28 @@ export function unsubscribeUrl({ appUrl, messageId, secret }) {
   return `${base}/.netlify/functions/marketing-unsubscribe?m=${encodeURIComponent(messageId)}&t=${encodeURIComponent(unsubscribeToken(secret, messageId))}`;
 }
 
-/** Czy lista dozwolonych adresów (MARKETING_SEND_ALLOWLIST) jest aktywna. */
+/** Czy lista dozwolonych adresów (MARKETING_SEND_ALLOWLIST) jest ustawiona (poprawna albo błędna). */
 export function sendAllowlistActive(env) {
-  return Array.isArray(env?.marketingSendAllowlist) && env.marketingSendAllowlist.length > 0;
+  return env?.marketingSendAllowlistInvalid === true || (Array.isArray(env?.marketingSendAllowlist) && env.marketingSendAllowlist.length > 0);
 }
 
-/** true = adres może dostać pocztę (lista nieaktywna albo adres na liście; porównanie trim + małe litery). */
+/** [review Codexa P1] lista ustawiona, ale błędna (wpis bez `@`) — blokuje wszystko. */
+export function sendAllowlistInvalid(env) {
+  return env?.marketingSendAllowlistInvalid === true;
+}
+
+/** true = adres może dostać pocztę (lista nieustawiona albo adres na POPRAWNEJ liście; porównanie trim + małe litery). */
 export function allowedBySendAllowlist(env, email) {
+  if (sendAllowlistInvalid(env)) return false;
   if (!sendAllowlistActive(env)) return true;
   const v = String(email || "").trim().toLowerCase();
   return !!v && env.marketingSendAllowlist.includes(v);
+}
+
+/** Lista dla RPC claim: null = bez ograniczenia; tablica = tylko te adresy (SQL nie dotyka reszty). */
+export function claimAllowlistParam(env) {
+  if (sendAllowlistInvalid(env)) return [];
+  return sendAllowlistActive(env) ? env.marketingSendAllowlist.slice() : null;
 }
 
 export function payloadHash({ subject, html, text }) {
@@ -71,6 +83,7 @@ export async function sendMarketingMail({ env, message, unsubscribeUrl: unsub, r
   const doFetch = fetchImpl || globalThis.fetch;
   if (!env?.resendApiKey) return { status: "uncertain", error: "no_resend_key" };
   if (!unsub) return { status: "rejected", error: "unsubscribe_url_missing" };
+  if (sendAllowlistInvalid(env)) return { status: "uncertain", error: "allowlist_invalid" };
   if (!allowedBySendAllowlist(env, message?.to_email)) return { status: "uncertain", error: "allowlist_blocked" };
   const body = {
     from: MARKETING_FROM,

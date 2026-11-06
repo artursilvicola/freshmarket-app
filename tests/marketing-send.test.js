@@ -11,7 +11,7 @@ vi.mock("../netlify/functions/_shared/function-env.js", () => ({
   missingEnvNames: (cfg, keys) => keys.filter((k) => !cfg[k]), envErrorPayload: (fn, missing) => ({ error: "env", fn, missing }),
 }));
 import { handler } from "../netlify/functions/marketing-send.js";
-import { payloadHash, sendMarketingMail, allowedBySendAllowlist, sendAllowlistActive } from "../netlify/functions/_shared/marketing-mailer.js";
+import { payloadHash, sendMarketingMail, allowedBySendAllowlist, sendAllowlistActive, sendAllowlistInvalid, claimAllowlistParam } from "../netlify/functions/_shared/marketing-mailer.js";
 import { DEFAULT_CONTENT, defaultContent } from "../netlify/functions/_shared/marketing-templates.js";
 
 const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -30,7 +30,9 @@ function service() {
     rpc: vi.fn(async (name, args) => {
       if (name === "marketing_claim_messages") {
         if (db.failClaim) return { data: null, error: { message: "claim down" } };
-        const rows = db.messages.filter((m) => m.campaign_id === args.p_campaign_id && !m.is_test && (m.state === "pending" || (m.state === "claimed" && m.lease_expired))).slice(0, args.p_limit);
+        db.claimCalls = (db.claimCalls || 0) + 1; db.lastClaimAllowed = args.p_allowed_emails === undefined ? "MISSING" : args.p_allowed_emails;
+        const allowed = Array.isArray(args.p_allowed_emails) && !db.ignoreAllowlistFilter ? (e) => args.p_allowed_emails.includes(String(e).trim().toLowerCase()) : () => true;
+        const rows = db.messages.filter((m) => m.campaign_id === args.p_campaign_id && !m.is_test && allowed(m.to_email) && (m.state === "pending" || (m.state === "claimed" && m.lease_expired))).slice(0, args.p_limit);
         for (const m of rows) { m.state = "claimed"; m.attempts += 1; m.lease_expired = false; }
         return { data: rows.map((m) => ({ ...m })), error: null };
       }
@@ -264,32 +266,49 @@ describe("[review Codexa P1 #3] mail testowy renderuje z zamrożonej treści kam
   });
 });
 
-describe("lista dozwolonych adresów — MARKETING_SEND_ALLOWLIST (próba na prawdziwych kontach, Codex 06.11)", () => {
-  it("batch: z aktywną listą idzie TYLKO adres z listy; inne wiersze pominięte (reason allowlist), zostają claimed, bez żądania do Resend; kampania nie kończy się jako wysłana", async () => {
+describe("lista dozwolonych adresów — MARKETING_SEND_ALLOWLIST (próba na prawdziwych kontach, Codex 06.11; review 10a0c6a P1/P2)", () => {
+  it("[P2] batch: filtr idzie do SQL (p_allowed_emails); wiersz spoza listy NIE jest zajmowany (pending, attempts 0), bez żądania do Resend; kampania nie kończy się jako wysłana", async () => {
     state.env.marketingSendAllowlist = ["opm1@test.pl"];
     const r = await call({ campaign_id: CAMP, mode: "batch" });
     expect(r.status).toBe(200);
-    expect(r.body.allowlist).toEqual({ active: true, blocked: 1 });
-    expect(r.body.outcome).toMatchObject({ claimed: 2, accepted: 1, skipped: 1, rejected: 0, uncertain: 0 });
+    expect(state.db.lastClaimAllowed).toEqual(["opm1@test.pl"]);
+    expect(r.body.allowlist).toEqual({ active: true, blocked: 0, waiting: 1 });
+    expect(r.body.outcome).toMatchObject({ claimed: 1, accepted: 1, skipped: 0, rejected: 0, uncertain: 0 });
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(state.fetchCalls[0].body.to).toEqual(["opm1@test.pl"]);
     const m2 = state.db.messages.find((m) => m.id === "m2");
-    expect(m2.state).toBe("claimed"); // zostaje do odzyskania po zdjęciu listy
-    expect(r.body.details.find((d) => d.id === "m2")).toMatchObject({ result: "skipped", reason: "allowlist" });
+    expect(m2.state).toBe("pending"); expect(m2.attempts).toBe(0); expect(m2.first_claim_at).toBeUndefined(); // okno 23 h nie ruszyło
     expect(r.body.remaining).toBe(1); expect(r.body.done).toBe(false);
     expect(state.db.campaign.status).toBe("sending");
-  });
-  it("batch: porównanie bez względu na wielkość liter i spacje; lista pusta = bez ograniczenia", async () => {
-    state.env.marketingSendAllowlist = [" OpM1@Test.pl ".trim().toLowerCase(), "opm2@test.pl"];
-    const r = await call({ campaign_id: CAMP, mode: "batch" });
-    expect(r.body.allowlist).toEqual({ active: true, blocked: 0 });
-    expect(fetch).toHaveBeenCalledTimes(2);
-    state.db = { campaign: { id: CAMP, status: "approved", reply_to: null, template_key: "start_with_credits" }, messages: [frozen("m3")], results: [] };
-    state.service = service(); state.fetchCalls.length = 0; fetch.mockClear();
-    state.env.marketingSendAllowlist = [];
+    // zdjęcie listy → ten sam wiersz idzie normalnie pod swoim kluczem
+    state.env.marketingSendAllowlist = []; fetch.mockClear(); state.fetchCalls.length = 0;
     const r2 = await call({ campaign_id: CAMP, mode: "batch" });
-    expect(r2.body.allowlist).toEqual({ active: false, blocked: 0 });
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(state.db.lastClaimAllowed).toBeNull();
+    expect(r2.body.allowlist).toEqual({ active: false, blocked: 0, waiting: 0 });
+    expect(state.fetchCalls[0].body.to).toEqual(["opm2@test.pl"]);
+    expect(state.fetchCalls[0].init.headers["Idempotency-Key"]).toBe(`marketing:${CAMP}:pm2`);
+    expect(r2.body.done).toBe(true); expect(state.db.campaign.status).toBe("sent");
+  });
+  it("zapora awaryjna w pętli: gdyby claim oddał wiersz spoza listy — skipped/allowlist bez maila (blocked 1)", async () => {
+    state.env.marketingSendAllowlist = ["opm1@test.pl"]; state.db.ignoreAllowlistFilter = true;
+    const r = await call({ campaign_id: CAMP, mode: "batch" });
+    expect(r.body.allowlist).toMatchObject({ active: true, blocked: 1 });
+    expect(r.body.details.find((d) => d.id === "m2")).toMatchObject({ result: "skipped", reason: "allowlist" });
+    expect(fetch).toHaveBeenCalledTimes(1); expect(state.fetchCalls[0].body.to).toEqual(["opm1@test.pl"]);
+  });
+  it("[P1] lista ustawiona, ale błędna → 403 allowlist_invalid dla partii i testu, PRZED odczytem kampanii i zajęciem; żaden mail", async () => {
+    state.env.marketingSendAllowlist = []; state.env.marketingSendAllowlistInvalid = true;
+    const b = await call({ campaign_id: CAMP, mode: "batch" });
+    expect(b.status).toBe(403); expect(b.body.error).toBe("allowlist_invalid");
+    const t = await call({ campaign_id: CAMP, mode: "test", test_to: "spiker.artur@gmail.com", message_id: "m1" });
+    expect(t.status).toBe(403); expect(t.body.error).toBe("allowlist_invalid");
+    expect(state.db.claimCalls || 0).toBe(0);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(state.db.messages.every((m) => m.state === "pending" && m.attempts === 0 && !m.is_test)).toBe(true);
+    // lista częściowo poprawna, ale z błędnym wpisem — też blokuje (nie „tylko poprawne adresy”)
+    state.env.marketingSendAllowlist = ["spiker.artur@gmail.com"]; state.env.marketingSendAllowlistInvalid = true;
+    expect((await call({ campaign_id: CAMP, mode: "batch" })).body.error).toBe("allowlist_invalid");
+    expect(claimAllowlistParam(state.env)).toEqual([]);
   });
   it("test: adres spoza listy → 403 test_to_not_allowed bez wiersza i bez maila; adres z listy → wysyłka", async () => {
     state.env.marketingSendAllowlist = ["spiker.artur@gmail.com", "artur.silvicola@gmail.com"];
@@ -307,15 +326,19 @@ describe("lista dozwolonych adresów — MARKETING_SEND_ALLOWLIST (próba na pra
     expect(r.status).toBe(403); expect(r.body.error).toBe("send_disabled");
     expect(fetch).not.toHaveBeenCalled();
   });
-  it("druga zapora w transporcie: sendMarketingMail z adresem spoza listy → uncertain allowlist_blocked, żadnego żądania", async () => {
+  it("druga zapora w transporcie: adres spoza listy → uncertain allowlist_blocked; błędna lista → uncertain allowlist_invalid; żadnego żądania", async () => {
     const env = { resendApiKey: "fake", marketingSendAllowlist: ["spiker.artur@gmail.com"] };
     const fetchImpl = vi.fn();
-    const r = await sendMarketingMail({ env, message: { id: "x", to_email: "ktos@firma.pl", subject: "s", html: "h", text_body: "t", idempotency_key: "k", campaign_id: CAMP }, unsubscribeUrl: "https://b2b.test/u", fetchImpl });
-    expect(r).toEqual({ status: "uncertain", error: "allowlist_blocked" });
+    const msg = { id: "x", to_email: "ktos@firma.pl", subject: "s", html: "h", text_body: "t", idempotency_key: "k", campaign_id: CAMP };
+    expect(await sendMarketingMail({ env, message: msg, unsubscribeUrl: "https://b2b.test/u", fetchImpl })).toEqual({ status: "uncertain", error: "allowlist_blocked" });
+    const bad = { resendApiKey: "fake", marketingSendAllowlist: ["spiker.artur@gmail.com"], marketingSendAllowlistInvalid: true };
+    expect(await sendMarketingMail({ env: bad, message: { ...msg, to_email: "spiker.artur@gmail.com" }, unsubscribeUrl: "https://b2b.test/u", fetchImpl })).toEqual({ status: "uncertain", error: "allowlist_invalid" });
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(sendAllowlistActive(env)).toBe(true);
+    expect(sendAllowlistActive(env)).toBe(true); expect(sendAllowlistInvalid(env)).toBe(false); expect(sendAllowlistInvalid(bad)).toBe(true);
     expect(allowedBySendAllowlist(env, "SPIKER.ARTUR@gmail.com ")).toBe(true);
+    expect(allowedBySendAllowlist(bad, "spiker.artur@gmail.com")).toBe(false);
     expect(allowedBySendAllowlist({ marketingSendAllowlist: [] }, "ktos@firma.pl")).toBe(true);
     expect(allowedBySendAllowlist({}, "ktos@firma.pl")).toBe(true);
+    expect(claimAllowlistParam(env)).toEqual(["spiker.artur@gmail.com"]); expect(claimAllowlistParam({})).toBeNull(); expect(claimAllowlistParam(bad)).toEqual([]);
   });
 });

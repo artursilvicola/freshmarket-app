@@ -1955,6 +1955,7 @@
       "test_note": "Test to prawdziwy mail (wymaga flagi wysyłki); nie liczy się do historii adresata.",
       "test_to_required": "Podaj adres testowy.",
       "send_allowlist_note": "Lista dozwolonych adresów (próba) jest aktywna: pominięto {{n}} adresów spoza listy — zostają do wysłania po jej zdjęciu.",
+      "err_allowlist_invalid": "Lista dozwolonych adresów (MARKETING_SEND_ALLOWLIST) zawiera błędny wpis — wysyłka i test zatrzymane do poprawienia konfiguracji.",
       "err_test_to_not_allowed": "Lista dozwolonych adresów (próba) jest aktywna — test tylko na adresy z listy.",
       "send_test": "Test",
       "test_sent": "Test wysłany na {{to}}.",

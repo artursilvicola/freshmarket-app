@@ -6,15 +6,31 @@ export function getFirstEnv(...keys) {
   return null;
 }
 
-/** Lista adresów e-mail z env: separatory `,` `;` i białe znaki; trim + małe litery; bez duplikatów; bez pustych. */
-export function parseEmailList(raw) {
-  const out = [];
-  for (const part of String(raw || "").split(/[\s,;]+/)) {
+const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Lista dozwolonych adresów z env (MARKETING_SEND_ALLOWLIST). Separatory `,` `;` i białe znaki;
+ * trim + małe litery; bez duplikatów. Zwraca { active, invalid, addresses, rejected }:
+ *  * pusta/nieustawiona → active=false (bez ograniczenia),
+ *  * każdy wpis poprawny → active=true, invalid=false,
+ *  * [review Codexa P1] choć jeden wpis niepoprawny (np. bez `@`) → active=true, invalid=true —
+ *    błędna konfiguracja ma ZATRZYMAĆ wysyłkę, nie otworzyć jej na wszystkich.
+ */
+export function parseSendAllowlist(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return { active: false, invalid: false, addresses: [], rejected: 0 };
+  const addresses = []; let rejected = 0;
+  for (const part of text.split(/[\s,;]+/)) {
     const v = part.trim().toLowerCase();
-    if (v && v.includes("@") && !out.includes(v)) out.push(v);
+    if (!v) continue;
+    if (!EMAIL_RX.test(v)) { rejected += 1; continue; }
+    if (!addresses.includes(v)) addresses.push(v);
   }
-  return out;
+  return { active: true, invalid: rejected > 0 || addresses.length === 0, addresses, rejected };
 }
+
+/** Zgodność wstecz: same poprawne adresy (bez informacji o błędach). */
+export function parseEmailList(raw) { return parseSendAllowlist(raw).addresses; }
 
 export function resolveEnvConfig() {
   const supabaseUrl = getFirstEnv("SUPABASE_URL", "VITE_SUPABASE_URL");
@@ -57,7 +73,11 @@ export function resolveEnvConfig() {
   // przecinkiem/średnikiem/spacją. Gdy NIEPUSTA, batch i test mogą wysłać WYŁĄCZNIE na te adresy:
   // inne wiersze są pomijane (zostają do wysłania po zdjęciu listy), test spoza listy = 403.
   // Pusta/nieustawiona = bez ograniczenia (zwykła wysyłka). Porównanie: trim + małe litery, dokładne.
-  const marketingSendAllowlist = parseEmailList(getFirstEnv("MARKETING_SEND_ALLOWLIST"));
+  // [review Codexa P1] niepusta, ale błędna lista (wpis bez `@`) → marketingSendAllowlistInvalid=true:
+  // funkcja wysyłki i transport ZATRZYMUJĄ wszystko (403 allowlist_invalid), nic nie jest zajmowane.
+  const allowlist = parseSendAllowlist(getFirstEnv("MARKETING_SEND_ALLOWLIST"));
+  const marketingSendAllowlist = allowlist.addresses;
+  const marketingSendAllowlistInvalid = allowlist.invalid;
 
   return {
     supabaseUrl,
@@ -79,6 +99,7 @@ export function resolveEnvConfig() {
     marketingSendEnabled,
     marketingUnsubscribeSecret,
     marketingSendAllowlist,
+    marketingSendAllowlistInvalid,
   };
 }
 

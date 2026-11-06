@@ -116,7 +116,7 @@ export default function MarketingActivation({ fl }) {
     if (!window.confirm(tr("send_confirm", { n: pending }))) return;
     const r = await marketingCall("marketing-send", { campaign_id: current.campaign.id, mode: "batch" });
     toast(tr("send_result", { ...r.outcome, remaining: r.remaining }));
-    if (r.allowlist?.active) toast(tr("send_allowlist_note", { n: r.allowlist.blocked || 0 }), "info");
+    if (r.allowlist?.active) toast(tr("send_allowlist_note", { n: (r.allowlist.waiting || 0) + (r.allowlist.blocked || 0) }), "info");
     await openCampaign(current.campaign.id); await loadCampaigns();
   });
 
