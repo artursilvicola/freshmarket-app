@@ -35,3 +35,7 @@ out/
 # [feat/marketing-activation] izolowany katalog podglądu odbiorowego + kanarek testu izolacji
 .preview-test*/
 .env.development.local
+
+# artefakty bundlera funkcji (netlify dev / build zip-ów) — nigdy do repo (review Codexa 2822b1f)
+netlify/functions/*.zip
+netlify/functions/manifest.json
