@@ -1,6 +1,6 @@
 -- Kontrola PRZED / PO migracjach biblioteki zdjęć i rejestru zgód (TYLKO ODCZYT). SQL Editor projektu PRODUKCYJNEGO sklyfuvzjikkqerxtulo.
 -- Ten sam plik działa przed i po migracjach (brakujące obiekty dają NULL/0 zamiast błędu). Wynik: jedna tabela.
--- Kolumna `po_migracji` = oczekiwana wartość po 7 migracjach; `przed` opisane w kolumnie `przed_migracja`.
+-- Kolumna `po_migracji` = oczekiwana wartość po 8 migracjach; `przed` opisane w kolumnie `przed_migracja`.
 with k(co, jest, przed_migracja, po_migracji) as (
   values
   ('postgres >= 15 (security_invoker)', (current_setting('server_version_num')::int >= 150000)::text, 'true', 'true'),
@@ -23,6 +23,10 @@ with k(co, jest, przed_migracja, po_migracji) as (
   ('tabela marketing_suppression_lifts', (to_regclass('public.marketing_suppression_lifts') is not null)::text, 'false', 'true'),
   ('RPC lift_suppression', (select count(*)::text from pg_proc where proname='marketing_lift_suppression'), '0', '1'),
   ('trigger ochrony wypisów', (select count(*)::text from pg_trigger where tgname='trg_marketing_suppressions_no_silent_delete'), '0', '1'),
+  ('trigger czasu zgody', (select count(*)::text from pg_trigger where tgname='trg_marketing_suppression_lifts_stamp'), '0', '1'),
+  ('strażnik wypisów w wersji końcowej', (select count(*)::text from pg_proc where proname='marketing_suppressions_no_silent_delete' and prosrc like '%to_jsonb(old)%'), '0', '1'),
+  ('trigger wersji dopuszcza zerowanie autora', (select count(*)::text from pg_proc where proname='marketing_photo_versions_immutable' and prosrc like '%new.created_by is not null%'), '0', '1'),
+  ('service_role EXECUTE zniesienia wypisu (ma NIE być)', case when to_regprocedure('public.marketing_lift_suppression(text,text,text,text)') is null then 'brak' else has_function_privilege('service_role','public.marketing_lift_suppression(text,text,text,text)','execute')::text end, 'brak', 'false'),
   ('service_role DELETE na wersjach (ma NIE być)', case when to_regclass('public.marketing_photo_versions') is null then 'brak' else has_table_privilege('service_role','public.marketing_photo_versions','delete')::text end, 'brak', 'false'),
   ('kampanie razem (bez zmian)', (select count(*)::text from public.marketing_campaigns), 'zapisz', 'jak przed'),
   ('wiadomości razem (bez zmian)', (select count(*)::text from public.marketing_messages), 'zapisz', 'jak przed'),

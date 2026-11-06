@@ -79,6 +79,20 @@ console.log("3. drugi Run pliku (po przerwanym wdrożeniu)");
 let again = null; try { await db.exec(patch(combined)); } catch (e) { again = e.message; }
 ok(!again, "drugi Run bez błędu" + (again ? ": " + again : ""));
 
+console.log("3b. usunięcie profilu autora zdjęcia i kontrola importu");
+const AUTHOR = "e0ffee00-0000-4000-8000-000000000001";
+await db.exec(`insert into auth.users (id, email) values ('${AUTHOR}','autor@example.invalid');
+  insert into public.profiles (id, role, name, email, active) values ('${AUTHOR}','admin','Autor','autor@example.invalid',true) on conflict (id) do nothing;`);
+const ph = (await db.query(`insert into public.marketing_photos (title, alt_pl, alt_en, status, created_by) values ('Kontrola','a','b','pending',$1) returning id`, [AUTHOR])).rows[0].id;
+const vv = (await db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, published_at, published_by, width, height, bytes, mime, sha256, created_by) values ($1::uuid,1,'marketing-photos','photos/k/v1.png','https://x/k.png',now(),$2::uuid,600,400,120000,'image/png',repeat('a',64),$2::uuid) returning id`, [ph, AUTHOR])).rows[0].id;
+const imp = (await db.query(read(PKG + "01b-kontrola-po-imporcie.sql"))).rows[0];
+ok(Number(imp.niezgodne_wersje) === 1, "kontrola po imporcie wyłapuje PNG 600×400: niezgodne_wersje = " + imp.niezgodne_wersje);
+await db.exec(`delete from public.profiles where id = '${AUTHOR}'`);
+const av = (await db.query(`select created_by, published_by, public_url from public.marketing_photo_versions where id = $1`, [vv])).rows[0];
+ok(av.created_by === null && av.published_by === null && av.public_url === "https://x/k.png", "usunięcie profilu autora: odwołania wyzerowane, adres pliku bez zmian");
+const zmiana = await (async () => { try { await db.query(`update public.marketing_photo_versions set created_by = $1 where id = $2`, [U1, vv]); return null; } catch (x) { return x.message; } })();
+ok(zmiana && /immutable/.test(zmiana), "podmiana autora na inną osobę → odmowa triggera");
+
 console.log("4. ochrona wypisów");
 const fails_with = async (sql, rx) => { try { await db.exec(sql); return null; } catch (e) { await db.exec("rollback").catch(() => {}); return rx.test(e.message) ? e.message : "INNY BŁĄD: " + e.message; } };
 let e = await fails_with(`delete from public.marketing_suppressions where email = '${M1}'`, /recorded consent/);
@@ -128,6 +142,16 @@ await db.exec(`select public.marketing_suppress_email('${M1}', 'unsubscribe', 'o
 ok((await db.query(`select count(*)::int as n from public.marketing_suppressions where email = '${M1}'`)).rows[0].n === 1, "ponowny wypis działa jak dotąd");
 e = await fails_with(`delete from public.marketing_suppressions where email = '${M1}'`, /recorded consent/);
 ok(e && !e.startsWith("INNY"), "stara zgoda nie obejmuje nowego wypisu");
+const stara = lifts[0]; // adres EN: wypis zniesiony wyżej, zgoda w historii
+await db.query(`insert into public.marketing_suppressions (email, reason, source, created_at) values ($1, 'bounce', 'odtworzony', ($2::jsonb->>'created_at')::timestamptz)`, [stara.email, JSON.stringify(stara.suppression)]);
+e = await fails_with(`delete from public.marketing_suppressions where email = '${stara.email}'`, /recorded consent/);
+ok(e && !e.startsWith("INNY"), "wypis odtworzony z tą samą datą jako bounce → stara zgoda go nie usunie");
+await db.exec(`update public.marketing_suppressions set reason = 'unsubscribe', source = '${stara.suppression.source}' where email = '${stara.email}'`);
+e = await fails_with(`delete from public.marketing_suppressions where email = '${stara.email}'`, /recorded consent/);
+ok(e && !e.startsWith("INNY"), "ten sam wiersz co w historii, ale bez nowej zgody w transakcji → odmowa");
+await db.exec(`select public.marketing_lift_suppression('${stara.email}','Nowa zgoda na ponowny test','czat, próba lokalna','Artur Stasiak')`);
+ok((await db.query(`select count(*)::int as n from public.marketing_suppressions where email = $1`, [stara.email])).rows[0].n === 0, "nowa zgoda w funkcji znosi wypis");
+ok((await db.query(`select count(*)::int as n from public.marketing_suppression_lifts where email = $1`, [stara.email])).rows[0].n === 2, "historia ma oba zniesienia tego adresu");
 await db.exec(read(PKG + "03-po-probie.sql"));
 ok((await state()).active === false, "03-po-probie: konta znów zawieszone");
 

@@ -10,7 +10,7 @@ Run w SQL Editor i kliknięcia „Zatwierdź”/„Wyślij” klika Artur. Produ
 Zrzuty: `mail-pl-komputer-640.png`, `mail-en-komputer-640.png`, `mail-pl-telefon-375.png`, `mail-en-telefon-375.png`, `app-wybor-zdjecia.jpg`,
 `app-kampania-kafelek.jpg`. Do decyzji także: tematy zostawione z układu 1, treści domyślne skrócone do powitania + dwóch zdań, podpis archiwalny per rocznik.
 
-## Krok 1 — migracje (PRZED kodem; 7 plików w tej kolejności, złożone 1:1 w `04-migracje-razem.sql`, jeden Run w SQL Editor prod)
+## Krok 1 — migracje (PRZED kodem; 8 plików w tej kolejności, złożone 1:1 w `04-migracje-razem.sql`, jeden Run w SQL Editor prod)
 | # | plik | SHA-256 (pierwsze 16) | linii |
 |---|---|---|---|
 | 1 | `20261107100000_marketing_photos.sql` | `953943331e29bdfe` | 172 |
@@ -20,10 +20,11 @@ Zrzuty: `mail-pl-komputer-640.png`, `mail-en-komputer-640.png`, `mail-pl-telefon
 | 5 | `20261107140000_marketing_photo_drop_release.sql` | `d0b00481ec9f99c7` | 84 |
 | 6 | `20261107150000_marketing_photo_unpublish_final.sql` | `0ae80708edc0bad2` | 120 |
 | 7 | `20261107160000_marketing_suppression_lifts.sql` | `10a2892b49fa7303` | 84 |
+| 8 | `20261107170000_marketing_review_fixes.sql` | `ef67a9c2b69525a4` | 120 |
 * Przed każdym Run: projekt `sklyfuvzjikkqerxtulo` w adresie karty; plik z repo (`cmp` z gałęzią), nie z kopii.
 * `01-kontrola-migracji.sql` PRZED (oczekiwane: 0 tabel zdjęć, bucket brak) i PO każdym etapie (tabela kontrolna w pliku: tabele, kolumny kampanii,
   widok, 2 buckety, 3 triggery, 1 RPC claim, brak funkcji release, liczby kampanii/wiadomości BEZ zmian).
-* Wszystkie 7 jest idempotentnych i addytywnych; stary kod (bez zdjęć) działa z nimi dalej (`layout_version` domyślnie 1, kolumny zdjęć NULL). Migracji NIE cofać.
+* Wszystkie 8 jest idempotentnych i addytywnych; stary kod (bez zdjęć) działa z nimi dalej (`layout_version` domyślnie 1, kolumny zdjęć NULL). Migracji NIE cofać.
 * Próba pakietu: `scripts/marketing-photos-deploy-check.mjs` na schemacie SPRZED tych migracji (76 plików) z danymi jak na produkcji: kontrola przed, plik łączony, kontrola po, drugi Run, reaktywacja, sprzątanie.
 
 ## Krok 2 — kod
@@ -42,7 +43,7 @@ Zrzuty: `mail-pl-komputer-640.png`, `mail-en-komputer-640.png`, `mail-pl-telefon
 * Dlaczego panel, nie skrypt: każde zdjęcie przechodzi przez tę samą funkcję co produkcja (walidacja bajtów, duplikaty sha256/dHash, EXIF usunięty
   w przeglądarce) i wymaga świadomego zatwierdzenia; skrypt zasiewu jest celowo zablokowany dla projektu prod.
 * Kontrola po imporcie (`01b-kontrola-po-imporcie.sql`): 18 `ready` z `approved_version_id`, 18 wersji opublikowanych, 0 pending, 18 obiektów w publicznym
-  buckecie i 0 w prywatnym, każdy plik 1200×800 JPEG ≤ 200 KB, bez EXIF, bo plik powstaje w przeglądarce jako nowy JPEG (przy imporcie przez panel sprawdzić wyrywkowo 1 plik, bo test 38/38 dotyczył zasiewu przez sharp); anonimowy GET 200.
+  buckecie i 0 w prywatnym, każdy plik 1200×800 JPEG ≤ 200 KB (`niezgodne_wersje` = 0), bez EXIF, bo plik powstaje w przeglądarce jako nowy JPEG (przy imporcie przez panel sprawdzić wyrywkowo 1 plik, bo test 38/38 dotyczył zasiewu przez sharp); anonimowy GET 200.
 * Minimalna pula: ≥ 5 (ostrzeżenie `pool_small` poniżej). Rotacja omija 4 ostatnie wysyłające kampanie.
 
 ## Krok 4 — konta próbne + lista + flaga

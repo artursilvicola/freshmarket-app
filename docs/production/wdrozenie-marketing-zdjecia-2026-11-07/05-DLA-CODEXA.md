@@ -5,11 +5,14 @@ Gałąź `feat/marketing-photos`. Produkcja bez zmian (main 2447650). Zakres od 
 git diff e3a27a6..origin/feat/marketing-photos
 ```
 
+## Runda 2: poprawki po NO-GO Codexa z 06.11
+Migracja `20261107170000_marketing_review_fixes.sql`: (1) usunięcie wypisu wymaga wpisu z tej samej transakcji, na pełny aktualny wiersz, tylko `unsubscribe`; czas w rejestrze ustawia trigger. (2) Trigger wersji pozwala tylko wyzerować `created_by` i `published_by`. (3) `01b` ma licznik `niezgodne_wersje`. Regresje w `scripts/marketing-photos-deploy-check.mjs`.
+
 ## Do sprawdzenia
 1. **Logo w podglądzie.** `netlify/functions/marketing-preview.js`, `_shared/marketing-logo-data.js` (generowany przez `scripts/marketing-logo-data.mjs`). Podgląd dostaje logo jako data URI, bo ramka `sandbox` nie pobiera obrazków z localhost. Mail z `approve`, testu i wysyłki ma nadal adres HTTPS. Czy nic innego nie korzysta z podglądu jako treści wysyłanej?
 2. **Tekst zastępczy logo.** Style `img` w `shellV2` (`_shared/marketing-templates.js`), zmiana dotyczy tylko układu 2.
 3. **Migracja `20261107160000_marketing_suppression_lifts.sql`.** Nowa w tej rundzie: rejestr zniesień wypisu tylko do dopisywania, `marketing_lift_suppression()` (tylko powód `unsubscribe`, bez EXECUTE dla ról aplikacji), trigger odrzucający usunięcie wypisu bez wpisu w rejestrze. Czy dopasowanie po `email` + `created_at` wystarcza? Czy SECURITY DEFINER i uprawnienia są domknięte?
-4. **`04-migracje-razem.sql`.** Siedem migracji 1:1 (sprawdza to `scripts/marketing-photos-deploy-check.mjs`), każda we własnej transakcji. Czy przerwanie w połowie i drugi Run są bezpieczne na danych produkcyjnych?
+4. **`04-migracje-razem.sql`.** Osiem migracji 1:1 (sprawdza to `scripts/marketing-photos-deploy-check.mjs`), każda we własnej transakcji. Czy przerwanie w połowie i drugi Run są bezpieczne na danych produkcyjnych?
 5. **`01-kontrola-migracji.sql` i `01b-kontrola-po-imporcie.sql`.** Czy kontrola wyłapuje wszystko, co musi być spełnione przed kodem?
 6. **`02-konta-probne-reaktywacja.sql`.** W repo stoi flaga `false`. Bez potwierdzonej zgody i bez źródła zgody przerywa bez zmian. Czy historia wypisu jest kompletna?
 7. **`00-CZYTAJ.md`.** Kolejność: migracje → kontrola → kod → zdjęcia → test na dwóch adresach, z blokadą wysyłki do pozostałych.
