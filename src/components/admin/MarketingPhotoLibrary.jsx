@@ -81,7 +81,7 @@ export default function MarketingPhotoLibrary({ fl }) {
         categories: String(m.categories || "").split(",").map((s) => s.trim()).filter(Boolean), year: m.year === "" ? null : Number(m.year), review_note: m.review_note,
         mime: "image/jpeg", data_base64: await blobToBase64(item.prepared.blob), source_sha256: item.sha, source_name: item.file.name, source_bytes: item.file.size, source_width: item.info.width, source_height: item.info.height, dhash: item.prepared.dhash, allow_similar: allowSimilar,
       });
-      toast(tr("ph_saved", { title: r.photo.title }));
+      toast(r.new_photo ? tr("ph_saved", { title: r.photo.title }) : tr("ph_saved_new_version", { title: r.photo.title, n: r.version?.version_no }));
       removeItem(item);
       await load();
     } catch (e) {
@@ -94,6 +94,11 @@ export default function MarketingPhotoLibrary({ fl }) {
   });
 
   // ── akcje na zdjęciach ─────────────────────────────────────────────────────
+  const approveVersion = (photo) => run("approve", async () => {
+    const v = photo.pending_version;
+    await marketingCall("marketing-photos", { action: "approve", photo_id: photo.id, version_id: v?.id });
+    toast(photo.approved_version && v ? tr("ph_new_version_approved", { n: v.version_no }) : tr("ph_approved")); await load();
+  });
   const action = (act, photo, okKey) => run(act, async () => {
     if (act === "disable" && !window.confirm(tr("ph_disable_confirm", { title: photo.title }))) return;
     await marketingCall("marketing-photos", { action: act, photo_id: photo.id });
@@ -181,25 +186,28 @@ export default function MarketingPhotoLibrary({ fl }) {
             const u = p.usage || {};
             return (
               <div key={p.id} data-testid="ph-card" style={{ border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden", opacity: p.status === "disabled" ? 0.6 : 1 }}>
-                {p.current_version ? <img src={p.current_version.public_url} alt={p.alt_pl} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", background: "#e2e8f0" }} /> : <div style={{ aspectRatio: "3 / 2", background: "#f1f5f9" }} />}
+                {/* [review Codexa P1] miniatura tylko z OPUBLIKOWANEJ (zatwierdzonej) wersji; kadr oczekujący leży w prywatnym buckecie bez adresu */}
+                {p.approved_version ? <img src={p.approved_version.public_url} alt={p.alt_pl} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", background: "#e2e8f0" }} /> : <div data-testid="ph-private" style={{ aspectRatio: "3 / 2", background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#94a3b8", textAlign: "center", padding: 8 }}>{tr("ph_private_pending")}</div>}
                 <div style={{ padding: 10 }}>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <div style={{ fontWeight: 700, fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.title}>{p.title}</div>
                     <span style={tag(bg, fg)}>{tr("ph_status_" + p.status)}</span>
                   </div>
-                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{p.year || "—"} · {tr("kind_" + (p.kind || "authentic"))}{p.current_version ? ` · ${tr("ph_version", { n: p.current_version.version_no })} · ${p.current_version.width}×${p.current_version.height} · ${fmtBytes(p.current_version.bytes)}` : ""}</div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{p.year || "—"} · {tr("kind_" + (p.kind || "authentic"))}{p.approved_version ? ` · ${tr("ph_version", { n: p.approved_version.version_no })} · ${p.approved_version.width}×${p.approved_version.height} · ${fmtBytes(p.approved_version.bytes)}` : ""}</div>
+                  {p.approved_version && p.pending_version && <div data-testid="ph-pending-version" style={{ fontSize: 11, color: "#92400e", background: "#fef3c7", borderRadius: 6, padding: "3px 6px", marginTop: 4 }}>{tr("ph_new_version_pending", { n: p.pending_version.version_no })}</div>}
                   <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>{p.caption_pl || p.alt_pl}</div>
                   {p.review_note && <div style={{ fontSize: 11, color: "#92400e", marginTop: 2 }}>{p.review_note}</div>}
                   <div style={{ fontSize: 11, color: u.sent_campaigns ? "#475569" : "#166534", marginTop: 4 }}>
                     {u.sent_campaigns ? `${tr("ph_used", { n: u.campaigns, sent: u.sent_campaigns })} · ${tr("ph_last_used", { at: fmtAt(u.last_sent_at) })}` : tr("ph_never")}{u.open_assignments ? ` · ${tr("ph_open_assign", { n: u.open_assignments })}` : ""}
                   </div>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>
-                    {p.status === "pending" && <button data-testid="ph-approve" style={{ ...btn("primary"), padding: "4px 9px" }} disabled={!!busy} onClick={() => action("approve", p, "ph_approved")}>{tr("ph_approve")}</button>}
+                    {/* zatwierdzenie dotyczy KONKRETNEJ wersji (review Codexa P2): nowe zdjęcie albo nowy kadr istniejącego */}
+                    {p.status !== "disabled" && p.pending_version && <button data-testid="ph-approve" style={{ ...btn("primary"), padding: "4px 9px" }} disabled={!!busy} onClick={() => approveVersion(p)}>{p.approved_version ? tr("ph_approve_new_version", { n: p.pending_version.version_no }) : tr("ph_approve")}</button>}
                     {p.status === "ready" && <button data-testid="ph-disable" style={{ ...btn("secondary"), padding: "4px 9px" }} disabled={!!busy} onClick={() => action("disable", p, "ph_disabled")}>{tr("ph_disable")}</button>}
                     {p.status === "disabled" && <button style={{ ...btn("secondary"), padding: "4px 9px" }} disabled={!!busy} onClick={() => action("enable", p, "ph_enabled")}>{tr("ph_enable")}</button>}
                     <button style={{ ...btn("secondary"), padding: "4px 9px" }} disabled={!!busy} onClick={() => setEdit({ ...p, categories: (p.categories || []).join(", "), year: p.year ?? "" })}>{tr("ph_edit")}</button>
                     <button data-testid="ph-usage" style={{ ...btn("secondary"), padding: "4px 9px" }} disabled={!!busy} onClick={() => showUsage(p)}>{tr("ph_usage")}</button>
-                    {p.current_version && <a href={p.current_version.public_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#0d9488", alignSelf: "center" }}>{tr("ph_open_file")}</a>}
+                    {p.approved_version && <a href={p.approved_version.public_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "#0d9488", alignSelf: "center" }}>{tr("ph_open_file")}</a>}
                   </div>
                 </div>
               </div>

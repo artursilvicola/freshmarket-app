@@ -2070,7 +2070,17 @@
       "err_metadata_invalid": "Uzupełnij opis zdjęcia (nazwa, alt PL/EN, bez HTML).",
       "err_format_not_allowed": "Dozwolone formaty: JPEG, PNG, WebP.",
       "err_photo_not_pending": "To zdjęcie nie czeka na zatwierdzenie.",
-      "err_photo_without_file": "Zdjęcie nie ma pliku."
+      "err_photo_without_file": "Zdjęcie nie ma pliku.",
+      "ph_private_pending": "Kadr czeka na zatwierdzenie — plik jest prywatny (bez publicznego adresu)",
+      "ph_new_version_pending": "Nowy kadr (wersja {{n}}) czeka na zatwierdzenie — w rotacji zostaje poprzednia wersja.",
+      "ph_approve_new_version": "Zatwierdź nowy kadr (v{{n}})",
+      "ph_new_version_approved": "Nowy kadr (wersja {{n}}) zatwierdzony i opublikowany — od teraz używany w nowych kampaniach.",
+      "ph_saved_new_version": "Nowy kadr zdjęcia „{{title}}” zapisany jako wersja {{n}} — czeka na zatwierdzenie (plik prywatny).",
+      "err_photo_disabled": "Zdjęcie jest wyłączone — najpierw je włącz.",
+      "err_version_not_found": "Nie znaleziono tej wersji pliku.",
+      "err_version_already_approved": "Ta wersja jest już zatwierdzona.",
+      "err_photo_without_approved_version": "Zdjęcie nie ma zatwierdzonej wersji — zatwierdź kadr zamiast włączać.",
+      "err_photo_version_not_approved": "Wybrana wersja pliku nie jest zatwierdzona — wybierz zdjęcie ponownie."
     },
     "settlements": {
       "title": "Rozliczenia z dostawcami",

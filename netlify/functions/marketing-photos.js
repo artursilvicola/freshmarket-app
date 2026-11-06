@@ -15,8 +15,12 @@
  *             przeglądarka wysyła już wykadrowaną i przeskalowaną wersję „do maila” (canvas → bez EXIF/GPS);
  *             serwer sprawdza magic bytes, wymiary (≤ 1200 px), rozmiar (≤ 350 KB), proporcje; duplikat
  *             oryginału (source_sha256) albo pliku (sha256) → 409; bliźniaczy kadr (dHash ≤ 6) → 409 similar_exists,
- *             chyba że allow_similar. Nowe zdjęcie = status pending (czeka na „Zatwierdź” administratora).
- *  approve  → { photo_id } → status ready (wchodzi do rotacji)
+ *             chyba że allow_similar. Plik ląduje w PRYWATNYM buckecie marketing-photos-pending (public_url = null) —
+ *             nikt go nie zobaczy, dopóki administrator nie zatwierdzi KONKRETNEJ wersji (review Codexa P1).
+ *             Nowe zdjęcie = status pending; nowa wersja istniejącego zdjęcia NIE dziedziczy zatwierdzenia: zdjęcie zostaje
+ *             przy approved_version_id (stary kadr w rotacji), nowy kadr czeka na approve (review Codexa P2).
+ *  approve  → { photo_id, version_id? (domyślnie ostatnio wgrana) } → publikacja tej wersji (kopia pod niezmienny adres
+ *             w publicznym buckecie, sha256 sprawdzony), approved_version_id = ta wersja, status ready
  *  update   → { photo_id, title?, alt_pl?, alt_en?, caption_pl?, caption_en?, kind?, source?, rights?, categories?, year?, review_note? }
  *             metadane; zamrożone kampanie mają własną kopię (frozen_photo), więc zmiana nie dotyka starych maili
  *  disable  → { photo_id } → status disabled (plik zostaje, stare maile nietknięte); enable → ready
@@ -27,8 +31,8 @@
  */
 import { createHash } from "node:crypto";
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
-import { ALLOWED_MIME, PHOTO_BUCKET, hammingHex, pickPhoto, validateMailImage, versionPath } from "./_shared/marketing-photos.js";
-import { loadLibrary, loadPhoto } from "./_shared/marketing-photo-data.js";
+import { ALLOWED_MIME, PHOTO_BUCKET, PENDING_BUCKET, hammingHex, pickPhoto, validateMailImage, versionPath } from "./_shared/marketing-photos.js";
+import { loadLibrary, loadPhoto, loadPhotoVersion, isPublished, publishVersion } from "./_shared/marketing-photo-data.js";
 
 const MAX_BASE64 = 600_000; // ~450 KB po dekodowaniu; twardy limit danych wejściowych
 const SIMILAR_MAX_DISTANCE = 6;
@@ -50,8 +54,8 @@ export const handler = async (event) => {
         const { photos, versions, usage } = await loadLibrary(supaSvc);
         const byPhoto = groupUsage(usage);
         const rows = photos.map((p) => decorate(p, versions, byPhoto));
-        const readyCount = rows.filter((r) => r.status === "ready" && r.current_version).length;
-        return json(200, { ok: true, photos: rows, ready_count: readyCount, warnings: readyCount < 5 ? ["pool_small"] : [], bucket: PHOTO_BUCKET, public_read: true });
+        const readyCount = rows.filter((r) => r.status === "ready" && r.approved_version).length;
+        return json(200, { ok: true, photos: rows, ready_count: readyCount, pending_versions: rows.filter((r) => r.pending_version).length, warnings: readyCount < 5 ? ["pool_small"] : [], bucket: PHOTO_BUCKET, pending_bucket: PENDING_BUCKET, public_read: true });
       }
       case "upload": {
         const meta = pickMeta(body, true);
@@ -94,36 +98,54 @@ export const handler = async (event) => {
         }
         const versionNo = 1 + versions.filter((v) => String(v.photo_id) === String(photo.id)).reduce((m, v) => Math.max(m, Number(v.version_no) || 0), 0);
         const path = versionPath(photo.id, versionNo, sha256, check.info.mime);
-        // plik NIGDY nie jest nadpisywany (upsert: false); nowa wersja = nowa ścieżka; długi cache (adres niezmienny)
-        const up = await supaSvc.storage.from(PHOTO_BUCKET).upload(path, bytes, { contentType: check.info.mime, cacheControl: "31536000", upsert: false });
+        // [P1] plik ląduje w PRYWATNYM buckecie; nigdy nie jest nadpisywany (upsert: false); nowa wersja = nowa ścieżka.
+        // Publiczny adres powstaje dopiero przy zatwierdzeniu tej wersji (publishVersion).
+        const up = await supaSvc.storage.from(PENDING_BUCKET).upload(path, bytes, { contentType: check.info.mime, cacheControl: "31536000", upsert: false });
         if (up.error) throw new Error("storage upload: " + up.error.message);
-        const pub = supaSvc.storage.from(PHOTO_BUCKET).getPublicUrl(path);
-        const publicUrl = String(pub?.data?.publicUrl || "");
-        if (!/^https:\/\//i.test(publicUrl)) throw new Error("public_url_not_https");
         const { data: version, error: vErr } = await supaSvc.from("marketing_photo_versions").insert({
-          photo_id: photo.id, version_no: versionNo, storage_bucket: PHOTO_BUCKET, storage_path: path, public_url: publicUrl,
+          photo_id: photo.id, version_no: versionNo, storage_bucket: PENDING_BUCKET, storage_path: path, public_url: null,
           width: check.info.width, height: check.info.height, bytes: bytes.length, mime: check.info.mime, sha256, created_by: caller.id,
         }).select("*").maybeSingle();
         if (vErr) throw new Error("insert version: " + vErr.message);
+        // [P2] current_version_id = ostatnio wgrany kadr; approved_version_id i status zostają (stary kadr dalej w rotacji)
         const patch = { current_version_id: version.id, updated_at: nowIso };
         if (existingPhoto && dhash) patch.dhash = dhash;
         const { data: updated, error: uErr } = await supaSvc.from("marketing_photos").update(patch).eq("id", photo.id).select("*").maybeSingle();
         if (uErr) throw new Error("update photo: " + uErr.message);
-        return json(200, { ok: true, photo: { ...(updated || photo), current_version: version }, version, new_photo: !existingPhoto, source: { sha256: sourceSha, name: str(body.source_name, 200), bytes: num(body.source_bytes), width: num(body.source_width), height: num(body.source_height) } });
+        return json(200, { ok: true, photo: { ...(updated || photo), current_version: version, pending_version: version }, version, new_photo: !existingPhoto, awaiting_approval: true, source: { sha256: sourceSha, name: str(body.source_name, 200), bytes: num(body.source_bytes), width: num(body.source_width), height: num(body.source_height) } });
       }
-      case "approve":
+      case "approve": {
+        // [P1/P2] zatwierdzenie KONKRETNEJ wersji: publikacja pliku pod niezmienny adres + approved_version_id
+        const photo = await loadPhoto(supaSvc, body.photo_id);
+        if (!photo) return json(404, { error: "photo_not_found" });
+        if (photo.status === "disabled") return json(409, { error: "photo_disabled", hint: "najpierw włącz zdjęcie" });
+        const versionId = body.version_id || photo.current_version_id;
+        if (!versionId) return json(409, { error: "photo_without_file" });
+        const version = await loadPhotoVersion(supaSvc, versionId);
+        if (!version || String(version.photo_id) !== String(photo.id)) return json(404, { error: "version_not_found" });
+        if (String(photo.approved_version_id || "") === String(version.id) && photo.status === "ready") return json(409, { error: "version_already_approved" });
+        const pub = await publishVersion(supaSvc, version, caller.id);
+        const nowIso = new Date().toISOString();
+        const { data, error } = await supaSvc.from("marketing_photos")
+          .update({ status: "ready", approved_version_id: version.id, approved_by: caller.id, approved_at: nowIso, disabled_by: null, disabled_at: null, updated_at: nowIso })
+          .eq("id", photo.id).select("*").maybeSingle();
+        if (error) throw new Error(error.message);
+        return json(200, { ok: true, photo: { ...data, approved_version: pub.version }, version: pub.version, published: pub.published });
+      }
       case "disable":
       case "enable": {
         const photo = await loadPhoto(supaSvc, body.photo_id);
         if (!photo) return json(404, { error: "photo_not_found" });
         const action = String(body.action);
-        if (action !== "disable" && !photo.current_version_id) return json(409, { error: "photo_without_file" });
         const nowIso = new Date().toISOString();
+        if (action === "enable") {
+          if (photo.status !== "disabled") return json(409, { error: "photo_not_disabled", status: photo.status });
+          const approved = await loadPhotoVersion(supaSvc, photo.approved_version_id);
+          if (!isPublished(approved)) return json(409, { error: "photo_without_approved_version", hint: "zatwierdź kadr (approve) zamiast włączać" });
+        }
         const patch = action === "disable"
           ? { status: "disabled", disabled_by: caller.id, disabled_at: nowIso, updated_at: nowIso }
-          : { status: "ready", approved_by: photo.approved_by || caller.id, approved_at: photo.approved_at || nowIso, disabled_by: null, disabled_at: null, updated_at: nowIso };
-        if (action === "approve" && photo.status !== "pending") return json(409, { error: "photo_not_pending", status: photo.status });
-        if (action === "enable" && photo.status !== "disabled") return json(409, { error: "photo_not_disabled", status: photo.status });
+          : { status: "ready", disabled_by: null, disabled_at: null, updated_at: nowIso };
         const { data, error } = await supaSvc.from("marketing_photos").update(patch).eq("id", photo.id).select("*").maybeSingle();
         if (error) throw new Error(error.message);
         return json(200, { ok: true, photo: data });
@@ -173,7 +195,10 @@ function groupUsage(usage) {
 
 function decorate(p, versions, byPhoto) {
   const current = versions.find((v) => String(v.id) === String(p.current_version_id)) || null;
-  return { ...p, current_version: current, versions_count: versions.filter((v) => String(v.photo_id) === String(p.id)).length, usage: byPhoto.get(String(p.id)) || { campaigns: 0, sent_campaigns: 0, last_sent_at: null, open_assignments: 0 } };
+  const approved = versions.find((v) => String(v.id) === String(p.approved_version_id)) || null;
+  // nowy kadr czeka na akceptację: ostatnio wgrana wersja ≠ zatwierdzona i jeszcze nieopublikowana
+  const pending = current && (!approved || String(current.id) !== String(approved.id)) && !isPublished(current) ? current : null;
+  return { ...p, current_version: current, approved_version: isPublished(approved) ? approved : null, pending_version: pending, versions_count: versions.filter((v) => String(v.photo_id) === String(p.id)).length, usage: byPhoto.get(String(p.id)) || { campaigns: 0, sent_campaigns: 0, last_sent_at: null, open_assignments: 0 } };
 }
 
 function pickMeta(src, requireAlt) {

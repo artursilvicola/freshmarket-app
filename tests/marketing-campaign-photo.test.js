@@ -21,8 +21,8 @@ const URL1 = "https://fake.supabase.co/storage/v1/object/public/marketing-photos
 const req = (body) => ({ httpMethod: "POST", headers: { authorization: "Bearer fake" }, body: JSON.stringify(body) });
 const call = async (body) => { const r = await handler(req(body)); return { status: r.statusCode, body: JSON.parse(r.body) }; };
 const row = (over = {}) => ({ company_id: "c1", company_name: "Sad Kowalski", profile_id: "p1", email: "op@kowalski.test", locale: "pl", segment: "start_with_credits", template_key: "credits_no_proposal", base_ok: true, in_audience: true, audience_reason: "q_credits_available_no_history", eligible: true, exclusions: [], warnings: [], snapshot: { credits_remaining: 5, credits_available: 5, reserved: 0, expiring_credits: 5, nearest_expiry: "2026-12-27" }, ...over });
-const photoRow = (id, over = {}) => ({ id, title: "Rozmowy " + id, alt_pl: "Rozmowy przy stoliku", alt_en: "Table talks", caption_pl: "Zdjęcie archiwalne 2026", caption_en: "Archive photo 2026", kind: "authentic", year: 2026, status: "ready", current_version_id: "v-" + id, created_at: "2026-11-06T10:00:00Z", ...over });
-const versionRow = (id) => ({ id: "v-" + id, photo_id: id, version_no: 1, public_url: URL1.replace("ph-1", id), width: 1200, height: 800, sha256: "s".repeat(64) });
+const photoRow = (id, over = {}) => ({ id, title: "Rozmowy " + id, alt_pl: "Rozmowy przy stoliku", alt_en: "Table talks", caption_pl: "Zdjęcie archiwalne 2026", caption_en: "Archive photo 2026", kind: "authentic", year: 2026, status: "ready", approved_version_id: "v-" + id, current_version_id: "v-" + id, created_at: "2026-11-06T10:00:00Z", ...over });
+const versionRow = (id, over = {}) => ({ id: "v-" + id, photo_id: id, version_no: 1, storage_bucket: "marketing-photos", public_url: URL1.replace("ph-1", id), published_at: "2026-11-06T10:00:00Z", width: 1200, height: 800, sha256: "s".repeat(64), ...over });
 
 beforeEach(() => {
   state.env = { supabaseUrl: "https://fake.supabase.co", supabaseAnonKey: "anon", supabaseServiceRoleKey: "svc", b2bAppUrl: "https://b2b.test", marketingUnsubscribeSecret: "sekret" };
@@ -74,7 +74,7 @@ describe("create", () => {
     expect(r.body.photo_pick).toMatchObject({ reason: "never_sent", photo_id: "ph-1", pool: 2, warnings: ["pool_small"] });
   });
   it("brak gotowych zdjęć: kampania bez zdjęcia (photo_id null) + ostrzeżenie no_ready_photos — nie blokuje tworzenia", async () => {
-    state.photos = [photoRow("ph-1", { status: "pending" })];
+    state.photos = [photoRow("ph-1", { status: "pending", approved_version_id: null })];
     const r = await call({ action: "create", template_key: "selected_companies", name: "Ręczna" });
     expect(r.status).toBe(200);
     expect(state.campaignInserts[0]).toMatchObject({ layout_version: 2, photo_id: null, photo_version_id: null });
@@ -99,6 +99,12 @@ describe("set_photo", () => {
     r = await call({ action: "set_photo", campaign_id: CAMP, photo_id: null });
     expect(r.status).toBe(200); expect(r.body.campaign.photo_id).toBeNull(); expect(r.body.photo).toBeNull();
     state.photos[1].status = "pending";
+    r = await call({ action: "set_photo", campaign_id: CAMP, photo_id: "ph-2" }); expect(r.status).toBe(409); expect(r.body.error).toBe("photo_not_ready");
+    // [P2] zdjęcie ready, ale wgrany nowy kadr v2 bez akceptacji: wybór bierze ZATWIERDZONĄ v1, nigdy v2
+    state.photos[1].status = "ready"; state.photos[1].current_version_id = "v-ph-2-nowa"; state.versions.push(versionRow("ph-2", { id: "v-ph-2-nowa", version_no: 2, storage_bucket: "marketing-photos-pending", public_url: null, published_at: null }));
+    r = await call({ action: "set_photo", campaign_id: CAMP, photo_id: "ph-2" }); expect(r.status).toBe(200); expect(r.body.campaign.photo_version_id).toBe("v-ph-2"); expect(r.body.photo.version_no).toBe(1);
+    // zdjęcie bez zatwierdzonej wersji (tylko kadr oczekujący) → 409
+    state.photos[1].approved_version_id = null;
     r = await call({ action: "set_photo", campaign_id: CAMP, photo_id: "ph-2" }); expect(r.status).toBe(409); expect(r.body.error).toBe("photo_not_ready");
     r = await call({ action: "set_photo", campaign_id: CAMP, photo_id: "nie-ma" }); expect(r.status).toBe(404);
   });
@@ -132,6 +138,14 @@ describe("approve — zamrożenie zdjęcia", () => {
     state.photos[0].status = "ready"; state.versions = [];
     r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1" }], content_version: 1 });
     expect(r.status).toBe(409); expect(r.body.error).toBe("photo_missing"); expect(state.inserts).toHaveLength(0);
+    // [P1] kampania wskazuje na wersję NIEOPUBLIKOWANĄ (prywatny bucket) → 409, żadnego maila z pustym obrazkiem
+    state.versions = [versionRow("ph-1", { id: "v-ph-1", storage_bucket: "marketing-photos-pending", public_url: null, published_at: null })];
+    r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1" }], content_version: 1 });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("photo_version_not_approved"); expect(state.inserts).toHaveLength(0);
+    // wersja opublikowana, ale inna niż zatwierdzona (approved_version_id wskazuje gdzie indziej) → 409
+    state.versions = [versionRow("ph-1")]; state.photos[0].approved_version_id = "v-inna";
+    r = await call({ action: "approve", campaign_id: CAMP, recipients: [{ company_id: "c1" }], content_version: 1 });
+    expect(r.status).toBe(409); expect(r.body.error).toBe("photo_version_not_approved"); expect(state.inserts).toHaveLength(0);
   });
   it("kampania układu 2 bez zdjęcia (świadomie): zamraża frozen_photo = null i renderuje bez bloku zdjęcia", async () => {
     state.campaign.photo_id = null; state.campaign.photo_version_id = null;

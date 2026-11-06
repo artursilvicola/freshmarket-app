@@ -7,11 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
 
 const calls = vi.hoisted(() => ({ list: [], status: "draft", photo: null }));
-const PH = (id, over = {}) => ({ id, title: "Rozmowy " + id, alt_pl: "Rozmowy", alt_en: "Talks", caption_pl: "Zdjęcie archiwalne 2026", kind: "authentic", year: 2026, status: "ready", review_note: null, current_version_id: "v-" + id, current_version: { id: "v-" + id, version_no: 1, public_url: "https://x.supabase.co/storage/v1/object/public/marketing-photos/photos/" + id + "/v1.jpg", width: 1200, height: 800, bytes: 100000 }, usage: { campaigns: 0, sent_campaigns: 0, last_sent_at: null, open_assignments: 0 }, ...over });
+const VER = (id, n = 1) => ({ id: "v-" + id + (n > 1 ? "-" + n : ""), version_no: n, public_url: n > 1 ? null : "https://x.supabase.co/storage/v1/object/public/marketing-photos/photos/" + id + "/v1.jpg", published_at: n > 1 ? null : "2026-11-06T10:00:00Z", width: 1200, height: 800, bytes: 100000 });
+const PH = (id, over = {}) => ({ id, title: "Rozmowy " + id, alt_pl: "Rozmowy", alt_en: "Talks", caption_pl: "Zdjęcie archiwalne 2026", kind: "authentic", year: 2026, status: "ready", review_note: null, current_version_id: "v-" + id, approved_version_id: "v-" + id, current_version: VER(id), approved_version: VER(id), pending_version: null, usage: { campaigns: 0, sent_campaigns: 0, last_sent_at: null, open_assignments: 0 }, ...over });
 vi.mock("../../lib/db.js", () => ({
   marketingCall: vi.fn(async (fn, body) => {
     calls.list.push([fn, body]);
-    if (fn === "marketing-photos" && body.action === "list") return { photos: [PH("p1"), PH("p2", { status: "pending", review_note: "zapas — do przeglądu" }), PH("p3", { status: "disabled" }), PH("p4", { usage: { campaigns: 2, sent_campaigns: 1, last_sent_at: "2026-10-01T10:00:00Z", open_assignments: 1 } })], ready_count: 2, warnings: ["pool_small"], public_read: true };
+    if (fn === "marketing-photos" && body.action === "list") return { photos: [PH("p1"), PH("p2", { status: "pending", review_note: "zapas — do przeglądu", approved_version_id: null, approved_version: null, pending_version: VER("p2") }), PH("p3", { status: "disabled" }), PH("p4", { usage: { campaigns: 2, sent_campaigns: 1, last_sent_at: "2026-10-01T10:00:00Z", open_assignments: 1 }, current_version_id: "v-p4-2", current_version: VER("p4", 2), pending_version: VER("p4", 2) })], ready_count: 2, warnings: ["pool_small"], public_read: true };
     if (fn === "marketing-photos" && body.action === "usage") return { usage: [{ campaign_id: "c1", campaign_name: "Kampania X", campaign_status: "sent", sent_count: 12, first_sent_at: "2026-10-01T10:00:00Z", created_at: "2026-09-30T10:00:00Z" }] };
     if (fn === "marketing-photos") return { photo: PH(body.photo_id) };
     if (fn === "marketing-campaign" && body.action === "list") return { campaigns: [{ id: "camp-1", name: "Aktywacja", status: calls.status, template_key: "credits_no_proposal", content: {}, counts: { total: 0 } }] };
@@ -45,15 +46,19 @@ describe("Biblioteka zdjęć", () => {
     expect(out()).toContain("do zatwierdzenia"); expect(out()).toContain("wyłączone"); expect(out()).toContain("zapas — do przeglądu");
     expect(out()).toContain("w 2 kampaniach, wysyłało 1"); expect(out()).toContain("w 1 otwartych"); expect(out()).toContain("nigdy niewysłane");
     await act(async () => { byId("ph-filter-pending").props.onClick(); });
-    expect(all("ph-card")).toHaveLength(1); expect(all("ph-approve")).toHaveLength(1);
+    expect(all("ph-card")).toHaveLength(1); expect(all("ph-approve")).toHaveLength(1); expect(all("ph-private")).toHaveLength(1); // kadr pending bez publicznego adresu
     await act(async () => { byId("ph-filter-all").props.onClick(); });
     expect(all("ph-disable")).toHaveLength(2); // p1, p4 ready
+    // [P2] p4: zatwierdzona v1 w rotacji, nowy kadr v2 czeka — osobny przycisk zatwierdzenia nowego kadru, miniatura z v1
+    expect(all("ph-pending-version")).toHaveLength(1); expect(out()).toContain("Nowy kadr (wersja 2) czeka na zatwierdzenie");
+    expect(all("ph-approve")).toHaveLength(2); expect(text(all("ph-approve")[1].children)).toBe("Zatwierdź nowy kadr (v2)");
+    expect(all("ph-card")[3].findAllByType("img")[0].props.src).toContain("/photos/p4/v1.jpg");
   });
   it("zatwierdzenie wysyła approve i odświeża; wyłączenie pyta o potwierdzenie (anulowane = brak wywołania); historia użycia otwiera okno z kampanią", async () => {
     const fl = vi.fn();
     await act(async () => { tree = create(<MarketingPhotoLibrary fl={fl} />); }); await flush();
     await act(async () => { byId("ph-approve").props.onClick(); }); await flush();
-    expect(calls.list.find(([f, b]) => f === "marketing-photos" && b.action === "approve")).toEqual(["marketing-photos", { action: "approve", photo_id: "p2" }]);
+    expect(calls.list.find(([f, b]) => f === "marketing-photos" && b.action === "approve")).toEqual(["marketing-photos", { action: "approve", photo_id: "p2", version_id: "v-p2" }]);
     expect(fl).toHaveBeenCalledWith("Zdjęcie zatwierdzone — jest w rotacji.", undefined);
     globalThis.window.confirm = vi.fn(() => false);
     await act(async () => { byId("ph-disable").props.onClick(); }); await flush();

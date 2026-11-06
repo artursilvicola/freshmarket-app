@@ -5,9 +5,10 @@
 //   node scripts/marketing-photos-seed.mjs [--dry-run] [--dir <katalog z oryginałami>] [--admin <uuid>]
 //
 // Dla każdego pliku: sharp → auto-orientacja, kadr 3:2 (attention), 1200×800, JPEG q82 (mozjpeg), BEZ metadanych
-// (sharp domyślnie usuwa EXIF/GPS) → sha256 wersji + sha256 oryginału + dHash 9×8 → upload do bucketa
-// `marketing-photos` (service_role, upsert:false, cache rok) → wiersz marketing_photos (+ wersja 1).
-//   zatw_*  → status ready (zatwierdzone przez Artura 06.11)       zapas_* → status pending + review_note „zapas — do przeglądu”
+// (sharp domyślnie usuwa EXIF/GPS) → sha256 wersji + sha256 oryginału + dHash 9×8 → upload do PRYWATNEGO bucketa
+// `marketing-photos-pending` (service_role, upsert:false) → wiersz marketing_photos (+ wersja 1, public_url = null).
+//   zatw_*  → publikacja wersji (kopia do publicznego `marketing-photos`) + approved_version_id + status ready
+//   zapas_* → status pending, plik ZOSTAJE prywatny do akceptacji kadru (review Codexa P1), review_note „zapas — do przeglądu”
 // Metadane (kategoria, opis kadru) z docs/production/mail-v2-makieta-2026-11-06/zdjecia-drive/kontakt.json.
 // Idempotentny: plik z tym samym source_sha256 w bazie = pomijany. Oryginały nie są zmieniane ani wysyłane.
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -16,7 +17,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { parseDotenv, validateTestEnv, PROD_REF } from "./lib/test-env.mjs";
-import { validateMailImage, versionPath, PHOTO_BUCKET } from "../netlify/functions/_shared/marketing-photos.js";
+import { validateMailImage, versionPath, PENDING_BUCKET } from "../netlify/functions/_shared/marketing-photos.js";
+import { publishVersion } from "../netlify/functions/_shared/marketing-photo-data.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
@@ -101,12 +103,13 @@ for (const f of files) {
     if (error) throw new Error("insert photo: " + error.message);
     const fileSha = sha(out);
     const p = versionPath(photo.id, 1, fileSha, "image/jpeg");
-    const up = await supa.storage.from(PHOTO_BUCKET).upload(p, out, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false });
+    const up = await supa.storage.from(PENDING_BUCKET).upload(p, out, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false });
     if (up.error) throw new Error("upload: " + up.error.message);
-    const publicUrl = supa.storage.from(PHOTO_BUCKET).getPublicUrl(p).data.publicUrl;
-    const { data: version, error: vErr } = await supa.from("marketing_photo_versions").insert({ photo_id: photo.id, version_no: 1, storage_bucket: PHOTO_BUCKET, storage_path: p, public_url: publicUrl, width: info.width, height: info.height, bytes: out.length, mime: "image/jpeg", sha256: fileSha, created_by: adminId }).select("id").maybeSingle();
+    const { data: version, error: vErr } = await supa.from("marketing_photo_versions").insert({ photo_id: photo.id, version_no: 1, storage_bucket: PENDING_BUCKET, storage_path: p, public_url: null, width: info.width, height: info.height, bytes: out.length, mime: "image/jpeg", sha256: fileSha, created_by: adminId }).select("*").maybeSingle();
     if (vErr) throw new Error("insert version: " + vErr.message);
-    const { error: uErr } = await supa.from("marketing_photos").update({ current_version_id: version.id }).eq("id", photo.id);
+    const patch = { current_version_id: version.id };
+    if (tier === "zatw") { await publishVersion(supa, version, adminId); patch.approved_version_id = version.id; }
+    const { error: uErr } = await supa.from("marketing_photos").update(patch).eq("id", photo.id);
     if (uErr) throw new Error("update photo: " + uErr.message);
     done++;
   } catch (e) { failed++; console.error(`  BŁĄD ${f}: ${e.message}`); }

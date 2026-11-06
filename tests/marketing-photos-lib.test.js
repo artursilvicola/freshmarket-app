@@ -35,10 +35,10 @@ describe("validateMailImage — limity wersji do maila", () => {
 });
 
 describe("pickPhoto — rotacja", () => {
-  const P = (id, over = {}) => ({ id, status: "ready", current_version_id: "v-" + id, created_at: `2026-11-0${id.slice(-1)}T00:00:00Z`, ...over });
+  const P = (id, over = {}) => ({ id, status: "ready", approved_version_id: "v-" + id, current_version_id: "v-" + id, created_at: `2026-11-0${id.slice(-1)}T00:00:00Z`, ...over });
   const U = (photo_id, campaign_id, over = {}) => ({ photo_id, campaign_id, campaign_status: "sent", sent_count: 10, first_sent_at: "2026-10-01T10:00:00Z", last_sent_at: "2026-10-01T11:00:00Z", approved_at: "2026-10-01T09:00:00Z", ...over });
-  it("brak gotowych zdjęć → null z ostrzeżeniem; pending/disabled/bez pliku nie wchodzą do puli", () => {
-    const r = pickPhoto({ photos: [P("p1", { status: "pending" }), P("p2", { status: "disabled" }), P("p3", { current_version_id: null })], usage: [] });
+  it("brak gotowych zdjęć → null z ostrzeżeniem; pending/disabled/bez ZATWIERDZONEJ wersji nie wchodzą do puli (nowy kadr bez akceptacji nie liczy się)", () => {
+    const r = pickPhoto({ photos: [P("p1", { status: "pending", approved_version_id: null }), P("p2", { status: "disabled" }), P("p3", { approved_version_id: null, current_version_id: "v-nowa" })], usage: [] });
     expect(r.photo).toBeNull(); expect(r.reason).toBe("no_ready_photos"); expect(r.warnings).toContain("no_ready_photos"); expect(r.pool).toBe(0);
   });
   it("nigdy niewysłane najpierw (najstarsze wgranie), potem najdawniej wysłane", () => {

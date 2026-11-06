@@ -77,7 +77,7 @@ export default function MarketingActivation({ fl }) {
   });
   const openPicker = () => current && run("picker", async () => {
     const r = await marketingCall("marketing-photos", { action: "list" });
-    setPicker({ photos: (r.photos || []).filter((p) => p.status === "ready" && p.current_version) });
+    setPicker({ photos: (r.photos || []).filter((p) => p.status === "ready" && p.approved_version) }); // tylko zatwierdzona, opublikowana wersja
   });
 
   const refreshCandidates = () => current && run("candidates", async () => { const c = await marketingCall("marketing-candidates", { campaign_id: current.campaign.id }); setCandidates(c); setSelected({}); toast(tr("refreshed", { at: new Date(c.snapshot_at).toLocaleTimeString("pl-PL") })); });
@@ -388,7 +388,7 @@ export default function MarketingActivation({ fl }) {
               const u = p.usage || {}; const selected = current?.campaign?.photo_id === p.id;
               return (
                 <div key={p.id} data-testid="mk-picker-photo" onClick={() => !busy && setPhoto({ photo_id: p.id })} style={{ border: "2px solid " + (selected ? "#0d9488" : u.sent_campaigns ? "#e2e8f0" : "#86efac"), borderRadius: 10, overflow: "hidden", cursor: "pointer" }}>
-                  <img src={p.current_version.public_url} alt={p.alt_pl} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", background: "#e2e8f0" }} />
+                  <img src={p.approved_version.public_url} alt={p.alt_pl} loading="lazy" style={{ display: "block", width: "100%", aspectRatio: "3 / 2", objectFit: "cover", background: "#e2e8f0" }} />
                   <div style={{ padding: 8, fontSize: 11 }}>
                     <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.title}>{p.title}</div>
                     <div style={{ color: u.sent_campaigns ? "#475569" : "#166534", marginTop: 2 }}>{u.sent_campaigns ? tr("ph_last_used", { at: u.last_sent_at ? new Date(u.last_sent_at).toLocaleDateString("pl-PL") : "—" }) : tr("ph_never")}{u.open_assignments ? ` · ${tr("ph_open_assign", { n: u.open_assignments })}` : ""}</div>

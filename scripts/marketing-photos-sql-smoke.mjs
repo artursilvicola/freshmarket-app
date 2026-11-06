@@ -35,8 +35,8 @@ for (const f of files) {
 console.log(`migracje: ${files.length} OK (ostatnia ${files[files.length - 1]})`);
 ok(files.includes("20261107100000_marketing_photos.sql"), "migracja biblioteki zdjęć w łańcuchu");
 console.log("idempotencja: migracja zdjęć drugi raz");
-let twice = null; try { await db.exec(patch(read("supabase/migrations/20261107100000_marketing_photos.sql"))); } catch (e) { twice = e.message; }
-ok(!twice, "druga aplikacja bez błędu" + (twice ? ": " + twice : ""));
+let twice = null; try { for (const f of ["20261107100000_marketing_photos.sql", "20261107110000_marketing_photo_versions_approval.sql"]) await db.exec(patch(read("supabase/migrations/" + f))); } catch (e) { twice = e.message; }
+ok(!twice, "druga aplikacja obu migracji zdjęć (w kolejności) bez błędu" + (twice ? ": " + twice : ""));
 
 const ADMIN = "11111111-1111-4111-8111-111111111111", OWNER = "55555555-5555-4555-8555-555555555555";
 const COMPANY = "44444444-4444-4444-8444-444444444444";
@@ -51,21 +51,37 @@ await db.exec(`
 
 console.log("1. zdjęcie + wersja; current_version_id; unikalność ścieżki i oryginału");
 const ph = (await db.query(`insert into public.marketing_photos (title, alt_pl, alt_en, caption_pl, kind, year, status, source_sha256, created_by) values ('Rozmowy 2026','Rozmowy','Talks','Zdjęcie archiwalne 2026','authentic',2026,'pending',repeat('a',64),$1) returning id`, [ADMIN])).rows[0].id;
-const v1 = (await db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256, created_by) values ($1::uuid,1,'photos/'||$1::text||'/v1-abc.jpg','https://x.supabase.co/storage/v1/object/public/marketing-photos/photos/'||$1::text||'/v1-abc.jpg',1200,800,120000,'image/jpeg',repeat('b',64),$2::uuid) returning id`, [ph, ADMIN])).rows[0].id;
-await db.query(`update public.marketing_photos set current_version_id = $2, status = 'ready', approved_by = $3, approved_at = now() where id = $1`, [ph, v1, ADMIN]);
+const v1 = (await db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, width, height, bytes, mime, sha256, created_by) values ($1::uuid,1,'marketing-photos-pending','photos/'||$1::text||'/v1-abc.jpg',null,1200,800,120000,'image/jpeg',repeat('b',64),$2::uuid) returning id`, [ph, ADMIN])).rows[0].id;
+ok((await db.query(`select published_at, public_url from public.marketing_photo_versions where id = $1`, [v1])).rows[0].public_url === null, "wersja po wgraniu: prywatny bucket, public_url NULL (review Codexa P1)");
+// publikacja = jedyne dozwolone przejście: bucket/ścieżka/adres/published_*
+await db.query(`update public.marketing_photo_versions set storage_bucket = 'marketing-photos', public_url = 'https://x.supabase.co/storage/v1/object/public/marketing-photos/photos/'||$1::text||'/v1-abc.jpg', published_at = now(), published_by = $2::uuid where id = $3`, [ph, ADMIN, v1]);
+ok((await db.query(`select published_at from public.marketing_photo_versions where id = $1`, [v1])).rows[0].published_at !== null, "publikacja wersji przeszła (pending → published)");
+await db.query(`update public.marketing_photos set current_version_id = $2, approved_version_id = $2, status = 'ready', approved_by = $3, approved_at = now() where id = $1`, [ph, v1, ADMIN]);
+ok((await db.query(`select approved_version_id from public.marketing_photos where id = $1`, [ph])).rows[0].approved_version_id === v1, "approved_version_id = v1 (zatwierdzenie per wersja, review Codexa P2)");
 ok((await db.query(`select current_version_id from public.marketing_photos where id = $1`, [ph])).rows[0].current_version_id === v1, "current_version_id wskazuje na v1");
-let e = await fails_with(() => db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,2,'photos/'||$1::text||'/v1-abc.jpg','https://x/y',1200,800,120000,'image/jpeg','c')`, [ph]), /unique|duplicate/i);
+let e = await fails_with(() => db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,2,'photos/'||$1::text||'/v1-abc.jpg',null,1200,800,120000,'image/jpeg','c')`, [ph]), /unique|duplicate/i);
 ok(e && !e.startsWith("INNY"), "druga wersja pod TĄ SAMĄ ścieżką odrzucona (unique storage_path)");
 e = await fails_with(() => db.query(`insert into public.marketing_photos (title, alt_pl, alt_en, source_sha256) values ('Dup','a','b',repeat('a',64))`), /unique|duplicate/i);
 ok(e && !e.startsWith("INNY"), "duplikat oryginału (source_sha256) odrzucony");
-e = await fails_with(() => db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,3,'photos/x/v3.gif','https://x/z',1200,800,120000,'image/gif','d')`, [ph]), /check|mime/i);
+e = await fails_with(() => db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,3,'photos/x/v3.gif',null,1200,800,120000,'image/gif','d')`, [ph]), /check|mime/i);
 ok(e && !e.startsWith("INNY"), "wersja z mime image/gif odrzucona (check)");
-e = await fails_with(() => db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,3,'photos/x/v3.jpg','https://x/z',3000,2000,120000,'image/jpeg','d')`, [ph]), /check|width/i);
+e = await fails_with(() => db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,3,'photos/x/v3.jpg',null,3000,2000,120000,'image/jpeg','d')`, [ph]), /check|width/i);
+e = await fails_with(() => db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,3,'photos/x/v3.jpg','https://x/z',1200,800,120000,'image/jpeg','d')`, [ph]), /check|published/i);
+ok(e && !e.startsWith("INNY"), "public_url bez published_at odrzucony (check: adres tylko dla opublikowanej)");
 ok(e && !e.startsWith("INNY"), "wersja 3000 px szeroka odrzucona (check width)");
 
 console.log("2. niezmienność wersji: update/delete zatrzymane triggerem (nawet jako właściciel)");
 e = await fails_with(() => db.query(`update public.marketing_photo_versions set public_url = 'https://inny/plik.jpg' where id = $1`, [v1]), /immutable/);
-ok(e && !e.startsWith("INNY"), "update wersji → wyjątek immutable");
+ok(e && !e.startsWith("INNY"), "podmiana adresu opublikowanej wersji → wyjątek immutable");
+e = await fails_with(() => db.query(`update public.marketing_photo_versions set sha256 = repeat('f',64) where id = $1`, [v1]), /immutable/);
+ok(e && !e.startsWith("INNY"), "zmiana sha256 → wyjątek immutable");
+// nowy kadr v2 (prywatny) — zatwierdzenie zdjęcia nie przechodzi na niego samo
+const v2 = (await db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,2,'marketing-photos-pending','photos/'||$1::text||'/v2-def.jpg',null,1200,800,110000,'image/jpeg',repeat('c',64)) returning id`, [ph])).rows[0].id;
+await db.query(`update public.marketing_photos set current_version_id = $2 where id = $1`, [ph, v2]);
+const pv = (await db.query(`select approved_version_id, current_version_id, status from public.marketing_photos where id = $1`, [ph])).rows[0];
+ok(pv.approved_version_id === v1 && pv.current_version_id === v2 && pv.status === "ready", "nowy kadr v2: current=v2, approved nadal v1, status ready (v1 w rotacji, v2 czeka)");
+e = await fails_with(() => db.query(`update public.marketing_photo_versions set published_at = now(), storage_bucket = 'marketing-photos' where id = $1`, [v2]), /https/);
+ok(e && !e.startsWith("INNY"), "publikacja bez adresu https odrzucona");
 e = await fails_with(() => db.query(`delete from public.marketing_photo_versions where id = $1`, [v1]), /immutable/);
 ok(e && !e.startsWith("INNY"), "delete wersji → wyjątek immutable");
 ok((await db.query(`select public_url from public.marketing_photo_versions where id = $1`, [v1])).rows[0].public_url.endsWith("/v1-abc.jpg"), "adres wersji bez zmian");
@@ -91,6 +107,12 @@ const fz = (await db.query(`select frozen_photo->>'url' as url from public.marke
 ok(fz.url === "https://x/v1-abc.jpg", "wyłączone zdjęcie: zamrożenie kampanii bez zmian");
 e = await fails_with(() => db.query(`delete from public.marketing_photos where id = $1`, [ph]), /foreign key|violates|restrict/i);
 ok(e && !e.startsWith("INNY"), "zdjęcia z wersjami nie da się skasować (FK restrict)");
+// cofnięcie publikacji: v1 użyta przez kampanię (i zatwierdzona) → odmowa; v2 po publikacji bez użycia → wolno
+e = await fails_with(() => db.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1`, [v1]), /referenced/);
+ok(e && !e.startsWith("INNY"), "cofnięcie publikacji wersji użytej w kampanii / zatwierdzonej → odmowa");
+await db.query(`update public.marketing_photo_versions set storage_bucket = 'marketing-photos', public_url = 'https://x/v2-def.jpg', published_at = now() where id = $1`, [v2]);
+await db.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1`, [v2]);
+ok((await db.query(`select public_url from public.marketing_photo_versions where id = $1`, [v2])).rows[0].public_url === null, "cofnięcie publikacji nieużywanej wersji (porządki) przeszło");
 
 console.log("4. uprawnienia");
 const can = async (role, sql, params = []) => { await db.exec(`reset role; select set_config('request.jwt.claim.sub', '', false); set role ${role};`); try { await db.query(sql, params); await db.exec("reset role"); return true; } catch { await db.exec("reset role"); return false; } };
@@ -99,7 +121,8 @@ ok(!(await can("anon", `select * from public.marketing_photos`)), "anon: brak SE
 ok(!(await can("authenticated", `insert into public.marketing_photos (title, alt_pl, alt_en) values ('x','a','b')`)), "authenticated: brak INSERT na marketing_photos");
 ok(!(await can("authenticated", `insert into public.marketing_photo_versions (photo_id, version_no, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,9,'p/9','https://x/9',1200,800,1200,'image/jpeg','z')`, [ph])), "authenticated: brak INSERT na wersje");
 ok(!(await can("service_role", `delete from public.marketing_photos where id = $1`, [ph])), "service_role: brak DELETE na marketing_photos");
-ok(!(await can("service_role", `update public.marketing_photo_versions set bytes = 1 where id = $1`, [v1])), "service_role: brak UPDATE na wersje");
+ok(!(await can("service_role", `update public.marketing_photo_versions set bytes = 1 where id = $1`, [v1])), "service_role: brak UPDATE kolumn pliku w wersjach");
+ok(!(await can("service_role", `delete from public.marketing_photo_versions where id = $1`, [v1])), "service_role: brak DELETE na wersje");
 ok(await can("service_role", `select count(*) from public.marketing_photo_usage`), "service_role: czyta widok użycia");
 let rows = await asUser(OWNER, `select count(*)::int as n from public.marketing_photos`);
 let viewRows = await asUser(OWNER, `select count(*)::int as n from public.marketing_photo_usage`);
@@ -112,8 +135,10 @@ console.log("5. bucket marketing-photos: publiczny odczyt, limit 2 MB, bez polit
 const bucket = (await db.query(`select public, file_size_limit, allowed_mime_types from storage.buckets where id = 'marketing-photos'`)).rows[0];
 ok(bucket && bucket.public === true && Number(bucket.file_size_limit) === 2097152, "bucket publiczny, 2 MB");
 ok(Array.isArray(bucket?.allowed_mime_types) && bucket.allowed_mime_types.join() === "image/jpeg,image/png,image/webp", "mime: jpeg/png/webp");
-const pol = (await db.query(`select polname, polcmd from pg_policy where polrelid = 'storage.objects'::regclass and polname like 'marketing_photos_%'`)).rows;
-ok(pol.length === 1 && pol[0].polname === "marketing_photos_public_read" && pol[0].polcmd === "r", "jedna polityka storage: tylko SELECT (" + pol.map((p) => p.polname + ":" + p.polcmd).join(",") + ")");
+const pol = (await db.query(`select polname, polcmd from pg_policy where polrelid = 'storage.objects'::regclass and polname like 'marketing_photos%'`)).rows;
+ok(pol.length === 1 && pol[0].polname === "marketing_photos_public_read" && pol[0].polcmd === "r", "jedna polityka storage: tylko SELECT na publicznym (" + pol.map((p) => p.polname + ":" + p.polcmd).join(",") + ")");
+const pend = (await db.query(`select public from storage.buckets where id = 'marketing-photos-pending'`)).rows[0];
+ok(pend && pend.public === false, "bucket marketing-photos-pending PRYWATNY i bez żadnej polityki (tylko service_role)");
 
 console.log("6. nic nie dotknęło rozliczeń");
 const legacy = (await db.query(`select (select count(*) from public.legacy_sends)::int + (select count(*) from public.wallet_tx)::int as n`)).rows[0].n;

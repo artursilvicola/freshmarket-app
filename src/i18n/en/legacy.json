@@ -2070,7 +2070,17 @@
       "err_metadata_invalid": "Complete the photo description (name, alt PL/EN, no HTML).",
       "err_format_not_allowed": "Allowed formats: JPEG, PNG, WebP.",
       "err_photo_not_pending": "This photo is not awaiting approval.",
-      "err_photo_without_file": "The photo has no file."
+      "err_photo_without_file": "The photo has no file.",
+      "ph_private_pending": "Crop awaiting approval — the file is private (no public address)",
+      "ph_new_version_pending": "A new crop (version {{n}}) is awaiting approval — the previous version stays in rotation.",
+      "ph_approve_new_version": "Approve new crop (v{{n}})",
+      "ph_new_version_approved": "New crop (version {{n}}) approved and published — used in new campaigns from now on.",
+      "ph_saved_new_version": "New crop of “{{title}}” saved as version {{n}} — awaiting approval (private file).",
+      "err_photo_disabled": "The photo is disabled — enable it first.",
+      "err_version_not_found": "This file version was not found.",
+      "err_version_already_approved": "This version is already approved.",
+      "err_photo_without_approved_version": "The photo has no approved version — approve the crop instead of enabling.",
+      "err_photo_version_not_approved": "The selected file version is not approved — choose the photo again."
     },
     "settlements": {
       "title": "Supplier settlements",

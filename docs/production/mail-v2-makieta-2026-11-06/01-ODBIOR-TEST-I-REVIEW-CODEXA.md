@@ -87,6 +87,40 @@ przy wgrywaniu. Tak samo będzie na produkcji po wdrożeniu.
 * UI: zdjęcie zmienia `content_version` (podgląd ↔ zatwierdzenie spójne), po zatwierdzeniu brak przycisków.
 * Uwaga techniczna: w podglądzie testowym (netlify dev, iframe `sandbox`) zielone logo z `http://localhost:8888/brand/…` nie wczytuje się w ramce podglądu panelu; plik jest serwowany (HTTP 200) i w normalnej karcie renderuje się poprawnie — na produkcji adres to `https://b2b.freshmarket.eu/brand/fm-email-logo-green.png` (jak dotychczasowe białe logo).
 
+## 8. Poprawki po review Codexa (06.11, P1 + P2) — druga runda
+
+**P1 (niezatwierdzone zdjęcia były publiczne).** Każdy upload trafia teraz do PRYWATNEGO bucketa `marketing-photos-pending`
+(bez żadnej polityki storage; czyta i pisze wyłącznie funkcja z service_role). Wiersz wersji ma `public_url = NULL` i `published_at = NULL`.
+Dopiero `approve` konkretnej wersji wywołuje `publishVersion`: pobiera bajty z prywatnego bucketa, sprawdza sha256 z wiersza,
+kopiuje pod TĘ SAMĄ niezmienną ścieżkę do publicznego `marketing-photos` (`upsert:false`, cache rok), ustawia `public_url`/`published_at`
+(jedyne przejście dozwolone przez trigger niezmienności) i usuwa kopię prywatną. Kampania, podgląd, rotacja i panel używają wyłącznie
+wersji opublikowanych; zatwierdzenie kampanii z wersją nieopublikowaną = 409 `photo_version_not_approved`.
+
+**P2 (nowy kadr dziedziczył zatwierdzenie).** `marketing_photos.approved_version_id` = konkretna zatwierdzona i opublikowana wersja.
+`current_version_id` = ostatnio wgrany plik. Upload nowej wersji zatwierdzonego zdjęcia zostawia status `ready` i `approved_version_id`
+na starym kadrze (rotacja i wybór dalej biorą v1), a v2 czeka prywatnie na `approve { photo_id, version_id }`. Panel pokazuje
+„Nowy kadr (wersja N) czeka na zatwierdzenie” i osobny przycisk; miniatura i okno wyboru zawsze z wersji zatwierdzonej.
+
+**Migracja** `20261107110000_marketing_photo_versions_approval.sql` (tylko baza testowa): `public_url` nullable + `published_at/by`
++ check (adres tylko z `published_at`), nowy trigger (publikacja pending→published; cofnięcie publikacji wyłącznie dla wersji
+nieużywanej przez kampanie ani niezatwierdzonej; wszystko inne odrzucane; DELETE nadal zabroniony), `approved_version_id`
+z backfillem dla `ready`, prywatny bucket. Kolejność w pliku: nowy trigger PRZED backfillem (stary odrzuciłby update).
+
+**Porządki na bazie testowej** (`scripts/marketing-photos-unpublish-pending.mjs`, po sprawdzeniu użycia): 20 wersji zdjęć pending
+cofnięte do prywatnego bucketa (żadna nie była użyta w kampanii ani zatwierdzona), 18 zatwierdzonych zostało opublikowanych.
+Kontrola na bazie testowej po porządkach: 20/20 plików pending niedostępnych anonimowo pod publicznym adresem (HTTP 400),
+prywatny bucket bez logowania i z kluczem anon = 400, zalogowany dostawca i admin nie czytają prywatnego bucketa, 18/18 zatwierdzonych
+pobieralnych (200), wszystkie 38 bez EXIF/XMP/IPTC/ICC, katalogi w storage: publiczny 18 / prywatny 20.
+
+**Regresje dodane:** `tests/marketing-photos-fn.test.js` (upload → tylko prywatny bucket, bez adresu; approve publikuje pod tą samą
+ścieżką z weryfikacją sha256 i usuwa kopię prywatną; niezgodny sha256 = STOP bez publikacji; sekwencja approve v1 → upload v2 → lista/
+rotacja na v1, v2 prywatna → approve v2 przełącza, v1 zostaje opublikowana; wersja innego zdjęcia 404; enable bez zatwierdzonej wersji 409),
+`tests/marketing-campaign-photo.test.js` (set_photo bierze zatwierdzoną v1 mimo wgranej v2; zdjęcie bez zatwierdzonej wersji 409;
+zatwierdzenie kampanii z wersją nieopublikowaną / inną niż zatwierdzona = 409 bez wiadomości), `tests/marketing-photos-lib.test.js`
+(pula = tylko approved_version_id), `scripts/marketing-photos-sql-smoke.mjs` (wersja po wgraniu bez adresu, publikacja, zmiana sha256/adresu
+odrzucona, nowy kadr nie zmienia approved, cofnięcie publikacji wersji użytej odrzucone, prywatny bucket), komponent (kadr prywatny bez
+miniatury, osobny przycisk zatwierdzenia nowego kadru, miniatura z v1).
+
 ## 7. Otwarte / poza zakresem
 * `MARKETING_SEND_ALLOWLIST` nadal ustawiona na prod (zdjąć przed prawdziwą kampanią) — bez związku z tą gałęzią.
 * Instrukcja administratora (rozdział Marketing) nie opisuje jeszcze biblioteki zdjęć — do uzupełnienia po akceptacji wyglądu.

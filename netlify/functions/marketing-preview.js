@@ -17,7 +17,7 @@
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
 import { computeCandidates, loadCampaign } from "./_shared/marketing-data.js";
 import { renderMarketingTemplate, validateContent, normalizeLayoutVersion, DEFAULT_LAYOUT_VERSION, TEMPLATE_KEYS } from "./_shared/marketing-templates.js";
-import { loadPhoto, loadPhotoVersion, resolveCampaignPhoto } from "./_shared/marketing-photo-data.js";
+import { loadPhoto, loadPhotoVersion, resolveCampaignPhoto, isPublished } from "./_shared/marketing-photo-data.js";
 
 export const handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return { statusCode: 204, headers: MARKETING_CORS };
@@ -72,8 +72,8 @@ async function previewPhoto(supaSvc, campaign, body) {
   if (body.photo_id === null) return null;
   if (body.photo_id) {
     const photo = await loadPhoto(supaSvc, body.photo_id);
-    const version = photo ? await loadPhotoVersion(supaSvc, photo.current_version_id) : null;
-    if (!photo || !version) throw new Error("photo_not_found");
+    const version = photo ? await loadPhotoVersion(supaSvc, photo.approved_version_id) : null; // tylko zatwierdzona, opublikowana wersja
+    if (!photo || !isPublished(version)) throw new Error("photo_not_found");
     return { photo_id: photo.id, version_id: version.id, url: version.public_url, width: version.width, height: version.height, alt_pl: photo.alt_pl, alt_en: photo.alt_en, caption_pl: photo.caption_pl, caption_en: photo.caption_en, frozen: false };
   }
   return resolveCampaignPhoto(supaSvc, campaign);

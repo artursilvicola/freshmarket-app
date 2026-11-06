@@ -46,7 +46,7 @@ import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketi
 import { computeCandidates, loadCampaign } from "./_shared/marketing-data.js";
 import { renderMarketingTemplate, defaultContent, effectiveContent, validateContent, normalizeLayoutVersion, AUDIENCE_TEMPLATE_KEYS, TEMPLATE_KEYS, DEFAULT_LAYOUT_VERSION } from "./_shared/marketing-templates.js";
 import { freezePhoto, validateFrozenPhoto } from "./_shared/marketing-photos.js";
-import { loadPhoto, loadPhotoVersion, resolveCampaignPhoto, suggestPhoto } from "./_shared/marketing-photo-data.js";
+import { loadPhoto, loadPhotoVersion, resolveCampaignPhoto, suggestPhoto, isPublished } from "./_shared/marketing-photo-data.js";
 import { payloadHash, unsubscribeUrl } from "./_shared/marketing-mailer.js";
 import { randomUUID } from "node:crypto";
 
@@ -142,8 +142,10 @@ export const handler = async (event) => {
         } else if (body.photo_id) {
           const photo = await loadPhoto(supaSvc, body.photo_id);
           if (!photo) return json(404, { error: "photo_not_found" });
-          if (photo.status !== "ready" || !photo.current_version_id) return json(409, { error: "photo_not_ready", status: photo.status });
-          photoId = photo.id; versionId = photo.current_version_id;
+          // [review Codexa P2] do kampanii trafia WYŁĄCZNIE zatwierdzona, opublikowana wersja — nigdy „ostatnio wgrana”
+          const approved = photo.status === "ready" ? await loadPhotoVersion(supaSvc, photo.approved_version_id) : null;
+          if (!isPublished(approved)) return json(409, { error: "photo_not_ready", status: photo.status });
+          photoId = photo.id; versionId = approved.id;
         } // photo_id: null = świadomie bez zdjęcia
         const { data, error } = await supaSvc.from("marketing_campaigns")
           .update({ photo_id: photoId, photo_version_id: versionId, content_version: current + 1, content_updated_at: new Date().toISOString(), content_updated_by: caller.id })
@@ -192,9 +194,11 @@ export const handler = async (event) => {
         let frozenPhoto = null;
         if (firstFreeze && layoutVersion === 2 && campaign.photo_id) {
           const photo = await loadPhoto(supaSvc, campaign.photo_id);
-          const version = photo ? await loadPhotoVersion(supaSvc, campaign.photo_version_id || photo.current_version_id) : null;
+          const version = photo ? await loadPhotoVersion(supaSvc, campaign.photo_version_id || photo.approved_version_id) : null;
           if (!photo || !version) return json(409, { error: "photo_missing", hint: "zdjęcie kampanii nie istnieje albo nie ma pliku — wybierz inne zdjęcie w szkicu" });
           if (photo.status !== "ready") return json(409, { error: "photo_not_ready", status: photo.status, hint: "zdjęcie zostało wyłączone — wybierz inne" });
+          // [P1] zamrażamy tylko OPUBLIKOWANĄ (zatwierdzoną) wersję — wersja z prywatnego bucketa nie ma adresu dla klienta poczty
+          if (!isPublished(version) || String(version.id) !== String(photo.approved_version_id)) return json(409, { error: "photo_version_not_approved", hint: "wybrana wersja pliku nie jest zatwierdzona — wybierz zdjęcie ponownie" });
           frozenPhoto = freezePhoto(photo, version);
         }
         const freezePatch = firstFreeze

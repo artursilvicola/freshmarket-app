@@ -2,7 +2,7 @@
  * [feat/marketing-photos] Biblioteka zdjęć do maili PreConnect — czysta logika (bez I/O):
  *  * sniffImage        — PRAWDZIWY format i wymiary z bajtów (JPEG/PNG/WebP), nie z deklaracji klienta
  *  * validateMailImage — limity wersji „do maila” (≤ 1200 px, ≤ 350 KB, proporcje zbliżone do 3:2)
- *  * pickPhoto         — rotacja: ready + aktualna wersja, nigdy niewysłane najpierw, potem najdawniej wysłane,
+ *  * pickPhoto         — rotacja: ready + ZATWIERDZONA wersja (approved_version_id; nowy kadr czeka na akceptację), nigdy niewysłane najpierw, potem najdawniej wysłane,
  *                        omija zdjęcia z ostatnich 4 kampanii, które faktycznie wysyłały, i zdjęcia przypisane
  *                        do innych otwartych kampanii; ostrzega, gdy wybór jest za mały
  *  * freezePhoto       — kształt zamrożenia zapisywanego w kampanii przy zatwierdzeniu
@@ -11,7 +11,8 @@
  * Testy: tests/marketing-photos-lib.test.js
  */
 
-export const PHOTO_BUCKET = "marketing-photos";
+export const PHOTO_BUCKET = "marketing-photos";            // publiczny ODCZYT: tylko zatwierdzone (opublikowane) wersje
+export const PENDING_BUCKET = "marketing-photos-pending";  // PRYWATNY: każdy upload, do czasu zatwierdzenia konkretnej wersji
 export const MAIL_IMAGE_LIMITS = Object.freeze({
   maxBytes: 350 * 1024,   // ~200 KB docelowo, 350 KB twardy limit (Codex: ≤ 1200 px, ok. 200 KB)
   minBytes: 1000,
@@ -94,7 +95,7 @@ export function validateMailImage(buf, declaredMime, limits = MAIL_IMAGE_LIMITS)
 /**
  * Rotacja zdjęć.
  * @param {object} a
- * @param {Array}  a.photos   wiersze marketing_photos (status, current_version_id, created_at, id)
+ * @param {Array}  a.photos   wiersze marketing_photos (status, approved_version_id, created_at, id)
  * @param {Array}  a.usage    wiersze widoku marketing_photo_usage (photo_id, campaign_id, campaign_status, sent_count, first_sent_at, last_sent_at, approved_at)
  * @param {string} [a.excludeCampaignId]  bieżąca kampania (jej własne przypisanie nie liczy się jako „inna otwarta”)
  * @param {string} [a.preferPhotoId]      ręczny wybór — zwracany, jeśli jest ready (reason: manual)
@@ -102,7 +103,7 @@ export function validateMailImage(buf, declaredMime, limits = MAIL_IMAGE_LIMITS)
  */
 export function pickPhoto({ photos = [], usage = [], excludeCampaignId = null, preferPhotoId = null } = {}) {
   const warnings = [];
-  const ready = photos.filter((p) => p && p.status === "ready" && p.current_version_id);
+  const ready = photos.filter((p) => p && p.status === "ready" && p.approved_version_id);
   if (preferPhotoId) {
     const manual = ready.find((p) => String(p.id) === String(preferPhotoId));
     if (manual) return { photo: manual, reason: "manual", warnings, pool: ready.length, ranked: [] };
