@@ -40,8 +40,8 @@ Zrzuty: `mail-pl-komputer-640.png`, `mail-en-komputer-640.png`, `mail-pl-telefon
   biblioteki” → plik ląduje w PRYWATNYM buckecie (bez adresu). Potem „Zatwierdź kadr” dla każdego = publikacja pod stały adres.
 * Dlaczego panel, nie skrypt: każde zdjęcie przechodzi przez tę samą funkcję co produkcja (walidacja bajtów, duplikaty sha256/dHash, EXIF usunięty
   w przeglądarce) i wymaga świadomego zatwierdzenia; skrypt zasiewu jest celowo zablokowany dla projektu prod.
-* Kontrola po imporcie (`01-kontrola-migracji.sql`, sekcja C): 18 `ready` z `approved_version_id`, 18 wersji opublikowanych, 0 pending, 18 obiektów w publicznym
-  buckecie i 0 w prywatnym, każdy plik 1200×800 JPEG ≤ 200 KB, 38/38 bez EXIF sprawdzone wcześniej na identycznym pipeline; anonimowy GET 200.
+* Kontrola po imporcie (`01b-kontrola-po-imporcie.sql`): 18 `ready` z `approved_version_id`, 18 wersji opublikowanych, 0 pending, 18 obiektów w publicznym
+  buckecie i 0 w prywatnym, każdy plik 1200×800 JPEG ≤ 200 KB, bez EXIF, bo plik powstaje w przeglądarce jako nowy JPEG (przy imporcie przez panel sprawdzić wyrywkowo 1 plik, bo test 38/38 dotyczył zasiewu przez sharp); anonimowy GET 200.
 * Minimalna pula: ≥ 5 (ostrzeżenie `pool_small` poniżej). Rotacja omija 4 ostatnie wysyłające kampanie.
 
 ## Krok 4 — konta próbne + lista + flaga
