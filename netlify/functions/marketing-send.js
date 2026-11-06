@@ -20,11 +20,18 @@
  * flagi: 403 `send_disabled` — także dla testu (Artur 4.11). W testach jednostkowych
  * transport jest atrapą (fetch).
  *
+ * MARKETING_SEND_ALLOWLIST (próba na prawdziwych kontach, Codex 06.11): gdy lista jest
+ * niepusta, batch wysyła TYLKO do adresów z listy — pozostałe zajęte wiersze są pomijane
+ * (`skipped`, reason `allowlist`, zostają claimed → po zdjęciu listy odzyska je kolejna
+ * partia pod tym samym kluczem), a test na adres spoza listy = 403 `test_to_not_allowed`.
+ * Odpowiedź niesie `allowlist: { active, blocked }`. Lista nie zastępuje flagi: bez
+ * MARKETING_SEND_ENABLED=true nadal 403 dla wszystkiego.
+ *
  * Marketing nie woła żadnego RPC rozliczeń i nie dotyka legacy_sends.
  */
 import { requireAdmin, json, parseBody, MARKETING_CORS } from "./_shared/marketing-auth.js";
 import { loadCampaign } from "./_shared/marketing-data.js";
-import { sendMarketingMail, unsubscribeUrl, payloadHash } from "./_shared/marketing-mailer.js";
+import { sendMarketingMail, unsubscribeUrl, payloadHash, sendAllowlistActive, allowedBySendAllowlist } from "./_shared/marketing-mailer.js";
 import { renderMarketingTemplate } from "./_shared/marketing-templates.js";
 
 const TIME_BUDGET_MS = 20_000;     // Netlify: 26 s limitu — zostaw zapas na odpowiedź
@@ -62,6 +69,7 @@ export const handler = async (event) => {
     const started = Date.now();
     const outcome = { claimed: 0, accepted: 0, rejected: 0, uncertain: 0, skipped: 0 };
     const details = [];
+    const allowlistInfo = { active: sendAllowlistActive(env), blocked: 0 };
 
     const { data: claimed, error: claimErr } = await supaSvc.rpc("marketing_claim_messages", {
       p_campaign_id: campaign.id, p_limit: limit, p_lease_seconds: LEASE_SECONDS, p_window_seconds: WINDOW_SECONDS,
@@ -77,6 +85,8 @@ export const handler = async (event) => {
         await supaSvc.rpc("marketing_record_result", { p_message_id: m.id, p_state: "rejected", p_resend_message_id: null, p_error: "payload_hash_mismatch" });
         outcome.rejected += 1; details.push({ id: m.id, result: "rejected", error: "payload_hash_mismatch" }); continue;
       }
+      // lista dozwolonych adresów (próba): adres spoza listy nie idzie — wiersz zostaje claimed do odzyskania
+      if (!allowedBySendAllowlist(env, m.to_email)) { outcome.skipped += 1; allowlistInfo.blocked += 1; details.push({ id: m.id, result: "skipped", reason: "allowlist" }); continue; }
       // [review Codexa #2] ponowna kontrola dopuszczenia w bazie TUŻ PRZED wysyłką
       // (wypis / odbicie / cofnięta zgoda w trakcie partii zatrzymują ten mail)
       const { data: pre, error: preErr } = await supaSvc.rpc("marketing_precheck_message", { p_message_id: m.id });
@@ -100,13 +110,13 @@ export const handler = async (event) => {
 
     // [review Codexa #6] co zostało? Błąd odczytu NIE zamyka kampanii — zostaje `sending`.
     const { data: left, error: leftErr } = await supaSvc.from("marketing_messages").select("id, state").eq("campaign_id", campaign.id).eq("is_test", false).in("state", ["pending", "claimed"]);
-    if (leftErr) return json(200, { ok: true, outcome, remaining: null, done: false, details, warning: "remaining_unknown:" + leftErr.message });
+    if (leftErr) return json(200, { ok: true, outcome, allowlist: allowlistInfo, remaining: null, done: false, details, warning: "remaining_unknown:" + leftErr.message });
     const remaining = Array.isArray(left) ? left.length : null;
     if (remaining === 0) {
       const { error: doneErr } = await supaSvc.from("marketing_campaigns").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", campaign.id).eq("status", "sending");
-      if (doneErr) return json(200, { ok: true, outcome, remaining, done: false, details, warning: "campaign_close_failed:" + doneErr.message });
+      if (doneErr) return json(200, { ok: true, outcome, allowlist: allowlistInfo, remaining, done: false, details, warning: "campaign_close_failed:" + doneErr.message });
     }
-    return json(200, { ok: true, outcome, remaining, done: remaining === 0, details });
+    return json(200, { ok: true, outcome, allowlist: allowlistInfo, remaining, done: remaining === 0, details });
   } catch (e) {
     console.error("[marketing-send]", e?.message || e);
     return json(500, { error: "send_failed", detail: String(e?.message || e) });
@@ -127,6 +137,7 @@ function frozenOrLive(campaign) {
 async function sendTest({ supaSvc, env, caller, campaign, body }) {
   const to = String(body.test_to || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return json(400, { error: "test_to_invalid" });
+  if (!allowedBySendAllowlist(env, to)) return json(403, { error: "test_to_not_allowed", hint: "MARKETING_SEND_ALLOWLIST jest aktywna — test tylko na adresy z listy" });
   if (!body.message_id) return json(400, { error: "message_id_required" });
   const { data: src, error } = await supaSvc.from("marketing_messages").select("*").eq("id", body.message_id).eq("campaign_id", campaign.id).maybeSingle();
   if (error) throw new Error(error.message);

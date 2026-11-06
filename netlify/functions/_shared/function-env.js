@@ -6,6 +6,16 @@ export function getFirstEnv(...keys) {
   return null;
 }
 
+/** Lista adresów e-mail z env: separatory `,` `;` i białe znaki; trim + małe litery; bez duplikatów; bez pustych. */
+export function parseEmailList(raw) {
+  const out = [];
+  for (const part of String(raw || "").split(/[\s,;]+/)) {
+    const v = part.trim().toLowerCase();
+    if (v && v.includes("@") && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
+
 export function resolveEnvConfig() {
   const supabaseUrl = getFirstEnv("SUPABASE_URL", "VITE_SUPABASE_URL");
   const supabaseAnonKey = getFirstEnv("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY");
@@ -43,6 +53,11 @@ export function resolveEnvConfig() {
   // (bez sekretu nie da się zatwierdzić ani wysłać wiadomości).
   const marketingSendEnabled = String(getFirstEnv("MARKETING_SEND_ENABLED") || "").trim().toLowerCase() === "true";
   const marketingUnsubscribeSecret = getFirstEnv("MARKETING_UNSUBSCRIBE_SECRET");
+  // MARKETING_SEND_ALLOWLIST (06.11, próba na prawdziwych kontach): lista adresów oddzielonych
+  // przecinkiem/średnikiem/spacją. Gdy NIEPUSTA, batch i test mogą wysłać WYŁĄCZNIE na te adresy:
+  // inne wiersze są pomijane (zostają do wysłania po zdjęciu listy), test spoza listy = 403.
+  // Pusta/nieustawiona = bez ograniczenia (zwykła wysyłka). Porównanie: trim + małe litery, dokładne.
+  const marketingSendAllowlist = parseEmailList(getFirstEnv("MARKETING_SEND_ALLOWLIST"));
 
   return {
     supabaseUrl,
@@ -63,6 +78,7 @@ export function resolveEnvConfig() {
     payuVatRate,
     marketingSendEnabled,
     marketingUnsubscribeSecret,
+    marketingSendAllowlist,
   };
 }
 

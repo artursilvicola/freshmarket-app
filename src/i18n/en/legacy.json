@@ -1954,6 +1954,8 @@
       "test_to_ph": "team test address",
       "test_note": "A test is a real e-mail (requires the send flag); it does not count towards the recipient's history.",
       "test_to_required": "Enter a test address.",
+      "send_allowlist_note": "Allowed-address list (trial) is active: {{n}} addresses outside the list were skipped — they remain to be sent once the list is removed.",
+      "err_test_to_not_allowed": "Allowed-address list (trial) is active — test only to addresses on the list.",
       "send_test": "Test",
       "test_sent": "Test sent to {{to}}.",
       "test_duplicate": "Same test in the same minute — not sent again.",

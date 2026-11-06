@@ -11,7 +11,7 @@ vi.mock("../netlify/functions/_shared/function-env.js", () => ({
   missingEnvNames: (cfg, keys) => keys.filter((k) => !cfg[k]), envErrorPayload: (fn, missing) => ({ error: "env", fn, missing }),
 }));
 import { handler } from "../netlify/functions/marketing-send.js";
-import { payloadHash } from "../netlify/functions/_shared/marketing-mailer.js";
+import { payloadHash, sendMarketingMail, allowedBySendAllowlist, sendAllowlistActive } from "../netlify/functions/_shared/marketing-mailer.js";
 import { DEFAULT_CONTENT, defaultContent } from "../netlify/functions/_shared/marketing-templates.js";
 
 const CAMP = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -261,5 +261,61 @@ describe("[review Codexa P1 #3] mail testowy renderuje z zamrożonej treści kam
     } finally {
       DEFAULT_CONTENT.start_with_credits.pl.subject = orig;
     }
+  });
+});
+
+describe("lista dozwolonych adresów — MARKETING_SEND_ALLOWLIST (próba na prawdziwych kontach, Codex 06.11)", () => {
+  it("batch: z aktywną listą idzie TYLKO adres z listy; inne wiersze pominięte (reason allowlist), zostają claimed, bez żądania do Resend; kampania nie kończy się jako wysłana", async () => {
+    state.env.marketingSendAllowlist = ["opm1@test.pl"];
+    const r = await call({ campaign_id: CAMP, mode: "batch" });
+    expect(r.status).toBe(200);
+    expect(r.body.allowlist).toEqual({ active: true, blocked: 1 });
+    expect(r.body.outcome).toMatchObject({ claimed: 2, accepted: 1, skipped: 1, rejected: 0, uncertain: 0 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(state.fetchCalls[0].body.to).toEqual(["opm1@test.pl"]);
+    const m2 = state.db.messages.find((m) => m.id === "m2");
+    expect(m2.state).toBe("claimed"); // zostaje do odzyskania po zdjęciu listy
+    expect(r.body.details.find((d) => d.id === "m2")).toMatchObject({ result: "skipped", reason: "allowlist" });
+    expect(r.body.remaining).toBe(1); expect(r.body.done).toBe(false);
+    expect(state.db.campaign.status).toBe("sending");
+  });
+  it("batch: porównanie bez względu na wielkość liter i spacje; lista pusta = bez ograniczenia", async () => {
+    state.env.marketingSendAllowlist = [" OpM1@Test.pl ".trim().toLowerCase(), "opm2@test.pl"];
+    const r = await call({ campaign_id: CAMP, mode: "batch" });
+    expect(r.body.allowlist).toEqual({ active: true, blocked: 0 });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    state.db = { campaign: { id: CAMP, status: "approved", reply_to: null, template_key: "start_with_credits" }, messages: [frozen("m3")], results: [] };
+    state.service = service(); state.fetchCalls.length = 0; fetch.mockClear();
+    state.env.marketingSendAllowlist = [];
+    const r2 = await call({ campaign_id: CAMP, mode: "batch" });
+    expect(r2.body.allowlist).toEqual({ active: false, blocked: 0 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it("test: adres spoza listy → 403 test_to_not_allowed bez wiersza i bez maila; adres z listy → wysyłka", async () => {
+    state.env.marketingSendAllowlist = ["spiker.artur@gmail.com", "artur.silvicola@gmail.com"];
+    const bad = await call({ campaign_id: CAMP, mode: "test", test_to: "zespol@test.pl", message_id: "m1" });
+    expect(bad.status).toBe(403); expect(bad.body.error).toBe("test_to_not_allowed");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(state.db.messages.some((m) => m.is_test)).toBe(false);
+    const ok = await call({ campaign_id: CAMP, mode: "test", test_to: "Spiker.Artur@gmail.com", message_id: "m1" });
+    expect(ok.status).toBe(200); expect(ok.body.test).toBe(true);
+    expect(state.fetchCalls[0].body.to).toEqual(["spiker.artur@gmail.com"]);
+  });
+  it("lista nie zastępuje flagi: bez MARKETING_SEND_ENABLED nadal 403 send_disabled, nawet dla adresu z listy", async () => {
+    state.env.marketingSendEnabled = false; state.env.marketingSendAllowlist = ["spiker.artur@gmail.com"];
+    const r = await call({ campaign_id: CAMP, mode: "test", test_to: "spiker.artur@gmail.com", message_id: "m1" });
+    expect(r.status).toBe(403); expect(r.body.error).toBe("send_disabled");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("druga zapora w transporcie: sendMarketingMail z adresem spoza listy → uncertain allowlist_blocked, żadnego żądania", async () => {
+    const env = { resendApiKey: "fake", marketingSendAllowlist: ["spiker.artur@gmail.com"] };
+    const fetchImpl = vi.fn();
+    const r = await sendMarketingMail({ env, message: { id: "x", to_email: "ktos@firma.pl", subject: "s", html: "h", text_body: "t", idempotency_key: "k", campaign_id: CAMP }, unsubscribeUrl: "https://b2b.test/u", fetchImpl });
+    expect(r).toEqual({ status: "uncertain", error: "allowlist_blocked" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(sendAllowlistActive(env)).toBe(true);
+    expect(allowedBySendAllowlist(env, "SPIKER.ARTUR@gmail.com ")).toBe(true);
+    expect(allowedBySendAllowlist({ marketingSendAllowlist: [] }, "ktos@firma.pl")).toBe(true);
+    expect(allowedBySendAllowlist({}, "ktos@firma.pl")).toBe(true);
   });
 });

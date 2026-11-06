@@ -15,6 +15,9 @@
  *    | uncertain (timeout / 5xx / 429 / 409 / błąd sieci — dzierżawa pozwoli odzyskać).
  *  * transport jest wstrzykiwalny (`fetchImpl`) — testy używają atrapy; prawdziwa
  *    wysyłka tylko gdy MARKETING_SEND_ENABLED="true" (sprawdzane w funkcji, nie tu).
+ *  * MARKETING_SEND_ALLOWLIST (próba 06.11): gdy lista niepusta, adres spoza listy NIE idzie
+ *    do Resend — funkcja pomija go wcześniej (`skipped`), a tu jest druga zapora:
+ *    `uncertain` + `allowlist_blocked` bez żadnego żądania (wiersz zostaje do odzyskania).
  */
 import crypto from "node:crypto";
 
@@ -39,6 +42,18 @@ export function unsubscribeUrl({ appUrl, messageId, secret }) {
   return `${base}/.netlify/functions/marketing-unsubscribe?m=${encodeURIComponent(messageId)}&t=${encodeURIComponent(unsubscribeToken(secret, messageId))}`;
 }
 
+/** Czy lista dozwolonych adresów (MARKETING_SEND_ALLOWLIST) jest aktywna. */
+export function sendAllowlistActive(env) {
+  return Array.isArray(env?.marketingSendAllowlist) && env.marketingSendAllowlist.length > 0;
+}
+
+/** true = adres może dostać pocztę (lista nieaktywna albo adres na liście; porównanie trim + małe litery). */
+export function allowedBySendAllowlist(env, email) {
+  if (!sendAllowlistActive(env)) return true;
+  const v = String(email || "").trim().toLowerCase();
+  return !!v && env.marketingSendAllowlist.includes(v);
+}
+
 export function payloadHash({ subject, html, text }) {
   return crypto.createHash("sha256").update(`${subject}\n${html}\n${text}`).digest("hex");
 }
@@ -56,6 +71,7 @@ export async function sendMarketingMail({ env, message, unsubscribeUrl: unsub, r
   const doFetch = fetchImpl || globalThis.fetch;
   if (!env?.resendApiKey) return { status: "uncertain", error: "no_resend_key" };
   if (!unsub) return { status: "rejected", error: "unsubscribe_url_missing" };
+  if (!allowedBySendAllowlist(env, message?.to_email)) return { status: "uncertain", error: "allowlist_blocked" };
   const body = {
     from: MARKETING_FROM,
     to: [message.to_email],

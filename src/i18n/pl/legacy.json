@@ -1954,6 +1954,8 @@
       "test_to_ph": "adres testowy zespołu",
       "test_note": "Test to prawdziwy mail (wymaga flagi wysyłki); nie liczy się do historii adresata.",
       "test_to_required": "Podaj adres testowy.",
+      "send_allowlist_note": "Lista dozwolonych adresów (próba) jest aktywna: pominięto {{n}} adresów spoza listy — zostają do wysłania po jej zdjęciu.",
+      "err_test_to_not_allowed": "Lista dozwolonych adresów (próba) jest aktywna — test tylko na adresy z listy.",
       "send_test": "Test",
       "test_sent": "Test wysłany na {{to}}.",
       "test_duplicate": "Ten sam test w tej samej minucie — nie wysłano ponownie.",
