@@ -143,6 +143,7 @@ export default function MarketingActivation({ fl }) {
   return (
     <div style={{ padding: 20, maxWidth: 1240 }}>
       <h1 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 4px", color: "#0f172a" }}>{tr("title")}</h1>
+      <a href="/admin/instrukcja/preconnect#instr-preconnect-admin-marketing" style={{ display: "inline-block", marginBottom: 8, fontSize: 13, color: "#0d9488" }}>{tr("guide_link")}</a>
       <div style={{ fontSize: 13, color: "#64748b", marginBottom: 14 }}>{tr("subtitle")}</div>
 
       <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 14 }}>

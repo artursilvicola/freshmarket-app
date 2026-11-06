@@ -1807,6 +1807,7 @@
     },
     "marketing": {
       "title": "Marketing → Aktywacja PreConnect",
+      "guide_link": "Instrukcja Marketingu",
       "subtitle": "Daj dostawcom powód, żeby zaprezentowali się sieciom handlowym. Wybór grupy → lista firm → treść PL/EN → podgląd → zatwierdzenie. Faza 1 — moduł za flagą, bez rozliczania kredytów.",
       "campaigns": "Kampanie",
       "no_campaigns": "Brak kampanii.",

@@ -6,7 +6,7 @@ export default {
     eyebrow: "PreConnect · instrukcja administratora",
     title: "PreConnect — instrukcja administratora",
     summary: "Obsługa PreConnect z panelu administratora: firmy i dostępy, sieci i kupcy, moderacja i mailing w Pipeline, kredyty i rozliczenia, wiadomości, treści w Brandingu, podgląd kont uczestników.",
-    updated: "2026-10-30",
+    updated: "2026-11-06",
     chapters: [
       {
         id: "przeglad",
@@ -62,6 +62,30 @@ export default {
         notes: [
           "Otwarcie e-maila przez kupca (piksel) jest traktowane jako odczyt i powoduje pobranie kredytu dostawcy. Takie są przyjęte zasady PreConnect; nie zmieniaj ich bez uzgodnienia.",
           "Próby wysyłki rób tylko na sieci testowej i aliasach testowych; po próbie wyłącz sieć testową i wstrzymaj firmę testową.",
+        ],
+      },
+      {
+        id: "marketing",
+        title: "Marketing: e-maile do dostawców",
+        intro: "Marketing → Aktywacja PreConnect zachęca dostawców do przedstawienia swojej firmy i propozycji sieciom handlowym. To nie jest mailing propozycji do kupców w Pipeline. Wysłanie ani otwarcie maila marketingowego nie pobiera kredytu dostawcy.",
+        steps: [
+          "Otwórz **Marketing** w menu administratora. W **Nowa kampania** wybierz grupę odbiorców i wpisz adres do odpowiedzi (reply-to), którego skrzynkę obsługuje zespół.",
+          "Dobierz grupę do celu: **Mają kredyty, brak propozycji** — zachęta do przygotowania propozycji; **Mają kredyty i propozycję gotową do zgłoszenia** — zachęta do jej zgłoszenia; **Korzystali wcześniej, mają wolne kredyty** — kolejna prezentacja; **Kredyty niedługo wygasają** — przypomnienie o ważności; **Brak ważnych kredytów** — informacja o pakiecie. Firma z rezerwacjami przy oczekujących propozycjach nie trafia do grupy bez ważnych kredytów.",
+          "W standardowej grupie nazwa, numer i data kampanii powstają automatycznie. **Do wybranych firm** wymaga własnej nazwy; firmy zaznaczasz pojedynczo, niezależnie od salda. Wypisy i pozostałe wykluczenia nadal obowiązują. Kliknij **Utwórz kampanię** — to zapisuje szkic, nie wysyła maili.",
+          "Sprawdź listę: firmę, operatora i jego adres, język, wolne kredyty, rezerwacje, ważność i powód kwalifikacji. **Sprawdź aktualny stan** odświeża dane i usuwa zaznaczenie odbiorców. Opcja pokazania pozostałych firm wyjaśnia wykluczenia, ale nie pozwala ich ominąć.",
+          "Zaznacz odbiorców. W standardowej grupie **Zaznacz widoczne** wybiera wszystkie widoczne firmy kwalifikujące się do wysyłki. Przed dalszym krokiem sprawdź liczbę i adresy; grupy mogą się nakładać, więc ta sama firma może znaleźć się w kilku kampaniach.",
+          "Przeczytaj i ewentualnie popraw temat, treść oraz podpis przycisku osobno dla **PL i EN**. Zachęcaj do prezentacji firmy i nawiązania kontaktu. Nie przypisuj kupcom nieznanych potrzeb i nie obiecuj odpowiedzi, zamówienia ani gwarantowanego przeczytania propozycji.",
+          "Kliknij **Zapisz treść**, następnie obejrzyj podgląd PL i EN na wybranej firmie. Sprawdź saldo i terminy w treści. Podgląd nie wysyła maila. Odbiorca otrzyma wersję zgodną z językiem jego konta, a nie językiem panelu administratora.",
+          "Sprawdź podsumowanie odbiorców PL/EN i podstawę zgody. Kliknij **Zatwierdź** i potwierdź wybór. Zatwierdzenie zamraża treść i tworzy oczekujące wiadomości w rejestrze, ale nie wysyła poczty. Po zatwierdzeniu nie edytujesz treści; jeśli wymaga zmiany, przygotuj nową kampanię i zamknij starą. Przy błędzie wersji odśwież kampanię i ponownie sprawdź podgląd.",
+          "W rejestrze otwórz zapisaną wiadomość, aby zobaczyć dokładną treść dla danego adresata. Zwykły podgląd szablonu może korzystać z aktualnych danych firmy; to zapis w rejestrze jest treścią przeznaczoną do wysyłki.",
+          "Najpierw wpisz uzgodniony adres skrzynki zespołu i użyj **Test** przy wiadomości. To prawdziwy e-mail testowy, nie wysyłka do dostawcy z tego wiersza. Sprawdź temat, język, logo, link i wygląd na telefonie. Wypis w mailu oznaczonym TEST nie wypisuje dostawcy; pełną próbę wypisu wykonuje się osobno na kontach próbnych przez zwykłą partię.",
+          "Dopiero po kontroli kliknij **Wyślij z rejestru** i potwierdź. Sprawdź wynik oraz stany wiadomości. Przyjęcie przez usługę pocztową nie jest dowodem dostarczenia ani przeczytania. Jeśli wynik jest niepewny lub wymaga sprawdzenia, nie twórz nowej kampanii tylko po to, żeby ponowić mail; poproś o kontrolę historii wysyłki.",
+          "Po zakończeniu użyj **Zamknij kampanię**. Historia zostaje. Zamknięcie nie cofa już wysłanych wiadomości ani żądania będącego w drodze do poczty. Wypis odbiorcy blokuje następne wiadomości marketingowe; nie omijaj go przez nowe konto lub inną kampanię.",
+        ],
+        notes: [
+          "Komunikat o wyłączonej wysyłce oznacza, że ani Test, ani partia nie wysyłają poczty. Włączenie wymaga osobnej konfiguracji przez osobę techniczną. Nie wklejaj kluczy ani haseł do treści kampanii.",
+          "Podczas prób wysyłka może być ograniczona do listy dozwolonych adresów. Pozostali odbiorcy czekają; nie oznacza to, że otrzymali maila. Przed normalną kampanią uzgodnij konfigurację ograniczenia z osobą techniczną.",
+          "Ta instrukcja opisuje obsługę, nie potwierdza zgody konkretnego odbiorcy. Jeśli podstawa zgody zapisana w rejestrze jest nieprawidłowa lub nieznana, wstrzymaj wysyłkę i wyjaśnij ją.",
         ],
       },
       {
@@ -125,7 +149,7 @@ export default {
     eyebrow: "PreConnect · administrator guide",
     title: "PreConnect — administrator guide",
     summary: "Running PreConnect from the admin panel: companies and access, chains and buyers, moderation and mailing in the Pipeline, credits and settlements, messages, Branding content, participant account preview.",
-    updated: "2026-10-30",
+    updated: "2026-11-06",
     chapters: [
       {
         id: "przeglad",
@@ -181,6 +205,30 @@ export default {
         notes: [
           "A buyer opening the e-mail (tracking pixel) is treated as a read and charges the supplier's credit. These are the adopted PreConnect rules; do not change them without agreement.",
           "Run sending tests only on the test chain and test aliases; after a test deactivate the test chain and suspend the test company.",
+        ],
+      },
+      {
+        id: "marketing",
+        title: "Marketing: e-mails to suppliers",
+        intro: "Marketing → PreConnect activation encourages suppliers to present their company and proposals to retail chains. It is separate from proposal mailings to buyers in the Pipeline. Sending or opening a marketing e-mail does not charge a supplier credit.",
+        steps: [
+          "Open **Marketing** in the administrator menu. Under **New campaign**, choose the audience and enter a reply-to address monitored by the team.",
+          "Match the audience to the purpose: **Have credits, no proposal** — prepare a proposal; **Have credits and a proposal ready to submit** — submit it; **Used before, have free credits** — present another proposal; **Credits expiring soon** — expiry reminder; **No valid credits** — package information. Companies with reservations for pending proposals are not included in the no-valid-credits group.",
+          "Standard groups receive a name, number and date automatically. **Selected companies** requires your own name; select companies individually regardless of their balance. Unsubscribes and other exclusions still apply. Click **Create campaign** to save a draft, not to send mail.",
+          "Check the company, operator and e-mail address, language, available credits, reservations, expiry and eligibility reason. **Check current state** refreshes the data and clears your selection. Showing other companies explains exclusions but does not let you bypass them.",
+          "Select recipients. In standard groups, **Select visible** selects all visible eligible companies. Check the count and addresses before continuing; groups can overlap, so a company may appear in several campaigns.",
+          "Read and, if needed, edit the subject, body and button label separately for **PL and EN**. Encourage company presentation and making contact. Do not invent buyer needs or promise replies, orders or guaranteed reading of proposals.",
+          "Click **Save content**, then preview PL and EN for a selected company. Check balances and dates in the text. Preview does not send mail. Recipients receive the language of their account, not the administrator panel language.",
+          "Check the PL/EN recipient summary and consent basis. Click **Approve** and confirm. Approval freezes the content and creates pending messages in the register, but sends no mail. Content cannot be edited after approval; if it must change, prepare a new campaign and close the old one. On a version conflict, refresh the campaign and review its preview again.",
+          "Open the saved message in the register to see the exact content for that recipient. The ordinary template preview may use current company data; the saved register message is the content intended for sending.",
+          "First enter an agreed team mailbox and use **Test** beside a message. This sends a real test e-mail, not mail to the supplier in that row. Check subject, language, logo, link and mobile appearance. Unsubscribing from a message marked TEST does not unsubscribe the supplier; a complete unsubscribe trial uses dedicated trial accounts through a normal batch.",
+          "Only after checking, click **Send from registry** and confirm. Review the result and message states. Acceptance by the mail service is not proof of delivery or reading. If a result is uncertain or needs review, do not create a new campaign merely to retry the mail; request a check of its sending history.",
+          "When finished, use **Close campaign**. History remains. Closing does not recall sent mail or a request already travelling to the mail service. Unsubscribing blocks subsequent marketing messages; do not bypass it with a new account or another campaign.",
+        ],
+        notes: [
+          "A sending-disabled message means neither Test nor batch sends mail. Enabling requires separate configuration by the technical team. Do not paste keys or passwords into campaign content.",
+          "During trials, sending may be restricted to an address allowlist. Other recipients wait; this does not mean they received mail. Agree the restriction settings with the technical team before a normal campaign.",
+          "This guide describes operation, not proof of an individual recipient's consent. If the consent basis recorded in the register is incorrect or unknown, hold sending and clarify it.",
         ],
       },
       {

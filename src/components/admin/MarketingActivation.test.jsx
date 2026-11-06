@@ -50,6 +50,14 @@ beforeEach(async () => {
 afterEach(() => { if (tree) act(() => tree.unmount()); tree = null; globalThis.window.confirm = prevConfirm; if (!hadWindow) delete globalThis.window; });
 
 describe("Marketing → Aktywacja PreConnect", () => {
+  it("links directly to the administrator marketing chapter in both languages", async () => {
+    await openFirst();
+    const href = "/admin/instrukcja/preconnect#instr-preconnect-admin-marketing";
+    expect(text(tree.root.findByProps({ href }).children)).toBe("Instrukcja Marketingu");
+    await act(async () => { await i18n.changeLanguage("en"); });
+    expect(text(tree.root.findByProps({ href }).children)).toBe("Marketing guide");
+  });
+
   it("only selected-company campaigns require a typed name", async () => {
     await openFirst();
     expect(byId("mk-name")).toBeUndefined();

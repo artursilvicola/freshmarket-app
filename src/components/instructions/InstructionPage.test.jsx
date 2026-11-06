@@ -68,6 +68,20 @@ describe("treść instrukcji — spójność", () => {
 });
 
 describe("strona instrukcji", () => {
+  it("renders the administrator marketing workflow in PL and EN with a chapter anchor", () => {
+    for (const lang of ["pl", "en"]) {
+      mount({ doc: "preconnect", role: "admin", lang });
+      const chapter = getInstruction("preconnect", "admin", lang).chapters.find(c => c.id === "marketing");
+      expect(chapter).toBeTruthy();
+      expect(chapter.steps).toHaveLength(12);
+      expect(output()).toContain(chapter.title);
+      expect(output()).toContain(lang === "pl" ? "nie pobiera kredytu" : "does not charge a supplier credit");
+      expect(tree.root.findAll(n => n.props.id === "instr-preconnect-admin-marketing").length).toBeGreaterThan(0);
+      act(() => tree.unmount());
+      tree = null;
+    }
+  });
+
   it("pokazuje spis treści, ponumerowane rozdziały i kroki, po polsku", () => {
     mount({ doc: "preconnect", role: "supplier", lang: "pl" });
     const out = output();
