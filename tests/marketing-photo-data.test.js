@@ -23,8 +23,10 @@ const fake = () => {
     q.update = (p) => { q._upd = p; return q; }; q.eq = (c, v) => { q._f.push([c, v]); return q; }; q.is = (c, v) => { q._is = [c, v]; return q; }; q.select = () => q;
     q.not = (c, op, v) => { q._notIs = [c, v]; return q; };
     q.maybeSingle = async () => {
+      const found = st.rows.find((r) => r.id === q._f.find(([c]) => c === "id")?.[1]);
+      if (!q._upd) return { data: found ? { ...found } : null, error: null }; // odczyt (loadPhotoVersion)
       if (st.failRowUpdate) return { data: null, error: { message: "db down" } };
-      const row = st.rows.find((r) => r.id === q._f.find(([c]) => c === "id")?.[1]);
+      const row = found;
       if (!row || (q._is && (row[q._is[0]] ?? null) !== q._is[1]) || (q._notIs && (row[q._notIs[0]] ?? null) === q._notIs[1])) return { data: null, error: null };
       // trigger: cofnięcie publikacji wymaga zajęcia i braku użycia; po cofnięciu stan znika
       if (q._upd.published_at === null && row.published_at) { if (!row.unpublishing_at) return { data: null, error: { message: "unpublish requires a prior claim" } }; if (st.referenced.has(row.id)) return { data: null, error: { message: "published version is referenced" } }; q._upd = { ...q._upd, unpublishing_at: null, unpublishing_by: null }; }
@@ -111,13 +113,44 @@ describe("unpublishVersion — kolejność ponawialna (review Codexa 3)", () => 
     await expect(unpublishVersion(supa, { ...v })).rejects.toThrow(/storage check .*Forbidden/);
     expect(st.rows[0].published_at).toBeTruthy(); expect(st.rows[0].unpublishing_at).toBeTruthy();
   });
-  it("cofnięcie publikacji bez zajęcia stanu (bezpośredni UPDATE) odrzuca trigger; releaseUnpublish zwalnia zajęty stan", async () => {
+  it("cofnięcie publikacji bez zajęcia stanu (bezpośredni UPDATE) odrzuca trigger; releaseUnpublish zwalnia zajęty stan tylko po weryfikacji publicznego pliku", async () => {
     const v = seedPublished();
     const direct = await supa.from("marketing_photo_versions").update({ published_at: null, public_url: null }).eq("id", v.id).select().maybeSingle();
     expect(direct.error.message).toMatch(/prior claim/);
     st.rows[0].unpublishing_at = "2026-11-06T12:00:00Z";
-    expect(await releaseUnpublish(supa, v.id)).toBe(true); expect(st.rows[0].unpublishing_at).toBeNull();
-    expect(await releaseUnpublish(supa, v.id)).toBe(false);
+    expect(await releaseUnpublish(supa, v.id)).toEqual({ released: true, restored: false }); expect(st.rows[0].unpublishing_at).toBeNull();
+    expect((await releaseUnpublish(supa, v.id)).released).toBe(false);
+  });
+  it("[review 5/P2] --release po przebiegu „publiczny usunięty → zapis wiersza padł”: publiczny plik PRZYWRÓCONY z kopii prywatnej pod ten sam adres i zweryfikowany, dopiero potem zwolnienie", async () => {
+    const v = seedPublished();
+    st.rows[0].unpublishing_at = "2026-11-06T12:00:00Z";
+    st.objects["marketing-photos-pending/" + v.storage_path] = st.objects["marketing-photos/" + v.storage_path];
+    delete st.objects["marketing-photos/" + v.storage_path]; // stan po usunięciu publicznego i awarii zapisu
+    const r = await releaseUnpublish(supa, v.id);
+    expect(r).toEqual({ released: true, restored: true });
+    expect(st.objects["marketing-photos/" + v.storage_path]).toBeTruthy(); expect(st.rows[0].unpublishing_at).toBeNull();
+    expect(st.uploads.at(-1)).toMatchObject({ bucket: "marketing-photos", path: v.storage_path, opts: { upsert: false } });
+  });
+  it("[review 5/P2] release ODMAWIA, gdy publicznego pliku nie ma i nie ma kopii prywatnej, gdy kopia ma zły sha256, gdy Storage odpowiada 503 — stan zostaje zajęty", async () => {
+    const v = seedPublished();
+    st.rows[0].unpublishing_at = "2026-11-06T12:00:00Z";
+    delete st.objects["marketing-photos/" + v.storage_path];
+    await expect(releaseUnpublish(supa, v.id)).rejects.toThrow(/no private copy to restore/);
+    expect(st.rows[0].unpublishing_at).toBeTruthy();
+    st.objects["marketing-photos-pending/" + v.storage_path] = jpegHeader(1200, 800, 31_000); // inne bajty
+    await expect(releaseUnpublish(supa, v.id)).rejects.toThrow(/private copy sha256 mismatch/);
+    expect(st.objects["marketing-photos/" + v.storage_path]).toBeUndefined(); expect(st.rows[0].unpublishing_at).toBeTruthy();
+    st.objects["marketing-photos/" + v.storage_path] = jpegHeader(1200, 800, 30_000);
+    st.downloadError = { bucket: "marketing-photos", once: true, error: { message: "Service Unavailable", statusCode: "503", status: 503 } };
+    await expect(releaseUnpublish(supa, v.id)).rejects.toThrow(/not a not-found/);
+    expect(st.rows[0].unpublishing_at).toBeTruthy();
+    // publiczny plik istnieje, ale ma inne bajty niż wiersz → odmowa
+    st.objects["marketing-photos/" + v.storage_path] = jpegHeader(1200, 800, 32_000);
+    await expect(releaseUnpublish(supa, v.id)).rejects.toThrow(/public object sha256 mismatch/);
+    expect(st.rows[0].unpublishing_at).toBeTruthy();
+    // wersja niezajęta → nic
+    st.rows[0].unpublishing_at = null; st.objects["marketing-photos/" + v.storage_path] = jpegHeader(1200, 800, 30_000);
+    expect((await releaseUnpublish(supa, v.id)).reason).toBe("not_claimed");
   });
   it("isNotFoundError: tylko jednoznaczny 404 / „Object not found”; 503, 403, 401, 408, 429 i puste → false", () => {
     expect(isNotFoundError({ message: "Object not found", statusCode: "404", status: 400 })).toBe(true);

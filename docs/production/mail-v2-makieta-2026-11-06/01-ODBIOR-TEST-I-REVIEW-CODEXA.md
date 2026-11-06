@@ -165,6 +165,33 @@ uprawnienia RPC. Funkcja: `approve` wersji wycofywanej = 409.
 
 Baza testowa po migracji: 79 migracji w rejestrze, skrypt porządkowy nie ma nic do cofnięcia (18 opublikowanych i zatwierdzonych, 20 prywatnych).
 
+## 11. Poprawki po review Codexa 7fa031f (piąta runda: wspólna blokada + bezpieczny release)
+
+**P1 — wyścig transakcji.** Migracja `20261107130000_marketing_photo_unpublish_locks.sql` (tylko baza testowa): wszystkie trzy operacje
+biorą blokadę TEGO SAMEGO wiersza `marketing_photo_versions`:
+* zajęcie do wycofania: `SELECT … FOR UPDATE` (czeka na blokady współdzielone), a DOPIERO PO uzyskaniu blokady osobna instrukcja
+  sprawdza użycie (świeża migawka READ COMMITTED widzi zatwierdzone w międzyczasie przypisanie) i dopiero potem UPDATE;
+* strażnicy przypisania (`photo_version_id` ORAZ `frozen_photo`) i zatwierdzenia (`approved_version_id`): `SELECT … FOR SHARE` — czekają
+  na trwające zajęcie i oceniają NAJNOWSZY wiersz (locking read), więc po commicie zajęcia widzą `unpublishing_at` i odrzucają.
+Dwie transakcje nie mogą obie przejść: albo przypisanie zdąży (zajęcie po blokadzie zwraca false), albo zajęcie zdąży (przypisanie
+po blokadzie dostaje wyjątek).
+
+**Test równoległości na prawdziwym Postgresie** (`scripts/marketing-photos-race-test.mjs`, trzy niezależne połączenia `pg`, BEGIN
+w dwóch, celowe przeplatanie z czekaniem na blokadzie; wrapper `tests/marketing-photos-race.integrated.test.js` pod `FM_RACE_TEST=1`):
+1. A zajmuje bez commitu → B przypisuje → B CZEKA na blokadzie → A commit → B odrzucone przez strażnika.
+2. B przypisuje bez commitu → A zajmuje → A CZEKA → B commit → zajęcie = false (widzi przypisanie po blokadzie).
+3. jak 1, ale B zatwierdza wersję (`approved_version_id`) → B czeka → odrzucone.
+4. jak 2, ale B zatwierdza → zajęcie = false.
+5. dwa równoległe zajęcia → drugie czeka, oba true (ponawialność), bez zakleszczenia.
+Wynik na bazie testowej: WSZYSTKO OK (wiersze „ZZZ TEST wyścig blokad” zostają: zdjęcie disabled, kampania closed, wersja bez pliku —
+wersji nie da się usunąć przez niezmienność).
+
+**P2 — `--release`.** `releaseUnpublish` przed zwolnieniem stanu ładuje wersję, sprawdza, że publiczny obiekt istnieje i ma sha256
+z wiersza; gdy go nie ma (jednoznaczny not-found), a jest kopia prywatna z poprawnym sha256 — PRZYWRACA plik pod ten sam adres
+(`upsert:false`) i weryfikuje po odczycie; gdy nie ma kopii, sha256 się nie zgadza albo Storage odpowiada błędem innym niż not-found —
+ODMOWA (stan zostaje zajęty, trzeba dokończyć wycofanie skryptem). Regresje w `tests/marketing-photo-data.test.js`: przywrócenie
+z kopii prywatnej, odmowa bez kopii, zły sha256 kopii, 503, zły sha256 publicznego, wersja niezajęta.
+
 ## 7. Otwarte / poza zakresem
 * `MARKETING_SEND_ALLOWLIST` nadal ustawiona na prod (zdjąć przed prawdziwą kampanią) — bez związku z tą gałęzią.
 * Instrukcja administratora (rozdział Marketing) nie opisuje jeszcze biblioteki zdjęć — do uzupełnienia po akceptacji wyglądu.

@@ -165,11 +165,35 @@ export async function unpublishVersion(supaSvc, version, callerId = null) {
   return { version: data, unpublished: true };
 }
 
-/** Zwolnienie stanu wycofywania (plik nadal publiczny) — ręczne odblokowanie po nieudanej próbie. */
+/**
+ * Zwolnienie stanu wycofywania — ręczne odblokowanie po nieudanej próbie. [review Codexa 5/P2] Samo wyzerowanie znacznika
+ * nie wystarcza: możliwy przebieg „publiczny plik usunięty → zapis wiersza padł → release” oddałby bazie wersję, której adres
+ * nie działa. Dlatego PRZED zwolnieniem: publiczny obiekt musi istnieć i mieć sha256 z wiersza; gdy go nie ma (jednoznaczny
+ * not-found), a jest kopia prywatna — przywracamy go pod ten sam adres i weryfikujemy; gdy nie da się przywrócić albo Storage
+ * odpowiada błędem innym niż not-found → ODMOWA (stan zostaje zajęty, trzeba dokończyć wycofanie skryptem).
+ * Zwraca { released, restored }.
+ */
 export async function releaseUnpublish(supaSvc, versionId) {
+  const version = await loadPhotoVersion(supaSvc, versionId);
+  if (!version) throw new Error("release unpublish: version not found: " + versionId);
+  if (!version.unpublishing_at || !version.published_at) return { released: false, restored: false, reason: "not_claimed" };
+  let restored = false;
+  let bytes = null;
+  try { bytes = await readObject(supaSvc, PHOTO_BUCKET, version.storage_path); }
+  catch (e) {
+    if (!e.notFound) throw new Error("release unpublish refused: public object check failed (not a not-found): " + e.message);
+    let priv = null;
+    try { priv = await readObject(supaSvc, PENDING_BUCKET, version.storage_path); }
+    catch (e2) { throw new Error("release unpublish refused: public object missing and no private copy to restore — finish the unpublish instead (" + e2.message + ")"); }
+    if (sha256(priv) !== version.sha256) throw new Error("release unpublish refused: private copy sha256 mismatch for " + version.storage_path);
+    await writeObject(supaSvc, PHOTO_BUCKET, version.storage_path, priv, version.mime);
+    bytes = await readObject(supaSvc, PHOTO_BUCKET, version.storage_path); // weryfikacja po przywróceniu
+    restored = true;
+  }
+  if (sha256(bytes) !== version.sha256) throw new Error("release unpublish refused: public object sha256 mismatch for " + version.storage_path);
   const r = await supaSvc.rpc("marketing_photo_version_release_unpublish", { p_version_id: versionId });
   if (r.error) throw new Error("release unpublish: " + r.error.message);
-  return r.data === true;
+  return { released: r.data === true, restored };
 }
 
 /**

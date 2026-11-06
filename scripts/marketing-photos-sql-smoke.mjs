@@ -35,7 +35,7 @@ for (const f of files) {
 console.log(`migracje: ${files.length} OK (ostatnia ${files[files.length - 1]})`);
 ok(files.includes("20261107100000_marketing_photos.sql"), "migracja biblioteki zdjęć w łańcuchu");
 console.log("idempotencja: migracja zdjęć drugi raz");
-let twice = null; try { for (const f of ["20261107100000_marketing_photos.sql", "20261107110000_marketing_photo_versions_approval.sql", "20261107120000_marketing_photo_unpublish_state.sql"]) await db.exec(patch(read("supabase/migrations/" + f))); } catch (e) { twice = e.message; }
+let twice = null; try { for (const f of ["20261107100000_marketing_photos.sql", "20261107110000_marketing_photo_versions_approval.sql", "20261107120000_marketing_photo_unpublish_state.sql", "20261107130000_marketing_photo_unpublish_locks.sql"]) await db.exec(patch(read("supabase/migrations/" + f))); } catch (e) { twice = e.message; }
 ok(!twice, "druga aplikacja obu migracji zdjęć (w kolejności) bez błędu" + (twice ? ": " + twice : ""));
 
 const ADMIN = "11111111-1111-4111-8111-111111111111", OWNER = "55555555-5555-4555-8555-555555555555";
