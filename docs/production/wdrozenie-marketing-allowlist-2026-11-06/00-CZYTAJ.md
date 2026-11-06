@@ -21,7 +21,7 @@ Każdy krok ze zmianą produkcji wykonuje się dopiero po „wdrażaj” Artura;
   - Review Codexa P1: PRZED zapisem kontrola tożsamości (UUID firm, UUID użytkowników, adresy, profile, tożsamości auth); każdy konflikt = `RAISE EXCEPTION` = cała transakcja wycofana, nic nie zmienione. Ponowienie dozwolone tylko dla potwierdzonych kont tej próby (UUID + adres + firma). Kontrola końcowa: dokładnie 2 kompletne konta, inaczej wycofanie.
   - Oczekiwany wynik Run: 2 wiersze (supplier / active=true / pl|en / firma active + preconnect). Każdy komunikat „KONFLIKT…” = stop i decyzja Artura.
   - PO utworzeniu sprawdzić OSOBNO logowanie Supabase (PGlite z atrapą `auth.identities` tego nie potwierdza — Codex): na b2b.freshmarket.eu „nie pamiętam hasła” / magic link na `spiker.artur@gmail.com` → mail → zalogowanie jako dostawca firmy „Próba marketingu PL (Artur)”. To jest mail usługowy Supabase, nie marketingowy — nie wymaga flagi wysyłki.
-- `05-przebieg-probny-pglite.mjs` v2 (Codex P2): 23 asercje (konflikty A–C przerywają bez zmian, D czysta baza + idempotencja, E 04 na obcych wierszach przerywa, F 04 zawiesza tylko 2+2, G kontrola 02); nieudana asercja = kod wyjścia 1 (`--self-test-fail` sprawdzony = 1).
+- `05-przebieg-probny-pglite.mjs` v3: 33 asercje (konflikty A–C przerywają bez zmian, D czysta baza + idempotencja, E/E2/E3/E4 = 04 przy obcej firmie / ZAMIENIONYCH firmach operatorów / company_id NULL / adresie pod innym UUID przerywa bez zmian, F = końcowy stan każdego konta, G kontrola 02); nieudana asercja = kod wyjścia 1 (`--self-test-fail` sprawdzony = 1).
 
 ## Krok 4 — lista + flaga (Netlify, kontekst production) → redeploy
 - `MARKETING_SEND_ALLOWLIST=spiker.artur@gmail.com,artur.silvicola@gmail.com` (bez spacji, małe litery; wpis bez `@` = 403 `allowlist_invalid`).
@@ -37,5 +37,5 @@ Każdy krok ze zmianą produkcji wykonuje się dopiero po „wdrażaj” Artura;
 
 ## Krok 6 — po próbie
 - `MARKETING_SEND_ENABLED=false` + redeploy (lista może zostać do pierwszej prawdziwej wysyłki; wtedy ZDJĄĆ, inaczej partia pominie wszystkich).
-- `04-po-probie.sql` v2 (zawieszenie TYLKO potwierdzonych kont próbnych: UUID + adres + firma; niezgodność = przerwanie bez zmian; >2 wierszy = wycofanie; wypisy zostają). Kampanię próbną zamknąć w panelu.
+- `04-po-probie.sql` v3 (review 52fc873 P2): każda DOKŁADNA para osobno — UUID użytkownika + adres + rola supplier + firma z nazwą, porównania `is not distinct from`; zamienione przypisania, brak firmy albo adres pod innym UUID = przerwanie PRZED zmianami; kontrola końcowego stanu każdego konta (operator active=false, firma suspended + preconnect off), inaczej wycofanie; wypisy zostają. Kampanię próbną zamknąć w panelu.
 - Memory + §20 dokumentu głównego.

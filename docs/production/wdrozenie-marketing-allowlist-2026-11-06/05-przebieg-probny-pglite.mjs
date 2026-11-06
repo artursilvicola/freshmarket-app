@@ -11,7 +11,10 @@
 //   C. adres zajęty przez konto o innym UUID     → wyjątek, nic nie utworzone (nie „pominięcie”)
 //   D. czysta baza                               → 2 kompletne konta; ponowienie idempotentne (1 konto / adres)
 //   E. 04 na obcych wierszach pod naszym UUID    → wyjątek, nic nie zmienione
-//   F. 04 na potwierdzonych kontach              → dokładnie 2 firmy + 2 operatorów zawieszonych
+//   E2. 04 przy ZAMIENIONYCH firmach operatorów  → wyjątek, nic nie zmienione (review 52fc873 P2)
+//   E3. 04 przy company_id = NULL               → wyjątek, nic nie zmienione
+//   E4. 04 gdy adres próbny istnieje pod innym UUID → wyjątek, nic nie zmienione
+//   F. 04 na potwierdzonych kontach              → końcowy stan KAŻDEGO konta: operator active=false, firma suspended + preconnect off
 //   G. 02 kontrola wykonuje się i pokazuje nową sygnaturę claim
 // Ograniczenie (Codex): PGlite nie ma pgcrypto ani prawdziwego auth Supabase — atrapy gen_salt/crypt
 // i tabela auth.identities tylko do przebiegu; działanie LOGOWANIA sprawdzić osobno po utworzeniu kont na prod.
@@ -110,12 +113,40 @@ await expectAbort("04-po-probie.sql", /KONFLIKT: profil/, "E");
 assert((await q(`select account_status from public.companies where id=$1`, [C1]))[0].account_status === "active", "E: firma próbna nadal active (nic nie zawieszono)");
 await db.exec(`update public.profiles set company_id = '${C1}' where id = '${U1}'; delete from public.companies where id = 'e0000000-0000-4000-8000-00000000000e'`);
 
-// ── F. 04 na potwierdzonych kontach ──────────────────────────────────────────
+// ── E2. 04 przy ZAMIENIONYCH firmach operatorów (review 52fc873 P2) ──────────
+console.log("E2. 04: operatorzy z zamienionymi firmami");
+await db.exec(`update public.profiles set company_id = '${C2}' where id = '${U1}'; update public.profiles set company_id = '${C1}' where id = '${U2}'`);
+await expectAbort("04-po-probie.sql", /KONFLIKT: profil .* zamienione przypisanie/, "E2");
+const swapped = await q(`select p.active, c.account_status from public.profiles p join public.companies c on c.id = p.company_id where p.id in ($1,$2)`, [U1, U2]);
+assert(swapped.length === 2 && swapped.every((r) => r.active === true && r.account_status === "active"), "E2: obaj operatorzy aktywni, obie firmy active (nic nie zawieszono)");
+await db.exec(`update public.profiles set company_id = '${C1}' where id = '${U1}'; update public.profiles set company_id = '${C2}' where id = '${U2}'`);
+
+// ── E3. 04 przy company_id = NULL ─────────────────────────────────────────────
+console.log("E3. 04: profil bez firmy (NULL)");
+await db.exec(`update public.profiles set company_id = null where id = '${U2}'`);
+await expectAbort("04-po-probie.sql", /KONFLIKT: profil/, "E3");
+assert((await q(`select account_status from public.companies where id in ($1,$2) and account_status = 'active'`, [C1, C2])).length === 2, "E3: obie firmy nadal active");
+await db.exec(`update public.profiles set company_id = '${C2}' where id = '${U2}'`);
+
+// ── E4. 04 gdy adres próbny istnieje pod innym UUID ──────────────────────────
+console.log("E4. 04: adres próbny pod innym UUID");
+await db.exec(`insert into auth.users (id, email) values ('88888888-8888-4888-8888-888888888888', 'SPIKER.ARTUR@gmail.com')`);
+let e4 = null; try { await db.exec(read(dir + "04-po-probie.sql")); } catch (e) { e4 = e; } try { await db.exec("rollback"); } catch {}
+assert(e4 && /KONFLIKT/.test(e4.message), `E4: przerwane wyjątkiem (${e4 ? e4.message.slice(0, 80) : "BRAK"})`);
+assert((await q(`select count(*)::int as n from public.profiles where id in ($1,$2) and active`, [U1, U2]))[0].n === 2, "E4: operatorzy nadal aktywni (nic nie zmienione)");
+await db.exec(`delete from public.profiles where id = '88888888-8888-4888-8888-888888888888'; delete from auth.users where id = '88888888-8888-4888-8888-888888888888'`);
+
+// ── F. 04 na potwierdzonych kontach — stan KAŻDEGO konta ─────────────────────
 console.log("F. 04 na potwierdzonych kontach");
 await db.exec(read(dir + "04-po-probie.sql"));
-const after = await q(`select p.active, c.account_status, c.preconnect_enabled from public.profiles p join public.companies c on c.id=p.company_id where p.id in ($1,$2) order by p.id`, [U1, U2]);
-assert(after.length === 2 && after.every((r) => r.active === false && r.account_status === "suspended" && r.preconnect_enabled === false), "F: 2 firmy suspended + preconnect off, 2 operatorów active=false");
+for (const [uid, email, cid, cname] of [[U1, E1, C1, "Próba marketingu PL (Artur)"], [U2, E2, C2, "Marketing trial EN (Artur)"]]) {
+  const st = (await q(`select u.email, p.active, p.role::text as role, c.id::text as cid, c.name, c.account_status, c.preconnect_enabled
+    from auth.users u join public.profiles p on p.id = u.id join public.companies c on c.id = p.company_id where u.id = $1`, [uid]))[0];
+  assert(st && st.email === email && st.role === "supplier" && st.active === false && st.cid === cid && st.name === cname && st.account_status === "suspended" && st.preconnect_enabled === false,
+    `F: ${email} → operator active=false, firma „${cname}” suspended + preconnect off`);
+}
 assert((await q(`select count(*)::int as n from public.companies where account_status = 'suspended'`))[0].n === 2, "F: żadna inna firma nie została zawieszona");
+assert((await q(`select count(*)::int as n from public.profiles where active is false`))[0].n === 2, "F: żaden inny profil nie został dezaktywowany");
 
 // ── G. 02 kontrola ───────────────────────────────────────────────────────────
 console.log("G. 02 kontrola");
