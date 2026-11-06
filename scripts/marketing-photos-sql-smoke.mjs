@@ -35,7 +35,7 @@ for (const f of files) {
 console.log(`migracje: ${files.length} OK (ostatnia ${files[files.length - 1]})`);
 ok(files.includes("20261107100000_marketing_photos.sql"), "migracja biblioteki zdjęć w łańcuchu");
 console.log("idempotencja: migracja zdjęć drugi raz");
-let twice = null; try { for (const f of ["20261107100000_marketing_photos.sql", "20261107110000_marketing_photo_versions_approval.sql", "20261107120000_marketing_photo_unpublish_state.sql", "20261107130000_marketing_photo_unpublish_locks.sql", "20261107140000_marketing_photo_drop_release.sql"]) await db.exec(patch(read("supabase/migrations/" + f))); } catch (e) { twice = e.message; }
+let twice = null; try { for (const f of ["20261107100000_marketing_photos.sql", "20261107110000_marketing_photo_versions_approval.sql", "20261107120000_marketing_photo_unpublish_state.sql", "20261107130000_marketing_photo_unpublish_locks.sql", "20261107140000_marketing_photo_drop_release.sql", "20261107150000_marketing_photo_unpublish_final.sql"]) await db.exec(patch(read("supabase/migrations/" + f))); } catch (e) { twice = e.message; }
 ok(!twice, "druga aplikacja obu migracji zdjęć (w kolejności) bez błędu" + (twice ? ": " + twice : ""));
 
 const ADMIN = "11111111-1111-4111-8111-111111111111", OWNER = "55555555-5555-4555-8555-555555555555";
@@ -132,8 +132,21 @@ ok(e && !e.startsWith("INNY"), "wyzerowanie unpublishing_at bez dokończenia wyc
 e = await fails_with(() => db.query(`update public.marketing_photo_versions set unpublishing_at = now() - interval '1 day' where id = $1`, [v2]), /cannot be changed/);
 ok(e && !e.startsWith("INNY"), "zmiana ustawionego unpublishing_at → odmowa triggera");
 await db.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1`, [v2]);
-const v2row = (await db.query(`select public_url, unpublishing_at from public.marketing_photo_versions where id = $1`, [v2])).rows[0];
-ok(v2row.public_url === null && v2row.unpublishing_at === null, "cofnięcie publikacji nieużywanej, zajętej wersji przeszło; stan zakończony przez trigger");
+const v2row = (await db.query(`select public_url, unpublishing_at, unpublished_at from public.marketing_photo_versions where id = $1`, [v2])).rows[0];
+ok(v2row.public_url === null && v2row.unpublishing_at === null && v2row.unpublished_at !== null, "cofnięcie publikacji nieużywanej, zajętej wersji przeszło; stan zakończony, TRWAŁY znacznik unpublished_at");
+// [nieodwracalność] ponowna publikacja tej samej wersji → odmowa; znacznik nie do wyzerowania; claim = false; nowa wersja z nową ścieżką OK
+e = await fails_with(() => db.query(`update public.marketing_photo_versions set storage_bucket = 'marketing-photos', public_url = 'https://x/v2-def.jpg', published_at = now() where id = $1`, [v2]), /cannot be published again/);
+ok(e && !e.startsWith("INNY"), "ponowna publikacja wycofanej wersji → odmowa triggera (nieodwracalne)");
+e = await fails_with(() => db.query(`update public.marketing_photo_versions set unpublished_at = null where id = $1`, [v2]), /permanent/);
+ok(e && !e.startsWith("INNY"), "wyzerowanie unpublished_at → odmowa (trwałe)");
+e = await fails_with(() => db.query(`update public.marketing_photo_versions set unpublished_at = now() where id = $1`, [v1]), /set only by completing/);
+ok(e && !e.startsWith("INNY"), "ręczne ustawienie unpublished_at na opublikowanej → odmowa");
+ok((await claim(v2)) === false, "zajęcie wycofanej wersji → false (nic do zrobienia)");
+e = await fails_with(() => db.query(`update public.marketing_campaigns set photo_version_id = $2 where id = $1`, [camp.id, v2]), /not published/);
+ok(e && !e.startsWith("INNY"), "przypisanie wycofanej wersji do kampanii → odmowa");
+const v4 = (await db.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, width, height, bytes, mime, sha256) values ($1::uuid,4,'marketing-photos-pending','photos/'||$1::text||'/v4-new.jpg',null,1200,800,100000,'image/jpeg',repeat('e',64)) returning id`, [ph])).rows[0].id;
+await db.query(`update public.marketing_photo_versions set storage_bucket = 'marketing-photos', public_url = 'https://x/v4-new.jpg', published_at = now() where id = $1`, [v4]);
+ok((await db.query(`select published_at from public.marketing_photo_versions where id = $1`, [v4])).rows[0].published_at !== null, "ponowne użycie zdjęcia = NOWA wersja z nową ścieżką publikuje się normalnie");
 // wyścig po przypisaniu: v3 (świeżo opublikowana logicznie) przypisana do kampanii → zajęcie odmówione; po zdjęciu → przechodzi
 const v3 = unpubV;
 await db.query(`update public.marketing_photo_versions set storage_bucket = 'marketing-photos', public_url = 'https://x/v3-ghi.jpg', published_at = now() where id = $1`, [v3]);

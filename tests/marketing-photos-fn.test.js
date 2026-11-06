@@ -147,6 +147,12 @@ describe("upload", () => {
     const blocked = await call({ action: "approve", photo_id: first.body.photo.id, version_id: first.body.version.id });
     expect(blocked.status).toBe(409); expect(blocked.body.error).toBe("version_unpublishing");
     expect((await call({ action: "list" })).body.photos[0].approved_version).toBeNull();
+    // [nieodwracalność] wersja wycofana: approve → 409 version_unpublished, lista nie pokazuje jej jako oczekującej (potrzebna nowa wersja)
+    state.versions[0].unpublishing_at = null; state.versions[0].unpublished_at = "2026-11-06T13:00:00Z"; state.versions[0].published_at = null; state.versions[0].public_url = null;
+    state.photos[0].current_version_id = first.body.version.id; // wycofana v1 jako ostatnio wgrana — nie może być „oczekująca”
+    const dead = await call({ action: "approve", photo_id: first.body.photo.id, version_id: first.body.version.id });
+    expect(dead.status).toBe(409); expect(dead.body.error).toBe("version_unpublished");
+    expect((await call({ action: "list" })).body.photos[0].pending_version).toBeNull();
   });
   it("[review 3/P2] lista daje administratorowi PODGLĄD kadru oczekującego: podpisany adres z prywatnego bucketa (10 min), nigdy publiczny; preview_version to samo dla jednej wersji", async () => {
     const up = await call({ action: "upload", ...META, mime: "image/jpeg", data_base64: b64(jpegHeader(1200, 800, 50_000)) });

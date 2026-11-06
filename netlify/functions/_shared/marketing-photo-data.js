@@ -41,7 +41,11 @@ export async function loadPhotoVersion(supaSvc, id) {
 
 /** Wersja opublikowana = ma published_at i adres HTTPS i NIE jest w trakcie wycofywania (tylko taka może trafić do kampanii / maila). */
 export function isPublished(version) {
-  return Boolean(version && version.published_at && !version.unpublishing_at && /^https:\/\//i.test(String(version.public_url || "")));
+  return Boolean(version && version.published_at && !version.unpublishing_at && !version.unpublished_at && /^https:\/\//i.test(String(version.public_url || "")));
+}
+/** Wersja wycofana z publikacji — NIEODWRACALNE (decyzja Artura 06.11): nie publikujemy jej ponownie, zdjęcie dostaje nową wersję. */
+export function isUnpublished(version) {
+  return Boolean(version && version.unpublished_at);
 }
 
 /**
@@ -110,6 +114,12 @@ async function writeObject(supaSvc, bucket, path, bytes, mime) {
  */
 export async function publishVersion(supaSvc, version, callerId = null) {
   if (!version) throw new Error("version_required");
+  // [nieodwracalność] ŚWIEŻY odczyt wiersza PRZED jakąkolwiek operacją Storage: wersja wycofana (unpublished_at) albo w trakcie
+  // wycofywania nigdy nie wraca do publikacji — ponowne użycie zdjęcia to nowa wersja z nową ścieżką
+  const fresh = (await loadPhotoVersion(supaSvc, version.id)) || version;
+  if (isUnpublished(fresh)) throw new Error("publish refused: version was unpublished (permanent) — upload a new version: " + fresh.id);
+  if (fresh.unpublishing_at) throw new Error("publish refused: version is being unpublished: " + fresh.id);
+  version = fresh;
   if (isPublished(version)) return { version, published: false };
   const sourceBucket = version.storage_bucket || PENDING_BUCKET; // zapamiętane PRZED update (obiekt wiersza może być współdzielony)
   const bytes = await readObject(supaSvc, sourceBucket, version.storage_path);
@@ -120,9 +130,9 @@ export async function publishVersion(supaSvc, version, callerId = null) {
   if (!/^https:\/\//i.test(publicUrl)) throw new Error("public_url_not_https");
   const { data, error } = await supaSvc.from("marketing_photo_versions")
     .update({ storage_bucket: PHOTO_BUCKET, public_url: publicUrl, published_at: new Date().toISOString(), published_by: callerId })
-    .eq("id", version.id).is("published_at", null).select("*").maybeSingle();
+    .eq("id", version.id).is("published_at", null).is("unpublished_at", null).select("*").maybeSingle();
   if (error) throw new Error("publish version: " + error.message);
-  if (!data) throw new Error("publish version: row not updated (already published?)");
+  if (!data) throw new Error("publish version: row not updated (already published or unpublished meanwhile)");
   if (sourceBucket !== PHOTO_BUCKET) await supaSvc.storage.from(sourceBucket).remove([version.storage_path]).catch(() => {});
   return { version: data, published: true };
 }
@@ -132,7 +142,9 @@ export async function publishVersion(supaSvc, version, callerId = null) {
  * public_url = null. Trigger odrzuca, gdy wersję używa jakakolwiek kampania albo jest zatwierdzoną wersją zdjęcia.
  */
 export async function unpublishVersion(supaSvc, version, callerId = null) {
-  if (!version || !version.published_at) return { version, unpublished: false };
+  if (!version) return { version, unpublished: false };
+  if (isUnpublished(version)) return { version, unpublished: false, reason: "already_unpublished" }; // nieodwracalne — nic do zrobienia, bez Storage
+  if (!version.published_at) return { version, unpublished: false };
   // [review Codexa 4/P1] NAJPIERW trwały, atomowy stan w bazie: marketing_photo_version_claim_unpublish() zajmuje wersję tylko,
   // gdy nie jest używana przez żadną kampanię ani zatwierdzona; od tej chwili triggery blokują nowe przypisania i zatwierdzenia.
   // Dopiero potem dotykamy plików. Ponowne zajęcie już zajętej wersji = sukces (ponawialność po przerwanej próbie).
@@ -159,10 +171,10 @@ export async function unpublishVersion(supaSvc, version, callerId = null) {
   }
   const { data, error } = await supaSvc.from("marketing_photo_versions")
     .update({ storage_bucket: PENDING_BUCKET, public_url: null, published_at: null, published_by: null })
-    .eq("id", version.id).not("unpublishing_at", "is", null).select("*").maybeSingle();
+    .eq("id", version.id).not("unpublishing_at", "is", null).is("unpublished_at", null).select("*").maybeSingle();
   if (error) throw new Error("unpublish version: " + error.message);
-  if (!data) throw new Error("unpublish version: row not updated (claim lost?)");
-  return { version: data, unpublished: true };
+  if (!data) throw new Error("unpublish version: row not updated (already completed by another run)");
+  return { version: data, unpublished: true }; // data.unpublished_at ustawione przez trigger — trwale
 }
 
 /**

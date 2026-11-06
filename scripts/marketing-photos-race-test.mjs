@@ -41,17 +41,23 @@ try {
   const SHA = "f".repeat(60) + "race";
   let photo = (await S.query(`select id from public.marketing_photos where source_sha256 = $1`, [SHA])).rows[0]?.id;
   if (!photo) photo = (await S.query(`insert into public.marketing_photos (title, alt_pl, alt_en, status, source_sha256, review_note, created_by) values ('ZZZ TEST wyścig blokad', 'test', 'test', 'pending', $1, 'wiersz testu wyścigu transakcji (scripts/marketing-photos-race-test.mjs) — bez pliku w Storage', $2) returning id`, [SHA, admin])).rows[0].id;
-  let v = (await S.query(`select * from public.marketing_photo_versions where photo_id = $1 order by version_no desc limit 1`, [photo])).rows[0];
-  if (!v) v = (await S.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, width, height, bytes, mime, sha256, published_at, created_by) values ($1::uuid, 1, 'marketing-photos', 'photos/'||$1::text||'/v1-race.jpg', 'https://race.invalid/'||$1::text||'/v1-race.jpg', 1200, 800, 100000, 'image/jpeg', $2::text, now(), $3::uuid) returning *`, [photo, "e".repeat(64), admin])).rows[0];
+  let v = (await S.query(`select * from public.marketing_photo_versions where photo_id = $1 and published_at is not null and unpublished_at is null order by version_no desc limit 1`, [photo])).rows[0];
+  if (!v) v = (await S.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, width, height, bytes, mime, sha256, published_at, created_by) values ($1::uuid, (select coalesce(max(version_no), 0) + 1 from public.marketing_photo_versions where photo_id = $1::uuid), 'marketing-photos', 'photos/'||$1::text||'/v'||(select coalesce(max(version_no), 0) + 1 from public.marketing_photo_versions where photo_id = $1::uuid)||'-race.jpg', 'https://race.invalid/'||$1::text||'/v-race.jpg', 1200, 800, 100000, 'image/jpeg', md5(random()::text) || md5(random()::text), now(), $3::uuid) returning *`, [photo, null, admin])).rows[0];
   // stan wyjściowy: opublikowana, niezajęta, nieprzypisana, niezatwierdzona. Ręcznego zwalniania NIE MA (review Codexa 6):
   // zajęty stan kończy tylko dokończone wycofanie (published_at → NULL), więc reset = wycofanie + ponowna publikacja (wiersz logiczny bez pliku)
+  // wycofanie jest NIEODWRACALNE: zajęta wersja zostaje wycofana (trwały znacznik), a kolejny scenariusz dostaje NOWĄ wersję z nową ścieżką
   const resetVersion = async () => {
     await S.query(`update public.marketing_campaigns set photo_version_id = null, photo_id = null where photo_version_id = $1::uuid`, [v.id]);
     await S.query(`update public.marketing_photos set approved_version_id = null where approved_version_id = $1::uuid`, [v.id]);
     const cur = (await S.query(`select published_at, unpublishing_at from public.marketing_photo_versions where id = $1::uuid`, [v.id])).rows[0];
     if (cur.unpublishing_at) await S.query(`update public.marketing_photo_versions set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' where id = $1::uuid`, [v.id]);
-    const now = (await S.query(`select published_at from public.marketing_photo_versions where id = $1::uuid`, [v.id])).rows[0];
-    if (!now.published_at) await S.query(`update public.marketing_photo_versions set published_at = now(), public_url = 'https://race.invalid/'||photo_id::text||'/v1-race.jpg', storage_bucket = 'marketing-photos' where id = $1::uuid`, [v.id]);
+    const now = (await S.query(`select published_at, unpublished_at from public.marketing_photo_versions where id = $1::uuid`, [v.id])).rows[0];
+    if (!now.published_at) {
+      const back = await errOf(S.query(`update public.marketing_photo_versions set published_at = now(), public_url = 'https://race.invalid/x.jpg', storage_bucket = 'marketing-photos' where id = $1::uuid`, [v.id]));
+      ok(back && /cannot be published again/.test(back), "wycofana wersja NIE wraca do publikacji (trigger): " + (back || "BRAK BŁĘDU"));
+      v = (await S.query(`insert into public.marketing_photo_versions (photo_id, version_no, storage_bucket, storage_path, public_url, width, height, bytes, mime, sha256, published_at, created_by) values ($1::uuid, (select coalesce(max(version_no), 0) + 1 from public.marketing_photo_versions where photo_id = $1::uuid), 'marketing-photos', 'photos/'||$1::text||'/v'||(select coalesce(max(version_no), 0) + 1 from public.marketing_photo_versions where photo_id = $1::uuid)||'-race.jpg', 'https://race.invalid/'||$1::text||'/v-race.jpg', 1200, 800, 100000, 'image/jpeg', md5(random()::text) || md5(random()::text), now(), $2::uuid) returning *`, [photo, admin])).rows[0];
+      await S.query(`update public.marketing_photos set current_version_id = $2 where id = $1`, [photo, v.id]);
+    }
   };
   await resetVersion();
   await S.query(`update public.marketing_photos set current_version_id = $2, status = 'pending' where id = $1`, [photo, v.id]);
@@ -144,7 +150,9 @@ try {
   // porządki: wiersze zostają (wersji nie da się usunąć), ale w stanie nieszkodliwym
   await errOf(S.query(`update public.marketing_campaigns set photo_version_id = null, photo_id = null, status = 'closed', closed_at = now() where name = 'ZZZ TEST wyścig blokad'`));
   await errOf(S.query(`update public.marketing_photos set approved_version_id = null, status = 'disabled', disabled_at = now() where title = 'ZZZ TEST wyścig blokad'`));
-  // wiersz testowy kończy jako WYCOFANY (bez pliku, bez publicznego adresu) — jedyny sposób zakończenia zajętego stanu
+  // WSZYSTKIE wersje testowe kończą jako WYCOFANE (wiersze logiczne bez pliku; zajęcie w bazie, potem dokończenie) — skrypt porządkowy
+  // nie ma potem nic do roboty, a wycofanie jest nieodwracalne, więc kolejny przebieg zakłada nową wersję
+  await errOf(S.query(`select public.marketing_photo_version_claim_unpublish(v.id, null) from public.marketing_photo_versions v join public.marketing_photos p on p.id = v.photo_id where p.title = 'ZZZ TEST wyścig blokad' and v.published_at is not null and v.unpublished_at is null`));
   await errOf(S.query(`update public.marketing_photo_versions v set published_at = null, public_url = null, storage_bucket = 'marketing-photos-pending' from public.marketing_photos p where p.id = v.photo_id and p.title = 'ZZZ TEST wyścig blokad' and v.unpublishing_at is not null`));
   for (const c of [A, B, S]) await c.end().catch(() => {});
 }

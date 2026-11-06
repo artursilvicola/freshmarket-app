@@ -5,7 +5,7 @@
 import { beforeEach, describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
 import { jpegHeader } from "./fixtures/image-headers.js";
-import { publishVersion, unpublishVersion, previewUrls, isPublished, isNotFoundError } from "../netlify/functions/_shared/marketing-photo-data.js";
+import { publishVersion, unpublishVersion, previewUrls, isPublished, isUnpublished, isNotFoundError } from "../netlify/functions/_shared/marketing-photo-data.js";
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
 let st;
@@ -29,7 +29,9 @@ const fake = () => {
       const row = found;
       if (!row || (q._is && (row[q._is[0]] ?? null) !== q._is[1]) || (q._notIs && (row[q._notIs[0]] ?? null) === q._notIs[1])) return { data: null, error: null };
       // trigger: cofnięcie publikacji wymaga zajęcia i braku użycia; po cofnięciu stan znika
-      if (q._upd.published_at === null && row.published_at) { if (!row.unpublishing_at) return { data: null, error: { message: "unpublish requires a prior claim" } }; if (st.referenced.has(row.id)) return { data: null, error: { message: "published version is referenced" } }; q._upd = { ...q._upd, unpublishing_at: null, unpublishing_by: null }; }
+      // trigger: publikacja wersji wycofanej odrzucona (trwale); wycofanie stawia unpublished_at
+      if (q._upd.published_at && !row.published_at && row.unpublished_at) return { data: null, error: { message: "version was unpublished and cannot be published again (create a new version with a new path)" } };
+      if (q._upd.published_at === null && row.published_at) { if (!row.unpublishing_at) return { data: null, error: { message: "unpublish requires a prior claim" } }; if (st.referenced.has(row.id)) return { data: null, error: { message: "published version is referenced" } }; q._upd = { ...q._upd, unpublishing_at: null, unpublishing_by: null, unpublished_at: row.unpublished_at || new Date().toISOString() }; }
       else if ("unpublishing_at" in q._upd && q._upd.unpublishing_at === null && row.unpublishing_at) return { data: null, error: { message: "unpublishing state can only end by completing the unpublish (no manual release)" } };
       Object.assign(row, q._upd); return { data: { ...row }, error: null };
     };
@@ -39,12 +41,12 @@ const fake = () => {
   const rpc = async (name, args) => {
     st.rpcCalls.push([name, args]);
     const row = st.rows.find((r) => r.id === args.p_version_id);
-    if (name === "marketing_photo_version_claim_unpublish") { if (!row || !row.published_at || st.referenced.has(row.id)) return { data: false, error: null }; row.unpublishing_at = row.unpublishing_at || new Date().toISOString(); return { data: true, error: null }; }
+    if (name === "marketing_photo_version_claim_unpublish") { if (!row || !row.published_at || row.unpublished_at || st.referenced.has(row.id)) return { data: false, error: null }; row.unpublishing_at = row.unpublishing_at || new Date().toISOString(); return { data: true, error: null }; }
     return { data: null, error: { message: "unknown rpc " + name } };
   };
   return { storage, from, rpc };
 };
-const seedPending = (id = "v1") => { const bytes = jpegHeader(1200, 800, 30_000); const path = `photos/ph/${id}-abc.jpg`; st.objects["marketing-photos-pending/" + path] = bytes; const row = { id, photo_id: "ph", version_no: 1, storage_bucket: "marketing-photos-pending", storage_path: path, public_url: null, published_at: null, mime: "image/jpeg", sha256: sha(bytes) }; st.rows.push(row); return row; };
+const seedPending = (id = "v1") => { const bytes = jpegHeader(1200, 800, 30_000 + id.length); const path = `photos/ph/${id}-abc.jpg`; st.objects["marketing-photos-pending/" + path] = bytes; const row = { id, photo_id: "ph", version_no: 1, storage_bucket: "marketing-photos-pending", storage_path: path, public_url: null, published_at: null, mime: "image/jpeg", sha256: sha(bytes) }; st.rows.push(row); return row; };
 const seedPublished = (id = "v1") => { const r = seedPending(id); const bytes = st.objects["marketing-photos-pending/" + r.storage_path]; delete st.objects["marketing-photos-pending/" + r.storage_path]; st.objects["marketing-photos/" + r.storage_path] = bytes; Object.assign(r, { storage_bucket: "marketing-photos", public_url: "https://fake.supabase.co/storage/v1/object/public/marketing-photos/" + r.storage_path, published_at: "2026-11-06T10:00:00Z" }); return r; };
 
 let supa;
@@ -144,6 +146,35 @@ describe("unpublishVersion — kolejność ponawialna (review Codexa 3)", () => 
     expect(st.rows[0]).toMatchObject({ published_at: null, public_url: null, unpublishing_at: null, storage_bucket: "marketing-photos-pending" });
     expect(st.objects["marketing-photos/" + v.storage_path]).toBeUndefined(); expect(st.objects["marketing-photos-pending/" + v.storage_path]).toBeTruthy();
     expect(isPublished(st.rows[0])).toBe(false);
+  });
+  it("[nieodwracalność] dwa wycofania → próba PONOWNEJ publikacji tej samej wersji odrzucona PRZED Storage (świeży odczyt) i w bazie → wznowienie starszego procesu nic nie zmienia; nowa wersja z nową ścieżką publikuje się normalnie", async () => {
+    const v = seedPublished();
+    let release; const gate = new Promise((r) => { release = r; });
+    const base = supa.storage.from; let gateUsed = false;
+    supa.storage = { from: (bucket) => { const api = base(bucket); return { ...api, remove: async (ps) => { if (bucket === "marketing-photos" && !gateUsed) { gateUsed = true; await gate; } return api.remove(ps); } }; } };
+    const first = unpublishVersion(supa, { ...v }, "proces-1");           // 1. wycofanie — zatrzymane przed usunięciem
+    await new Promise((r) => setTimeout(r, 10));
+    const second = await unpublishVersion(supa, { ...st.rows[0] }, "proces-2"); // 2. wycofanie — domyka
+    expect(second.unpublished).toBe(true); expect(isUnpublished(st.rows[0])).toBe(true); expect(st.rows[0].unpublished_at).toBeTruthy();
+    // próba ponownej publikacji TEJ SAMEJ wersji: odrzucona przed jakąkolwiek operacją Storage (żaden upload, żaden download)
+    const uploadsBefore = st.uploads.length;
+    await expect(publishVersion(supa, { ...st.rows[0], unpublished_at: null }, "admin")).rejects.toThrow(/was unpublished \(permanent\)/); // nawet ze „starym” obiektem w ręku — świeży odczyt z bazy
+    expect(st.uploads.length).toBe(uploadsBefore); expect(st.objects["marketing-photos/" + v.storage_path]).toBeUndefined();
+    // ta sama próba bezpośrednio w bazie → trigger
+    const direct = await supa.from("marketing_photo_versions").update({ published_at: "2026-11-07T00:00:00Z", public_url: "https://x/y.jpg" }).eq("id", v.id).select().maybeSingle();
+    expect(direct.error.message).toMatch(/cannot be published again/);
+    // wznowienie starszego procesu: nic nie zmienia, kończy „row not updated”
+    release();
+    await expect(first).rejects.toThrow(/row not updated/);
+    expect(st.rows[0]).toMatchObject({ published_at: null, public_url: null, unpublishing_at: null }); expect(st.rows[0].unpublished_at).toBeTruthy();
+    expect(st.objects["marketing-photos/" + v.storage_path]).toBeUndefined(); expect(st.objects["marketing-photos-pending/" + v.storage_path]).toBeTruthy();
+    // trzecie wycofanie tej samej wersji: nic do zrobienia, bez dotykania Storage; zajęcie = false
+    const third = await unpublishVersion(supa, { ...st.rows[0] }, "proces-3");
+    expect(third).toMatchObject({ unpublished: false, reason: "already_unpublished" });
+    // ponowne użycie zdjęcia = NOWA wersja z NOWĄ ścieżką → publikuje się normalnie
+    const v2 = seedPending("v2"); v2.storage_path = "photos/ph/v2-xyz.jpg"; st.objects["marketing-photos-pending/" + v2.storage_path] = st.objects["marketing-photos-pending/photos/ph/v2-abc.jpg"];
+    const pub = await publishVersion(supa, { ...v2 }, "admin");
+    expect(pub.published).toBe(true); expect(st.objects["marketing-photos/" + v2.storage_path]).toBeTruthy(); expect(st.rows[1].unpublished_at ?? null).toBeNull();
   });
   it("[review 6/P1] zatrzymanie PO usunięciu publicznego, przed zapisem wiersza → drugi przebieg domyka (bajty z kopii prywatnej) → wznowienie pierwszego nie zmienia stanu", async () => {
     const v = seedPublished();

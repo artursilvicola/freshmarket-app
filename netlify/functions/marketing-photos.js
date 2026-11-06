@@ -130,7 +130,8 @@ export const handler = async (event) => {
         const version = await loadPhotoVersion(supaSvc, versionId);
         if (!version || String(version.photo_id) !== String(photo.id)) return json(404, { error: "version_not_found" });
         if (String(photo.approved_version_id || "") === String(version.id) && photo.status === "ready") return json(409, { error: "version_already_approved" });
-        if (version.unpublishing_at) return json(409, { error: "version_unpublishing", hint: "wersja jest w trakcie wycofywania publikacji — zwolnij stan (release) albo poczekaj na koniec porządków" });
+        if (version.unpublished_at) return json(409, { error: "version_unpublished", hint: "ta wersja została wycofana z publikacji — nieodwracalnie; wgraj zdjęcie ponownie jako nową wersję" });
+        if (version.unpublishing_at) return json(409, { error: "version_unpublishing", hint: "wersja jest w trakcie wycofywania publikacji — poczekaj na koniec porządków (ponowne uruchomienie skryptu domyka stan)" });
         const pub = await publishVersion(supaSvc, version, caller.id);
         const nowIso = new Date().toISOString();
         const { data, error } = await supaSvc.from("marketing_photos")
@@ -212,7 +213,8 @@ function decorate(p, versions, byPhoto) {
   const approved = versions.find((v) => String(v.id) === String(p.approved_version_id)) || null;
   // nowy kadr czeka na akceptację: ostatnio wgrana wersja ≠ zatwierdzona. Dotyczy TAKŻE wersji już opublikowanej, której
   // zapis approved_version_id padł (przerwane zatwierdzenie) — inaczej zniknąłby przycisk ponowienia (review Codexa 3/P2).
-  const pending = current && (!approved || String(current.id) !== String(approved.id)) ? { ...current, published: isPublished(current) } : null;
+  // wersja wycofana (unpublished_at) nigdy nie jest „oczekująca” — do rotacji wraca tylko nowa wersja z nową ścieżką
+  const pending = current && !current.unpublished_at && (!approved || String(current.id) !== String(approved.id)) ? { ...current, published: isPublished(current) } : null;
   return { ...p, current_version: current, approved_version: isPublished(approved) ? approved : null, pending_version: pending, versions_count: versions.filter((v) => String(v.photo_id) === String(p.id)).length, usage: byPhoto.get(String(p.id)) || { campaigns: 0, sent_campaigns: 0, last_sent_at: null, open_assignments: 0 } };
 }
 

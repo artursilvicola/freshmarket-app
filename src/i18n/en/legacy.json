@@ -2084,7 +2084,8 @@
       "ph_pending_preview_alt": "Preview of the pending crop (version {{n}})",
       "ph_pending_published_unapproved": "Version {{n}} is already published but the approval was not saved (interrupted). Click “Approve” again — the publication will not repeat.",
       "ph_preview_signed_note": "The pending-crop preview is a protected address valid for 10 minutes, visible only to the administrator; refresh the list once it expires.",
-      "err_preview_unavailable": "The preview of this version is unavailable."
+      "err_preview_unavailable": "The preview of this version is unavailable.",
+      "err_version_unpublished": "This version was withdrawn from publication (permanently) — upload the photo again as a new version."
     },
     "settlements": {
       "title": "Supplier settlements",

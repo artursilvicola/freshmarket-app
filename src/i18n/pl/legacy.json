@@ -2084,7 +2084,8 @@
       "ph_pending_preview_alt": "Podgląd kadru oczekującego (wersja {{n}})",
       "ph_pending_published_unapproved": "Wersja {{n}} jest już opublikowana, ale zatwierdzenie nie zostało zapisane (przerwane). Kliknij „Zatwierdź” jeszcze raz — publikacja się nie powtórzy.",
       "ph_preview_signed_note": "Podgląd kadru oczekującego to chroniony adres ważny 10 minut, widoczny tylko dla administratora; odśwież listę, gdy wygaśnie.",
-      "err_preview_unavailable": "Podgląd tej wersji jest niedostępny."
+      "err_preview_unavailable": "Podgląd tej wersji jest niedostępny.",
+      "err_version_unpublished": "Ta wersja została wycofana z publikacji (nieodwracalnie) — wgraj zdjęcie ponownie jako nową wersję."
     },
     "settlements": {
       "title": "Rozliczenia z dostawcami",

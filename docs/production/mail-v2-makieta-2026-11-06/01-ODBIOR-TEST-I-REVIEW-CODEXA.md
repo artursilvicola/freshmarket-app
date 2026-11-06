@@ -211,6 +211,23 @@ SQL smoke: funkcja release nie istnieje, wyzerowanie/zmiana `unpublishing_at` od
 wyścig po przypisaniu nadal zamknięty. Test wyścigu dwóch połączeń (`marketing-photos-race-test.mjs`) resetuje stan między scenariuszami
 przez dokończenie wycofania i ponowną publikację wiersza logicznego; wiersz testowy kończy jako wycofany.
 
+## 13. Decyzja Artura: wycofanie wersji jest NIEODWRACALNE (siódma runda)
+
+Migracja `20261107150000_marketing_photo_unpublish_final.sql` (tylko baza testowa): trwały znacznik `marketing_photo_versions.unpublished_at`,
+ustawiany WYŁĄCZNIE przez trigger w chwili zakończenia wycofania (`published_at → NULL`); nie da się go wyzerować, zmienić ani ustawić ręcznie.
+Trigger odrzuca ponowną publikację wersji z tym znacznikiem („create a new version with a new path”); RPC zajęcia zwraca false dla wersji
+wycofanej; strażnicy kampanii/zatwierdzenia i tak jej nie przyjmą (nieopublikowana). W kodzie `publishVersion` robi ŚWIEŻY odczyt wiersza
+PRZED jakąkolwiek operacją Storage i odmawia dla wersji wycofanej lub wycofywanej (nawet gdy wywołujący trzyma stary obiekt), a UPDATE
+publikacji ma dodatkowy warunek `unpublished_at is null`; `approve` wersji wycofanej = 409 `version_unpublished`; lista nie pokazuje jej jako
+oczekującej. Ponowne użycie zdjęcia = nowa wersja z nową ścieżką (upload → approve) — publikuje się normalnie. `--release` nie wraca.
+
+**Regresja (zalecona):** dwa wycofania (pierwsze zatrzymane przed usunięciem, drugie domyka) → próba ponownej publikacji tej samej wersji
+odrzucona przed Storage (0 uploadów, 0 pobrań) i w bazie (trigger) → wznowienie starszego procesu nic nie zmienia („row not updated”, stan
+spójny: plik tylko prywatny, znacznik trwały) → trzecie wycofanie = „already_unpublished” bez dotykania Storage → nowa wersja z nową ścieżką
+publikuje się. SQL smoke na PGlite (82 migracje): ponowna publikacja wycofanej odrzucona, znacznik trwały, ręczne ustawienie odrzucone,
+zajęcie = false, przypisanie odrzucone, nowa wersja OK. Test wyścigu dwóch połączeń: reset między scenariuszami tworzy NOWĄ wersję logiczną
+(i sprawdza, że wycofana nie wraca do publikacji).
+
 ## 7. Otwarte / poza zakresem
 * `MARKETING_SEND_ALLOWLIST` nadal ustawiona na prod (zdjąć przed prawdziwą kampanią) — bez związku z tą gałęzią.
 * Instrukcja administratora (rozdział Marketing) nie opisuje jeszcze biblioteki zdjęć — do uzupełnienia po akceptacji wyglądu.
