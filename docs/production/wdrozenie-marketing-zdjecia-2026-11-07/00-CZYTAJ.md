@@ -129,3 +129,15 @@ Wyniki i źródła: `docs/production/odbior-marketing-zdjecia-2026-11-07/00-WYNI
 * `03-po-probie.sql` wklejony do edytora (sha po normalizacji końców linii 97b74686651ad9b2 = plik), NIE uruchomiony.
 
 Czeka na Artura: kliknięcie wypisu, Gmail na telefonie, Run skryptu sprzątającego. Po próbie: punkt 7 notatki Codexa i przegląd 2eae91c przez Codexa bezpośrednio z Arturem.
+
+## Dziennik: teksty odporne na liczbę kredytów (07.11.2026)
+Zlecenie Codexa przez Artura: brzmienia z liczbą po dwukropku, testy 0, 1, 2, 4, 5, 12, 22, bez wysyłek i bez kredytów na produkcji.
+* fb359c1: układ 2. Codex NO-GO: brak układu 1 i słaby test {{expiring_n}}.
+* e389dc5: układ 1 i stare klucze, temat wygasających wspólny, nowy symbol {{expiring_n}}, testy obu układów. Codex GO. 6734651: test sprawdza też HTML (uwaga Codexa).
+* Pełny zestaw: 117 plików, 1222 testy OK. Galeria `odbior-marketing-zdjecia-2026-11-07/podglad-grup-kredyty.html` odświeżona.
+* NIEWDROŻONE: main = 2eae91c. Treści zamrożone i zapisane wiadomości bez zmian.
+
+Domknięcie próby, stan 07.11 przed Run:
+* Wypis: jeszcze nie kliknięty (żaden adres próbny nie ma wykluczenia „wypis”).
+* Edytor SQL: projekt sklyfuvzjikkqerxtulo (produkcja), `03-po-probie.sql`, 86 linii, sha po normalizacji 97b74686651ad9b2 = plik, 2 × update, 0 × delete. NIE uruchomiony.
+* Wysyłka wyłączona (flaga false, 403 w działającym deployu).
