@@ -96,3 +96,17 @@ Wymagane kliknięcia Artura (nic z tego nie jest wykonane):
 2. „Zatwierdź” i „Wyślij z rejestru” dla kampanii próbnej, oraz odczyt Gmaila i kliknięcie wypisu.
 
 Plan po pkt 1 (niewykonany): włączenie flagi i redeploy, kampania tylko na dwie firmy próbne, identyfikatory i zdarzenia Resend zapisane w `docs/production/odbior-marketing-zdjecia-2026-11-07/`, wyłączenie flagi także przy błędzie, `03-po-probie.sql`. Punkt 7 notatki Codexa (tekst biblioteki, instrukcja) po próbie, z review przed deployem.
+
+## Dziennik: krok 4 i blokada próby (07.11.2026 rano)
+Wykonane:
+* Reaktywacja (Run: Artur, 08:27): 2 wiersze, konta active, PreConnect true, operator true, wypisy 0, zapisane zgody po 1.
+* Flaga true + deploy 6aeed300 (72a2a4a), lista = dokładnie dwa adresy. Utworzony szkic kampanii „Próba mail v2 07.11”, #5, bez zatwierdzenia i bez wiadomości.
+* BLOKADA: obie firmy próbne mają wykluczenie „kampania <30 dni” po wysyłce z 06.11 (kampania #3), bez pola wyboru. Serwer stosuje tę regułę także przy zatwierdzaniu. Runbook tego nie przewidział.
+* Flaga z powrotem false + redeploy o 07:31 UTC (72a2a4a), odczyt potwierdzony. Mail nie wyszedł. Konta próbne zostają aktywne do próby.
+* Poprawka 2eae91c na gałęzi: wyjątek od przerwy 30 dni tylko w kampanii ręcznej i tylko dla adresu z aktywnej, poprawnej listy. Test: 116 plików, 990 testów OK. Codex: GO (CLI, read-only).
+
+Blokady i kliknięcia Artura:
+1. Decyzja „wdrażaj” dla 2eae91c. Bez niej próba czeka do 06.12.
+2. Po wdrożeniu: „Zatwierdź” i „Wyślij z rejestru”, odczyt Gmaila, kliknięcie wypisu.
+
+Plan po „wdrażaj” (niewykonany): merge gałęzi do main, flaga true przed tym deployem, kontrola `version.json` i listy, wybór dwóch firm w kampanii #5. Po próbie flaga false i `03-po-probie.sql`, także przy błędzie.
