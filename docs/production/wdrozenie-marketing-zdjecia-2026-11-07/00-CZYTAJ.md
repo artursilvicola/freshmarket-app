@@ -148,3 +148,15 @@ Domknięcie próby, stan 07.11 przed Run:
 * Wysyłka wyłączona, lista dwóch adresów zostaje do pierwszej prawdziwej kampanii. Wtedy ją zdjąć, bo wyjątek od przerwy 30 dni (2eae91c) działa tylko przy aktywnej liście.
 
 Otwarte: wdrożenie poprawki tekstów (6734651, Codex GO) na „wdrażaj” Artura; punkt 7 notatki Codexa (tekst biblioteki o plikach prywatnych, instrukcja administratora); kadr 0173; 20 zdjęć zapasowych; przegląd 2eae91c przez Codexa bezpośrednio z Arturem.
+
+## Dziennik: końcowy pakiet wdrożony bez włączania wysyłki (07.11.2026)
+Zlecenie Codexa przez Artura: teksty kredytów + ostrzeżenie o zdjęciach prywatnych i publicznych + instrukcja biblioteki; po review wdrożyć bez wysyłki; listy nie zdejmować.
+* 9ee1d52: ostrzeżenie w panelu PL/EN, rozdział „Marketing: biblioteka zdjęć” w instrukcji administratora PreConnect PL/EN, testy. Codex GO z uwagą o pierwszeństwie nieprzypisanych zdjęć w rotacji → fa3dd0b.
+* Testy: 118 plików, 1226 OK; vite build OK.
+* Tag `prod-rollback-2026-11-07-texts-library` = 2eae91c; rollback w Netlify: Publish deploy 6aeedf78 (2eae91c, flaga false).
+* main fast-forward do fa3dd0b, deploy 6aeef6d2ffaecdbf9dbafc89, `version.json` fa3dd0bb98ab.
+* Na żywo: flaga false, wysyłka 403 `send_disabled`, lista = dwa adresy; ostrzeżenie w Bibliotece zdjęć nowe; rozdział instrukcji pod `#instr-preconnect-admin-marketing-zdjecia`; podgląd firmy z 1 kredytem: „Dostępne kredyty PreConnect: 1”.
+
+Korekta: wcześniejsza sugestia, że kadr 0173 da się poprawić suwakiem w nowej wersji, była błędna. Panel odrzuca ponowne wgranie tego samego oryginału jako duplikat; nowa wersja istniejącego zdjęcia jest możliwa tylko przez API. 0173 zostaje prywatne.
+
+Nadal niesprawdzone: Outlook i wypis przyciskiem Gmaila (nagłówek List-Unsubscribe).
