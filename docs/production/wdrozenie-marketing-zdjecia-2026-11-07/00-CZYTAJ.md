@@ -121,3 +121,11 @@ Wykonane:
 * Po podglądach flaga true + redeploy, lista sprawdzona tuż przed zmianą.
 
 Czeka na Artura: „Zatwierdź (2)” i „Wyślij z rejestru”, Gmail na komputerze i telefonie, wypis.
+
+## Dziennik: próba wykonana (07.11.2026)
+Wyniki i źródła: `docs/production/odbior-marketing-zdjecia-2026-11-07/00-WYNIK-PROBY.md`.
+* Artur zatwierdził i wysłał; 2 × accepted o 07:50:48 UTC; oba maile w Gmailu; wygląd zaakceptowany na komputerze.
+* Ponowienie 409, bez nowych wierszy. Flaga false (deploy 6aeedf78, 2eae91c), wysyłka 403 `send_disabled`. Lista zostaje. Kampania #5 zamknięta.
+* `03-po-probie.sql` wklejony do edytora (sha po normalizacji końców linii 97b74686651ad9b2 = plik), NIE uruchomiony.
+
+Czeka na Artura: kliknięcie wypisu, Gmail na telefonie, Run skryptu sprzątającego. Po próbie: punkt 7 notatki Codexa i przegląd 2eae91c przez Codexa bezpośrednio z Arturem.
