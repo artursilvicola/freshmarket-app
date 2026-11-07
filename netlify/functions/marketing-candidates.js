@@ -23,7 +23,7 @@ export const handler = async (event) => {
     let campaign = body.campaign_id ? await loadCampaign(auth.supaSvc, body.campaign_id) : null;
     if (body.campaign_id && !campaign) return json(404, { error: "campaign_not_found" });
     if (!campaign) campaign = { template_key: body.template_key || null }; // grupa odbiorców bez zapisanej kampanii (podgląd kwalifikacji)
-    const result = await computeCandidates(auth.supaSvc, { campaign });
+    const result = await computeCandidates(auth.supaSvc, { campaign, env: auth.env });
     return json(200, { ok: true, snapshot_at: result.snapshot_at, today: result.today, summary: result.summary, rows: result.rows, campaign: body.campaign_id ? campaign : null });
   } catch (e) {
     console.error("[marketing-candidates]", e?.message || e);

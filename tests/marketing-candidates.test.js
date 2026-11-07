@@ -148,6 +148,20 @@ describe("wykluczenia bazowe z powodami (niezależne od grupy)", () => {
     expect(run({ suppressions: [{ email: "op@kowalski.test" }] }).rows[0].exclusions).toContain("suppressed");
     expect(run({ recentMessages: [{ company_id: "c1", profile_id: "p1", sent_at: "2026-10-20T00:00:00Z", state: "accepted" }] }).rows[0].exclusions).toContain("recent_campaign");
   });
+  it("przerwa 30 dni: wyjątek tylko dla adresu z listy próbnej w kampanii ręcznej", () => {
+    const recent = [{ company_id: "c1", profile_id: "p1", sent_at: "2026-10-20T00:00:00Z", state: "accepted" }];
+    const manual = { template_key: AUDIENCES.SELECTED_COMPANIES };
+    const excl = (over) => run({ recentMessages: recent, ...over }).rows[0];
+    expect(excl({ campaign: manual, trialEmails: [" OP@kowalski.test "] }).exclusions).not.toContain("recent_campaign");
+    expect(excl({ campaign: manual, trialEmails: [" OP@kowalski.test "] }).eligible).toBe(true);
+    expect(excl({ campaign: manual, trialEmails: [] }).exclusions).toContain("recent_campaign"); // lista zdjęta albo błędna
+    expect(excl({ campaign: manual }).exclusions).toContain("recent_campaign");
+    expect(excl({ campaign: manual, trialEmails: ["inny@kowalski.test"] }).exclusions).toContain("recent_campaign");
+    expect(excl({ campaign: { template_key: AUDIENCES.CREDITS_NO_PROPOSAL }, trialEmails: ["op@kowalski.test"] }).exclusions).toContain("recent_campaign"); // grupy automatyczne bez wyjątku
+    const wypis = excl({ campaign: manual, trialEmails: ["op@kowalski.test"], suppressions: [{ email: "op@kowalski.test" }] });
+    expect(wypis.exclusions).toContain("suppressed"); // wypis zawsze blokuje
+    expect(wypis.eligible).toBe(false);
+  });
   it("nieaktywny profil nie liczy się jako operator", () => {
     expect(run({ profiles: [op({ active: false })] }).rows[0].exclusions).toContain("no_operator");
   });

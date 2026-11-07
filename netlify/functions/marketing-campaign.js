@@ -169,7 +169,7 @@ export const handler = async (event) => {
         const liveContent = campaign.content && Object.keys(campaign.content).length ? campaign.content : null;
         if (liveContent) { const errors = validateContent(liveContent); if (errors.length) return json(422, { error: "content_invalid", errors }); }
 
-        const result = await computeCandidates(supaSvc, { campaign });
+        const result = await computeCandidates(supaSvc, { campaign, env });
         const snapshotAt = result.snapshot_at;
         const problems = [];
         const toInsert = [];

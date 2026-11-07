@@ -144,12 +144,15 @@ export function qualifyAudience(key, f) {
  * @param {Array} input.recentMessages profile_id, company_id, sent_at, state  (wysłane w ostatnich 30 dniach)
  * @param {object} input.campaign   template_key = grupa odbiorców (AUDIENCE_KEYS) — decyduje o `in_audience`/`eligible`
  * @param {string} input.todayISO   'YYYY-MM-DD' (dzień biznesowy)
+ * @param {Array<string>} input.trialEmails  adresy z AKTYWNEJ listy MARKETING_SEND_ALLOWLIST: tylko one i tylko w kampanii ręcznej nie podlegają
+ *   przerwie 30 dni (powtórzona próba na kontach testowych). Bez listy brak wyjątku. Pozostałe wykluczenia, w tym wypis, działają bez zmian.
  */
 export function buildCandidates(input) {
-  const { companies = [], profiles = [], packages = [], sends = [], offers = [], suppressions = [], recentMessages = [], campaign = null, todayISO } = input;
+  const { companies = [], profiles = [], packages = [], sends = [], offers = [], suppressions = [], recentMessages = [], campaign = null, todayISO, trialEmails = [] } = input;
   const today = todayISO || new Date().toISOString().slice(0, 10);
   const audience = AUDIENCE_KEYS.includes(campaign?.template_key) ? campaign.template_key : null;
   const suppressed = new Set(suppressions.map((s) => norm(s.email)).filter(Boolean));
+  const trial = new Set(audience === AUDIENCES.SELECTED_COMPANIES ? trialEmails.map(norm).filter(Boolean) : []);
 
   // operatorzy: aktywne profile dostawców per firma; adresy współdzielone między firmami
   const profilesByCompany = new Map();
@@ -195,7 +198,7 @@ export function buildCandidates(input) {
     if (operator && !EMAIL_RX.test(email)) exclusions.push("email_invalid");
     if (email && (companiesByEmail.get(email)?.size || 0) > 1) exclusions.push("email_shared");
     if (email && suppressed.has(email)) exclusions.push("suppressed");
-    if (recentByCompany.has(String(co.id))) exclusions.push("recent_campaign");
+    if (recentByCompany.has(String(co.id)) && !trial.has(email)) exclusions.push("recent_campaign");
 
     // opisowy segment (informacja, nie kwalifikacja)
     let segment;

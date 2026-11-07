@@ -5,6 +5,7 @@
  * je uruchomić także na cienkim shimie PostgREST w teście zintegrowanym.
  */
 import { buildCandidates } from "./marketing-candidates.js";
+import { claimAllowlistParam } from "./marketing-mailer.js";
 
 async function must(q, what) {
   const { data, error } = await q;
@@ -12,7 +13,7 @@ async function must(q, what) {
   return data || [];
 }
 
-export async function loadCandidateInputs(supaSvc, { campaign = null, todayISO = null } = {}) {
+export async function loadCandidateInputs(supaSvc, { campaign = null, todayISO = null, env = null } = {}) {
   const today = todayISO || new Date().toISOString().slice(0, 10);
   const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
   const [companies, profiles, packages, sends, offers, suppressions, recent] = await Promise.all([
@@ -24,7 +25,7 @@ export async function loadCandidateInputs(supaSvc, { campaign = null, todayISO =
     must(supaSvc.from("marketing_suppressions").select("email"), "marketing_suppressions"),
     must(supaSvc.from("marketing_messages").select("profile_id, company_id, sent_at, state, is_test").eq("is_test", false).eq("state", "accepted").gte("sent_at", since), "marketing_messages"),
   ]);
-  return { companies, profiles, packages, sends, offers, suppressions, recentMessages: recent, campaign, todayISO: today };
+  return { companies, profiles, packages, sends, offers, suppressions, recentMessages: recent, campaign, todayISO: today, trialEmails: claimAllowlistParam(env) || [] };
 }
 
 export async function computeCandidates(supaSvc, opts) {

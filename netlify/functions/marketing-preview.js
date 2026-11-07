@@ -31,7 +31,7 @@ export const handler = async (event) => {
   try {
     const campaign = body.campaign_id ? await loadCampaign(auth.supaSvc, body.campaign_id) : null;
     const templateKey = TEMPLATE_KEYS.includes(body.template_key) ? body.template_key : (campaign?.template_key || null);
-    const result = await computeCandidates(auth.supaSvc, { campaign: campaign || { template_key: templateKey } });
+    const result = await computeCandidates(auth.supaSvc, { campaign: campaign || { template_key: templateKey }, env: auth.env });
     const row = result.rows.find((r) => String(r.company_id) === String(body.company_id));
     if (!row) return json(404, { error: "company_not_found" });
     const key = templateKey || row.template_key;
