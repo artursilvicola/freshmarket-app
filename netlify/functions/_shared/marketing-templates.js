@@ -59,27 +59,27 @@ export const DEFAULT_CONTENT = Object.freeze({
   },
   credits_no_proposal: {
     pl: { subject: "Daj się poznać sieciom handlowym — masz {{credits}} w PreConnect", cta: "Przygotuj propozycję",
-      body: `Dzień dobry, {{company}},\n\n${CORE_PL}\n\nW Twoim koncie Fresh Market B2B dostępne są **{{credits}}** (stan na {{snapshot_date}}). ${RULES_PL}\n\n${MAILING_PL}\n\nJeżeli nie wiesz, jak przygotować pierwszą propozycję lub do kogo ją skierować, odpowiedz na tę wiadomość. Pomożemy Ci zacząć.` },
+      body: `Dzień dobry, {{company}},\n\n${CORE_PL}\n\nDostępne kredyty PreConnect: **{{credits_n}}** (stan na {{snapshot_date}}). ${RULES_PL}\n\n${MAILING_PL}\n\nJeżeli nie wiesz, jak przygotować pierwszą propozycję lub do kogo ją skierować, odpowiedz na tę wiadomość. Pomożemy Ci zacząć.` },
     en: { subject: "Introduce your company to retail chains — you have {{credits}} in PreConnect", cta: "Prepare a proposal",
       body: `Hello, {{company}},\n\n${CORE_EN}\n\nYour Fresh Market B2B account has **{{credits}}** available (as of {{snapshot_date}}). ${RULES_EN}\n\n${MAILING_EN}\n\nIf you are not sure how to prepare your first proposal or which chains to address, reply to this e-mail. We will help you start.` },
   },
   credits_proposal_ready: {
     pl: { subject: "Twoja propozycja czeka na sieci — wybierz odbiorców w PreConnect", cta: "Wybierz sieci",
-      body: `Dzień dobry, {{company}},\n\nMasz w PreConnect przygotowaną propozycję asortymentową, która nie została jeszcze skierowana do żadnej sieci. ${CORE_PL}\n\nWybierz sieci, do których chcesz ją skierować. W Twoim koncie dostępne są **{{credits}}** (stan na {{snapshot_date}}). ${RULES_PL}\n\n${MAILING_PL}\n\n${HELP_PL}` },
+      body: `Dzień dobry, {{company}},\n\nMasz w PreConnect przygotowaną propozycję asortymentową, która nie została jeszcze skierowana do żadnej sieci. ${CORE_PL}\n\nWybierz sieci, do których chcesz ją skierować. Dostępne kredyty PreConnect: **{{credits_n}}** (stan na {{snapshot_date}}). ${RULES_PL}\n\n${MAILING_PL}\n\n${HELP_PL}` },
     en: { subject: "Your proposal is waiting for retail chains — choose recipients in PreConnect", cta: "Choose chains",
       body: `Hello, {{company}},\n\nYou have a product proposal prepared in PreConnect that has not been addressed to any retail chain yet. ${CORE_EN}\n\nChoose the chains you want to address. Your account has **{{credits}}** available (as of {{snapshot_date}}). ${RULES_EN}\n\n${MAILING_EN}\n\n${HELP_EN}` },
   },
   used_before_free_credits: {
     pl: { subject: "Kolejna propozycja w PreConnect — masz jeszcze {{credits}}", cta: "Przygotuj propozycję",
-      body: `Dzień dobry, {{company}},\n\nKorzystałeś już z PreConnect. Jeżeli masz nowy produkt, aktualny program dostaw albo chcesz przedstawić się innym sieciom, przygotuj kolejną propozycję. ${CORE_PL}\n\nW Twoim koncie dostępne są **{{credits}}** (stan na {{snapshot_date}}). ${RULES_PL} W panelu sprawdzisz stan dotychczasowych wysyłek.\n\n${MAILING_PL}\n\n${HELP_PL}` },
+      body: `Dzień dobry, {{company}},\n\nTwoja firma korzystała już z PreConnect. Jeżeli masz nowy produkt, aktualny program dostaw albo chcesz przedstawić się innym sieciom, przygotuj kolejną propozycję. ${CORE_PL}\n\nDostępne kredyty PreConnect: **{{credits_n}}** (stan na {{snapshot_date}}). ${RULES_PL} W panelu sprawdzisz stan dotychczasowych wysyłek.\n\n${MAILING_PL}\n\n${HELP_PL}` },
     en: { subject: "Another proposal in PreConnect — you still have {{credits}}", cta: "Prepare a proposal",
       body: `Hello, {{company}},\n\nYou have used PreConnect before. If you have a new product, an up-to-date supply programme or want to introduce yourself to other chains, prepare another proposal. ${CORE_EN}\n\nYour account has **{{credits}}** available (as of {{snapshot_date}}). ${RULES_EN} In the panel you can check the state of your previous sendings.\n\n${MAILING_EN}\n\n${HELP_EN}` },
   },
   credits_expiring: {
-    pl: { subject: "Twoje kredyty PreConnect wygasają {{expiry}}", cta: "Przygotuj propozycję",
-      body: `Dzień dobry, {{company}},\n\nW Twoim koncie Fresh Market B2B **{{expiring_credits}}** PreConnect ma termin ważności do **{{expiry}}** (łącznie dostępne: {{credits}}, stan na {{snapshot_date}}). Po tym terminie niewykorzystane kredyty z tej puli przepadają.\n\n${CORE_PL}\n\n${RULES_PL}\n\n${MAILING_PL} Przygotuj propozycję wcześniej, żeby zdążyć przed terminem ważności.\n\n${HELP_PL}` },
-    en: { subject: "Your PreConnect credits expire on {{expiry}}", cta: "Prepare a proposal",
-      body: `Hello, {{company}},\n\nIn your Fresh Market B2B account **{{expiring_credits}}** in PreConnect are valid until **{{expiry}}** (available in total: {{credits}}, as of {{snapshot_date}}). After that date the unused credits from this pool are lost.\n\n${CORE_EN}\n\n${RULES_EN}\n\n${MAILING_EN} Prepare your proposal earlier to make it before the expiry date.\n\n${HELP_EN}` },
+    pl: { subject: "Termin ważności kredytów PreConnect: {{expiry}}", cta: "Przygotuj propozycję",
+      body: `Dzień dobry, {{company}},\n\nKredyty PreConnect z terminem ważności do **{{expiry}}**: **{{expiring_n}}** (wszystkie dostępne kredyty: {{credits_n}}, stan na {{snapshot_date}}). Po tym terminie niewykorzystane kredyty z tej puli przepadają.\n\n${CORE_PL}\n\n${RULES_PL}\n\n${MAILING_PL} Przygotuj propozycję wcześniej, żeby zdążyć przed terminem ważności.\n\n${HELP_PL}` },
+    en: { subject: "PreConnect credit expiry date: {{expiry}}", cta: "Prepare a proposal",
+      body: `Hello, {{company}},\n\nPreConnect credits expiring on **{{expiry}}**: **{{expiring_n}}** (all available credits: {{credits_n}}, as of {{snapshot_date}}). After that date the unused credits from this pool are lost.\n\n${CORE_EN}\n\n${RULES_EN}\n\n${MAILING_EN} Prepare your proposal earlier to make it before the expiry date.\n\n${HELP_EN}` },
   },
   no_valid_credits: {
     pl: { subject: "PreConnect: pakiet kredytów na propozycje do sieci handlowych", cta: "Sprawdź pakiety",
@@ -90,13 +90,13 @@ export const DEFAULT_CONTENT = Object.freeze({
   // stare szablony (kampanie sprzed 5.11) — treść jak dotąd, w nowej strukturze
   start_with_credits: {
     pl: { subject: "Masz {{credits}} PreConnect — najbliższy mailing do kupców {{mailing_date}}", cta: "Przejdź do panelu",
-      body: `Dzień dobry, {{company}},\n\nW Twoim koncie Fresh Market B2B dostępne są **{{credits}}** PreConnect (stan na {{snapshot_date}}), najbliższy termin ważności: **{{expiry}}**. Jedna propozycja asortymentowa do jednej sieci = jeden kredyt. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.\n\nPrzygotuj propozycję przed najbliższym mailingiem do kupców **{{mailing_date}}**. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem.\n\nJeżeli nie wiesz, jak przygotować propozycję lub do kogo ją skierować, odpowiedz na tę wiadomość. Pomożemy Ci zacząć.` },
+      body: `Dzień dobry, {{company}},\n\nDostępne kredyty PreConnect: **{{credits_n}}** (stan na {{snapshot_date}}), najbliższy termin ważności: **{{expiry}}**. Jedna propozycja asortymentowa do jednej sieci = jeden kredyt. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.\n\nPrzygotuj propozycję przed najbliższym mailingiem do kupców **{{mailing_date}}**. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem.\n\nJeżeli nie wiesz, jak przygotować propozycję lub do kogo ją skierować, odpowiedz na tę wiadomość. Pomożemy Ci zacząć.` },
     en: { subject: "You have {{credits}} in PreConnect — next buyer mailing on {{mailing_date}}", cta: "Open the panel",
       body: `Hello, {{company}},\n\nYour Fresh Market B2B account has **{{credits}}** available in PreConnect (as of {{snapshot_date}}), the nearest expiry date is **{{expiry}}**. One product proposal to one retail chain uses one credit. The credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.\n\nPrepare your proposal before the next buyer mailing on **{{mailing_date}}**. Proposals qualify for the mailing according to their current status.\n\nIf you are not sure how to prepare a proposal or which chain to address, reply to this e-mail. We will help you start.` },
   },
   return_active: {
     pl: { subject: "Mailing do kupców {{mailing_date}} — dodasz nową propozycję w PreConnect?", cta: "Przejdź do PreConnect",
-      body: `Dzień dobry, {{company}},\n\nJeżeli masz nowy produkt lub aktualny program dostaw, możesz przygotować kolejną propozycję w PreConnect. W Twoim koncie dostępne są **{{credits}}** (stan na {{snapshot_date}}), najbliższy termin ważności: **{{expiry}}**. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.\n\nPrzygotuj propozycję przed najbliższym mailingiem do kupców **{{mailing_date}}**. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem. W panelu sprawdzisz stan dotychczasowych wysyłek.\n\nJeżeli chcesz pomocy w wyborze sieci albo opisaniu asortymentu, odpowiedz na tę wiadomość.` },
+      body: `Dzień dobry, {{company}},\n\nJeżeli masz nowy produkt lub aktualny program dostaw, możesz przygotować kolejną propozycję w PreConnect. Dostępne kredyty PreConnect: **{{credits_n}}** (stan na {{snapshot_date}}), najbliższy termin ważności: **{{expiry}}**. Kredyt rozliczamy po zarejestrowanym odczycie: otwarciu wiadomości e-mail lub wyświetleniu propozycji na liście w panelu kupca.\n\nPrzygotuj propozycję przed najbliższym mailingiem do kupców **{{mailing_date}}**. Do wysyłki kwalifikujemy propozycje zgodnie z ich aktualnym statusem. W panelu sprawdzisz stan dotychczasowych wysyłek.\n\nJeżeli chcesz pomocy w wyborze sieci albo opisaniu asortymentu, odpowiedz na tę wiadomość.` },
     en: { subject: "Buyer mailing on {{mailing_date}} — add a new proposal in PreConnect?", cta: "Go to PreConnect",
       body: `Hello, {{company}},\n\nIf you have a new product or an up-to-date supply programme, you can prepare another proposal in PreConnect. Your account has **{{credits}}** available (as of {{snapshot_date}}), nearest expiry **{{expiry}}**. A credit is settled after a registered read: the buyer opening the e-mail or viewing the proposal on the list in their panel.\n\nPrepare your proposal before the next buyer mailing on **{{mailing_date}}**. Proposals qualify for the mailing according to their current status. In the panel you can check the state of your previous sendings.\n\nIf you would like help choosing a chain or describing your range, reply to this e-mail.` },
   },
@@ -161,9 +161,9 @@ export const DEFAULT_CONTENT_V2 = Object.freeze({
       body: `Hello, {{company}},\n\nYou have used PreConnect before — your account still has **{{credits}}** available (as of {{snapshot_date}}). If you have a new product or want to introduce yourself to other chains, prepare another proposal.` },
   },
   credits_expiring: {
-    pl: { subject: "Termin ważności kredytów PreConnect: {{expiry}}", cta: "Przygotuj propozycję",
+    pl: { subject: DEFAULT_CONTENT.credits_expiring.pl.subject, cta: "Przygotuj propozycję",
       body: `Dzień dobry, {{company}},\n\nKredyty PreConnect z terminem ważności do **{{expiry}}**: **{{expiring_n}}** (wszystkie dostępne kredyty: {{credits_n}}, stan na {{snapshot_date}}). Przygotuj propozycję przed tym terminem, żeby zaprezentować swoją firmę kupcom wybranych sieci.` },
-    en: { subject: "PreConnect credit expiry date: {{expiry}}", cta: "Prepare a proposal",
+    en: { subject: DEFAULT_CONTENT.credits_expiring.en.subject, cta: "Prepare a proposal",
       body: `Hello, {{company}},\n\nPreConnect credits expiring on **{{expiry}}**: **{{expiring_n}}** (all available credits: {{credits_n}}, as of {{snapshot_date}}). Prepare a proposal before that date to present your company to buyers of selected chains.` },
   },
   no_valid_credits: {

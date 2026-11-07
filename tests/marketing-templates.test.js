@@ -45,9 +45,9 @@ describe("pięć grup — domyślna treść PL i EN", () => {
     expect(cta("credits_proposal_ready", "pl")).toBe("Wybierz sieci: https://b2b.freshmarket.eu");
     expect(cta("no_valid_credits", "en")).toBe("See packages: https://b2b.freshmarket.eu");
     const exp = renderMarketingTemplate({ ...base, templateKey: "credits_expiring", locale: "pl" });
-    expect(exp.subject).toBe("Twoje kredyty PreConnect wygasają 27 grudnia 2026");
-    expect(exp.html).toContain("<strong>2 kredyty</strong> PreConnect ma termin ważności do <strong>27 grudnia 2026</strong>");
-    expect(exp.html).toContain("łącznie dostępne: 5 kredytów");
+    expect(exp.subject).toBe("Termin ważności kredytów PreConnect: 27 grudnia 2026");
+    expect(exp.html).toContain("Kredyty PreConnect z terminem ważności do <strong>27 grudnia 2026</strong>: <strong>2</strong>");
+    expect(exp.html).toContain("wszystkie dostępne kredyty: 5");
     const none = renderMarketingTemplate({ ...base, templateKey: "no_valid_credits", locale: "pl", creditsRemaining: 0, creditsExpiry: null, expiringCredits: 0 });
     expect(none.html).toContain("nie ma ważnych kredytów PreConnect");
     expect(none.html).toContain("możesz kupić pakiet kredytów w panelu");
