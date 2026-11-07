@@ -89,6 +89,27 @@ export default {
         ],
       },
       {
+        id: "marketing-zdjecia",
+        title: "Marketing: biblioteka zdjęć",
+        intro: "**Marketing → Biblioteka zdjęć** dostarcza jedno zdjęcie do każdej kampanii w nowym układzie maila, wspólne dla PL i EN. Zdjęcie trafia do maili dopiero po zatwierdzeniu kadru przez administratora.",
+        steps: [
+          "Kliknij **Dodaj zdjęcia** i wybierz pliki JPEG, PNG lub WebP (do 40 MB każdy). Przeglądarka przygotowuje kadr 3:2 o wymiarach 1200×800 px i zapisuje nowy plik bez metadanych (EXIF, lokalizacja). Oryginał nie opuszcza komputera.",
+          "Ustaw kadr suwakiem. Podgląd pokazuje dokładnie to, co trafi do maila. Przy zdjęciach pionowych sprawdź, czy kadr nie ucina twarzy ani głów na brzegach.",
+          "Wpisz tytuł oraz opis alternatywny PL i EN; bez opisów zapis jest zablokowany. Podpis, rok, rodzaj zdjęcia i prawa mają wartości domyślne; popraw je, jeśli są inne. Kliknij **Zapisz do biblioteki**.",
+          "Zapisane zdjęcie ma status **do zatwierdzenia**. Plik leży w prywatnym magazynie i nie ma publicznego adresu. Podgląd w panelu korzysta z chronionego adresu ważnego 10 minut; po wygaśnięciu odśwież listę.",
+          "Obejrzyj kadr i kliknij **Zatwierdź kadr**. Dopiero wtedy plik dostaje stały, publiczny adres HTTPS, bo klient poczty pobiera zdjęcie bez logowania. Zatwierdzaj tylko zdjęcia, które można pokazać publicznie. Zatwierdzone zdjęcie ma status **w rotacji**.",
+          "Nowa kampania dostaje zdjęcie z rotacji automatycznie: najpierw jeszcze niewysyłane, potem najdawniej wysyłane, z pominięciem zdjęć z 4 ostatnich wysyłających kampanii. Powód wyboru widać przy zdjęciu kampanii. **Wybierz zdjęcie** pozwala wybrać ręcznie, **Zaproponuj z rotacji** dobiera ponownie według tych zasad, a **Bez zdjęcia** zostawia kampanię bez bloku zdjęcia.",
+          "Zatwierdzenie kampanii zamraża zdjęcie: konkretny plik, opis alternatywny i podpis. Zmiana zdjęcia po zatwierdzeniu wymaga nowej kampanii. Wysłane maile zawsze pokazują zamrożony plik.",
+          "**Wyłącz** usuwa zdjęcie z rotacji i z wyboru dla nowych kampanii. Plik zostaje pod tym samym adresem, bo korzystają z niego wysłane maile. **Włącz ponownie** przywraca zdjęcie do rotacji. Zdjęć się nie kasuje.",
+          "**Edytuj opis** zmienia tytuł, opisy i podpisy dla kolejnych kampanii; kampanie już zatwierdzone zachowują poprzednie teksty. **Historia użycia** pokazuje kampanie i liczbę wysłanych maili z tym zdjęciem.",
+        ],
+        notes: [
+          "Kadru zapisanego zdjęcia nie zmienisz w panelu: ponowne wgranie tego samego oryginału zostanie odrzucone jako duplikat. Jeśli kadr wymaga poprawki, nie zatwierdzaj go albo wyłącz zdjęcie i zgłoś to osobie technicznej.",
+          "Gdy w rotacji jest mniej niż 5 zdjęć, panel ostrzega, że kolejne kampanie mogą powtarzać kadry. Dodaj wtedy nowe zdjęcia.",
+          "Panel odrzuca identyczny plik lub oryginał i ostrzega przed bardzo podobnym kadrem. **Wgraj mimo to** świadomie zapisuje podobny kadr jako osobne zdjęcie.",
+        ],
+      },
+      {
         id: "kredyty",
         title: "Kredyty, proformy, rozliczenia",
         steps: [
@@ -229,6 +250,27 @@ export default {
           "A sending-disabled message means neither Test nor batch sends mail. Enabling requires separate configuration by the technical team. Do not paste keys or passwords into campaign content.",
           "During trials, sending may be restricted to an address allowlist. Other recipients wait; this does not mean they received mail. Agree the restriction settings with the technical team before a normal campaign.",
           "This guide describes operation, not proof of an individual recipient's consent. If the consent basis recorded in the register is incorrect or unknown, hold sending and clarify it.",
+        ],
+      },
+      {
+        id: "marketing-zdjecia",
+        title: "Marketing: photo library",
+        intro: "**Marketing → Photo library** provides one photo per campaign in the new e-mail layout, shared by PL and EN. A photo reaches e-mails only after an administrator approves its crop.",
+        steps: [
+          "Click **Add photos** and choose JPEG, PNG or WebP files (up to 40 MB each). The browser prepares a 3:2 crop of 1200×800 px and saves a new file without metadata (EXIF, location). The original never leaves your computer.",
+          "Set the crop with the slider. The preview shows exactly what goes into the e-mail. For portrait photos, check that the crop does not cut off faces or heads at the edges.",
+          "Enter a title and PL and EN alternative text; saving is blocked without them. Caption, year, photo type and rights have default values; correct them if they differ. Click **Save to library**.",
+          "A saved photo has the status **awaiting approval**. The file sits in private storage and has no public address. The panel preview uses a protected address valid for 10 minutes; refresh the list when it expires.",
+          "Review the crop and click **Approve crop**. Only then does the file get a fixed public HTTPS address, because mail clients download the photo without logging in. Approve only photos that can be shown publicly. An approved photo has the status **in rotation**.",
+          "A new campaign gets a photo from rotation automatically: first one never sent, then the one sent longest ago, skipping photos from the last 4 sending campaigns. The reason is shown next to the campaign photo. **Choose photo** lets you pick manually, **Suggest from rotation** picks again by these rules, and **No photo** leaves the campaign without a photo block.",
+          "Approving a campaign freezes its photo: the specific file, alternative text and caption. Changing the photo after approval requires a new campaign. Sent e-mails always show the frozen file.",
+          "**Disable** removes a photo from rotation and from the choice for new campaigns. The file stays at the same address because sent e-mails use it. **Enable again** returns it to rotation. Photos are never deleted.",
+          "**Edit description** changes the title, descriptions and captions for later campaigns; already approved campaigns keep the previous texts. **Usage history** shows the campaigns and the number of e-mails sent with the photo.",
+        ],
+        notes: [
+          "You cannot change the crop of a saved photo in the panel: uploading the same original again is rejected as a duplicate. If a crop needs correcting, do not approve it, or disable the photo, and report it to the technical team.",
+          "When fewer than 5 photos are in rotation, the panel warns that consecutive campaigns may repeat frames. Add new photos then.",
+          "The panel rejects an identical file or original and warns about a very similar crop. **Upload anyway** deliberately saves a similar crop as a separate photo.",
         ],
       },
       {

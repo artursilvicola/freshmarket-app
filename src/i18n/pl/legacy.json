@@ -1978,7 +1978,7 @@
       "tab_photos": "Biblioteka zdjęć",
       "photos_title": "Biblioteka zdjęć do maili PreConnect",
       "photos_subtitle": "Jedno zdjęcie na kampanię (wspólne PL/EN), dobierane z rotacji albo ręcznie. Nowe zdjęcie wchodzi do rotacji dopiero po zatwierdzeniu kadru przez administratora.",
-      "photos_public_warning": "Każdy plik w bibliotece jest dostępny publicznie pod stałym adresem HTTPS (klient poczty musi go pobrać bez logowania). Nie wgrywaj zdjęć, których nie można pokazać publicznie.",
+      "photos_public_warning": "Nowe pliki czekają w prywatnym magazynie, bez publicznego adresu. Dopiero zatwierdzony kadr dostaje stały, publiczny adres HTTPS, bo klient poczty pobiera zdjęcie bez logowania. Nie zatwierdzaj zdjęć, których nie można pokazać publicznie.",
       "photos_pool_small": "W rotacji jest tylko {{n}} gotowych zdjęć — dodaj więcej, żeby kolejne kampanie nie powtarzały kadrów (zalecane co najmniej 5).",
       "photos_upload": "Dodaj zdjęcia",
       "photos_upload_hint": "Jeden lub więcej plików JPEG/PNG/WebP (do 40 MB każdy). Przeglądarka sprawdza prawdziwy format i wymiary z nagłówka pliku, przygotowuje kadr 3:2 (1200×800 px, ok. 200 KB) i zapisuje NOWY plik bez metadanych (EXIF, lokalizacja). Oryginał nie opuszcza komputera.",

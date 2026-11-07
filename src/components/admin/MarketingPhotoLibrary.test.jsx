@@ -42,7 +42,8 @@ describe("Biblioteka zdjęć", () => {
     await act(async () => { tree = create(<MarketingPhotoLibrary fl={fl} />); }); await flush();
     expect(calls.list[0]).toEqual(["marketing-photos", { action: "list" }]);
     expect(all("ph-card")).toHaveLength(5);
-    expect(out()).toContain("dostępny publicznie pod stałym adresem HTTPS");
+    expect(out()).toContain("Nowe pliki czekają w prywatnym magazynie");
+    expect(out()).toContain("Dopiero zatwierdzony kadr dostaje stały, publiczny adres HTTPS");
     expect(text(byId("ph-pool-small").children)).toContain("tylko 2 gotowych zdjęć");
     expect(out()).toContain("do zatwierdzenia"); expect(out()).toContain("wyłączone"); expect(out()).toContain("zapas — do przeglądu");
     expect(out()).toContain("w 2 kampaniach, wysyłało 1"); expect(out()).toContain("w 1 otwartych"); expect(out()).toContain("nigdy niewysłane");

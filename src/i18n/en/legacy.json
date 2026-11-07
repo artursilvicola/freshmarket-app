@@ -1978,7 +1978,7 @@
       "tab_photos": "Photo library",
       "photos_title": "Photo library for PreConnect e-mails",
       "photos_subtitle": "One photo per campaign (shared by PL/EN), picked from rotation or manually. A new photo enters rotation only after the administrator approves the crop.",
-      "photos_public_warning": "Every file in the library is publicly available at a fixed HTTPS address (mail clients must download it without logging in). Do not upload photos that cannot be shown publicly.",
+      "photos_public_warning": "New files wait in private storage without a public address. Only an approved crop gets a fixed public HTTPS address, because mail clients download the photo without logging in. Do not approve photos that cannot be shown publicly.",
       "photos_pool_small": "Only {{n}} ready photos are in rotation — add more so consecutive campaigns do not repeat frames (at least 5 recommended).",
       "photos_upload": "Add photos",
       "photos_upload_hint": "One or more JPEG/PNG/WebP files (up to 40 MB each). The browser checks the real format and dimensions from the file header, prepares a 3:2 crop (1200×800 px, about 200 KB) and saves a NEW file without metadata (EXIF, location). The original never leaves your computer.",
