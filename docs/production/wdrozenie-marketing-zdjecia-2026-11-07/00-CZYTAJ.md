@@ -110,3 +110,14 @@ Blokady i kliknięcia Artura:
 2. Po wdrożeniu: „Zatwierdź” i „Wyślij z rejestru”, odczyt Gmaila, kliknięcie wypisu.
 
 Plan po „wdrażaj” (niewykonany): merge gałęzi do main, flaga true przed tym deployem, kontrola `version.json` i listy, wybór dwóch firm w kampanii #5. Po próbie flaga false i `03-po-probie.sql`, także przy błędzie.
+
+## Dziennik: wdrożenie 2eae91c i przygotowanie próby (07.11.2026)
+Polecenie Artura: wklejona propozycja Codexa „Wdróż 2eae91c, ale najpierw z wyłączoną wysyłką…”. GO dla commita pochodzi z przeglądu Codexa CLI uruchomionego przez Claude; Codex w rozmowie z Arturem zaznaczył, że sam tego commita nie sprawdzał.
+
+Wykonane:
+* Tag `prod-rollback-2026-11-07-trial-cooldown` = 72a2a4a. Rollback w Netlify: Publish deploy 6aeed3d2 (72a2a4a, flaga false).
+* main fast-forward do 2eae91c, deploy 6aeed64f, `version.json` 2eae91cf681a, flaga false, lista = dwa adresy, marketing-send bez tokenu 401.
+* Kampania #5: firmy próbne kwalifikują się, zaznaczone dokładnie 2 (PL 1, EN 1). Zdjęcie z rotacji 2025 · 0137_R6M29785, anonimowy GET 200 image/jpeg. Podgląd PL i EN sprawdzony: logo, zdjęcie, tytuł, data, przycisk, wypis.
+* Po podglądach flaga true + redeploy, lista sprawdzona tuż przed zmianą.
+
+Czeka na Artura: „Zatwierdź (2)” i „Wyślij z rejestru”, Gmail na komputerze i telefonie, wypis.
