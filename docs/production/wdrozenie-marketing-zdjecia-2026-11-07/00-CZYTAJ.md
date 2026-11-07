@@ -82,3 +82,17 @@ Do kroku 4 `MARKETING_SEND_ENABLED=false`. Przed włączeniem flagi `netlify env
 * Krok 3: 18 zdjęć w panelu; opublikowane 17, każde HTTP 200 anonimowo, JPEG 1200×800, max 153 KB, 0 metadanych; `niezgodne_wersje` 0. 2026/0173 (pion) ZOSTAJE prywatny: kadr ucina głowę, decyzja Artura.
 * Krok 4: zgoda Artura w czacie 06.11 ok. 21:32. `02a-reaktywacja-ze-zgoda-06-11.sql` = 02 + dwie linie (flaga, źródło zgody), wklejony do SQL Editora, czeka na Run Artura.
 * Do poprawy po próbie: tekst ostrzeżenia w bibliotece mówi „każdy plik publiczny”, a oczekujące są prywatne.
+
+## Dziennik: stan przed reaktywacją (07.11.2026, odpowiedź na `docs/production/CODEX_DO_CLAUDE_MARKETING_NEXT.md`)
+Wykonane i sprawdzone, tylko odczyt (bez zapisu, deployu i wysyłki):
+* Produkcja: `version.json` 72a2a4a19f04, ostatni deploy 6aee3990 z 06.11 20:33 UTC, origin/main = 72a2a4a. Kroki 1–3 NIE do powtórzenia.
+* Flaga i lista: `MARKETING_SEND_ENABLED=false`; `MARKETING_SEND_ALLOWLIST` to dokładnie dwa adresy próbne. Obie zmienne zmieniono 06.11 przed tym deployem (11:38 i 11:12 UTC), więc działający deploy ma te wartości. Bramki z tych wartości nie sprawdzono wywołaniem funkcji: to będzie krok próby.
+* Baza (odczyt SQL): firmy aktywne 0, firmy z PreConnect 0, operatorzy aktywni 0, wypisy 2 (oba `unsubscribe`), zapisane zgody 0, kampanie 4, wiadomości 2, zdjęcia ready 17, wycofywane 0. Reaktywacja NIE została uruchomiona.
+* Edytor SQL (karta Artura): `02a-reaktywacja-ze-zgoda-06-11.sql`, 96 linii, sha256 po normalizacji końców linii 740364330e4b6f30 = plik w repo, flaga zgody true.
+* Dowód zgody: wiadomość Artura w czacie z 06.11 o 20:31:30 UTC, jego własna, nie wzór z wiadomości Codexa. W czacie brakuje pierwszej litery („gadzam się…”); `v_consent` zapisze pełne słowo „Zgadzam”.
+
+Wymagane kliknięcia Artura (nic z tego nie jest wykonane):
+1. Run + „Run query” na reaktywacji; oczekiwane 2 wiersze: active, preconnect true, operator true, wypisy 0, zapisane zgody 1.
+2. „Zatwierdź” i „Wyślij z rejestru” dla kampanii próbnej, oraz odczyt Gmaila i kliknięcie wypisu.
+
+Plan po pkt 1 (niewykonany): włączenie flagi i redeploy, kampania tylko na dwie firmy próbne, identyfikatory i zdarzenia Resend zapisane w `docs/production/odbior-marketing-zdjecia-2026-11-07/`, wyłączenie flagi także przy błędzie, `03-po-probie.sql`. Punkt 7 notatki Codexa (tekst biblioteki, instrukcja) po próbie, z review przed deployem.
