@@ -35,7 +35,8 @@ describe("układ v2 — każda grupa PL/EN ze zdjęciem", () => {
       expect(body.split(/\n[ \t]*\n/)).toHaveLength(2);
       expect(body.split(/\n[ \t]*\n/)[1].split(/[.!?](\s|$)/).filter((s) => s && s.trim().length > 1).length).toBeLessThanOrEqual(2);
       // temat jak w układzie 1 (zatwierdzony 5.11)
-      expect(r.subject).toBe(renderMarketingTemplate({ ...base, templateKey: key, locale, layoutVersion: 1 }).subject);
+      // temat jak w układzie 1; wyjątek: wygasające mają temat bez „Twoje kredyty … wygasają” (liczba pojedyncza, review Codexa 07.11)
+      if (key !== "credits_expiring") expect(r.subject).toBe(renderMarketingTemplate({ ...base, templateKey: key, locale, layoutVersion: 1 }).subject);
     }
   });
   it("wersja tekstowa: dopisek, hasło, [Zdjęcie: alt], treść, mailing, przycisk z adresem, pomoc, zasady, reply-to, wypis", () => {
@@ -45,7 +46,7 @@ describe("układ v2 — każda grupa PL/EN ze zdjęciem", () => {
     expect(lines[1]).toBe("Pierwszy krok do nowej sieci handlowej.");
     expect(r.text).toContain("[Zdjęcie: Rozmowy dostawców z kupcami]");
     expect(r.text).toContain("Dzień dobry, Sad <Kowalski> & Syn,");
-    expect(r.text).toContain("dostępne są 5 kredytów (stan na 6 listopada 2026)");
+    expect(r.text).toContain("Dostępne kredyty PreConnect: 5 (stan na 6 listopada 2026)");
     expect(r.text).toContain("Najbliższy mailing do kupców: 1 grudnia 2026");
     expect(r.text).toContain("Przygotuj propozycję: https://b2b.freshmarket.eu");
     expect(r.text).toContain("Zasady kredytów PreConnect: Jedna propozycja");
@@ -97,7 +98,7 @@ describe("układ v2 — treść własna i zgodność z układem 1", () => {
   it("defaultContent(key, 2) ≠ defaultContent(key, 1) dla grup; stare klucze mają w układzie 2 tę samą treść co w 1; effectiveContent dziedziczy układ", () => {
     for (const key of AUDIENCE_TEMPLATE_KEYS) {
       expect(defaultContent(key, 2).pl.body).not.toBe(defaultContent(key, 1).pl.body);
-      expect(defaultContent(key, 2).pl.subject).toBe(defaultContent(key, 1).pl.subject);
+      if (key !== "credits_expiring") expect(defaultContent(key, 2).pl.subject).toBe(defaultContent(key, 1).pl.subject);
       expect(defaultContent(key, 2).pl.body.length).toBeLessThan(defaultContent(key, 1).pl.body.length);
     }
     expect(DEFAULT_CONTENT_V2.start_with_credits).toBe(DEFAULT_CONTENT.start_with_credits);

@@ -9,7 +9,7 @@
  * Każda grupa ma DOMYŚLNĄ treść PL i EN (temat, treść, etykieta przycisku). Administrator może
  * ją edytować w panelu BEZ HTML: zwykły tekst, akapity rozdzielone pustą linią, `**pogrubienie**`,
  * symbole {{company}}, {{credits}} (WOLNE = ważne − rezerwacje), {{credits_n}}, {{valid_credits}} (wszystkie ważne),
- * {{expiry}}, {{expiring_credits}}, {{reserved_n}}, {{mailing_date}}, {{snapshot_date}}. Wszystko jest ESCAPOWANE — `<`/`>` są odrzucane przy walidacji.
+ * {{expiry}}, {{expiring_credits}}, {{expiring_n}} (sama liczba), {{reserved_n}}, {{mailing_date}}, {{snapshot_date}}. Wszystko jest ESCAPOWANE — `<`/`>` są odrzucane przy walidacji.
  * Stałe elementy (nagłówek, stopka, adres, link wypisu, reply-to) są poza edycją.
  *
  * Każdy render zwraca { subject, html, text, meta } — wersja tekstowa jest pełna.
@@ -21,7 +21,7 @@ export const AUDIENCE_TEMPLATE_KEYS = Object.freeze(["credits_no_proposal", "cre
 /** Stare klucze zostają, żeby dało się renderować/pokazać wcześniejsze kampanie testowe. */
 export const LEGACY_TEMPLATE_KEYS = Object.freeze(["start_with_credits", "return_active"]);
 export const TEMPLATE_KEYS = Object.freeze([...AUDIENCE_TEMPLATE_KEYS, ...LEGACY_TEMPLATE_KEYS]);
-export const PLACEHOLDERS = Object.freeze(["company", "credits", "credits_n", "valid_credits", "expiry", "expiring_credits", "reserved_n", "mailing_date", "snapshot_date"]);
+export const PLACEHOLDERS = Object.freeze(["company", "credits", "credits_n", "valid_credits", "expiry", "expiring_credits", "expiring_n", "reserved_n", "mailing_date", "snapshot_date"]);
 export const LIMITS = Object.freeze({ subject: 200, body: 4000, cta: 60 });
 
 export function esc(v) {
@@ -144,27 +144,27 @@ export const DEFAULT_CONTENT_V2 = Object.freeze({
   },
   credits_no_proposal: {
     pl: { subject: DEFAULT_CONTENT.credits_no_proposal.pl.subject, cta: "Przygotuj propozycję",
-      body: `Dzień dobry, {{company}},\n\nW Twoim koncie Fresh Market B2B dostępne są **{{credits}}** (stan na {{snapshot_date}}). Przygotuj pierwszą propozycję w PreConnect i pokaż kupcom wybranych sieci swoje produkty oraz możliwości współpracy.` },
+      body: `Dzień dobry, {{company}},\n\nDostępne kredyty PreConnect: **{{credits_n}}** (stan na {{snapshot_date}}). Przygotuj pierwszą propozycję w PreConnect i pokaż kupcom wybranych sieci swoje produkty oraz możliwości współpracy.` },
     en: { subject: DEFAULT_CONTENT.credits_no_proposal.en.subject, cta: "Prepare a proposal",
       body: `Hello, {{company}},\n\nYour Fresh Market B2B account has **{{credits}}** available (as of {{snapshot_date}}). Prepare your first proposal in PreConnect and show buyers of selected chains your products and your cooperation capabilities.` },
   },
   credits_proposal_ready: {
     pl: { subject: DEFAULT_CONTENT.credits_proposal_ready.pl.subject, cta: "Wybierz sieci",
-      body: `Dzień dobry, {{company}},\n\nTwoja propozycja asortymentowa w PreConnect czeka na wybór sieci — w koncie dostępne są **{{credits}}** (stan na {{snapshot_date}}). Wybierz sieci, którym chcesz się zaprezentować, a my dostarczymy propozycję kupcom w najbliższym mailingu.` },
+      body: `Dzień dobry, {{company}},\n\nDostępne kredyty PreConnect: **{{credits_n}}** (stan na {{snapshot_date}}), a Twoja propozycja asortymentowa czeka na wybór sieci. Wybierz sieci, którym chcesz się zaprezentować, a my dostarczymy propozycję kupcom w najbliższym mailingu.` },
     en: { subject: DEFAULT_CONTENT.credits_proposal_ready.en.subject, cta: "Choose chains",
       body: `Hello, {{company}},\n\nYour product proposal in PreConnect is waiting for a choice of chains — your account has **{{credits}}** available (as of {{snapshot_date}}). Choose the chains you want to introduce yourself to and we will deliver the proposal to their buyers in the next mailing.` },
   },
   used_before_free_credits: {
     pl: { subject: DEFAULT_CONTENT.used_before_free_credits.pl.subject, cta: "Przygotuj propozycję",
-      body: `Dzień dobry, {{company}},\n\nKorzystałeś już z PreConnect — w Twoim koncie dostępne są jeszcze **{{credits}}** (stan na {{snapshot_date}}). Jeżeli masz nowy produkt albo chcesz przedstawić się innym sieciom, przygotuj kolejną propozycję.` },
+      body: `Dzień dobry, {{company}},\n\nTwoja firma korzystała już z PreConnect — dostępne kredyty PreConnect: **{{credits_n}}** (stan na {{snapshot_date}}). Jeżeli masz nowy produkt albo chcesz przedstawić się innym sieciom, przygotuj kolejną propozycję.` },
     en: { subject: DEFAULT_CONTENT.used_before_free_credits.en.subject, cta: "Prepare a proposal",
       body: `Hello, {{company}},\n\nYou have used PreConnect before — your account still has **{{credits}}** available (as of {{snapshot_date}}). If you have a new product or want to introduce yourself to other chains, prepare another proposal.` },
   },
   credits_expiring: {
-    pl: { subject: DEFAULT_CONTENT.credits_expiring.pl.subject, cta: "Przygotuj propozycję",
-      body: `Dzień dobry, {{company}},\n\n**{{expiring_credits}}** PreConnect w Twoim koncie ma termin ważności do **{{expiry}}** (łącznie dostępne: {{credits}}, stan na {{snapshot_date}}). Przygotuj propozycję przed tym terminem, żeby zaprezentować swoją firmę kupcom wybranych sieci.` },
-    en: { subject: DEFAULT_CONTENT.credits_expiring.en.subject, cta: "Prepare a proposal",
-      body: `Hello, {{company}},\n\n**{{expiring_credits}}** in your PreConnect account are valid until **{{expiry}}** (available in total: {{credits}}, as of {{snapshot_date}}). Prepare a proposal before that date to present your company to buyers of selected chains.` },
+    pl: { subject: "Termin ważności kredytów PreConnect: {{expiry}}", cta: "Przygotuj propozycję",
+      body: `Dzień dobry, {{company}},\n\nKredyty PreConnect z terminem ważności do **{{expiry}}**: **{{expiring_n}}** (wszystkie dostępne kredyty: {{credits_n}}, stan na {{snapshot_date}}). Przygotuj propozycję przed tym terminem, żeby zaprezentować swoją firmę kupcom wybranych sieci.` },
+    en: { subject: "PreConnect credit expiry date: {{expiry}}", cta: "Prepare a proposal",
+      body: `Hello, {{company}},\n\nPreConnect credits expiring on **{{expiry}}**: **{{expiring_n}}** (all available credits: {{credits_n}}, as of {{snapshot_date}}). Prepare a proposal before that date to present your company to buyers of selected chains.` },
   },
   no_valid_credits: {
     pl: { subject: DEFAULT_CONTENT.no_valid_credits.pl.subject, cta: "Zobacz pakiety PreConnect",
@@ -401,7 +401,7 @@ export function renderMarketingTemplate(d) {
   const content = effectiveContent(key, d.content)[locale];
   const vars = {
     company, credits: `${avail} ${creditsWord(avail, locale)}`, credits_n: String(avail), valid_credits: `${n} ${creditsWord(n, locale)}`,
-    expiry: expiryLabel, expiring_credits: `${expiringN} ${creditsWord(expiringN, locale)}`, reserved_n: String(reserved),
+    expiry: expiryLabel, expiring_credits: `${expiringN} ${creditsWord(expiringN, locale)}`, expiring_n: String(expiringN), reserved_n: String(reserved),
     mailing_date: mailingLabel, snapshot_date: snapshotLabel,
   };
   const subject = stripBold(fill(content.subject, vars)).replace(/\s+/g, " ").trim();
@@ -430,7 +430,7 @@ function templateVars(d, locale) {
   const snapshot = d.snapshotAt ? new Date(d.snapshotAt) : new Date();
   const vars = {
     company: String(d.companyName || "").trim(), credits: `${avail} ${creditsWord(avail, locale)}`, credits_n: String(avail), valid_credits: `${n} ${creditsWord(n, locale)}`,
-    expiry: expiryLabel, expiring_credits: `${expiringN} ${creditsWord(expiringN, locale)}`, reserved_n: String(reserved),
+    expiry: expiryLabel, expiring_credits: `${expiringN} ${creditsWord(expiringN, locale)}`, expiring_n: String(expiringN), reserved_n: String(reserved),
     mailing_date: mailingLabel, snapshot_date: formatLongDate(snapshot, locale),
   };
   return { vars, mailingLabel, n, avail, expiry, expiryLabel };

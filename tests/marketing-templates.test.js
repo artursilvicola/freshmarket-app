@@ -95,7 +95,7 @@ describe("treść edytowana w panelu (bez HTML)", () => {
     expect(validateContent(long)).toEqual(expect.arrayContaining(["pl.body.too_long", "en.subject.multiline"]));
     const missing = { pl: custom().pl };
     expect(validateContent(missing)).toContain("en.missing");
-    expect(PLACEHOLDERS).toEqual(["company", "credits", "credits_n", "valid_credits", "expiry", "expiring_credits", "reserved_n", "mailing_date", "snapshot_date"]);
+    expect(PLACEHOLDERS).toEqual(["company", "credits", "credits_n", "valid_credits", "expiry", "expiring_credits", "expiring_n", "reserved_n", "mailing_date", "snapshot_date"]);
   });
   it("niepoprawna zapisana treść nie psuje renderu — używana jest domyślna; defaultContent zwraca kopię", () => {
     const r = renderMarketingTemplate({ ...base, templateKey: "credits_no_proposal", locale: "pl", content: { pl: { subject: "<x>" } } });
