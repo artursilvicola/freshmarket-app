@@ -21,6 +21,7 @@ for (const layoutVersion of [1, 2]) {
         // znane błędne konstrukcje z 07.11 nie wracają (tekst, HTML i temat)
         expect(r.text).not.toMatch(BAD);
         expect(r.subject).not.toMatch(BAD);
+        expect(r.html.replace(/<[^>]+>/g, "")).not.toMatch(BAD);
         if (locale === "pl" && WITH_CREDITS.includes(key)) {
           expect(r.text).toMatch(new RegExp(`dostępne kredyty PreConnect: ${n} \\(stan na 7 listopada 2026\\)`, "i"));
         }
