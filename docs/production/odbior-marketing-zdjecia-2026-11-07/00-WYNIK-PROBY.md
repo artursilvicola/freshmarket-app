@@ -25,3 +25,13 @@ Kampania „Próba mail v2 07.11”, #5, grupa „Do wybranych firm”. Commit 2
 * `email.delivered`: nie wpłynęło; subskrypcja tego zdarzenia pozostaje otwartym punktem (patrz 22.10). Dotarcie opiera się na skrzynkach.
 * Otwarcie piksela nie dowodzi świadomego przeczytania.
 * Wypis: patrz dziennik w `wdrozenie-marketing-zdjecia-2026-11-07/00-CZYTAJ.md`.
+
+## Pozostałe grupy: podgląd bez wysyłki (07.11.2026)
+Plik `podglad-grup-kredyty.html`: pięć grup, PL i EN, firma przykładowa, liczby kredytów z rozkładu na produkcji. Gmail na telefonie: Artur potwierdził, że maile są w porządku.
+
+Błędy w domyślnych tekstach układu 2:
+* PL przy 1 kredycie: „dostępne są 1 kredyt” w trzech grupach. Dziś dotyczy to 10 firm z grupy „Mają kredyty, brak propozycji”.
+* PL w grupie wygasających przy kilku kredytach: „4 kredyty PreConnect … ma termin ważności”.
+* EN w grupie wygasających przy 1 kredycie: „1 credit … are valid until”.
+* PL w grupie „Korzystali wcześniej”: „Korzystałeś już” zwraca się do firmy formą męską.
+Grupa wygasających ma dziś 0 firm. Nic z tego nie zostało wysłane ani poprawione.
