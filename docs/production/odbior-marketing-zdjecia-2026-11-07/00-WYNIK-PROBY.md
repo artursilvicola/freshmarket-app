@@ -35,3 +35,14 @@ Błędy w domyślnych tekstach układu 2:
 * EN w grupie wygasających przy 1 kredycie: „1 credit … are valid until”.
 * PL w grupie „Korzystali wcześniej”: „Korzystałeś już” zwraca się do firmy formą męską.
 Grupa wygasających ma dziś 0 firm. Nic z tego nie zostało wysłane ani poprawione.
+
+## Wypis i zamknięcie (07.11.2026)
+| Sprawdzenie | Wynik | Źródło |
+|---|---|---|
+| Gmail na telefonie | w porządku | Artur |
+| Wypis | adres EN, powód unsubscribe, źródło: strona wypisu, 09:47:25 UTC, przypisany do kampanii #5 | SQL |
+| Historia zgód | wpis zniesienia z 06.11 zostaje obok nowego wypisu | SQL |
+| Zawieszenie kont | 2 firmy suspended, PreConnect false, operatorzy false (Run: Artur) | SQL |
+| Kampania #5 | closed, 2 wiadomości | SQL |
+
+Nie sprawdzono: wypisu jednym kliknięciem z nagłówka (przycisk Gmaila) i Outlooka. Adres PL bez wypisu, konto zawieszone.

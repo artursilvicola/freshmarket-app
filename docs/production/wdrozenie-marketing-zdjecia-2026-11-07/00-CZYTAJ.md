@@ -141,3 +141,10 @@ Domknięcie próby, stan 07.11 przed Run:
 * Wypis: jeszcze nie kliknięty (żaden adres próbny nie ma wykluczenia „wypis”).
 * Edytor SQL: projekt sklyfuvzjikkqerxtulo (produkcja), `03-po-probie.sql`, 86 linii, sha po normalizacji 97b74686651ad9b2 = plik, 2 × update, 0 × delete. NIE uruchomiony.
 * Wysyłka wyłączona (flaga false, 403 w działającym deployu).
+
+## Dziennik: próba zamknięta (07.11.2026)
+* Wypis adresu EN ze strony wypisu o 09:47:25 UTC, przypisany do kampanii #5. Historia zgody z 06.11 zachowana.
+* `03-po-probie.sql` (Run: Artur, ok. 10:47): 2 firmy suspended, PreConnect false, operatorzy false.
+* Wysyłka wyłączona, lista dwóch adresów zostaje do pierwszej prawdziwej kampanii. Wtedy ją zdjąć, bo wyjątek od przerwy 30 dni (2eae91c) działa tylko przy aktywnej liście.
+
+Otwarte: wdrożenie poprawki tekstów (6734651, Codex GO) na „wdrażaj” Artura; punkt 7 notatki Codexa (tekst biblioteki o plikach prywatnych, instrukcja administratora); kadr 0173; 20 zdjęć zapasowych; przegląd 2eae91c przez Codexa bezpośrednio z Arturem.
