@@ -3005,7 +3005,7 @@
         "visit": "A visit is a signed-in buyer or supplier opening the app. Visits less than 30 minutes apart count as one. An administrator previewing an account is not recorded.",
         "opened": "A recorded e-mail open means the mail client downloaded the tracking image. Some clients download images automatically, others block them, so open counts are approximate.",
         "delivered": "Delivered means the recipient's mail server accepted the message. It does not guarantee it reached the main inbox.",
-        "app_view": "Proposal views: the register stores only the first and last view date and the total number of views, without dates in between.",
+        "app_view": "Proposal views: for each proposal the register stores only the date of the first and last view. It holds no full history and no exact number of views.",
         "no_intent": "None of these events is evidence of purchase interest.",
         "mail_scope": "E-mails: PreConnect proposal register for buyers (since 22 Oct 2026) and marketing e-mails. Other mail types are not included yet.",
         "dates": "Each event is counted by its own date: sending by the send date, delivery and opens by the event date."
@@ -3037,9 +3037,10 @@
         "last_visit": "Last recorded visit",
         "emails": "E-mails in period: sent / delivered / open",
         "emails_hint": "Sent = accepted for sending. Delivered = accepted by the recipient's server. Open = recorded open (approximate).",
-        "viewed": "Proposals viewed",
+        "viewed": "Proposals with a recorded view",
         "legacy": "Last activity field",
-        "legacy_hint": "Data from before the log: a profile field overwritten on each visit, without history. When tracking was deployed in June 2026, existing accounts received a shared date, so the origin of the value is uncertain."
+        "legacy_hint": "Data from before the log: a profile field overwritten on each visit, without history. When tracking was deployed in June 2026, existing accounts received a shared date, so the origin of the value is uncertain.",
+        "viewed_hint": "Proposals whose first or last recorded view falls in the period. The register does not store views between those dates."
       },
       "role": {
         "buyer": "Retail chain",
@@ -3071,8 +3072,8 @@
         "bounced": "E-mail rejected by the recipient's server",
         "complained": "Recipient reported the e-mail as spam",
         "other": "Other event",
-        "app_view_first": "First proposal view in the app (total views: {{n}})",
-        "app_view_last": "Last proposal view in the app (total views: {{n}})"
+        "app_view_first": "First recorded proposal view in the app",
+        "app_view_last": "Last recorded proposal view in the app"
       },
       "csv": {
         "role": "Role",
@@ -3086,7 +3087,7 @@
         "delivered": "Delivered",
         "opened": "With a recorded open",
         "last_opened": "Last recorded open",
-        "viewed": "Proposals viewed",
+        "viewed": "Proposals with a recorded view (first/last)",
         "legacy_last_active": "Last activity field (before the log)",
         "at": "Date",
         "event": "Event",

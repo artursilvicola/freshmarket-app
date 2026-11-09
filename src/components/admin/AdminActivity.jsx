@@ -59,8 +59,9 @@ export function eventLabel(ev, t) {
     case "email_opened": return t("admin.activity.ev.opened");
     case "email_bounced": return t("admin.activity.ev.bounced");
     case "email_complained": return t("admin.activity.ev.complained");
-    case "app_view_first": return t("admin.activity.ev.app_view_first", { n: d.read_count_total || 1 });
-    case "app_view_last": return t("admin.activity.ev.app_view_last", { n: d.read_count_total || 1 });
+    // rejestr zna tylko pierwsze i ostatnie wyświetlenie — bez liczby wyświetleń (licznik nie jest dokładny)
+    case "app_view_first": return t("admin.activity.ev.app_view_first");
+    case "app_view_last": return t("admin.activity.ev.app_view_last");
     default: return t("admin.activity.ev.other");
   }
 }
@@ -297,7 +298,7 @@ export default function AdminActivity({ fl = () => {} }) {
                   <th style={th}>{t("admin.activity.col.visits")}</th>
                   <th style={th}>{t("admin.activity.col.last_visit")}</th>
                   <th style={th} title={t("admin.activity.col.emails_hint")}>{t("admin.activity.col.emails")}</th>
-                  <th style={th}>{t("admin.activity.col.viewed")}</th>
+                  <th style={th} title={t("admin.activity.col.viewed_hint")}>{t("admin.activity.col.viewed")}</th>
                   <th style={th} title={t("admin.activity.col.legacy_hint")}>{t("admin.activity.col.legacy")}</th>
                 </tr>
               </thead>

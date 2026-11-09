@@ -57,6 +57,10 @@ describe("AdminActivity", () => {
     expect(s).toContain("Żadne z tych zdarzeń nie jest dowodem zainteresowania zakupem.");
     expect(s).toContain("Podgląd konta przez administratora nie jest zapisywany.");
     expect(s).toContain("Każde zdarzenie jest liczone według własnej daty");
+    // ograniczona historia wyświetleń propozycji opisana wprost, bez liczby wyświetleń
+    expect(s).toContain("tylko datę pierwszego i ostatniego wyświetlenia. Nie ma w nim pełnej historii ani dokładnej liczby wyświetleń.");
+    expect(s).toContain("Propozycje z zapisanym wyświetleniem");
+    expect(s).not.toMatch(/wyświetleń łącznie|razy:/);
     expect(s).toContain("brak zarejestrowanego wejścia");
     expect(s).toContain("brak zarejestrowanego otwarcia");
     expect(s).toContain("ta sama data u 87 kont");
@@ -201,8 +205,8 @@ describe("AdminActivity — logika i CSV", () => {
     const l = (kind, extra = {}) => eventLabel({ kind, source: "preconnect", detail: {}, ...extra }, t);
     expect(l("email_opened")).toBe("Zarejestrowane otwarcie e-maila");
     expect(l("email_delivered")).toBe("Doręczono e-mail (przyjęty przez serwer odbiorcy)");
-    expect(l("app_view_first", { detail: { read_count_total: 7 } })).toBe("Pierwsze wyświetlenie propozycji w aplikacji (wyświetleń łącznie: 7)");
-    expect(l("app_view_last", { detail: { read_count_total: 7 } })).toBe("Ostatnie wyświetlenie propozycji w aplikacji (wyświetleń łącznie: 7)");
+    expect(l("app_view_first", { detail: { read_count_total: 7 } })).toBe("Pierwsze zapisane wyświetlenie propozycji w aplikacji");
+    expect(l("app_view_last", { detail: { read_count_total: 7 } })).toBe("Ostatnie zapisane wyświetlenie propozycji w aplikacji");
     expect(l("email_sent", { source: "marketing", detail: { campaign: "Aktywacja" } })).toBe("Wysłano e-mail marketingowy: Aktywacja");
   });
 

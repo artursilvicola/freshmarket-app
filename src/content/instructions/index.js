@@ -13,6 +13,7 @@ import preconnectAdmin from "./preconnect-admin.js";
 import b2bSupplier from "./b2b-supplier.js";
 import b2bBuyer from "./b2b-buyer.js";
 import b2bAdmin from "./b2b-admin.js";
+import { ADMIN_ACTIVITY } from "../../config/features.js";
 
 export const INSTRUCTION_ROLES = ["supplier", "buyer", "admin"];
 export const INSTRUCTION_LANGS = ["pl", "en"];
@@ -33,7 +34,15 @@ export function getInstruction(doc, role, lang) {
   const d = byRole && byRole[role];
   if (!d) return null;
   const l = String(lang || "pl").toLowerCase().startsWith("en") ? "en" : "pl";
-  return d[l] || d.pl || null;
+  return withFlags(d[l] || d.pl || null);
+}
+
+// [feat/admin-activity] Rozdziały z `flag` pokazujemy tylko przy włączonej funkcji
+// (np. „Aktywność kont” — zakładka za VITE_ADMIN_ACTIVITY).
+const FLAGS = { ADMIN_ACTIVITY };
+export function withFlags(content, flags = FLAGS) {
+  if (!content || !Array.isArray(content.chapters) || !content.chapters.some((c) => c.flag)) return content;
+  return { ...content, chapters: content.chapters.filter((c) => !c.flag || flags[c.flag]) };
 }
 
 /** Do testów spójności: wszystkie kombinacje. */

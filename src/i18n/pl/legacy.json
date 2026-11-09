@@ -3005,7 +3005,7 @@
         "visit": "Wejście to otwarcie aplikacji przez zalogowanego kupca lub dostawcę. Wejścia w odstępach krótszych niż 30 minut liczą się jako jedno. Podgląd konta przez administratora nie jest zapisywany.",
         "opened": "Zarejestrowane otwarcie e-maila oznacza, że program pocztowy pobrał obraz śledzący. Część programów pobiera obrazy automatycznie, inne je blokują, dlatego liczba otwarć jest przybliżona.",
         "delivered": "Doręczono oznacza, że serwer pocztowy odbiorcy przyjął wiadomość. Nie gwarantuje to trafienia do skrzynki głównej.",
-        "app_view": "Wyświetlenie propozycji: rejestr przechowuje tylko datę pierwszego i ostatniego wyświetlenia oraz łączną liczbę wyświetleń, bez dat pośrednich.",
+        "app_view": "Wyświetlenie propozycji: rejestr przechowuje dla każdej propozycji tylko datę pierwszego i ostatniego wyświetlenia. Nie ma w nim pełnej historii ani dokładnej liczby wyświetleń.",
         "no_intent": "Żadne z tych zdarzeń nie jest dowodem zainteresowania zakupem.",
         "mail_scope": "Maile: rejestr propozycji PreConnect do kupców (od 22.10.2026) i maile marketingowe. Inne rodzaje poczty nie są jeszcze uwzględnione.",
         "dates": "Każde zdarzenie jest liczone według własnej daty: wysyłka według daty wysłania, doręczenie i otwarcie według daty zdarzenia."
@@ -3037,9 +3037,10 @@
         "last_visit": "Ostatnie zarejestrowane wejście",
         "emails": "E-maile w okresie: wysłano / doręczono / otwarcie",
         "emails_hint": "Wysłano = przyjęte do wysyłki. Doręczono = przyjęte przez serwer odbiorcy. Otwarcie = zarejestrowane otwarcie (przybliżone).",
-        "viewed": "Wyświetlone propozycje",
+        "viewed": "Propozycje z zapisanym wyświetleniem",
         "legacy": "Pole ostatniej aktywności",
-        "legacy_hint": "Dane sprzed dziennika: pole profilu nadpisywane przy każdym wejściu, bez historii. Przy wdrożeniu śledzenia w czerwcu 2026 istniejące konta dostały wspólną datę, więc pochodzenie wartości nie jest pewne."
+        "legacy_hint": "Dane sprzed dziennika: pole profilu nadpisywane przy każdym wejściu, bez historii. Przy wdrożeniu śledzenia w czerwcu 2026 istniejące konta dostały wspólną datę, więc pochodzenie wartości nie jest pewne.",
+        "viewed_hint": "Propozycje, których pierwsze lub ostatnie zapisane wyświetlenie przypada w okresie. Wyświetleń pomiędzy tymi datami rejestr nie przechowuje."
       },
       "role": {
         "buyer": "Sieć handlowa",
@@ -3071,8 +3072,8 @@
         "bounced": "E-mail odrzucony przez serwer odbiorcy",
         "complained": "Odbiorca zgłosił e-mail jako spam",
         "other": "Inne zdarzenie",
-        "app_view_first": "Pierwsze wyświetlenie propozycji w aplikacji (wyświetleń łącznie: {{n}})",
-        "app_view_last": "Ostatnie wyświetlenie propozycji w aplikacji (wyświetleń łącznie: {{n}})"
+        "app_view_first": "Pierwsze zapisane wyświetlenie propozycji w aplikacji",
+        "app_view_last": "Ostatnie zapisane wyświetlenie propozycji w aplikacji"
       },
       "csv": {
         "role": "Rola",
@@ -3086,7 +3087,7 @@
         "delivered": "Doręczone",
         "opened": "Z zarejestrowanym otwarciem",
         "last_opened": "Ostatnie zarejestrowane otwarcie",
-        "viewed": "Wyświetlone propozycje",
+        "viewed": "Propozycje z zapisanym wyświetleniem (pierwsze/ostatnie)",
         "legacy_last_active": "Pole ostatniej aktywności (sprzed dziennika)",
         "at": "Data",
         "event": "Zdarzenie",

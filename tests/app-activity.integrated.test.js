@@ -152,6 +152,8 @@ describe.skipIf(!PGLITE_PATH)("Aktywność — dziennik wejść i raport admina 
     expect((await as(ANNA, "select count(*)::int as n from public.app_activity_settings")).rows[0].n).toBe(0);
     await expect(report(ANNA)).rejects.toThrow(/tylko administrator/);
     await expect(events(OWNER)).rejects.toThrow(/tylko administrator/);
+    await expect(report(OWNER)).rejects.toThrow(/tylko administrator/);                   // dostawca nie widzi raportu
+    await expect(events(ANNA)).rejects.toThrow(/tylko administrator/);
     await expect(as(OWNER, "select public.admin_set_activity_test_account($1::uuid, true)", [ANNA])).rejects.toThrow(/tylko administrator/);
     for (const fn of ["public.purge_app_visits()", "public.app_activity_event_rows(now() - interval '1 day', now(), null)", "public.app_activity_period(null, null)"]) {
       await expect(as(ADMIN, `select * from ${fn}`)).rejects.toThrow(/permission denied/);
@@ -288,8 +290,21 @@ describe.skipIf(!PGLITE_PATH)("Aktywność — dziennik wejść i raport admina 
     await report(ADMIN);
     expect((await visits(BARTEK)).length).toBe(1);
     await old("500 days");
+    // stare rekordy rejestrów poczty, odczytów i rozliczeń NIE podlegają retencji dziennika wejść
+    await db.exec(`
+      insert into public.legacy_send_messages (resend_message_id, retailer_id, buyer_profile_id, to_email, legacy_ids, sent_at)
+      values ('stary', 1, '${ANNA}', 'anna@example.invalid', '{101}', now() - interval '3 years');
+      insert into public.legacy_send_email_events (event_id, resend_message_id, event_type, occurred_at, received_at, payload, status)
+      values ('stare', 'stary', 'email.opened', now() - interval '3 years', now() - interval '3 years', '{}', 'processed');
+      insert into public.legacy_send_app_reads (legacy_id, buyer_profile_id, reader_role, channel, first_read_at, last_read_at)
+      values (101, '${ANNA}', 'buyer', 'app_list', now() - interval '3 years', now() - interval '3 years');
+      insert into public.packages (company_id, plan, qty_total, qty_used, expires_at, purchased_at) values ('${COMPANY}', 'std_5', 5, 5, current_date - 700, now() - interval '3 years');
+    `);
+    const before = await fingerprint();
     expect((await one("select public.purge_app_visits() as n")).n).toBe(1);                // jak zadanie pg_cron (właściciel)
     expect((await visits(BARTEK)).length).toBe(1);
+    expect(await fingerprint()).toEqual(before);
+    expect(read("supabase/migrations/20261109120000_app_activity.sql").match(/delete from public\.\w+/g)).toEqual(["delete from public.app_visits", "delete from public.app_activity_test_accounts"]);
   });
 
   it("brak wpływu na kredyty, statusy propozycji, odczyty dostawcy i pole ostatniej aktywności", async () => {

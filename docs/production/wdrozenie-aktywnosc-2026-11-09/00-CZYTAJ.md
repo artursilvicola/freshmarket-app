@@ -33,9 +33,11 @@ Zakładka pokazuje to pole osobno jako „dane sprzed dziennika”. Nie wnioskuj
 | Wysłano e-mail | `legacy_send_messages`, `marketing_messages` (accepted, nie testowe) | `sent_at` |
 | Doręczono | zdarzenia Resend `email.delivered` | data zdarzenia |
 | Zarejestrowane otwarcie | zdarzenia Resend `email.opened` (bez `ignored`) | data zdarzenia |
-| Wyświetlono propozycję | `legacy_send_app_reads` | tylko znane daty: pierwsze i ostatnie wyświetlenie |
+| Wyświetlono propozycję | `legacy_send_app_reads` | tylko dwie zapisane daty: pierwsze i ostatnie wyświetlenie |
 
 Każde zdarzenie liczy się według **własnej daty**. Raport i oś czasu korzystają z jednej funkcji SQL. Żadne zdarzenie nie jest przedstawiane jako dowód zainteresowania zakupem. Brak zdarzenia opisujemy jako „brak zarejestrowanego wejścia/otwarcia”.
+
+**Ograniczona historia wyświetleń propozycji.** Rejestr `legacy_send_app_reads` (ten sam, który zasila informacje dla dostawcy i rozliczenia) przechowuje dla każdej propozycji tylko datę pierwszego i ostatniego wyświetlenia oraz licznik zapisów. Zakładka pokazuje wyłącznie te dwie daty („Pierwsze/Ostatnie zapisane wyświetlenie propozycji”), kolumnę nazywa „Propozycje z zapisanym wyświetleniem” i nie podaje liczby wyświetleń — licznik nie jest dokładny. Wyświetleń pomiędzy dwiema datami nie widać. To samo mówią zastrzeżenia w zakładce, podpowiedź kolumny i rozdział instrukcji administratora.
 
 ## 4. Bezpieczeństwo i dane
 
@@ -44,14 +46,15 @@ Każde zdarzenie liczy się według **własnej daty**. Raport i oś czasu korzys
 * Deduplikacja: blokada doradcza per konto (`pg_advisory_xact_lock`) — kilka kart i równoległe żądania dają jedną wizytę.
 * Tabele: RLS (odczyt tylko admin), brak zapisu dla `anon`/`authenticated`/`service_role`. Funkcje pomocnicze bez `EXECUTE` dla ról API.
 * Bez IP, user-agenta i tokenów. Konta testowe oznacza jawnie administrator (przycisk w osi czasu, audyt: kto i kiedy).
-* Retencja 12 miesięcy: usuwanie przy każdej nowej wizycie, przy odczycie raportu i codziennie z `pg_cron` w bazie (zadanie `fm-app-activity-retention`, 03:17 UTC).
+* Retencja 12 miesięcy dotyczy **wyłącznie nowego dziennika wejść** (`app_visits`): usuwanie przy każdej nowej wizycie, przy odczycie raportu i codziennie z `pg_cron` w bazie (zadanie `fm-app-activity-retention`, 03:17 UTC). Rejestry poczty, odczytów i rozliczeń nie są usuwane — test sprawdza, że trzyletnie rekordy w nich zostają, a migracja nie zawiera innego `delete` niż na `app_visits` i (odznaczenie konta testowego) `app_activity_test_accounts`.
 * Moduł **tylko czyta** rejestry maili i odczytów — nie zmienia kredytów, statusów propozycji ani informacji o odczytach widocznych dla dostawcy (test odcisku tabel).
 
 ## 5. Wyniki kontroli (9.11.2026)
 
-* PGlite, pełny łańcuch migracji: 14/14 testów SQL (`tests/app-activity.integrated.test.js`) — wyłącznik, deduplikacja, przerwa > 30 min, admin i brak sesji, uprawnienia (RLS, EXECUTE, service_role), raport, liczenie według dat (wysyłka przed okresem, otwarcie po okresie), przerwa między odczytami, filtr kont i stronicowanie, granica okresu dla ostatniego wejścia, walidacja okresu, retencja, brak wpływu na kredyty.
-* UI: 13/13 (`src/components/admin/AdminActivity.test.jsx`) — słownictwo, zastrzeżenia, wyłącznik, konta testowe, oś czasu, spóźnione odpowiedzi, niepełny własny okres, blokada eksportu, CSV.
-* Pełny zestaw repo i `vite build`: wynik w § 7.
+* PGlite, pełny łańcuch migracji: 14/14 testów SQL (`tests/app-activity.integrated.test.js`) — wyłącznik, deduplikacja, przerwa > 30 min, admin i brak sesji, uprawnienia (RLS, EXECUTE, service_role; kupiec i dostawca bez dostępu do raportu i zdarzeń), raport, liczenie według dat (wysyłka przed okresem, otwarcie po okresie), przerwa między odczytami, filtr kont, jedna migawka zdarzeń, granica okresu dla ostatniego wejścia, walidacja okresu, retencja tylko dziennika wejść, brak wpływu na kredyty.
+* UI: 13/13 (`src/components/admin/AdminActivity.test.jsx`) — słownictwo, zastrzeżenia (w tym ograniczona historia wyświetleń), wyłącznik, konta testowe, oś czasu, spóźnione odpowiedzi, niepełny własny okres, blokada eksportu, **eksport zdarzeń jednym wywołaniem** (odmowa przy niepełnym lub zbyt dużym zbiorze), CSV.
+* Instrukcja: 4/4 (`tests/activity-instruction.test.js`) — rozdział „Aktywność kont” tylko przy włączonej zakładce, etykiety jak w panelu.
+* Pełny zestaw repo i `vite build`: wynik w `01-DLA-CODEXA.md`.
 * Baza testowa:
   * migracja nałożona; zapis włączony **tylko tam**;
   * `pg_cron` 1.6.4 — zadanie próbne wykonało `purge_app_visits()` (succeeded, usunięta wizyta > 12 mies.), zostało tylko zadanie dzienne;
@@ -78,7 +81,21 @@ Kolejność ma znaczenie. Każdy krok tylko w projekcie **`sklyfuvzjikkqerxtulo`
 
 **Wycofanie — zawsze w tej kolejności:** (1) `04-wylaczenie-zapisu.sql`, (2) potwierdzenie w wyniku `enabled = false`, (3) Netlify → poprzedni deploy → Publish. Harmonogram retencji zostaje, żeby zebrane dane nadal były usuwane po 12 miesiącach. Rollback samego frontu ani wyłączenie flag VITE nie zatrzymują zapisu przez bezpośrednie RPC.
 
+5. **Kontrola po wdrożeniu** (`05-kontrola-po-wdrozeniu.sql`, tylko odczyt) — § 7a.
+
 Po włączeniu: oznaczyć konta testowe (ZZZ TEST, aliasy `artur.stasiak+…`, konta próby marketingu) przyciskiem w osi czasu.
+
+### 7a. Kontrola po wdrożeniu (na produkcji, konta testowe)
+
+| # | Czynność | Oczekiwany wynik (`05-kontrola-po-wdrozeniu.sql`) |
+|---|---|---|
+| A | Testowy kupiec wchodzi do aplikacji (magic link) | 1 wizyta, `hit_count = 1` |
+| B | Ten sam kupiec odświeża stronę (w ciągu 30 min) | nadal 1 wizyta, `hit_count = 2` |
+| C | Administrator otwiera podgląd konta tego kupca | nadal 1 wizyta, `hit_count` bez zmian; 0 wizyt kont administratorów |
+| D | Dostawca (konto testowe) — próba odczytu raportu | błąd „tylko administrator” (blok D w SQL; w panelu dostawcy zakładki nie ma) |
+| E | Stan modułu | `enabled = true`, 1 aktywne zadanie retencji, `collecting_since` ustawione |
+
+Wynik niezgodny z tabelą → `04-wylaczenie-zapisu.sql`, potem diagnoza.
 
 ## 8. Otwarte
 

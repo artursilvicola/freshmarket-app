@@ -110,6 +110,25 @@ export default {
         ],
       },
       {
+        id: "aktywnosc",
+        flag: "ADMIN_ACTIVITY",
+        title: "Aktywność kont",
+        intro: "**Aktywność** pokazuje zarejestrowane wejścia kupców i dostawców do aplikacji oraz zdarzenia maili PreConnect i marketingowych. Dane i eksport widzi tylko administrator.",
+        steps: [
+          "Wybierz okres: 7, 30 lub 90 dni albo **Własny okres** z obiema datami. Nagłówek tabeli podaje dokładny okres, którego dotyczą liczby.",
+          "Kolumna **Wejścia w okresie** liczy wizyty: otwarcia aplikacji przez zalogowanego kupca lub dostawcę. Wejścia w odstępach krótszych niż 30 minut liczą się jako jedno. Twój podgląd cudzego konta nie jest zapisywany.",
+          "Kolumna maili podaje osobno: **wysłano** (przyjęte do wysyłki), **doręczono** (przyjęte przez serwer odbiorcy, co nie gwarantuje skrzynki głównej) i **zarejestrowane otwarcie** (program pocztowy pobrał obraz śledzący). Każde zdarzenie liczy się według własnej daty.",
+          "Kolumna **Propozycje z zapisanym wyświetleniem** dotyczy kupców. Rejestr przechowuje dla każdej propozycji tylko datę pierwszego i ostatniego wyświetlenia. Nie ma w nim pełnej historii ani dokładnej liczby wyświetleń.",
+          "Kliknij wiersz, aby zobaczyć oś czasu konta w wybranym okresie. Tam też oznaczysz konto jako testowe; konta testowe są domyślnie ukryte (**Pokaż konta testowe**).",
+          "**Eksport podsumowania (CSV)** i **Eksport zdarzeń (CSV)** zapisują to, co widać po filtrach. Plik zawiera okres i zastrzeżenie o niepełnym pomiarze. Przy bardzo dużej liczbie zdarzeń eksport odmawia — zawęź wtedy okres.",
+        ],
+        notes: [
+          "Brak zarejestrowanego wejścia lub otwarcia nie oznacza braku aktywności. Żadne zdarzenie nie jest dowodem zainteresowania zakupem.",
+          "Kolumna **Pole ostatniej aktywności** to dane sprzed dziennika, bez historii. W czerwcu 2026 istniejące konta dostały wspólną datę, więc ta data nie musi oznaczać wejścia.",
+          "Wpisy dziennika wejść starsze niż 12 miesięcy są usuwane automatycznie. Rejestrów poczty, odczytów i rozliczeń to nie dotyczy.",
+        ],
+      },
+      {
         id: "kredyty",
         title: "Kredyty, proformy, rozliczenia",
         steps: [
@@ -271,6 +290,25 @@ export default {
           "You cannot change the crop of a saved photo in the panel: uploading the same original again is rejected as a duplicate. If a crop needs correcting, do not approve it, or disable the photo, and report it to the technical team.",
           "When fewer than 5 photos are in rotation, the panel warns that consecutive campaigns may repeat frames. Add new photos then.",
           "The panel rejects an identical file or original and warns about a very similar crop. **Upload anyway** deliberately saves a similar crop as a separate photo.",
+        ],
+      },
+      {
+        id: "aktywnosc",
+        flag: "ADMIN_ACTIVITY",
+        title: "Account activity",
+        intro: "**Activity** shows recorded app visits by buyers and suppliers, plus PreConnect and marketing e-mail events. Data and exports are visible to administrators only.",
+        steps: [
+          "Choose a period: 7, 30 or 90 days, or a **Custom period** with both dates. The table header states the exact period the numbers refer to.",
+          "**Visits in period** counts visits: a signed-in buyer or supplier opening the app. Visits less than 30 minutes apart count as one. Your preview of someone else's account is not recorded.",
+          "The e-mail column lists separately: **sent** (accepted for sending), **delivered** (accepted by the recipient's server, which does not guarantee the main inbox) and **recorded open** (the mail client downloaded the tracking image). Each event counts by its own date.",
+          "**Proposals with a recorded view** applies to buyers. For each proposal the register stores only the date of the first and last view. It holds no full history and no exact number of views.",
+          "Click a row to see the account's timeline for the selected period. There you can also mark the account as a test account; test accounts are hidden by default (**Show test accounts**).",
+          "**Export summary (CSV)** and **Export events (CSV)** save what is visible after filtering. The file states the period and the incomplete-measurement caveat. With a very large number of events the export refuses — narrow the period then.",
+        ],
+        notes: [
+          "No recorded visit or open does not mean no activity. No event is evidence of purchase interest.",
+          "The **Last activity field** column is data from before the log, without history. In June 2026 existing accounts received a shared date, so that date does not necessarily mean a visit.",
+          "Visit log entries older than 12 months are deleted automatically. This does not apply to e-mail, read or billing registers.",
         ],
       },
       {
