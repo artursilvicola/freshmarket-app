@@ -121,6 +121,12 @@ begin
   -- bariera z wyłącznikiem: blokada WSPÓŁDZIELONA modułu do końca transakcji. Skrypt
   -- wyłączenia (04) bierze blokadę WYŁĄCZNĄ, więc czeka na trwające zapisy, a wywołania
   -- rozpoczęte po nim czytają już enabled = false. Po zakończeniu 04 nic się nie dopisze.
+  -- Bariera działa przy READ COMMITTED (domyślny poziom PostgREST): każde polecenie po blokadzie
+  -- widzi zatwierdzony stan przełącznika. Na wyższym poziomie migawka mogłaby pochodzić sprzed
+  -- wyłączenia — wtedy niczego nie zapisujemy.
+  if current_setting('transaction_isolation') <> 'read committed' then
+    return jsonb_build_object('recorded', false, 'reason', 'isolation');
+  end if;
   perform pg_advisory_xact_lock_shared(hashtextextended('app_activity:switch', 0));
   if not coalesce((select s.enabled from public.app_activity_settings s where s.id), false) then
     return jsonb_build_object('recorded', false, 'reason', 'disabled');

@@ -115,6 +115,13 @@ describe.skipIf(!PGLITE_PATH)("Aktywność — dziennik wejść i raport admina 
     const def = (await one("select pg_get_functiondef('public.record_app_visit()'::regprocedure) as d")).d;
     expect(def.indexOf("pg_advisory_xact_lock_shared(hashtextextended('app_activity:switch'")).toBeGreaterThan(-1);
     expect(def.indexOf("pg_advisory_xact_lock_shared")).toBeLessThan(def.indexOf("app_activity_settings"));   // blokada przed odczytem przełącznika
+    // wyższy poziom izolacji: migawka mogłaby być sprzed wyłączenia — zapis odrzucony
+    await db.exec(read(dir + "03-wlaczenie-zapisu.sql").split("-- kontrola:")[0]);
+    await db.exec(`reset role; select set_config('request.jwt.claim.sub', '${ANNA}', false);`);
+    await db.exec("begin isolation level repeatable read; set local role authenticated;");
+    const rr = (await db.query("select public.record_app_visit() as r")).rows[0].r;
+    await db.exec("commit; reset role; select set_config('request.jwt.claim.sub', '', false);");
+    expect(rr).toEqual({ recorded: false, reason: "isolation" });
     await q("delete from public.app_visits");
     // ponowne zastosowanie migracji (idempotencja) nie włącza zapisu ani nie kasuje ustawień
     await q("update public.app_activity_settings set enabled = true where id");

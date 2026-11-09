@@ -93,21 +93,23 @@ async function main() {
       const inFlight = await asBuyer(A);                                     // zapis w toku, bez commit
       let disabledAt = null;
       const disabling = B.query(disableSql).then(() => { disabledAt = Date.now(); });
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 1000));
+      // C: wywołanie rozpoczęte PODCZAS wyłączania (B czeka na A) — kolejkuje się za blokadą wyłączną
+      await C.query("begin");
+      const waiting = asBuyer(C).then(async (r) => { await C.query("commit"); return r; });
+      await new Promise((r) => setTimeout(r, 1000));
       const waited = disabledAt === null;
       const commitAt = Date.now();
       await A.query("commit");
       await disabling;
       const order = disabledAt !== null && disabledAt >= commitAt;
-      await C.query("begin");
-      const after = await asBuyer(C);
-      await C.query("commit");
+      const after = await waiting;
       const visits = (await admin.query("select count(*)::int n, coalesce(sum(hit_count),0)::int h from public.app_visits where profile_id = $1", [acc.supplier])).rows[0];
       const checks = [
         [inFlight.recorded === true, `zapis w toku przyjęty przed wyłączeniem (${JSON.stringify(inFlight)})`],
         [waited, "wyłączenie czekało na zakończenie zapisu w toku (≥ 1,5 s)"],
         [order, "wyłączenie zakończyło się dopiero po commit zapisu w toku"],
-        [after.reason === "disabled", `wywołanie po wyłączeniu: ${JSON.stringify(after)}`],
+        [after.reason === "disabled", `wywołanie oczekujące w trakcie wyłączania: ${JSON.stringify(after)}`],
         [visits.n === 1 && visits.h === 1, `po wyłączeniu brak nowych zapisów: wizyty ${visits.n}, wejścia ${visits.h} (oczek. 1/1)`],
       ];
       for (const [pass, label] of checks) { ok = ok && pass; console.log(`${pass ? "OK  " : "BŁĄD"} ${label}`); }
