@@ -59,3 +59,12 @@ W krokach P–5 adresy kont testowych w skryptach podmienia się w jednym miejsc
 | 6 | 15:47 | 6 kont oznaczonych jako testowe (2 kupców, 4 dostawców testowych/próbnych) |
 
 Zrzut: `zrzut-produkcja-2026-11-09.jpg`. Incydent bez skutków: karta panelu admina zawisła na chwilę po powrocie z podglądu (zablokowana przez okno przeglądarki); po odblokowaniu oczekujące skrypty oznaczeń wykonały się — sprawdzone: dokładnie 6 zamierzonych kont.
+
+## Zamknięcie odbioru — 9.11.2026, 16:08 (PL)
+
+* Produkcja: **`f4179e7`** (deploy `6af1de21a39df8059442290c`; kod identyczny z `c737cd8` i odebranym `de7a63e`, różnica tylko w `docs/`). Drugi deploy powstał z wypchnięcia dziennika do `main`.
+* **Blokada wysyłki marketingowej potwierdzona na aktualnej produkcji:** nowa sesja admina (`artur@kjow.pl`, token z 15:08:08 UTC), lista kampanii 200 (9), próba `marketing-send` → **403 `send_disabled`**. Poczta nie była włączana, nic nie wysłano.
+  * Wcześniejsze 401 `invalid_token` wynikały z wygaśnięcia sesji admina w karcie Chrome (`session_not_found`), nie z deployu.
+* Netlify (production): `MARKETING_SEND_ENABLED=false`, `MARKETING_SEND_ALLOWLIST` = 2 adresy (bez zmian); `VITE_ADMIN_ACTIVITY=true`, `VITE_APP_ACTIVITY_LOG=true`.
+* Moduł: `enabled=true`, historia od 14:38:59 UTC (15:38 PL), 1 wizyta (kupiec testowy), 6 kont testowych oznaczonych; zadanie retencji `fm-app-activity-retention` aktywne (03:17 UTC, `postgres/postgres`).
+* **Odbiór wdrożenia zamknięty.** Wycofanie: `04-wylaczenie-zapisu.sql` → `enabled=false` → Netlify Publish `6aeef6d2` (`fa3dd0b`, tag `prod-rollback-2026-11-09-activity`); harmonogram retencji zostaje.
