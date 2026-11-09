@@ -71,6 +71,8 @@ Każde zdarzenie liczy się według **własnej daty**. Raport i oś czasu korzys
 
 ## 7. Wdrożenie produkcyjne (po decyzji Artura) — cztery osobne kroki
 
+Szczegółowy plan z kontrolami przed wdrożeniem (`06`) i przed włączeniem zapisu (`07`), warunkami STOP i stanem wyjściowym: **`08-PLAN-WDROZENIA.md`**.
+
 Kolejność ma znaczenie. Każdy krok tylko w projekcie **`sklyfuvzjikkqerxtulo`** (sprawdź adres SQL Editora przed każdym Run).
 
 0. **Tylko przy ponowieniu lub wznowieniu przerwanego wdrożenia** (tabela `app_activity_settings` już istnieje): najpierw `04-wylaczenie-zapisu.sql` i sprawdzić w wyniku `enabled = false`. Migracja celowo zachowuje istniejący stan przełącznika, więc bez tego kroku zapis mógłby działać przed kontrolą retencji i frontu. Przy pierwszym wdrożeniu migracja tworzy przełącznik w stanie `false`.
