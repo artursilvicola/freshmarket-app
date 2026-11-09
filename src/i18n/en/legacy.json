@@ -3097,10 +3097,11 @@
       "disabled": "Visit logging is switched off in the database — new visits are not recorded.",
       "period_line": "Period: {{from}} – {{to}}",
       "legacy_shared": "same date on {{n}} accounts",
-      "timeline_more": "Show more ({{shown}} of {{total}})",
       "exporting": "Exporting…",
       "export_too_many": "Too many events for one export ({{n}}). Narrow the period or filters.",
-      "export_failed": "Export failed: {{message}}"
+      "export_failed": "Export failed: {{message}}",
+      "need_dates": "Fill in both dates of the custom period to load data.",
+      "timeline_partial": "Showing the latest {{shown}} of {{total}} events. Narrow the period to see all."
     }
   },
   "fm": {

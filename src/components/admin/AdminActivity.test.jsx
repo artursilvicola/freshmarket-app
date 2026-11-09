@@ -30,7 +30,7 @@ vi.mock("../../lib/db.js", () => ({
   loadAdminActivityEvents: vi.fn(async (args) => { calls.events.push(args); return calls.eventsImpl ? calls.eventsImpl(args) : { total: EVENTS.length, events: EVENTS }; }),
   setActivityTestAccount: vi.fn(async (id, isTest) => { calls.setTest.push([id, isTest]); return { profile_id: id, is_test: isTest }; }),
 }));
-import AdminActivity, { buildSummaryCsv, buildEventsCsv, csvCell, filterAccounts, eventLabel, loadAllEvents, TIMELINE_PAGE } from "./AdminActivity.jsx";
+import AdminActivity, { buildSummaryCsv, buildEventsCsv, csvCell, filterAccounts, eventLabel, loadAllEvents, TIMELINE_LIMIT, EXPORT_MAX } from "./AdminActivity.jsx";
 
 let tree;
 const text = (n) => typeof n === "string" ? n : Array.isArray(n) ? n.map(text).join("") : (n?.children || []).map(text).join("");
@@ -82,23 +82,20 @@ describe("AdminActivity", () => {
     expect(tree.root.findAllByProps({ "data-testid": "activity-test-badge" })).toHaveLength(1);
   });
 
-  it("oś czasu ładuje zdarzenia tylko tego konta i w okresie raportu; „pokaż więcej” dociąga kolejną stronę", async () => {
-    calls.eventsImpl = (a) => ({ total: 250, events: a.offset === 0 ? EVENTS : [{ ...EVENTS[0], at: "2026-10-12T09:00:00Z" }] });
+  it("oś czasu: jedno wywołanie dla tego konta i okresu raportu; niepełna lista jest jawnie opisana", async () => {
+    calls.eventsImpl = () => ({ total: 1500, events: EVENTS });
     const fl = vi.fn();
     await act(async () => { tree = create(<AdminActivity fl={fl} />); });
     await flush();
     await act(async () => { byId("activity-row-p-anna").props.onClick(); });
     await flush();
-    expect(calls.events[0]).toMatchObject({ profileIds: ["p-anna"], limit: TIMELINE_PAGE, offset: 0, from: META.from, to: META.to });
+    expect(calls.events).toHaveLength(1);
+    expect(calls.events[0]).toMatchObject({ profileIds: ["p-anna"], limit: TIMELINE_LIMIT, offset: 0, from: META.from, to: META.to });
     const tl = text(byId("activity-timeline-p-anna").children);
     expect(tl).toContain("Zarejestrowane wejście do aplikacji (wczytania w ciągu wizyty: 3)");
     expect(tl).toContain("Wysłano e-mail z propozycjami PreConnect (propozycje: 2)");
     expect(tl).toContain("Doręczono e-mail (przyjęty przez serwer odbiorcy)");
-    expect(text(byId("activity-timeline-more").children)).toContain("Pokaż więcej (3 z 250)");
-    await act(async () => { byId("activity-timeline-more").props.onClick({ stopPropagation() {} }); });
-    await flush();
-    expect(calls.events[1]).toMatchObject({ profileIds: ["p-anna"], offset: 3 });
-    expect(text(byId("activity-timeline-p-anna").children)).toContain("12.10.2026");
+    expect(text(byId("activity-timeline-partial").children)).toContain("Pokazano najnowsze 3 z 1500 zdarzeń. Zawęź okres");
   });
 
   it("oznaczenie konta testowego woła RPC i odświeża raport", async () => {
@@ -132,6 +129,27 @@ describe("AdminActivity", () => {
     expect(byId("activity-export-summary").props.disabled).toBe(false);
   });
 
+  it("niepełny własny okres unieważnia poprzedni raport i oczekujące żądanie; eksport zablokowany", async () => {
+    const pending = deferred();
+    calls.reportImpl = () => (calls.load.length === 1 ? REPORT : pending.p);
+    await act(async () => { tree = create(<AdminActivity />); });
+    await flush();
+    expect(byId("activity-export-summary").props.disabled).toBe(false);
+    await act(async () => { byId("activity-period-7").props.onClick(); });     // żądanie w toku
+    expect(calls.load).toHaveLength(2);
+    const custom = tree.root.findAll((n) => n.type === "button" && text(n.children) === "Własny okres")[0];
+    await act(async () => { custom.props.onClick(); });                         // brak dat
+    expect(text(byId("activity-need-dates").children)).toContain("Uzupełnij obie daty");
+    expect(byId("activity-summary")).toBeUndefined();
+    expect(byId("activity-export-summary").props.disabled).toBe(true);
+    expect(byId("activity-export-events").props.disabled).toBe(true);
+    await act(async () => { pending.resolve({ ...REPORT, meta: { ...META, from: "2026-11-02T00:00:00Z" } }); });   // spóźnione 7 dni
+    await flush();
+    expect(byId("activity-summary")).toBeUndefined();
+    expect(byId("activity-export-summary").props.disabled).toBe(true);
+    expect(calls.load).toHaveLength(2);
+  });
+
   it("błąd wczytania: eksport zablokowany, brak starych danych", async () => {
     calls.reportImpl = () => { throw new Error("awaria"); };
     await act(async () => { tree = create(<AdminActivity />); });
@@ -151,15 +169,15 @@ describe("AdminActivity — logika i CSV", () => {
     expect(filterAccounts(ACCOUNTS, { onlyWithEvents: true }).map((a) => a.profile_id)).toEqual(["p-anna"]);
   });
 
-  it("eksport zdarzeń pobiera wszystkie strony; niepełny lub zbyt duży zbiór to błąd, nie cichy obcięty plik", async () => {
+  it("eksport zdarzeń: jedno wywołanie (jedna migawka); niepełny lub zbyt duży zbiór to błąd, nie obcięty plik", async () => {
     const all = Array.from({ length: 12 }, (_, i) => ({ profile_id: "p-anna", kind: "visit", at: `2026-11-0${1 + (i % 9)}T10:00:00Z`, detail: { hit_count: 1 } }));
     const seen = [];
-    const load = async ({ limit, offset, profileIds }) => { seen.push([offset, profileIds]); return { total: all.length, events: all.slice(offset, offset + limit) }; };
-    expect(await loadAllEvents({ from: "a", to: "b", profileIds: ["p-anna"], load, page: 5 })).toHaveLength(12);
-    expect(seen.map((s) => s[0])).toEqual([0, 5, 10]);
-    const short = async ({ offset }) => ({ total: 12, events: offset === 0 ? all.slice(0, 5) : [] });
-    await expect(loadAllEvents({ from: "a", to: "b", profileIds: [], load: short, page: 5 })).rejects.toThrow("incomplete_events");
-    const huge = async () => ({ total: 300000, events: [] });
+    const load = async (args) => { seen.push(args); return { total: all.length, events: all }; };
+    expect(await loadAllEvents({ from: "a", to: "b", profileIds: ["p-anna"], load })).toHaveLength(12);
+    expect(seen).toEqual([{ from: "a", to: "b", profileIds: ["p-anna"], limit: EXPORT_MAX, offset: 0 }]);
+    const short = async () => ({ total: 12, events: all.slice(0, 5) });
+    await expect(loadAllEvents({ from: "a", to: "b", profileIds: [], load: short })).rejects.toThrow("incomplete_events");
+    const huge = async () => ({ total: EXPORT_MAX + 1, events: all });
     await expect(loadAllEvents({ from: "a", to: "b", profileIds: [], load: huge })).rejects.toThrow("too_many_events");
   });
 

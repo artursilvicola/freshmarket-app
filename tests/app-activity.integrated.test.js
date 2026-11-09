@@ -257,7 +257,18 @@ describe.skipIf(!PGLITE_PATH)("Aktywność — dziennik wejść i raport admina 
     const onlyAnna = await events(ADMIN, NOV, [ANNA], 1000, 0);
     expect(onlyAnna.total).toBe(12);
     expect(onlyAnna.events.every((e) => e.profile_id === ANNA)).toBe(true);
-    expect((await events(ADMIN, NOV, null, 999999, 0)).limit).toBe(5000);                 // górny limit strony
+    expect((await events(ADMIN, NOV, null, 999999, 0)).limit).toBe(50000);                // górny limit jednego wywołania
+    // licznik i lista z jednej migawki: funkcja STABLE (wspólny obraz danych w obrębie wywołania)
+    expect((await one("select provolatile from pg_proc where proname = 'admin_activity_events'")).provolatile).toBe("s");
+  });
+
+  it("ostatnie wejście: tylko faktycznie zapisany czas, bez tworzenia czasu na granicy okresu", async () => {
+    await q(`insert into public.app_visits (profile_id, role, retailer_id, started_at, last_seen_at, hit_count)
+             values ('${ANNA}', 'buyer', 1, '2026-11-05T10:00:00Z', '2026-11-05T10:20:00Z', 3)`);
+    const at = async (to) => new Date(byId(await report(ADMIN, ["2026-11-01T00:00:00Z", to]))[ANNA].last_visit_at).toISOString();
+    expect(await at("2026-11-05T10:10:00Z")).toBe("2026-11-05T10:00:00.000Z");            // granica w trakcie wizyty → początek
+    expect(await at("2026-11-05T10:30:00Z")).toBe("2026-11-05T10:20:00.000Z");            // po wizycie → ostatnie wczytanie
+    expect(byId(await report(ADMIN, ["2026-11-01T00:00:00Z", "2026-11-05T09:00:00Z"]))[ANNA].last_visit_at).toBeNull();
   });
 
   it("okres raportu: walidacja i wejście poza okresem nie jest liczone", async () => {

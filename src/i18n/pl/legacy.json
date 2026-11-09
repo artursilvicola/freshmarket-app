@@ -3097,10 +3097,11 @@
       "disabled": "Zapis wejść jest wyłączony w bazie — nowe wejścia nie są rejestrowane.",
       "period_line": "Okres: {{from}} – {{to}}",
       "legacy_shared": "ta sama data u {{n}} kont",
-      "timeline_more": "Pokaż więcej ({{shown}} z {{total}})",
       "exporting": "Eksportowanie…",
       "export_too_many": "Za dużo zdarzeń do jednego eksportu ({{n}}). Zawęź okres albo filtry.",
-      "export_failed": "Eksport się nie udał: {{message}}"
+      "export_failed": "Eksport się nie udał: {{message}}",
+      "need_dates": "Uzupełnij obie daty własnego okresu, aby wczytać dane.",
+      "timeline_partial": "Pokazano najnowsze {{shown}} z {{total}} zdarzeń. Zawęź okres, aby zobaczyć wszystkie."
     }
   },
   "fm": {

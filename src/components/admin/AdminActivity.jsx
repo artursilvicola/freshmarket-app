@@ -12,9 +12,10 @@ import { loadAdminActivityReport, loadAdminActivityEvents, setActivityTestAccoun
 
 const DAY = 864e5;
 export const PERIODS = [7, 30, 90];
-export const TIMELINE_PAGE = 200;
-export const EXPORT_PAGE = 5000;
-export const EXPORT_MAX = 200000;
+// Oś czasu i eksport pobierają zdarzenia JEDNYM wywołaniem RPC (jedna migawka danych w bazie).
+// Łączenie stron z osobnych wywołań mogłoby zdublować lub zgubić zdarzenie dopisane w międzyczasie.
+export const TIMELINE_LIMIT = 1000;
+export const EXPORT_MAX = 50000;
 const TZ = "Europe/Warsaw";
 
 export function fmtDateTime(iso, lang = "pl") {
@@ -96,20 +97,14 @@ export function buildEventsCsv(events, accountsById, meta, t, lang) {
   return csvJoin([[periodLine(meta, t, lang)], [t("admin.activity.csv.note")], head, ...rows]);
 }
 
-// Wszystkie strony zdarzeń dla wskazanych kont — eksport nigdy nie jest po cichu obcięty.
-export async function loadAllEvents({ from, to, profileIds, load = loadAdminActivityEvents, page = EXPORT_PAGE, max = EXPORT_MAX }) {
-  const out = [];
-  let total = null;
-  for (let offset = 0; total === null || offset < total; offset += page) {
-    const r = await load({ from, to, profileIds, limit: page, offset });
-    total = Number(r?.total) || 0;
-    if (total > max) { const e = new Error("too_many_events"); e.total = total; throw e; }
-    const batch = r?.events || [];
-    out.push(...batch);
-    if (batch.length === 0) break;
-  }
-  if (out.length !== total) { const e = new Error("incomplete_events"); e.total = total; e.got = out.length; throw e; }
-  return out;
+// Wszystkie zdarzenia wskazanych kont z JEDNEJ migawki — eksport nigdy nie jest po cichu obcięty.
+export async function loadAllEvents({ from, to, profileIds, load = loadAdminActivityEvents, max = EXPORT_MAX }) {
+  const r = await load({ from, to, profileIds, limit: max, offset: 0 });
+  const total = Number(r?.total) || 0;
+  const events = r?.events || [];
+  if (total > max) { const e = new Error("too_many_events"); e.total = total; throw e; }
+  if (events.length !== total) { const e = new Error("incomplete_events"); e.total = total; e.got = events.length; throw e; }
+  return events;
 }
 
 function download(name, content) {
@@ -154,6 +149,7 @@ export default function AdminActivity({ fl = () => {} }) {
   const [error, setError] = useState(null);
   const [open, setOpen] = useState(null);
   const [timeline, setTimeline] = useState(null);     // { profileId, events, total, loading, error }
+  const [needDates, setNeedDates] = useState(false);
   const [busy, setBusy] = useState(null);
   const [exporting, setExporting] = useState(false);
   const seq = useRef(0);
@@ -161,8 +157,13 @@ export default function AdminActivity({ fl = () => {} }) {
 
   const load = useCallback(async () => {
     const want = rangeFor(period, customFrom, customTo);
-    if (!want) return;
-    const my = ++seq.current;
+    const my = ++seq.current;                          // unieważnia każde wcześniejsze żądanie
+    if (!want) {                                       // niepełny własny okres: brak raportu = brak eksportu
+      setReport(null); setRange(null); setError(null); setLoading(false);
+      setOpen(null); setTimeline(null); setNeedDates(true);
+      return;
+    }
+    setNeedDates(false);
     setLoading(true); setError(null);
     try {
       const r = await loadAdminActivityReport(want);
@@ -179,14 +180,14 @@ export default function AdminActivity({ fl = () => {} }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const loadTimeline = useCallback(async (profileId, offset = 0) => {
+  const loadTimeline = useCallback(async (profileId) => {
     if (!range) return;
     const my = ++tlSeq.current;
-    setTimeline((prev) => ({ profileId, events: offset ? (prev?.events || []) : [], total: prev?.total ?? null, loading: true, error: null }));
+    setTimeline({ profileId, events: [], total: null, loading: true, error: null });
     try {
-      const r = await loadAdminActivityEvents({ from: range.from, to: range.to, profileIds: [profileId], limit: TIMELINE_PAGE, offset });
+      const r = await loadAdminActivityEvents({ from: range.from, to: range.to, profileIds: [profileId], limit: TIMELINE_LIMIT, offset: 0 });
       if (my !== tlSeq.current) return;
-      setTimeline((prev) => ({ profileId, events: [...(offset ? prev?.events || [] : []), ...(r?.events || [])], total: Number(r?.total) || 0, loading: false, error: null }));
+      setTimeline({ profileId, events: r?.events || [], total: Number(r?.total) || 0, loading: false, error: null });
     } catch (e) {
       if (my !== tlSeq.current) return;
       setTimeline((prev) => ({ ...(prev || {}), profileId, loading: false, error: e?.message || String(e) }));
@@ -203,7 +204,7 @@ export default function AdminActivity({ fl = () => {} }) {
 
   const toggleRow = (a) => {
     if (open === a.profile_id) { setOpen(null); setTimeline(null); return; }
-    setOpen(a.profile_id); loadTimeline(a.profile_id, 0);
+    setOpen(a.profile_id); loadTimeline(a.profile_id);
   };
 
   const toggleTest = async (a) => {
@@ -277,6 +278,7 @@ export default function AdminActivity({ fl = () => {} }) {
       </div>
 
       {error && <div style={{ ...box, borderColor: "#fecaca", background: "#fef2f2", color: "#991b1b", fontSize: 13 }}>{t("admin.activity.error", { message: error })}</div>}
+      {needDates && <div style={{ ...box, fontSize: 13, color: "#475569" }} data-testid="activity-need-dates">{t("admin.activity.need_dates")}</div>}
       {loading && <div style={{ fontSize: 13, color: "#64748b", marginBottom: 8 }} data-testid="activity-loading">{t("admin.activity.loading")}</div>}
 
       {report && !error && (
@@ -360,10 +362,9 @@ export default function AdminActivity({ fl = () => {} }) {
                             )}
                             {tl?.loading && <div style={{ fontSize: 12, ...muted }}>{t("admin.activity.loading")}</div>}
                             {tl && !tl.loading && tl.total > tl.events.length && (
-                              <button type="button" style={{ ...btn(false), marginTop: 6 }} data-testid="activity-timeline-more"
-                                onClick={(e) => { e.stopPropagation(); loadTimeline(a.profile_id, tl.events.length); }}>
-                                {t("admin.activity.timeline_more", { shown: tl.events.length, total: tl.total })}
-                              </button>
+                              <div style={{ fontSize: 12, color: "#b45309", marginTop: 6 }} data-testid="activity-timeline-partial">
+                                {t("admin.activity.timeline_partial", { shown: tl.events.length, total: tl.total })}
+                              </div>
                             )}
                           </td>
                         </tr>

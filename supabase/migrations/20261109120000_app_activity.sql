@@ -322,8 +322,10 @@ begin
     select p.last_active_at, count(*)::int as n
       from public.profiles p where p.last_active_at is not null group by p.last_active_at
   ),
-  last_vis as (   -- ostatnie zarejestrowane wejście do końca okresu (także sprzed okresu)
-    select v.profile_id, max(least(v.last_seen_at, v_to)) as last_visit_at
+  last_vis as (   -- ostatnie ZAPISANE wejście przed końcem okresu (także sprzed okresu): początek wizyty
+                  -- albo jej ostatnie wczytanie, jeśli było przed końcem — bez tworzenia czasu granicznego
+    select v.profile_id,
+           max(greatest(v.started_at, case when v.last_seen_at < v_to then v.last_seen_at end)) as last_visit_at
       from public.app_visits v where v.started_at < v_to group by v.profile_id
   ),
   ev as (select * from public.app_activity_event_rows(v_from, v_to, null)),
@@ -369,7 +371,10 @@ begin
 end;
 $$;
 
--- ── 11. zdarzenia: stronicowane, filtrowane po kontach (admin) ──────────────
+-- ── 11. zdarzenia: filtrowane po kontach (admin) ────────────────────────────
+-- Jedno wywołanie = jedna migawka danych. Eksport i oś czasu pobierają całość JEDNYM
+-- wywołaniem (limit do 50 000); gdy total > limit, interfejs odmawia zamiast łączyć strony
+-- z różnych chwil (dopisany webhook między stronami dublowałby lub gubił zdarzenia).
 create or replace function public.admin_activity_events(
   p_from timestamptz default null, p_to timestamptz default null,
   p_profile_ids uuid[] default null, p_limit integer default 1000, p_offset integer default 0)
@@ -382,7 +387,7 @@ as $$
 declare
   v_from timestamptz;
   v_to   timestamptz;
-  v_limit integer := least(greatest(coalesce(p_limit, 1000), 1), 5000);
+  v_limit integer := least(greatest(coalesce(p_limit, 1000), 1), 50000);
   v_offset integer := greatest(coalesce(p_offset, 0), 0);
   v_total integer;
   v_events jsonb;
