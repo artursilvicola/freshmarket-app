@@ -23,6 +23,16 @@ Produkcja **niezmieniona**: brak merge, deployu, migracji i zmian danych. Środo
 2. **Retencja tylko dziennika wejść** — `purge_app_visits()` usuwa wyłącznie z `app_visits`. Test: trzyletnie rekordy w `legacy_send_messages`, `legacy_send_email_events`, `legacy_send_app_reads`, `packages` zostają (odcisk tabel przed i po), a migracja nie zawiera innego `delete` niż na `app_visits` i `app_activity_test_accounts` (odznaczenie konta testowego).
 3. **Kontrola po wdrożeniu** — `05-kontrola-po-wdrozeniu.sql` + tabela § 7a: wejście kupca = 1 wizyta, odświeżenie = ta sama wizyta, podgląd admina nie zapisuje, dostawca dostaje „tylko administrator”. Skrypt uruchomiony na bazie testowej (kupiec e2e: 1 wizyta, `hit_count` 2; wizyty adminów 0; blok D: oczekiwany błąd).
 
+## Zmiana wyglądu po akceptacji Artura (9.11, po południu)
+
+Zamiast dużego żółtego bloku: krótkie ostrzeżenie + przycisk-odnośnik **„Ograniczenia pomiaru”** (`aria-expanded`, `aria-controls`), domyślnie zwinięty; po rozwinięciu te same 8 wyjaśnień co wcześniej. Test UI: domyślnie zwinięte, rozwijanie i zwijanie, komplet wyjaśnień. Akceptacja wyglądu **nie jest** zgodą na wdrożenie.
+
+Sprawdzone w przeglądarce (podgląd testowy, konto `codex.admin@freshmarket.test`):
+
+* komputer 1366×900 — podpisy kolumn i podpowiedzi (w tym „Propozycje z zapisanym wyświetleniem”), oś czasu kupca: „Pierwsze/Ostatnie zapisane wyświetlenie propozycji w aplikacji” bez liczby wyświetleń (tymczasowy odczyt na bazie testowej, potem usunięty), zwinięte i rozwinięte ograniczenia — `zrzut-test-aktywnosc.jpg`, `zrzut-test-aktywnosc-ograniczenia.jpg`;
+* telefon poziomo 812×375 — stuknięcie rozwija 8 wyjaśnień, tabela przewija się w bok wewnątrz ramki, strona bez poziomego przewijania — `zrzut-telefon-poziomo-ograniczenia.jpg`;
+* telefon pionowo 375×812 — cały panel admina (stały pasek boczny) zostawia treści ok. 107 px i pokazuje własny komunikat „Telefon pionowo może być niewygodny”; dotyczy wszystkich zakładek admina, nie tylko tej — `zrzut-telefon-pionowo.jpg`.
+
 ## Jak uruchomić testy
 
 ```
@@ -36,11 +46,11 @@ Uwaga: lokalny `.env.test` (poza repo) ma `VITE_ADMIN_ACTIVITY=true` i `VITE_APP
 
 ## Wyniki Claude (9.11, ok. 12:00)
 
-* Pełny zestaw: **121 plików OK, 2 pominięte; 1257 testów OK, 3 pominięte** (pominięte wymagają uruchomionego podglądu — bez związku z modułem). `vite build` OK.
-* Moduł: SQL 14/14, UI 13/13, instrukcja 4/4.
+* Pełny zestaw (po zmianie wyglądu): **121 plików OK, 2 pominięte; 1258 testów OK, 3 pominięte** (pominięte wymagają uruchomionego podglądu — bez związku z modułem). `vite build` OK.
+* Moduł: SQL 14/14, UI 14/14, instrukcja 4/4.
 * Baza testowa: migracja nałożona (ponownie — idempotentna, stan wyłącznika zachowany); `02` — zadanie `postgres/postgres`, `purge_app_visits` wykonuje tylko `postgres`; dwa przebiegi pg_cron `succeeded`; `04` → `enabled=false`, `03` → `enabled=true`; kontrola równoległości: 4 połączenia × 3 konta tymczasowe → kupiec 1/4, dostawca 1/4, admin 0, sprzątanie 0.
 
 ## Czego Claude nie sprawdził
 
 * Niczego na produkcji (zgodnie z poleceniem).
-* Wyglądu nowych podpisów kolumny i osi czasu w przeglądarce po ostatniej zmianie tekstów (sprawdzone testem UI; zrzut `zrzut-test-aktywnosc.jpg` jest sprzed tej zmiany).
+* Prawdziwego telefonu (tylko emulacja rozmiaru w przeglądarce podglądu).

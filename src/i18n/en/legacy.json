@@ -2999,7 +2999,6 @@
       "collecting_since": "Visit history collected since {{date}}.",
       "collecting_none": "The visit log has not recorded any visit yet.",
       "retention": "Log entries older than 12 months are deleted automatically. The “Last activity field” column is data from before the log.",
-      "disclaimer_title": "Measurement is incomplete",
       "disclaimer": {
         "incomplete": "No recorded visit or open does not mean no activity.",
         "visit": "A visit is a signed-in buyer or supplier opening the app. Visits less than 30 minutes apart count as one. An administrator previewing an account is not recorded.",
@@ -3102,7 +3101,9 @@
       "export_too_many": "Too many events for one export ({{n}}). Narrow the period or filters.",
       "export_failed": "Export failed: {{message}}",
       "need_dates": "Fill in both dates of the custom period to load data.",
-      "timeline_partial": "Showing the latest {{shown}} of {{total}} events. Narrow the period to see all."
+      "timeline_partial": "Showing the latest {{shown}} of {{total}} events. Narrow the period to see all.",
+      "disclaimer_short": "Measurement is incomplete: no recorded event does not mean no activity.",
+      "limits_toggle": "Measurement limitations"
     }
   },
   "fm": {

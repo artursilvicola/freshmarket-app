@@ -151,6 +151,7 @@ export default function AdminActivity({ fl = () => {} }) {
   const [open, setOpen] = useState(null);
   const [timeline, setTimeline] = useState(null);     // { profileId, events, total, loading, error }
   const [needDates, setNeedDates] = useState(false);
+  const [limitsOpen, setLimitsOpen] = useState(false);
   const [busy, setBusy] = useState(null);
   const [exporting, setExporting] = useState(false);
   const seq = useRef(0);
@@ -246,11 +247,19 @@ export default function AdminActivity({ fl = () => {} }) {
         <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{t("admin.activity.retention")}</div>
       </div>
 
-      <div style={{ ...box, background: "#fffbeb", borderColor: "#fde68a" }} data-testid="activity-disclaimer">
-        <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{t("admin.activity.disclaimer_title")}</div>
-        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#713f12", lineHeight: 1.5 }}>
-          {["incomplete", "visit", "opened", "delivered", "app_view", "dates", "no_intent", "mail_scope"].map((k) => <li key={k}>{t("admin.activity.disclaimer." + k)}</li>)}
-        </ul>
+      {/* Krótkie ostrzeżenie + rozwijane „Ograniczenia pomiaru” (domyślnie zwinięte — więcej firm od razu widocznych). */}
+      <div style={{ marginBottom: 12, fontSize: 12, color: "#713f12", display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 10px" }} data-testid="activity-disclaimer">
+        <span data-testid="activity-disclaimer-short">⚠ {t("admin.activity.disclaimer_short")}</span>
+        <button type="button" data-testid="activity-limits-toggle" aria-expanded={limitsOpen} aria-controls="activity-limits"
+          onClick={() => setLimitsOpen((v) => !v)}
+          style={{ border: "none", background: "none", padding: 0, color: "#0d9488", textDecoration: "underline", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          {t("admin.activity.limits_toggle")} {limitsOpen ? "▴" : "▾"}
+        </button>
+        {limitsOpen && (
+          <ul id="activity-limits" data-testid="activity-limits" style={{ flexBasis: "100%", margin: "6px 0 0", padding: "8px 12px 8px 26px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, color: "#713f12", lineHeight: 1.5 }}>
+            {["incomplete", "visit", "opened", "delivered", "app_view", "dates", "no_intent", "mail_scope"].map((k) => <li key={k}>{t("admin.activity.disclaimer." + k)}</li>)}
+          </ul>
+        )}
       </div>
 
       <div style={{ ...box, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>

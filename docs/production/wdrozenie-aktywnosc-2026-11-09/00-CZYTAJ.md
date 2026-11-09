@@ -11,7 +11,7 @@ Administrator widzi dla każdego kupca i dostawcy w wybranym okresie:
 * **maile z istniejących rejestrów**: propozycje PreConnect do kupców (rejestr od 22.10.2026) i maile marketingowe (bez wiadomości testowych na adres zespołu);
 * **wyświetlenia propozycji w aplikacji** (kupcy, rejestr `legacy_send_app_reads`);
 * oś czasu konta, filtry (okres 7/30/90 dni lub własny, rola, wyszukiwanie, konta testowe, tylko konta ze zdarzeniem), eksport podsumowania i zdarzeń do CSV;
-* datę rozpoczęcia zbierania historii oraz zastrzeżenia pomiaru.
+* datę rozpoczęcia zbierania historii oraz krótkie ostrzeżenie „Pomiar jest niepełny…” z rozwijanym odnośnikiem **„Ograniczenia pomiaru”** (domyślnie zwinięty; w środku komplet 8 wyjaśnień) — wygląd zaakceptowany przez Artura 9.11, to nie jest zgoda na wdrożenie.
 
 Inne rodzaje poczty (moderacja, powiadomienia, przypomnienia) — następny etap.
 
@@ -52,7 +52,7 @@ Każde zdarzenie liczy się według **własnej daty**. Raport i oś czasu korzys
 ## 5. Wyniki kontroli (9.11.2026)
 
 * PGlite, pełny łańcuch migracji: 14/14 testów SQL (`tests/app-activity.integrated.test.js`) — wyłącznik, deduplikacja, przerwa > 30 min, admin i brak sesji, uprawnienia (RLS, EXECUTE, service_role; kupiec i dostawca bez dostępu do raportu i zdarzeń), raport, liczenie według dat (wysyłka przed okresem, otwarcie po okresie), przerwa między odczytami, filtr kont, jedna migawka zdarzeń, granica okresu dla ostatniego wejścia, walidacja okresu, retencja tylko dziennika wejść, brak wpływu na kredyty.
-* UI: 13/13 (`src/components/admin/AdminActivity.test.jsx`) — słownictwo, zastrzeżenia (w tym ograniczona historia wyświetleń), wyłącznik, konta testowe, oś czasu, spóźnione odpowiedzi, niepełny własny okres, blokada eksportu, **eksport zdarzeń jednym wywołaniem** (odmowa przy niepełnym lub zbyt dużym zbiorze), CSV.
+* UI: 14/14 (`src/components/admin/AdminActivity.test.jsx`) — słownictwo, „Ograniczenia pomiaru” (domyślnie zwinięte, rozwijanie/zwijanie, `aria-expanded`, komplet 8 wyjaśnień w środku), zastrzeżenia (w tym ograniczona historia wyświetleń), wyłącznik, konta testowe, oś czasu, spóźnione odpowiedzi, niepełny własny okres, blokada eksportu, **eksport zdarzeń jednym wywołaniem** (odmowa przy niepełnym lub zbyt dużym zbiorze), CSV.
 * Instrukcja: 4/4 (`tests/activity-instruction.test.js`) — rozdział „Aktywność kont” tylko przy włączonej zakładce, etykiety jak w panelu.
 * Pełny zestaw repo i `vite build`: wynik w `01-DLA-CODEXA.md`.
 * Baza testowa:

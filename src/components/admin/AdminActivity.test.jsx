@@ -49,6 +49,7 @@ describe("AdminActivity", () => {
     await flush();
     expect(calls.load).toHaveLength(1);
     expect(Math.round((new Date(calls.load[0].to) - new Date(calls.load[0].from)) / 864e5)).toBe(30);
+    await act(async () => { byId("activity-limits-toggle").props.onClick(); });   // rozwinięcie „Ograniczenia pomiaru”
     const s = out();
     expect(s).toContain("Okres: 10.10.2026");
     expect(s).toContain("Historia wejść zbierana od 09.11.2026");
@@ -66,6 +67,29 @@ describe("AdminActivity", () => {
     expect(s).toContain("ta sama data u 87 kont");
     expect(s).not.toMatch(/nie wszedł|nie przeczytał|nie otworzył|ustawione zbiorczo/);
     expect(byId("activity-disabled")).toBeUndefined();
+  });
+
+  it("„Ograniczenia pomiaru”: domyślnie zwinięte (krótkie ostrzeżenie), rozwijane i zwijane, komplet wyjaśnień w środku", async () => {
+    await act(async () => { tree = create(<AdminActivity />); });
+    await flush();
+    const toggle = () => byId("activity-limits-toggle");
+    expect(text(byId("activity-disclaimer-short").children)).toContain("Pomiar jest niepełny: brak zarejestrowanego zdarzenia nie oznacza braku aktywności.");
+    expect(text(toggle().children)).toContain("Ograniczenia pomiaru");
+    expect(toggle().props["aria-expanded"]).toBe(false);
+    expect(byId("activity-limits")).toBeUndefined();
+    expect(out()).not.toContain("Nie gwarantuje to trafienia do skrzynki głównej.");
+    await act(async () => { toggle().props.onClick(); });
+    expect(toggle().props["aria-expanded"]).toBe(true);
+    const items = byId("activity-limits").findAllByType("li").map((li) => text(li.children));
+    expect(items).toHaveLength(8);
+    for (const k of ["incomplete", "visit", "opened", "delivered", "app_view", "dates", "no_intent", "mail_scope"]) {
+      expect(items).toContain(t("admin.activity.disclaimer." + k));
+    }
+    await act(async () => { toggle().props.onClick(); });
+    expect(toggle().props["aria-expanded"]).toBe(false);
+    expect(byId("activity-limits")).toBeUndefined();
+    // tabela firm stoi zaraz pod filtrami — nie zasłania jej rozwinięty blok
+    expect(byId("activity-summary")).toBeDefined();
   });
 
   it("wyłączony zapis w bazie jest widoczny w zakładce", async () => {

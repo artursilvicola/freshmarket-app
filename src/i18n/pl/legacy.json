@@ -2999,7 +2999,6 @@
       "collecting_since": "Historia wejść zbierana od {{date}}.",
       "collecting_none": "Dziennik wejść nie zarejestrował jeszcze żadnego wejścia.",
       "retention": "Wpisy dziennika starsze niż 12 miesięcy są usuwane automatycznie. Kolumna „Pole ostatniej aktywności” to dane sprzed dziennika.",
-      "disclaimer_title": "Pomiar jest niepełny",
       "disclaimer": {
         "incomplete": "Brak zarejestrowanego wejścia lub otwarcia nie oznacza braku aktywności.",
         "visit": "Wejście to otwarcie aplikacji przez zalogowanego kupca lub dostawcę. Wejścia w odstępach krótszych niż 30 minut liczą się jako jedno. Podgląd konta przez administratora nie jest zapisywany.",
@@ -3102,7 +3101,9 @@
       "export_too_many": "Za dużo zdarzeń do jednego eksportu ({{n}}). Zawęź okres albo filtry.",
       "export_failed": "Eksport się nie udał: {{message}}",
       "need_dates": "Uzupełnij obie daty własnego okresu, aby wczytać dane.",
-      "timeline_partial": "Pokazano najnowsze {{shown}} z {{total}} zdarzeń. Zawęź okres, aby zobaczyć wszystkie."
+      "timeline_partial": "Pokazano najnowsze {{shown}} z {{total}} zdarzeń. Zawęź okres, aby zobaczyć wszystkie.",
+      "disclaimer_short": "Pomiar jest niepełny: brak zarejestrowanego zdarzenia nie oznacza braku aktywności.",
+      "limits_toggle": "Ograniczenia pomiaru"
     }
   },
   "fm": {
