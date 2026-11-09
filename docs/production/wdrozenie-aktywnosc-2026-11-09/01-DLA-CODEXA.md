@@ -33,6 +33,12 @@ Sprawdzone w przeglądarce (podgląd testowy, konto `codex.admin@freshmarket.tes
 * telefon poziomo 812×375 — stuknięcie rozwija 8 wyjaśnień, tabela przewija się w bok wewnątrz ramki, strona bez poziomego przewijania — `zrzut-telefon-poziomo-ograniczenia.jpg`;
 * telefon pionowo 375×812 — cały panel admina (stały pasek boczny) zostawia treści ok. 107 px i pokazuje własny komunikat „Telefon pionowo może być niewygodny”; dotyczy wszystkich zakładek admina, nie tylko tej — `zrzut-telefon-pionowo.jpg`.
 
+## Poprawki po review Codexa commitu 79fc899 (GO z uwagami, 3 × P2)
+
+1. **Własny okres przy zmianie czasu** — `zonedMidnightISO()`: granice to północe kalendarzowe w `Europe/Warsaw` (koniec = północ dnia następnego), bez dodawania 24 h i niezależnie od strefy przeglądarki. Testy: 25.10.2026 (doba 25 h) i 29.03.2026 (doba 23 h), przejście roku, inna strefa. W przeglądarce: okres 25.10–25.10 → „25.10.2026, 00:00 – 26.10.2026, 00:00”.
+2. **Oznaczenie konta testowego a zmiana okresu** — odświeżenie przez licznik `reloadTick` obsługiwany efektem z aktualnym `load`, zamiast starego domknięcia. Test: oczekujące oznaczenie → zmiana na 7 dni → zakończenie → raport za 7 dni.
+3. **Wyłącznik jako bariera** — `record_app_visit()` bierze `pg_advisory_xact_lock_shared('app_activity:switch')` przed odczytem przełącznika; `03`/`04` biorą wyłączną blokadę w transakcji. Test PGlite: skrypty `03`/`04` z pakietu działają, blokada przed odczytem. Baza testowa (`scripts/app-activity-concurrency-check.mjs`, faza 2, osobne połączenia): zapis w toku przyjęty → `04` czekało ≥ 1,5 s i skończyło po jego commit → kolejne wywołanie „disabled”, 0 nowych zapisów; przełącznik przywrócony.
+
 ## Jak uruchomić testy
 
 ```
@@ -46,8 +52,8 @@ Uwaga: lokalny `.env.test` (poza repo) ma `VITE_ADMIN_ACTIVITY=true` i `VITE_APP
 
 ## Wyniki Claude (9.11, ok. 12:00)
 
-* Pełny zestaw (po zmianie wyglądu): **121 plików OK, 2 pominięte; 1258 testów OK, 3 pominięte** (pominięte wymagają uruchomionego podglądu — bez związku z modułem). `vite build` OK.
-* Moduł: SQL 14/14, UI 14/14, instrukcja 4/4.
+* Pełny zestaw (po poprawkach do 79fc899): **121 plików OK, 2 pominięte; 1260 testów OK, 3 pominięte** (pominięte wymagają uruchomionego podglądu — bez związku z modułem). `vite build` OK.
+* Moduł: SQL 14/14, UI 16/16, instrukcja 4/4.
 * Baza testowa: migracja nałożona (ponownie — idempotentna, stan wyłącznika zachowany); `02` — zadanie `postgres/postgres`, `purge_app_visits` wykonuje tylko `postgres`; dwa przebiegi pg_cron `succeeded`; `04` → `enabled=false`, `03` → `enabled=true`; kontrola równoległości: 4 połączenia × 3 konta tymczasowe → kupiec 1/4, dostawca 1/4, admin 0, sprzątanie 0.
 
 ## Czego Claude nie sprawdził

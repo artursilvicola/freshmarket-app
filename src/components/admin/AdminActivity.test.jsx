@@ -30,7 +30,7 @@ vi.mock("../../lib/db.js", () => ({
   loadAdminActivityEvents: vi.fn(async (args) => { calls.events.push(args); return calls.eventsImpl ? calls.eventsImpl(args) : { total: EVENTS.length, events: EVENTS }; }),
   setActivityTestAccount: vi.fn(async (id, isTest) => { calls.setTest.push([id, isTest]); return { profile_id: id, is_test: isTest }; }),
 }));
-import AdminActivity, { buildSummaryCsv, buildEventsCsv, csvCell, filterAccounts, eventLabel, loadAllEvents, TIMELINE_LIMIT, EXPORT_MAX } from "./AdminActivity.jsx";
+import AdminActivity, { buildSummaryCsv, buildEventsCsv, csvCell, filterAccounts, eventLabel, loadAllEvents, TIMELINE_LIMIT, EXPORT_MAX, rangeFor, zonedMidnightISO } from "./AdminActivity.jsx";
 
 let tree;
 const text = (n) => typeof n === "string" ? n : Array.isArray(n) ? n.map(text).join("") : (n?.children || []).map(text).join("");
@@ -178,6 +178,26 @@ describe("AdminActivity", () => {
     expect(calls.load).toHaveLength(2);
   });
 
+  it("oznaczenie konta testowego w trakcie zmiany okresu odświeża AKTUALNY okres, nie poprzedni", async () => {
+    const pendingMark = deferred();
+    const { setActivityTestAccount } = await import("../../lib/db.js");
+    setActivityTestAccount.mockImplementationOnce(async (id, isTest) => { calls.setTest.push([id, isTest]); return pendingMark.p; });
+    await act(async () => { tree = create(<AdminActivity />); });
+    await flush();
+    await act(async () => { byId("activity-row-p-anna").props.onClick(); });
+    await flush();
+    let marking;
+    await act(async () => { marking = byId("activity-toggle-test").props.onClick({ stopPropagation() {} }); });
+    await act(async () => { byId("activity-period-7").props.onClick(); });          // zmiana okresu w trakcie RPC
+    await flush();
+    const before = calls.load.length;
+    await act(async () => { pendingMark.resolve({ profile_id: "p-anna", is_test: true }); await marking; });
+    await flush();
+    expect(calls.load.length).toBe(before + 1);
+    const last = calls.load[calls.load.length - 1];
+    expect(Math.round((new Date(last.to) - new Date(last.from)) / 864e5)).toBe(7);    // nie 30 dni
+  });
+
   it("błąd wczytania: eksport zablokowany, brak starych danych", async () => {
     calls.reportImpl = () => { throw new Error("awaria"); };
     await act(async () => { tree = create(<AdminActivity />); });
@@ -190,6 +210,18 @@ describe("AdminActivity", () => {
 });
 
 describe("AdminActivity — logika i CSV", () => {
+  it("własny okres: północ czasu polskiego, poprawnie w dni zmiany czasu, niezależnie od strefy przeglądarki", () => {
+    // 25.10.2026: zmiana CEST→CET (doba 25 h); 29.03.2026: CET→CEST (doba 23 h)
+    expect(rangeFor("custom", "2026-10-25", "2026-10-25")).toEqual({ from: "2026-10-24T22:00:00.000Z", to: "2026-10-25T23:00:00.000Z" });
+    expect(rangeFor("custom", "2026-03-29", "2026-03-29")).toEqual({ from: "2026-03-28T23:00:00.000Z", to: "2026-03-29T22:00:00.000Z" });
+    expect(rangeFor("custom", "2026-11-01", "2026-11-30")).toEqual({ from: "2026-10-31T23:00:00.000Z", to: "2026-11-30T23:00:00.000Z" });
+    expect(rangeFor("custom", "2026-12-31", "2026-12-31").to).toBe("2026-12-31T23:00:00.000Z");     // przejście roku
+    expect(zonedMidnightISO("2026-07-01", "America/New_York")).toBe("2026-07-01T04:00:00.000Z");   // ta sama funkcja w innej strefie
+    expect(rangeFor("custom", "2026-11-05", "2026-11-04")).toBeNull();
+    expect(rangeFor("custom", "2026-11-05", "")).toBeNull();
+    expect(zonedMidnightISO("05.11.2026")).toBeNull();
+  });
+
   it("filtry: rola, wyszukiwanie, konta testowe, tylko ze zdarzeniem w okresie", () => {
     expect(filterAccounts(ACCOUNTS).map((a) => a.profile_id)).toEqual(["p-anna", "p-jan"]);
     expect(filterAccounts(ACCOUNTS, { showTest: true, role: "buyer" }).map((a) => a.profile_id)).toEqual(["p-anna", "p-test"]);

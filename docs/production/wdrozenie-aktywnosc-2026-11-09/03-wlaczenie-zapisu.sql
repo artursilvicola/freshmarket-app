@@ -9,9 +9,12 @@
 -- WYŁĄCZENIE (także wycofanie i krok 0 przy ponowieniu): osobny plik 04-wylaczenie-zapisu.sql
 -- (nie zależy od pg_cron). Wyłączenie samych flag VITE NIE zatrzymuje zapisu przez bezpośrednie RPC.
 -- ============================================================================
+begin;
+select pg_advisory_xact_lock(hashtextextended('app_activity:switch', 0));
 update public.app_activity_settings
    set enabled = true, enabled_changed_at = now()
  where id;
+commit;
 
 -- kontrola: stan przełącznika, harmonogram retencji, liczba zapisanych wizyt
 select s.enabled, s.enabled_changed_at, s.collecting_since,

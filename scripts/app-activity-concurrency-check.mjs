@@ -74,6 +74,48 @@ async function main() {
     const newFlags = results.filter((r, i) => i % 3 === 0 && r.new_visit).length;
     const pass2 = newFlags === 1; ok = ok && pass2;
     console.log(`${pass2 ? "OK  " : "BŁĄD"} dokładnie jedno wywołanie kupca utworzyło wizytę (${newFlags})`);
+
+    // ── Faza 2: wyłącznik jako bariera (review Codexa 79fc899) ─────────────────────────────
+    // A: zapis w toku (transakcja otwarta, trzyma blokadę współdzieloną) → B: 04-wylaczenie
+    // musi czekać → A commit → B kończy → C (nowe wywołanie): „disabled”, brak nowych zapisów.
+    const pkg = path.join(root, "docs/production/wdrozenie-aktywnosc-2026-11-09/");
+    const disableSql = readFileSync(path.join(pkg, "04-wylaczenie-zapisu.sql"), "utf8");
+    const enableSql = readFileSync(path.join(pkg, "03-wlaczenie-zapisu.sql"), "utf8").split("-- kontrola:")[0];
+    const [A, B, C] = await Promise.all([0, 1, 2].map(async () => { const c = new Client({ connectionString: url, ssl }); await c.connect(); return c; }));
+    const asBuyer = async (c) => {
+      await c.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: acc.supplier, role: "authenticated" })]);
+      await c.query("set local role authenticated");
+      return (await c.query("select public.record_app_visit() as r")).rows[0].r;
+    };
+    try {
+      await admin.query("delete from public.app_visits where profile_id = $1", [acc.supplier]);
+      await A.query("begin");
+      const inFlight = await asBuyer(A);                                     // zapis w toku, bez commit
+      let disabledAt = null;
+      const disabling = B.query(disableSql).then(() => { disabledAt = Date.now(); });
+      await new Promise((r) => setTimeout(r, 1500));
+      const waited = disabledAt === null;
+      const commitAt = Date.now();
+      await A.query("commit");
+      await disabling;
+      const order = disabledAt !== null && disabledAt >= commitAt;
+      await C.query("begin");
+      const after = await asBuyer(C);
+      await C.query("commit");
+      const visits = (await admin.query("select count(*)::int n, coalesce(sum(hit_count),0)::int h from public.app_visits where profile_id = $1", [acc.supplier])).rows[0];
+      const checks = [
+        [inFlight.recorded === true, `zapis w toku przyjęty przed wyłączeniem (${JSON.stringify(inFlight)})`],
+        [waited, "wyłączenie czekało na zakończenie zapisu w toku (≥ 1,5 s)"],
+        [order, "wyłączenie zakończyło się dopiero po commit zapisu w toku"],
+        [after.reason === "disabled", `wywołanie po wyłączeniu: ${JSON.stringify(after)}`],
+        [visits.n === 1 && visits.h === 1, `po wyłączeniu brak nowych zapisów: wizyty ${visits.n}, wejścia ${visits.h} (oczek. 1/1)`],
+      ];
+      for (const [pass, label] of checks) { ok = ok && pass; console.log(`${pass ? "OK  " : "BŁĄD"} ${label}`); }
+    } finally {
+      await A.query("rollback").catch(() => {});
+      await Promise.all([A, B, C].map((c) => c.end().catch(() => {})));
+      if (enabled) { await admin.query(enableSql); console.log("przełącznik przywrócony: enabled = true (stan sprzed kontroli)"); }
+    }
   } finally {
     const del = await admin.query("delete from auth.users where id = any($1::uuid[])", [ids]).catch((e) => ({ rowCount: `błąd: ${e.message}` }));
     const left = (await admin.query("select count(*)::int as n from public.app_visits where profile_id = any($1::uuid[])", [ids]).catch(() => ({ rows: [{ n: "?" }] }))).rows[0].n;

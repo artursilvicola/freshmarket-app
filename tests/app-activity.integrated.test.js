@@ -105,6 +105,17 @@ describe.skipIf(!PGLITE_PATH)("Aktywność — dziennik wejść i raport admina 
     expect(await visit(OWNER)).toEqual({ recorded: false, reason: "disabled" });
     expect((await one("select count(*)::int as n from public.app_visits")).n).toBe(0);
     expect((await report(ADMIN)).meta).toMatchObject({ enabled: false, collecting_since: null });
+    // skrypty przełącznika z pakietu: wyłączna blokada modułu w transakcji; zapis — współdzielona
+    const dir = "docs/production/wdrozenie-aktywnosc-2026-11-09/";
+    await db.exec(read(dir + "03-wlaczenie-zapisu.sql").split("-- kontrola:")[0]);
+    expect((await visit(ANNA)).recorded).toBe(true);
+    await db.exec(read(dir + "04-wylaczenie-zapisu.sql"));
+    expect(await visit(ANNA)).toEqual({ recorded: false, reason: "disabled" });
+    expect(read(dir + "04-wylaczenie-zapisu.sql")).toMatch(/begin;\s*select pg_advisory_xact_lock\(hashtextextended\('app_activity:switch', 0\)\);[\s\S]*update public\.app_activity_settings[\s\S]*commit;/);
+    const def = (await one("select pg_get_functiondef('public.record_app_visit()'::regprocedure) as d")).d;
+    expect(def.indexOf("pg_advisory_xact_lock_shared(hashtextextended('app_activity:switch'")).toBeGreaterThan(-1);
+    expect(def.indexOf("pg_advisory_xact_lock_shared")).toBeLessThan(def.indexOf("app_activity_settings"));   // blokada przed odczytem przełącznika
+    await q("delete from public.app_visits");
     // ponowne zastosowanie migracji (idempotencja) nie włącza zapisu ani nie kasuje ustawień
     await q("update public.app_activity_settings set enabled = true where id");
     await db.exec(patch(fresh));

@@ -8,6 +8,8 @@
 -- 2. WYŁĄCZNIK W BAZIE: app_activity_settings.enabled = false po migracji. Dopóki nie
 --    zostanie świadomie włączony poleceniem SQL na właściwym projekcie, record_app_visit()
 --    niczego nie zapisuje — niezależnie od flag frontendu i bezpośrednich wywołań API.
+--    Zmiana przełącznika (03/04) bierze wyłączną blokadę 'app_activity:switch', a zapis —
+--    współdzieloną: wyłączenie czeka na trwające zapisy i jest barierą dla kolejnych.
 -- 3. Konta admina NIE są zapisywane. Podgląd konta przez administratora działa na
 --    sesji admina, więc nigdy nie zostanie zapisany jako wejście kupca/dostawcy.
 -- 4. Jawne oznaczenie kont testowych (app_activity_test_accounts) — tylko admin.
@@ -116,6 +118,10 @@ declare
   v_id    bigint;
   v_new   boolean := false;
 begin
+  -- bariera z wyłącznikiem: blokada WSPÓŁDZIELONA modułu do końca transakcji. Skrypt
+  -- wyłączenia (04) bierze blokadę WYŁĄCZNĄ, więc czeka na trwające zapisy, a wywołania
+  -- rozpoczęte po nim czytają już enabled = false. Po zakończeniu 04 nic się nie dopisze.
+  perform pg_advisory_xact_lock_shared(hashtextextended('app_activity:switch', 0));
   if not coalesce((select s.enabled from public.app_activity_settings s where s.id), false) then
     return jsonb_build_object('recorded', false, 'reason', 'disabled');
   end if;

@@ -117,13 +117,29 @@ function download(name, content) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// Północ danego dnia kalendarzowego w strefie `tz` jako chwila UTC — niezależnie od strefy
+// przeglądarki i poprawnie w dni zmiany czasu (doba ma wtedy 23 albo 25 godzin).
+export function zonedMidnightISO(dateStr, tz = TZ) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ""));
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const wall = (t) => { const p = Object.fromEntries(fmt.formatToParts(new Date(t)).map((x) => [x.type, x.value])); return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second); };
+  const target = Date.UTC(y, mo - 1, d);
+  let t = target;
+  for (let i = 0; i < 3; i++) t = target - (wall(t) - t);
+  return new Date(t).toISOString();
+}
+const nextDay = (dateStr) => { const [y, m, d] = dateStr.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10); };
+
 export function rangeFor(period, customFrom, customTo, now = Date.now()) {
   if (period === "custom") {
     if (!customFrom || !customTo) return null;
-    const from = new Date(customFrom + "T00:00:00");
-    const to = new Date(new Date(customTo + "T00:00:00").getTime() + DAY);
-    if (!(from < to)) return null;
-    return { from: from.toISOString(), to: to.toISOString() };
+    // od północy pierwszego dnia do północy dnia PO ostatnim (czas polski), bez dodawania 24 h
+    const from = zonedMidnightISO(customFrom);
+    const to = zonedMidnightISO(nextDay(customTo));
+    if (!from || !to || !(from < to)) return null;
+    return { from, to };
   }
   return { from: new Date(now - Number(period) * DAY).toISOString(), to: new Date(now).toISOString() };
 }
@@ -152,6 +168,7 @@ export default function AdminActivity({ fl = () => {} }) {
   const [timeline, setTimeline] = useState(null);     // { profileId, events, total, loading, error }
   const [needDates, setNeedDates] = useState(false);
   const [limitsOpen, setLimitsOpen] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);   // odświeżenie po zmianie — zawsze z AKTUALNYM okresem
   const [busy, setBusy] = useState(null);
   const [exporting, setExporting] = useState(false);
   const seq = useRef(0);
@@ -180,7 +197,7 @@ export default function AdminActivity({ fl = () => {} }) {
     }
   }, [period, customFrom, customTo]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, reloadTick]);
 
   const loadTimeline = useCallback(async (profileId) => {
     if (!range) return;
@@ -214,7 +231,7 @@ export default function AdminActivity({ fl = () => {} }) {
     try {
       await setActivityTestAccount(a.profile_id, !a.is_test);
       fl(t(a.is_test ? "admin.activity.test_unmarked" : "admin.activity.test_marked"), "success");
-      await load();
+      setReloadTick((n) => n + 1);                     // nie stare domknięcie `load` sprzed zmiany okresu
     } catch (e) { fl(e?.message || String(e), "error"); }
     finally { setBusy(null); }
   };
