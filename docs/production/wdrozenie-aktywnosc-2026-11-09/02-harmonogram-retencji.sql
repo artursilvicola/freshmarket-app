@@ -7,9 +7,14 @@
 -- właściciel bazy; funkcja nie jest dostępna dla anon/authenticated/service_role.
 -- Idempotentny: ponowny Run podmienia zadanie o tej samej nazwie.
 -- Wymaga rozszerzenia pg_cron (Supabase: Database → Extensions). Bez niego przerywa.
+-- Uruchamiać jako `postgres` (domyślna rola SQL Editora): zadanie pg_cron dostaje rolę i bazę
+-- wywołującego. Właściwy projekt potwierdza adres SQL Editora — nazwa bazy go nie identyfikuje.
 -- ============================================================================
 do $$
 begin
+  if current_user <> 'postgres' then
+    raise exception 'Uruchom jako postgres (teraz: %) — zadanie przejmuje rolę wywołującego.', current_user;
+  end if;
   if not exists (select 1 from pg_extension where extname = 'pg_cron') then
     raise exception 'Brak rozszerzenia pg_cron — włącz je w Database → Extensions i uruchom ponownie.';
   end if;
@@ -21,6 +26,15 @@ begin
 end;
 $$;
 
--- kontrola: jedno zadanie, aktywne, z właściwym poleceniem
-select jobid, jobname, schedule, command, active
+-- kontrola: jedno zadanie, aktywne, z właściwym poleceniem, rola i baza = postgres
+select jobid, jobname, schedule, command, active, username, database
   from cron.job where jobname = 'fm-app-activity-retention';
+
+-- kontrola uprawnień: funkcje modułu należą do postgres; purge_app_visits i
+-- app_activity_event_rows wykonuje TYLKO postgres; RPC panelu — postgres + authenticated
+select p.proname, pg_get_userbyid(p.proowner) as owner, p.proacl::text as acl
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and p.proname in ('purge_app_visits','app_activity_event_rows','app_activity_period','record_app_visit',
+                     'admin_activity_report','admin_activity_events','admin_set_activity_test_account')
+ order by p.proname;

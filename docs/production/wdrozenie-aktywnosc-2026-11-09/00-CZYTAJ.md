@@ -62,18 +62,22 @@ Każde zdarzenie liczy się według **własnej daty**. Raport i oś czasu korzys
 
 1. `558c8c5` — **NO-GO**, 8 ustaleń (izolacja środowiska, okres maili, odczyty między datami, harmonogram Netlify w branch deployach, spóźnione odpowiedzi, obcięty eksport, heurystyka pola sprzed dziennika, test kasujący dane).
 2. `a3968c5` — **NO-GO**: 5 naprawione, 3 częściowo; nowe: eksport łączył strony z różnych chwil, niepełny własny okres zostawiał eksport starego raportu, ostatnie wejście na granicy okresu tworzyło nieistniejący czas.
-3. Poprawki: eksport i oś czasu jednym wywołaniem (jedna migawka, limit 50 000, powyżej — odmowa), niepełny okres unieważnia raport, ostatnie wejście = tylko zapisany czas. Wynik trzeciej rundy — § 7.
+3. Poprawki: eksport i oś czasu jednym wywołaniem (jedna migawka, limit 50 000, powyżej — odmowa), niepełny okres unieważnia raport, ostatnie wejście = tylko zapisany czas.
+4. `1bc1a2a` — **GO z uwagami**: wszystkie 6 otwartych ustaleń zamknięte; uwaga do instrukcji (ponowienie wdrożenia, kolejność wycofania) wprowadzona w § 7; skrypt `02-harmonogram-retencji.sql` przekazany do osobnej kontroli.
+5. Kontrola pakietu (02, 03, § 7) — **GO z uwagami**: wyłączenie przeniesione do `04-wylaczenie-zapisu.sql` bez zależności od pg_cron; `02` wymaga roli `postgres` i pokazuje rolę, bazę zadania oraz uprawnienia funkcji. Na bazie testowej: zadanie `postgres/postgres`, `purge_app_visits` wykonuje tylko `postgres`.
 
 ## 7. Wdrożenie produkcyjne (po decyzji Artura) — cztery osobne kroki
 
 Kolejność ma znaczenie. Każdy krok tylko w projekcie **`sklyfuvzjikkqerxtulo`** (sprawdź adres SQL Editora przed każdym Run).
 
-1. **Migracja** `supabase/migrations/20261109120000_app_activity.sql` (SQL Editor, jeden Run). Zapis pozostaje wyłączony.
-2. **Harmonogram retencji** `02-harmonogram-retencji.sql` (wymaga `pg_cron`; kontrola na końcu pliku).
-3. **Front**: merge do `main`, deploy Netlify z `VITE_ADMIN_ACTIVITY=true` (zakładka) i `VITE_APP_ACTIVITY_LOG=true` (wywołanie zapisu z przeglądarki). Rollback frontu: Netlify → poprzedni deploy → Publish.
+0. **Tylko przy ponowieniu lub wznowieniu przerwanego wdrożenia** (tabela `app_activity_settings` już istnieje): najpierw `04-wylaczenie-zapisu.sql` i sprawdzić w wyniku `enabled = false`. Migracja celowo zachowuje istniejący stan przełącznika, więc bez tego kroku zapis mógłby działać przed kontrolą retencji i frontu. Przy pierwszym wdrożeniu migracja tworzy przełącznik w stanie `false`.
+1. **Migracja** `supabase/migrations/20261109120000_app_activity.sql` (SQL Editor, jeden Run). Kontrola: `select enabled from public.app_activity_settings` → `false`.
+2. **Harmonogram retencji** `02-harmonogram-retencji.sql` jako `postgres` (wymaga `pg_cron`). Kontrola na końcu pliku: jedno aktywne zadanie z `username = postgres`, `database = postgres`; funkcje modułu należą do `postgres`, a `purge_app_visits` i `app_activity_event_rows` wykonuje tylko `postgres` (migracja odbiera EXECUTE rolom `PUBLIC`, `anon`, `authenticated`, `service_role`; test SQL to sprawdza).
+3. **Front**: merge do `main`, deploy Netlify z `VITE_ADMIN_ACTIVITY=true` (zakładka) i `VITE_APP_ACTIVITY_LOG=true` (wywołanie zapisu z przeglądarki).
 4. **Włączenie zapisu** `03-wlaczenie-zapisu.sql`. Od tej chwili liczy się „Historia wejść zbierana od …”.
 
-Wyłączenie zbierania: `03-wlaczenie-zapisu.sql` z `false`. Same flagi VITE nie zatrzymują zapisu przez bezpośrednie RPC.
+**Wycofanie — zawsze w tej kolejności:** (1) `04-wylaczenie-zapisu.sql`, (2) potwierdzenie w wyniku `enabled = false`, (3) Netlify → poprzedni deploy → Publish. Harmonogram retencji zostaje, żeby zebrane dane nadal były usuwane po 12 miesiącach. Rollback samego frontu ani wyłączenie flag VITE nie zatrzymują zapisu przez bezpośrednie RPC.
+
 Po włączeniu: oznaczyć konta testowe (ZZZ TEST, aliasy `artur.stasiak+…`, konta próby marketingu) przyciskiem w osi czasu.
 
 ## 8. Otwarte

@@ -6,8 +6,8 @@
 --      (produkcja: sklyfuvzjikkqerxtulo; test: rruszzdffclfhbtfeznb).
 -- Bez tego kroku record_app_visit() nic nie zapisuje, nawet przy włączonych flagach VITE.
 --
--- WYŁĄCZENIE (także jako wycofanie): ten sam plik z `false` w miejscu `true`.
--- Wyłączenie samych flag VITE NIE zatrzymuje zapisu przez bezpośrednie RPC.
+-- WYŁĄCZENIE (także wycofanie i krok 0 przy ponowieniu): osobny plik 04-wylaczenie-zapisu.sql
+-- (nie zależy od pg_cron). Wyłączenie samych flag VITE NIE zatrzymuje zapisu przez bezpośrednie RPC.
 -- ============================================================================
 update public.app_activity_settings
    set enabled = true, enabled_changed_at = now()
