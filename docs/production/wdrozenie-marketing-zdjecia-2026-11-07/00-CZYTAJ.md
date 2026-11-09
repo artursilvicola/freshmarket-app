@@ -148,3 +148,14 @@ Domknięcie próby, stan 07.11 przed Run:
 * Wysyłka wyłączona, lista dwóch adresów zostaje do pierwszej prawdziwej kampanii. Wtedy ją zdjąć, bo wyjątek od przerwy 30 dni (2eae91c) działa tylko przy aktywnej liście.
 
 Otwarte: wdrożenie poprawki tekstów (6734651, Codex GO) na „wdrażaj” Artura; punkt 7 notatki Codexa (tekst biblioteki o plikach prywatnych, instrukcja administratora); kadr 0173; 20 zdjęć zapasowych; przegląd 2eae91c przez Codexa bezpośrednio z Arturem.
+
+## 9.11.2026, 16:37 — WYSYŁKA MARKETINGOWA WŁĄCZONA (decyzja Artura: „flaga + zdjęcie listy”)
+
+* Przed: `MARKETING_SEND_ENABLED=false`, `MARKETING_SEND_ALLOWLIST=spiker.artur@gmail.com,artur.silvicola@gmail.com`.
+* Po (Netlify production): `MARKETING_SEND_ENABLED=true`, `MARKETING_SEND_ALLOWLIST` **usunięta**; `MARKETING_UNSUBSCRIBE_SECRET` obecny. Przebudowa `6af1e887fb215b9886c25f9c` (kod `f4179e7`, bez zmian), ready 15:37 UTC.
+* Stan kampanii w chwili zmiany: same szkice (0 wiadomości) + zamknięte próby #3 i #5 — nic nie czekało na wysyłkę; brak harmonogramu wysyłki (wysyłka tylko przyciskiem po zatwierdzeniu).
+* Kontrola bez wysyłki: `marketing-send` z nieistniejącą kampanią → **404 `campaign_not_found`** (bramki `send_disabled` i allowlisty przepuszczają; nic nie zajęto, nic nie wysłano).
+* Skutek zdjęcia listy: znika też wyjątek 30 dni dla adresów próbnych (konta próbne są zawieszone/oznaczone jako testowe).
+* Nadal niesprawdzone: wygląd w Outlooku, wypis przyciskiem Gmaila (List-Unsubscribe).
+* Przed pierwszą prawdziwą wysyłką: przegląd listy odbiorców i podglądu PL/EN kampanii z Arturem.
+* Wycofanie: `netlify env:set MARKETING_SEND_ENABLED false --context production` (+ ewentualnie przywrócenie listy) i przebudowa (`netlify api createSiteBuild`) → kontrola 403 `send_disabled`.
