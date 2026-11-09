@@ -49,7 +49,9 @@ Ustalenie Codexa (PGlite): wiadomość marketingowa, przy której odbiorca wypis
 
 Poprawka w `app_activity_event_rows`: „wysłano” = `accepted` **albo** `suppressed` z `resend_message_id` i `sent_at`. Wiadomość wykluczona przed wysyłką (`suppressed_before_send`, `suppressed_at_send` bez id Resend) nadal się nie liczy; inne stany bez potwierdzenia (`uncertain` itd.) też nie.
 
-Regresja (`tests/app-activity.integrated.test.js`, „wypis W TRAKCIE wysyłki…”): podsumowanie (1 wysłany, 1 doręczony) i oś czasu (wysłano + doręczono) dla wypisu w trakcie; 0 zdarzeń dla wykluczonej przed wysyłką; stan `uncertain` pominięty. Test na wersji z `3fea63a` **nie przechodzi** (0 wysłanych), na poprawionej przechodzi. Pełny zestaw: 1261 testów OK, 3 pominięte; build OK. Migracja nałożona ponownie tylko na bazę testową.
+Regresja (`tests/app-activity.integrated.test.js`, „wypis W TRAKCIE wysyłki…”): podsumowanie (1 wysłany, 1 doręczony) i oś czasu (wysłano + doręczono) dla wypisu w trakcie; 0 zdarzeń dla wykluczonej przed wysyłką; stan `uncertain` pominięty. Test na wersji z `3fea63a` **nie przechodzi** (0 wysłanych), na poprawionej przechodzi. Migracja nałożona ponownie tylko na bazę testową.
+
+Po review `7b96e35` (Codex: GO z uwagami — luka w teście): dodane warianty `suppressed` z samym id Resend i z samym `sent_at` (0 wysłanych w podsumowaniu, brak `email_sent` na osi czasu) oraz test przez **prawdziwą** funkcję `marketing_record_result` (wiersz `suppressed` w trakcie wysyłki → wynik `accepted` od Resend → stan `suppressed` z id i `sent_at` → 1 wysłany). Oba testy marketingowe nie przechodzą na `3fea63a`. Pełny zestaw: 1262 testy OK, 3 pominięte.
 
 ## Jak uruchomić testy
 

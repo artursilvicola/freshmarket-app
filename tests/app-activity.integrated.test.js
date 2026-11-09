@@ -253,9 +253,32 @@ describe.skipIf(!PGLITE_PATH)("Aktywność — dziennik wejść i raport admina 
     expect(kinds(ev, OWNER)).toEqual(["email_delivered:marketing", "email_sent:marketing"]);
     expect(ev.find((e) => e.profile_id === OWNER && e.kind === "email_sent").detail).toMatchObject({ message: "mk-during", campaign: expect.stringMatching(/^Aktywacja listopad/) });
     expect(kinds(ev, ANNA)).toEqual([]);
+    // suppressed bez PEŁNEGO potwierdzenia (tylko id Resend albo tylko sent_at) — nie jest wysłany
+    for (const [id, sent] of [["mk-only-id", null], [null, "2026-11-06T08:00:00Z"]]) {
+      await q(`update public.marketing_messages set resend_message_id = $1, sent_at = $2::timestamptz where idempotency_key = 'mk-during'`, [id, sent]);
+      expect(byId(await report(ADMIN, NOV))[OWNER].emails_sent).toBe(0);
+      expect(kinds((await events(ADMIN, NOV)).events, OWNER)).not.toContain("email_sent:marketing");
+    }
     // inne stany bez potwierdzenia wysyłki nadal pominięte
-    await q(`update public.marketing_messages set state = 'uncertain' where idempotency_key = 'mk-during'`);
+    await q(`update public.marketing_messages set state = 'uncertain', resend_message_id = 'mk-during', sent_at = '2026-11-06T07:50:00Z' where idempotency_key = 'mk-during'`);
     expect(byId(await report(ADMIN, NOV))[OWNER].emails_sent).toBe(0);
+  });
+
+  it("marketing: stan końcowy z PRAWDZIWEJ ścieżki wypisu w trakcie wysyłki (marketing_record_result) liczy się jako wysłany", async () => {
+    await db.exec(`
+      insert into public.marketing_campaigns (id, name, template_key) values ('${CAMPAIGN}', 'Aktywacja listopad', 'start_with_credits');
+      insert into public.marketing_messages (id, campaign_id, company_id, profile_id, to_email, subject, html, text_body, payload_hash, idempotency_key, is_test, state, last_error) values
+        ('77777777-0000-4000-8000-000000000001', '${CAMPAIGN}', '${COMPANY}', '${OWNER}', 'dostawca@example.invalid', 'Temat', '<p>x</p>', 'x', 'h1', 'mk-real', false, 'suppressed', 'suppressed_at_send');
+    `);
+    // wypis przyszedł w trakcie żądania do Resend: wiersz już suppressed, Resend przyjął wiadomość
+    const r = await one(`select public.marketing_record_result('77777777-0000-4000-8000-000000000001'::uuid, 'accepted', 'mk-real-resend', null) as r`);
+    expect(r.r).toMatchObject({ ok: true, state: "suppressed", sent_before_unsubscribe: true });
+    const row = await one(`select state, resend_message_id, sent_at from public.marketing_messages where idempotency_key = 'mk-real'`);
+    expect(row).toMatchObject({ state: "suppressed", resend_message_id: "mk-real-resend" });
+    expect(row.sent_at).not.toBeNull();
+    const now = [new Date(Date.now() - 864e5).toISOString(), new Date(Date.now() + 60e3).toISOString()];
+    expect(byId(await report(ADMIN, now))[OWNER]).toMatchObject({ emails_sent: 1 });
+    expect(kinds((await events(ADMIN, now)).events, OWNER)).toEqual(["email_sent:marketing"]);
   });
 
   it("każde zdarzenie liczone według własnej daty (wysyłka przed okresem, otwarcie po okresie)", async () => {
