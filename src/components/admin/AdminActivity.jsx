@@ -5,12 +5,16 @@
 //
 // Słownictwo celowo ostrożne: „brak zarejestrowanego wejścia/otwarcia”, nie „nie wszedł /
 // nie przeczytał”. Żadne zdarzenie nie jest przedstawiane jako dowód zainteresowania zakupem.
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+// Każde zdarzenie jest liczone według własnej daty (raport i oś czasu z tego samego źródła SQL).
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { loadAdminActivityReport, setActivityTestAccount } from "../../lib/db.js";
+import { loadAdminActivityReport, loadAdminActivityEvents, setActivityTestAccount } from "../../lib/db.js";
 
 const DAY = 864e5;
 export const PERIODS = [7, 30, 90];
+export const TIMELINE_PAGE = 200;
+export const EXPORT_PAGE = 5000;
+export const EXPORT_MAX = 200000;
 const TZ = "Europe/Warsaw";
 
 export function fmtDateTime(iso, lang = "pl") {
@@ -29,7 +33,7 @@ export function filterAccounts(accounts, { role = "all", query = "", showTest = 
   return (accounts || []).filter((a) => {
     if (!showTest && a.is_test) return false;
     if (role !== "all" && a.role !== role) return false;
-    if (onlyWithEvents && !(a.visits > 0 || a.emails_sent > 0 || a.proposals_viewed > 0)) return false;
+    if (onlyWithEvents && !(a.events > 0)) return false;
     if (!q) return true;
     return [accountOrg(a), a.name, a.email].some((v) => String(v || "").toLowerCase().includes(q));
   });
@@ -54,13 +58,20 @@ export function eventLabel(ev, t) {
     case "email_opened": return t("admin.activity.ev.opened");
     case "email_bounced": return t("admin.activity.ev.bounced");
     case "email_complained": return t("admin.activity.ev.complained");
-    case "app_view": return t(d.channel === "app_detail" ? "admin.activity.ev.app_view_detail" : "admin.activity.ev.app_view_list", { n: d.read_count || 1 });
+    case "app_view_first": return t("admin.activity.ev.app_view_first", { n: d.read_count_total || 1 });
+    case "app_view_last": return t("admin.activity.ev.app_view_last", { n: d.read_count_total || 1 });
     default: return t("admin.activity.ev.other");
   }
 }
 
-export function buildSummaryCsv(accounts, t, lang) {
-  const head = ["role", "org", "person", "email", "test", "visits", "last_visit", "sent", "delivered", "opened", "last_opened", "viewed", "legacy_last_active", "legacy_kind"]
+// Zakres przekazywany do RPC: komentarz w nagłówku i nazwa pliku eksportu opisują dokładnie ten okres.
+export function periodLine(meta, t, lang) {
+  if (!meta?.from || !meta?.to) return "";
+  return t("admin.activity.period_line", { from: fmtDateTime(meta.from, lang), to: fmtDateTime(meta.to, lang) });
+}
+
+export function buildSummaryCsv(accounts, meta, t, lang) {
+  const head = ["role", "org", "person", "email", "test", "visits", "last_visit", "sent", "delivered", "opened", "last_opened", "viewed", "legacy_last_active", "legacy_shared"]
     .map((k) => t("admin.activity.csv." + k));
   const rows = accounts.map((a) => [
     t("admin.activity.role." + a.role), accountOrg(a), a.name, a.email, a.is_test ? t("admin.activity.yes") : "",
@@ -68,12 +79,12 @@ export function buildSummaryCsv(accounts, t, lang) {
     a.emails_sent, a.emails_delivered, a.emails_opened, fmtDateTime(a.last_opened_at, lang),
     a.role === "buyer" ? a.proposals_viewed : "",
     fmtDateTime(a.legacy_last_active_at, lang),
-    a.legacy_last_active_kind ? t("admin.activity.legacy_kind." + a.legacy_last_active_kind) : "",
+    a.legacy_last_active_at ? a.legacy_last_active_shared : "",
   ]);
-  return csvJoin([head, ...rows]);
+  return csvJoin([[periodLine(meta, t, lang)], [t("admin.activity.csv.note")], head, ...rows]);
 }
 
-export function buildEventsCsv(events, accountsById, t, lang) {
+export function buildEventsCsv(events, accountsById, meta, t, lang) {
   const head = ["at", "role", "org", "person", "email", "event", "source"].map((k) => t("admin.activity.csv." + k));
   const rows = [];
   for (const ev of events) {
@@ -82,7 +93,23 @@ export function buildEventsCsv(events, accountsById, t, lang) {
     rows.push([fmtDateTime(ev.at, lang), t("admin.activity.role." + a.role), accountOrg(a), a.name, a.email,
       eventLabel(ev, t), ev.source ? t("admin.activity.source." + ev.source) : ""]);
   }
-  return csvJoin([head, ...rows]);
+  return csvJoin([[periodLine(meta, t, lang)], [t("admin.activity.csv.note")], head, ...rows]);
+}
+
+// Wszystkie strony zdarzeń dla wskazanych kont — eksport nigdy nie jest po cichu obcięty.
+export async function loadAllEvents({ from, to, profileIds, load = loadAdminActivityEvents, page = EXPORT_PAGE, max = EXPORT_MAX }) {
+  const out = [];
+  let total = null;
+  for (let offset = 0; total === null || offset < total; offset += page) {
+    const r = await load({ from, to, profileIds, limit: page, offset });
+    total = Number(r?.total) || 0;
+    if (total > max) { const e = new Error("too_many_events"); e.total = total; throw e; }
+    const batch = r?.events || [];
+    out.push(...batch);
+    if (batch.length === 0) break;
+  }
+  if (out.length !== total) { const e = new Error("incomplete_events"); e.total = total; e.got = out.length; throw e; }
+  return out;
 }
 
 function download(name, content) {
@@ -94,7 +121,7 @@ function download(name, content) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function rangeFor(period, customFrom, customTo, now = Date.now()) {
+export function rangeFor(period, customFrom, customTo, now = Date.now()) {
   if (period === "custom") {
     if (!customFrom || !customTo) return null;
     const from = new Date(customFrom + "T00:00:00");
@@ -122,30 +149,62 @@ export default function AdminActivity({ fl = () => {} }) {
   const [showTest, setShowTest] = useState(false);
   const [onlyWithEvents, setOnlyWithEvents] = useState(false);
   const [report, setReport] = useState(null);
+  const [range, setRange] = useState(null);           // zakres, dla którego jest `report`
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [open, setOpen] = useState(null);
+  const [timeline, setTimeline] = useState(null);     // { profileId, events, total, loading, error }
   const [busy, setBusy] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const seq = useRef(0);
+  const tlSeq = useRef(0);
 
   const load = useCallback(async () => {
-    const range = rangeFor(period, customFrom, customTo);
-    if (!range) return;
+    const want = rangeFor(period, customFrom, customTo);
+    if (!want) return;
+    const my = ++seq.current;
     setLoading(true); setError(null);
-    try { setReport(await loadAdminActivityReport(range)); }
-    catch (e) { setError(e?.message || String(e)); }
-    finally { setLoading(false); }
+    try {
+      const r = await loadAdminActivityReport(want);
+      if (my !== seq.current) return;                 // spóźniona odpowiedź dla poprzedniego zakresu
+      setReport(r); setRange({ from: r?.meta?.from || want.from, to: r?.meta?.to || want.to });
+      setOpen(null); setTimeline(null);
+    } catch (e) {
+      if (my !== seq.current) return;
+      setError(e?.message || String(e)); setReport(null); setRange(null);
+    } finally {
+      if (my === seq.current) setLoading(false);
+    }
   }, [period, customFrom, customTo]);
 
   useEffect(() => { load(); }, [load]);
 
+  const loadTimeline = useCallback(async (profileId, offset = 0) => {
+    if (!range) return;
+    const my = ++tlSeq.current;
+    setTimeline((prev) => ({ profileId, events: offset ? (prev?.events || []) : [], total: prev?.total ?? null, loading: true, error: null }));
+    try {
+      const r = await loadAdminActivityEvents({ from: range.from, to: range.to, profileIds: [profileId], limit: TIMELINE_PAGE, offset });
+      if (my !== tlSeq.current) return;
+      setTimeline((prev) => ({ profileId, events: [...(offset ? prev?.events || [] : []), ...(r?.events || [])], total: Number(r?.total) || 0, loading: false, error: null }));
+    } catch (e) {
+      if (my !== tlSeq.current) return;
+      setTimeline((prev) => ({ ...(prev || {}), profileId, loading: false, error: e?.message || String(e) }));
+    }
+  }, [range]);
+
   const accounts = useMemo(() => report?.accounts || [], [report]);
   const accountsById = useMemo(() => new Map(accounts.map((a) => [a.profile_id, a])), [accounts]);
   const rows = useMemo(() => filterAccounts(accounts, { role, query, showTest, onlyWithEvents }), [accounts, role, query, showTest, onlyWithEvents]);
-  const visibleIds = useMemo(() => new Set(rows.map((a) => a.profile_id)), [rows]);
-  const events = useMemo(() => (report?.events || []).filter((e) => visibleIds.has(e.profile_id)), [report, visibleIds]);
   const meta = report?.meta || {};
   const withVisit = rows.filter((a) => a.visits > 0).length;
+  const ready = !!report && !loading && !error;
   const stamp = new Date().toISOString().slice(0, 10);
+
+  const toggleRow = (a) => {
+    if (open === a.profile_id) { setOpen(null); setTimeline(null); return; }
+    setOpen(a.profile_id); loadTimeline(a.profile_id, 0);
+  };
 
   const toggleTest = async (a) => {
     setBusy(a.profile_id);
@@ -157,12 +216,26 @@ export default function AdminActivity({ fl = () => {} }) {
     finally { setBusy(null); }
   };
 
+  const exportEvents = async () => {
+    if (!ready || !range) return;
+    setExporting(true);
+    try {
+      const events = await loadAllEvents({ from: range.from, to: range.to, profileIds: rows.map((a) => a.profile_id) });
+      download(`aktywnosc-zdarzenia-${stamp}.csv`, buildEventsCsv(events, accountsById, meta, t, lang));
+    } catch (e) {
+      fl(e?.message === "too_many_events" ? t("admin.activity.export_too_many", { n: e.total }) : t("admin.activity.export_failed", { message: e?.message || String(e) }), "error");
+    } finally { setExporting(false); }
+  };
+
   return (
     <div data-testid="admin-activity">
       <h2 style={{ margin: "0 0 4px", fontSize: 20 }}>{t("admin.activity.title")}</h2>
       <p style={{ margin: "0 0 12px", fontSize: 13, color: "#475569" }}>{t("admin.activity.intro")}</p>
 
       <div style={{ ...box, background: "#f8fafc" }} data-testid="activity-collecting">
+        {report && meta.enabled === false && (
+          <div data-testid="activity-disabled" style={{ fontSize: 13, fontWeight: 700, color: "#b45309", marginBottom: 4 }}>{t("admin.activity.disabled")}</div>
+        )}
         <div style={{ fontSize: 13, fontWeight: 600 }}>
           {meta.collecting_since
             ? t("admin.activity.collecting_since", { date: fmtDateTime(meta.collecting_since, lang) })
@@ -174,12 +247,12 @@ export default function AdminActivity({ fl = () => {} }) {
       <div style={{ ...box, background: "#fffbeb", borderColor: "#fde68a" }} data-testid="activity-disclaimer">
         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{t("admin.activity.disclaimer_title")}</div>
         <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: "#713f12", lineHeight: 1.5 }}>
-          {["incomplete", "visit", "opened", "delivered", "app_view", "no_intent", "mail_scope"].map((k) => <li key={k}>{t("admin.activity.disclaimer." + k)}</li>)}
+          {["incomplete", "visit", "opened", "delivered", "app_view", "dates", "no_intent", "mail_scope"].map((k) => <li key={k}>{t("admin.activity.disclaimer." + k)}</li>)}
         </ul>
       </div>
 
       <div style={{ ...box, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-        {PERIODS.map((d) => <button key={d} type="button" style={btn(period === d)} onClick={() => setPeriod(d)}>{t("admin.activity.period_days", { n: d })}</button>)}
+        {PERIODS.map((d) => <button key={d} type="button" style={btn(period === d)} onClick={() => setPeriod(d)} data-testid={`activity-period-${d}`}>{t("admin.activity.period_days", { n: d })}</button>)}
         <button type="button" style={btn(period === "custom")} onClick={() => setPeriod("custom")}>{t("admin.activity.period_custom")}</button>
         {period === "custom" && (
           <>
@@ -197,22 +270,22 @@ export default function AdminActivity({ fl = () => {} }) {
         <label style={{ fontSize: 12 }}><input type="checkbox" checked={onlyWithEvents} onChange={(e) => setOnlyWithEvents(e.target.checked)} /> {t("admin.activity.only_with_events")}</label>
         <span style={{ flex: 1 }} />
         <button type="button" style={btn(false)} onClick={load} disabled={loading}>{t("admin.activity.refresh")}</button>
-        <button type="button" style={btn(false)} data-testid="activity-export-summary" disabled={!report}
-          onClick={() => download(`aktywnosc-podsumowanie-${stamp}.csv`, buildSummaryCsv(rows, t, lang))}>{t("admin.activity.export_summary")}</button>
-        <button type="button" style={btn(false)} data-testid="activity-export-events" disabled={!report}
-          onClick={() => download(`aktywnosc-zdarzenia-${stamp}.csv`, buildEventsCsv(events, accountsById, t, lang))}>{t("admin.activity.export_events")}</button>
+        <button type="button" style={btn(false)} data-testid="activity-export-summary" disabled={!ready}
+          onClick={() => download(`aktywnosc-podsumowanie-${stamp}.csv`, buildSummaryCsv(rows, meta, t, lang))}>{t("admin.activity.export_summary")}</button>
+        <button type="button" style={btn(false)} data-testid="activity-export-events" disabled={!ready || exporting}
+          onClick={exportEvents}>{exporting ? t("admin.activity.exporting") : t("admin.activity.export_events")}</button>
       </div>
 
       {error && <div style={{ ...box, borderColor: "#fecaca", background: "#fef2f2", color: "#991b1b", fontSize: 13 }}>{t("admin.activity.error", { message: error })}</div>}
-      {loading && !report && <div style={{ fontSize: 13, color: "#64748b" }}>{t("admin.activity.loading")}</div>}
+      {loading && <div style={{ fontSize: 13, color: "#64748b", marginBottom: 8 }} data-testid="activity-loading">{t("admin.activity.loading")}</div>}
 
-      {report && (
+      {report && !error && (
         <>
           <div style={{ fontSize: 12, color: "#475569", margin: "0 0 8px" }} data-testid="activity-summary">
+            <strong>{periodLine(meta, t, lang)}</strong>{" · "}
             {t("admin.activity.summary", { total: rows.length, with_visit: withVisit, without_visit: rows.length - withVisit })}
-            {meta.events_truncated ? <span style={{ color: "#b45309" }}> · {t("admin.activity.truncated", { n: meta.events_total })}</span> : null}
           </div>
-          <div style={{ ...box, padding: 0, overflowX: "auto" }}>
+          <div style={{ ...box, padding: 0, overflowX: "auto", opacity: loading ? 0.5 : 1 }}>
             <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 980 }}>
               <thead>
                 <tr>
@@ -230,10 +303,10 @@ export default function AdminActivity({ fl = () => {} }) {
                 {rows.length === 0 && <tr><td style={{ ...td, ...muted }} colSpan={8}>{t("admin.activity.empty")}</td></tr>}
                 {rows.map((a) => {
                   const isOpen = open === a.profile_id;
-                  const own = isOpen ? events.filter((e) => e.profile_id === a.profile_id) : [];
+                  const tl = isOpen && timeline?.profileId === a.profile_id ? timeline : null;
                   return (
                     <React.Fragment key={a.profile_id}>
-                      <tr data-testid={`activity-row-${a.profile_id}`} onClick={() => setOpen(isOpen ? null : a.profile_id)} style={{ cursor: "pointer", background: isOpen ? "#f0fdfa" : undefined }}>
+                      <tr data-testid={`activity-row-${a.profile_id}`} onClick={() => toggleRow(a)} style={{ cursor: "pointer", background: isOpen ? "#f0fdfa" : undefined }}>
                         <td style={td}>
                           {accountOrg(a) || <span style={muted}>—</span>}
                           {a.is_test && <span data-testid="activity-test-badge" style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#7c2d12", background: "#fed7aa", borderRadius: 6, padding: "1px 6px" }}>{t("admin.activity.test_badge")}</span>}
@@ -244,7 +317,7 @@ export default function AdminActivity({ fl = () => {} }) {
                         <td style={td}>{a.visits}</td>
                         <td style={td}>{a.last_visit_at ? fmtDateTime(a.last_visit_at, lang) : <span style={muted}>{t("admin.activity.no_visit")}</span>}</td>
                         <td style={td}>
-                          {a.emails_sent > 0
+                          {a.emails_sent + a.emails_delivered + a.emails_opened > 0
                             ? <>
                                 {t("admin.activity.emails_counts", { sent: a.emails_sent, delivered: a.emails_delivered, opened: a.emails_opened })}
                                 {a.emails_opened === 0 && <div style={{ fontSize: 11, ...muted }}>{t("admin.activity.no_open")}</div>}
@@ -254,7 +327,9 @@ export default function AdminActivity({ fl = () => {} }) {
                         <td style={td}>{a.role === "buyer" ? (a.proposals_viewed || <span style={muted}>0</span>) : <span style={muted}>—</span>}</td>
                         <td style={td}>
                           {a.legacy_last_active_at ? fmtDateTime(a.legacy_last_active_at, lang) : <span style={muted}>—</span>}
-                          {a.legacy_last_active_kind === "bulk_set" && <div style={{ fontSize: 11, color: "#b45309" }}>{t("admin.activity.legacy_kind.bulk_set")}</div>}
+                          {a.legacy_last_active_at && a.legacy_last_active_shared > 1 && (
+                            <div style={{ fontSize: 11, color: "#b45309" }}>{t("admin.activity.legacy_shared", { n: a.legacy_last_active_shared })}</div>
+                          )}
                         </td>
                       </tr>
                       {isOpen && (
@@ -268,21 +343,28 @@ export default function AdminActivity({ fl = () => {} }) {
                                 {t(a.is_test ? "admin.activity.unmark_test" : "admin.activity.mark_test")}
                               </button>
                             </div>
-                            {own.length === 0
-                              ? <div style={{ fontSize: 12, ...muted }}>{t("admin.activity.timeline_empty")}</div>
-                              : (
-                                <table style={{ borderCollapse: "collapse" }}>
-                                  <tbody>
-                                    {own.map((ev, i) => (
-                                      <tr key={i}>
-                                        <td style={{ ...td, whiteSpace: "nowrap", color: "#475569" }}>{fmtDateTime(ev.at, lang)}</td>
-                                        <td style={td}>{eventLabel(ev, t)}</td>
-                                        <td style={{ ...td, ...muted }}>{ev.source ? t("admin.activity.source." + ev.source) : ""}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              )}
+                            {tl?.error && <div style={{ fontSize: 12, color: "#991b1b" }}>{t("admin.activity.error", { message: tl.error })}</div>}
+                            {tl && !tl.error && tl.events.length === 0 && !tl.loading && <div style={{ fontSize: 12, ...muted }}>{t("admin.activity.timeline_empty")}</div>}
+                            {tl && tl.events.length > 0 && (
+                              <table style={{ borderCollapse: "collapse" }}>
+                                <tbody>
+                                  {tl.events.map((ev, i) => (
+                                    <tr key={i}>
+                                      <td style={{ ...td, whiteSpace: "nowrap", color: "#475569" }}>{fmtDateTime(ev.at, lang)}</td>
+                                      <td style={td}>{eventLabel(ev, t)}</td>
+                                      <td style={{ ...td, ...muted }}>{ev.source ? t("admin.activity.source." + ev.source) : ""}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                            {tl?.loading && <div style={{ fontSize: 12, ...muted }}>{t("admin.activity.loading")}</div>}
+                            {tl && !tl.loading && tl.total > tl.events.length && (
+                              <button type="button" style={{ ...btn(false), marginTop: 6 }} data-testid="activity-timeline-more"
+                                onClick={(e) => { e.stopPropagation(); loadTimeline(a.profile_id, tl.events.length); }}>
+                                {t("admin.activity.timeline_more", { shown: tl.events.length, total: tl.total })}
+                              </button>
+                            )}
                           </td>
                         </tr>
                       )}

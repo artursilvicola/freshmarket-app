@@ -1,36 +1,36 @@
-// [feat/admin-activity] Zakładka „Aktywność”: ostrożne słownictwo, zastrzeżenia pomiaru, data
-// rozpoczęcia zbierania, konta testowe ukryte domyślnie, oś czasu, eksport CSV bez IP.
+// [feat/admin-activity] Zakładka „Aktywność”: ostrożne słownictwo, zastrzeżenia pomiaru, wyłącznik
+// w bazie, konta testowe ukryte domyślnie, oś czasu ładowana per konto, spóźnione odpowiedzi
+// ignorowane, eksport zablokowany przy ładowaniu/błędzie i pełny (stronami), CSV bez IP.
 import React from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "../../i18n";
 
-const calls = vi.hoisted(() => ({ load: [], setTest: [] }));
-const REPORT = {
-  meta: { from: "2026-10-10T00:00:00Z", to: "2026-11-09T00:00:00Z", collecting_since: "2026-11-09T08:00:00Z", retention_months: 12, dedupe_minutes: 30, events_total: 4, events_truncated: false },
-  accounts: [
-    { profile_id: "p-anna", role: "buyer", name: "Anna Kupiec", email: "anna@siec.test", active: true, retailer_name: "Sieć Testowa", company_name: null, is_test: false,
-      visits: 2, last_visit_at: "2026-11-08T10:00:00Z", emails_sent: 1, emails_delivered: 1, emails_opened: 0, last_opened_at: null, proposals_viewed: 3,
-      legacy_last_active_at: "2026-06-07T09:42:20Z", legacy_last_active_kind: "bulk_set" },
-    { profile_id: "p-jan", role: "supplier", name: "Jan Dostawca", email: "=jan@sad.test", active: true, retailer_name: null, company_name: "Sad; \"Złoty\"", is_test: false,
-      visits: 0, last_visit_at: null, emails_sent: 0, emails_delivered: 0, emails_opened: 0, last_opened_at: null, proposals_viewed: 0,
-      legacy_last_active_at: null, legacy_last_active_kind: null },
-    { profile_id: "p-test", role: "buyer", name: "Test Kupiec", email: "artur+kupiec@test", active: true, retailer_name: "ZZZ TEST", company_name: null, is_test: true,
-      visits: 5, last_visit_at: "2026-11-08T12:00:00Z", emails_sent: 0, emails_delivered: 0, emails_opened: 0, last_opened_at: null, proposals_viewed: 0,
-      legacy_last_active_at: "2026-11-02T13:26:00Z", legacy_last_active_kind: "app" },
-  ],
-  events: [
-    { profile_id: "p-anna", kind: "visit", source: null, at: "2026-11-08T09:40:00Z", detail: { hit_count: 3 } },
-    { profile_id: "p-anna", kind: "email_sent", source: "preconnect", at: "2026-11-03T09:20:00Z", detail: { proposals: 2 } },
-    { profile_id: "p-anna", kind: "email_delivered", source: "preconnect", at: "2026-11-03T09:20:05Z", detail: {} },
-    { profile_id: "p-test", kind: "visit", source: null, at: "2026-11-08T12:00:00Z", detail: { hit_count: 1 } },
-  ],
-};
+const calls = vi.hoisted(() => ({ load: [], events: [], setTest: [], reportImpl: null, eventsImpl: null }));
+const META = { from: "2026-10-10T00:00:00Z", to: "2026-11-09T00:00:00Z", enabled: true, collecting_since: "2026-11-09T08:00:00Z", retention_months: 12, dedupe_minutes: 30 };
+const ACCOUNTS = [
+  { profile_id: "p-anna", role: "buyer", name: "Anna Kupiec", email: "anna@siec.test", active: true, retailer_name: "Sieć Testowa", company_name: null, is_test: false,
+    visits: 2, last_visit_at: "2026-11-08T10:00:00Z", emails_sent: 1, emails_delivered: 1, emails_opened: 0, last_opened_at: null, proposals_viewed: 3, events: 5,
+    legacy_last_active_at: "2026-06-07T09:42:20Z", legacy_last_active_shared: 87 },
+  { profile_id: "p-jan", role: "supplier", name: "Jan Dostawca", email: "=jan@sad.test", active: true, retailer_name: null, company_name: "Sad; \"Złoty\"", is_test: false,
+    visits: 0, last_visit_at: null, emails_sent: 0, emails_delivered: 0, emails_opened: 0, last_opened_at: null, proposals_viewed: 0, events: 0,
+    legacy_last_active_at: null, legacy_last_active_shared: null },
+  { profile_id: "p-test", role: "buyer", name: "Test Kupiec", email: "artur+kupiec@test", active: true, retailer_name: "ZZZ TEST", company_name: null, is_test: true,
+    visits: 5, last_visit_at: "2026-11-08T12:00:00Z", emails_sent: 0, emails_delivered: 0, emails_opened: 0, last_opened_at: null, proposals_viewed: 0, events: 5,
+    legacy_last_active_at: "2026-11-02T13:26:00Z", legacy_last_active_shared: 1 },
+];
+const REPORT = { meta: META, accounts: ACCOUNTS };
+const EVENTS = [
+  { profile_id: "p-anna", kind: "visit", source: null, at: "2026-11-08T09:40:00Z", detail: { hit_count: 3 } },
+  { profile_id: "p-anna", kind: "email_sent", source: "preconnect", at: "2026-11-03T09:20:00Z", detail: { proposals: 2 } },
+  { profile_id: "p-anna", kind: "email_delivered", source: "preconnect", at: "2026-11-03T09:20:05Z", detail: {} },
+];
 vi.mock("../../lib/db.js", () => ({
-  loadAdminActivityReport: vi.fn(async (range) => { calls.load.push(range); return REPORT; }),
+  loadAdminActivityReport: vi.fn(async (range) => { calls.load.push(range); return calls.reportImpl ? calls.reportImpl(range) : REPORT; }),
+  loadAdminActivityEvents: vi.fn(async (args) => { calls.events.push(args); return calls.eventsImpl ? calls.eventsImpl(args) : { total: EVENTS.length, events: EVENTS }; }),
   setActivityTestAccount: vi.fn(async (id, isTest) => { calls.setTest.push([id, isTest]); return { profile_id: id, is_test: isTest }; }),
 }));
-import AdminActivity, { buildSummaryCsv, buildEventsCsv, csvCell, filterAccounts, eventLabel } from "./AdminActivity.jsx";
+import AdminActivity, { buildSummaryCsv, buildEventsCsv, csvCell, filterAccounts, eventLabel, loadAllEvents, TIMELINE_PAGE } from "./AdminActivity.jsx";
 
 let tree;
 const text = (n) => typeof n === "string" ? n : Array.isArray(n) ? n.map(text).join("") : (n?.children || []).map(text).join("");
@@ -38,76 +38,144 @@ const out = () => text(tree.toJSON());
 const flush = async () => { await act(async () => { await new Promise((r) => setTimeout(r, 0)); }); };
 const byId = (id) => tree.root.findAllByProps({ "data-testid": id })[0];
 const t = i18n.getFixedT("pl", "legacy");
+const deferred = () => { let resolve, reject; const p = new Promise((a, b) => { resolve = a; reject = b; }); return { p, resolve, reject }; };
 
 describe("AdminActivity", () => {
-  beforeEach(async () => { calls.load = []; calls.setTest = []; await i18n.changeLanguage("pl"); });
+  beforeEach(async () => { calls.load = []; calls.events = []; calls.setTest = []; calls.reportImpl = null; calls.eventsImpl = null; await i18n.changeLanguage("pl"); });
   afterEach(() => { if (tree) act(() => tree.unmount()); tree = null; });
 
-  it("ładuje ostatnie 30 dni, pokazuje datę rozpoczęcia zbierania i zastrzeżenia pomiaru", async () => {
+  it("ładuje ostatnie 30 dni; pokazuje okres, początek zbierania i zastrzeżenia pomiaru", async () => {
     await act(async () => { tree = create(<AdminActivity />); });
     await flush();
     expect(calls.load).toHaveLength(1);
-    const span = new Date(calls.load[0].to) - new Date(calls.load[0].from);
-    expect(Math.round(span / 864e5)).toBe(30);
+    expect(Math.round((new Date(calls.load[0].to) - new Date(calls.load[0].from)) / 864e5)).toBe(30);
     const s = out();
+    expect(s).toContain("Okres: 10.10.2026");
     expect(s).toContain("Historia wejść zbierana od 09.11.2026");
     expect(s).toContain("Brak zarejestrowanego wejścia lub otwarcia nie oznacza braku aktywności.");
     expect(s).toContain("Nie gwarantuje to trafienia do skrzynki głównej.");
     expect(s).toContain("Żadne z tych zdarzeń nie jest dowodem zainteresowania zakupem.");
     expect(s).toContain("Podgląd konta przez administratora nie jest zapisywany.");
-    // ostrożne słownictwo w tabeli
+    expect(s).toContain("Każde zdarzenie jest liczone według własnej daty");
     expect(s).toContain("brak zarejestrowanego wejścia");
     expect(s).toContain("brak zarejestrowanego otwarcia");
-    expect(s).toContain("ustawione zbiorczo przy wdrożeniu, nie wejście");
-    expect(s).not.toMatch(/nie wszedł|nie przeczytał|nie otworzył|zainteresowan[ya] zakupem\b(?! nie)/);
+    expect(s).toContain("ta sama data u 87 kont");
+    expect(s).not.toMatch(/nie wszedł|nie przeczytał|nie otworzył|ustawione zbiorczo/);
+    expect(byId("activity-disabled")).toBeUndefined();
+  });
+
+  it("wyłączony zapis w bazie jest widoczny w zakładce", async () => {
+    calls.reportImpl = () => ({ ...REPORT, meta: { ...META, enabled: false, collecting_since: null } });
+    await act(async () => { tree = create(<AdminActivity />); });
+    await flush();
+    expect(text(byId("activity-disabled").children)).toContain("Zapis wejść jest wyłączony w bazie");
+    expect(out()).toContain("Dziennik wejść nie zarejestrował jeszcze żadnego wejścia.");
   });
 
   it("konta testowe ukryte domyślnie, widoczne po zaznaczeniu, z oznaczeniem TEST", async () => {
     await act(async () => { tree = create(<AdminActivity />); });
     await flush();
     expect(out()).not.toContain("ZZZ TEST");
-    expect(byId("activity-summary") && text(byId("activity-summary").children)).toContain("Konta: 2");
+    expect(text(byId("activity-summary").children)).toContain("Konta: 2");
     await act(async () => { byId("activity-show-test").props.onChange({ target: { checked: true } }); });
     expect(out()).toContain("ZZZ TEST");
     expect(tree.root.findAllByProps({ "data-testid": "activity-test-badge" })).toHaveLength(1);
   });
 
-  it("wiersz rozwija oś czasu; oznaczenie konta testowego woła RPC i odświeża raport", async () => {
+  it("oś czasu ładuje zdarzenia tylko tego konta i w okresie raportu; „pokaż więcej” dociąga kolejną stronę", async () => {
+    calls.eventsImpl = (a) => ({ total: 250, events: a.offset === 0 ? EVENTS : [{ ...EVENTS[0], at: "2026-10-12T09:00:00Z" }] });
     const fl = vi.fn();
     await act(async () => { tree = create(<AdminActivity fl={fl} />); });
     await flush();
     await act(async () => { byId("activity-row-p-anna").props.onClick(); });
+    await flush();
+    expect(calls.events[0]).toMatchObject({ profileIds: ["p-anna"], limit: TIMELINE_PAGE, offset: 0, from: META.from, to: META.to });
     const tl = text(byId("activity-timeline-p-anna").children);
     expect(tl).toContain("Zarejestrowane wejście do aplikacji (wczytania w ciągu wizyty: 3)");
     expect(tl).toContain("Wysłano e-mail z propozycjami PreConnect (propozycje: 2)");
     expect(tl).toContain("Doręczono e-mail (przyjęty przez serwer odbiorcy)");
+    expect(text(byId("activity-timeline-more").children)).toContain("Pokaż więcej (3 z 250)");
+    await act(async () => { byId("activity-timeline-more").props.onClick({ stopPropagation() {} }); });
+    await flush();
+    expect(calls.events[1]).toMatchObject({ profileIds: ["p-anna"], offset: 3 });
+    expect(text(byId("activity-timeline-p-anna").children)).toContain("12.10.2026");
+  });
+
+  it("oznaczenie konta testowego woła RPC i odświeża raport", async () => {
+    const fl = vi.fn();
+    await act(async () => { tree = create(<AdminActivity fl={fl} />); });
+    await flush();
+    await act(async () => { byId("activity-row-p-anna").props.onClick(); });
+    await flush();
     await act(async () => { await byId("activity-toggle-test").props.onClick({ stopPropagation() {} }); });
     await flush();
     expect(calls.setTest).toEqual([["p-anna", true]]);
     expect(calls.load).toHaveLength(2);
     expect(fl).toHaveBeenCalledWith("Konto oznaczone jako testowe.", "success");
   });
+
+  it("spóźniona odpowiedź dla poprzedniego okresu nie nadpisuje aktualnej; eksport zablokowany w trakcie", async () => {
+    const first = deferred(), second = deferred();
+    calls.reportImpl = () => (calls.load.length === 1 ? first.p : second.p);
+    await act(async () => { tree = create(<AdminActivity />); });
+    expect(byId("activity-export-summary").props.disabled).toBe(true);
+    expect(byId("activity-export-events").props.disabled).toBe(true);
+    await act(async () => { byId("activity-period-7").props.onClick(); });
+    expect(calls.load).toHaveLength(2);
+    const seven = { ...REPORT, meta: { ...META, from: "2026-11-02T00:00:00Z" }, accounts: [ACCOUNTS[1]] };
+    await act(async () => { second.resolve(seven); });
+    await flush();
+    await act(async () => { first.resolve(REPORT); });          // stara (30 dni) przychodzi później
+    await flush();
+    expect(text(byId("activity-summary").children)).toContain("Okres: 02.11.2026");
+    expect(out()).not.toContain("Anna Kupiec");
+    expect(byId("activity-export-summary").props.disabled).toBe(false);
+  });
+
+  it("błąd wczytania: eksport zablokowany, brak starych danych", async () => {
+    calls.reportImpl = () => { throw new Error("awaria"); };
+    await act(async () => { tree = create(<AdminActivity />); });
+    await flush();
+    expect(out()).toContain("Nie udało się wczytać danych: awaria");
+    expect(byId("activity-export-summary").props.disabled).toBe(true);
+    expect(byId("activity-export-events").props.disabled).toBe(true);
+    expect(byId("activity-summary")).toBeUndefined();
+  });
 });
 
 describe("AdminActivity — logika i CSV", () => {
-  it("filtry: rola, wyszukiwanie, konta testowe, tylko ze zdarzeniem", () => {
-    const acc = REPORT.accounts;
-    expect(filterAccounts(acc).map((a) => a.profile_id)).toEqual(["p-anna", "p-jan"]);
-    expect(filterAccounts(acc, { showTest: true, role: "buyer" }).map((a) => a.profile_id)).toEqual(["p-anna", "p-test"]);
-    expect(filterAccounts(acc, { query: "złoty" }).map((a) => a.profile_id)).toEqual(["p-jan"]);
-    expect(filterAccounts(acc, { onlyWithEvents: true }).map((a) => a.profile_id)).toEqual(["p-anna"]);
+  it("filtry: rola, wyszukiwanie, konta testowe, tylko ze zdarzeniem w okresie", () => {
+    expect(filterAccounts(ACCOUNTS).map((a) => a.profile_id)).toEqual(["p-anna", "p-jan"]);
+    expect(filterAccounts(ACCOUNTS, { showTest: true, role: "buyer" }).map((a) => a.profile_id)).toEqual(["p-anna", "p-test"]);
+    expect(filterAccounts(ACCOUNTS, { query: "złoty" }).map((a) => a.profile_id)).toEqual(["p-jan"]);
+    expect(filterAccounts(ACCOUNTS, { onlyWithEvents: true }).map((a) => a.profile_id)).toEqual(["p-anna"]);
   });
 
-  it("CSV: średnik, BOM, cudzysłowy, ochrona przed formułami, bez IP i tokenów", () => {
+  it("eksport zdarzeń pobiera wszystkie strony; niepełny lub zbyt duży zbiór to błąd, nie cichy obcięty plik", async () => {
+    const all = Array.from({ length: 12 }, (_, i) => ({ profile_id: "p-anna", kind: "visit", at: `2026-11-0${1 + (i % 9)}T10:00:00Z`, detail: { hit_count: 1 } }));
+    const seen = [];
+    const load = async ({ limit, offset, profileIds }) => { seen.push([offset, profileIds]); return { total: all.length, events: all.slice(offset, offset + limit) }; };
+    expect(await loadAllEvents({ from: "a", to: "b", profileIds: ["p-anna"], load, page: 5 })).toHaveLength(12);
+    expect(seen.map((s) => s[0])).toEqual([0, 5, 10]);
+    const short = async ({ offset }) => ({ total: 12, events: offset === 0 ? all.slice(0, 5) : [] });
+    await expect(loadAllEvents({ from: "a", to: "b", profileIds: [], load: short, page: 5 })).rejects.toThrow("incomplete_events");
+    const huge = async () => ({ total: 300000, events: [] });
+    await expect(loadAllEvents({ from: "a", to: "b", profileIds: [], load: huge })).rejects.toThrow("too_many_events");
+  });
+
+  it("CSV: okres i zastrzeżenie w nagłówku, średnik, BOM, cudzysłowy, ochrona przed formułami, bez IP", () => {
     expect(csvCell('Sad; "Złoty"')).toBe('"Sad; ""Złoty"""');
     expect(csvCell("=jan@sad.test")).toBe("'=jan@sad.test");
-    const csv = buildSummaryCsv(filterAccounts(REPORT.accounts), t, "pl");
-    expect(csv.startsWith("﻿Rola;Firma / sieć;Osoba;E-mail;Konto testowe;Wejścia w okresie;Ostatnie zarejestrowane wejście")).toBe(true);
+    const csv = buildSummaryCsv(filterAccounts(ACCOUNTS), META, t, "pl");
+    const lines = csv.split("\r\n");
+    expect(lines[0]).toMatch(/^﻿Okres: 10\.10\.2026/);
+    expect(lines[1]).toContain("brak zarejestrowanego zdarzenia nie oznacza braku aktywności");
+    expect(lines[2]).toMatch(/^Rola;Firma \/ sieć;Osoba;E-mail;Konto testowe;Wejścia w okresie;Ostatnie zarejestrowane wejście/);
     expect(csv).toContain("Dostawca;\"Sad; \"\"Złoty\"\"\";Jan Dostawca;'=jan@sad.test;;0;brak zarejestrowanego wejścia;0;0;0");
-    expect(csv).toContain("ustawione zbiorczo przy wdrożeniu, nie wejście");
+    expect(csv).toContain(";87\r\n");
     expect(csv).not.toMatch(/\bIP\b|token/i);
-    const ev = buildEventsCsv(REPORT.events, new Map(REPORT.accounts.map((a) => [a.profile_id, a])), t, "pl");
-    expect(ev.split("\r\n")[0]).toBe("﻿Data;Rola;Firma / sieć;Osoba;E-mail;Zdarzenie;Źródło");
+    const ev = buildEventsCsv(EVENTS, new Map(ACCOUNTS.map((a) => [a.profile_id, a])), META, t, "pl");
+    expect(ev.split("\r\n")[2]).toBe("Data;Rola;Firma / sieć;Osoba;E-mail;Zdarzenie;Źródło");
     expect(ev).toContain("Sieć handlowa;Sieć Testowa;Anna Kupiec;anna@siec.test;Wysłano e-mail z propozycjami PreConnect (propozycje: 2);PreConnect");
   });
 
@@ -115,7 +183,8 @@ describe("AdminActivity — logika i CSV", () => {
     const l = (kind, extra = {}) => eventLabel({ kind, source: "preconnect", detail: {}, ...extra }, t);
     expect(l("email_opened")).toBe("Zarejestrowane otwarcie e-maila");
     expect(l("email_delivered")).toBe("Doręczono e-mail (przyjęty przez serwer odbiorcy)");
-    expect(l("app_view", { detail: { channel: "app_detail", read_count: 2 } })).toBe("Wyświetlono szczegóły propozycji w aplikacji (razy: 2)");
+    expect(l("app_view_first", { detail: { read_count_total: 7 } })).toBe("Pierwsze wyświetlenie propozycji w aplikacji (wyświetleń łącznie: 7)");
+    expect(l("app_view_last", { detail: { read_count_total: 7 } })).toBe("Ostatnie wyświetlenie propozycji w aplikacji (wyświetleń łącznie: 7)");
     expect(l("email_sent", { source: "marketing", detail: { campaign: "Aktywacja" } })).toBe("Wysłano e-mail marketingowy: Aktywacja");
   });
 

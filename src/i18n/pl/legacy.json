@@ -3005,9 +3005,10 @@
         "visit": "Wejście to otwarcie aplikacji przez zalogowanego kupca lub dostawcę. Wejścia w odstępach krótszych niż 30 minut liczą się jako jedno. Podgląd konta przez administratora nie jest zapisywany.",
         "opened": "Zarejestrowane otwarcie e-maila oznacza, że program pocztowy pobrał obraz śledzący. Część programów pobiera obrazy automatycznie, inne je blokują, dlatego liczba otwarć jest przybliżona.",
         "delivered": "Doręczono oznacza, że serwer pocztowy odbiorcy przyjął wiadomość. Nie gwarantuje to trafienia do skrzynki głównej.",
-        "app_view": "Wyświetlono propozycję oznacza, że kupiec otworzył listę lub szczegóły propozycji w aplikacji.",
+        "app_view": "Wyświetlenie propozycji: rejestr przechowuje tylko datę pierwszego i ostatniego wyświetlenia oraz łączną liczbę wyświetleń, bez dat pośrednich.",
         "no_intent": "Żadne z tych zdarzeń nie jest dowodem zainteresowania zakupem.",
-        "mail_scope": "Maile: rejestr propozycji PreConnect do kupców (od 22.10.2026) i maile marketingowe. Inne rodzaje poczty nie są jeszcze uwzględnione."
+        "mail_scope": "Maile: rejestr propozycji PreConnect do kupców (od 22.10.2026) i maile marketingowe. Inne rodzaje poczty nie są jeszcze uwzględnione.",
+        "dates": "Każde zdarzenie jest liczone według własnej daty: wysyłka według daty wysłania, doręczenie i otwarcie według daty zdarzenia."
       },
       "period_days": "{{n}} dni",
       "period_custom": "Własny okres",
@@ -3034,11 +3035,11 @@
         "role": "Rola",
         "visits": "Wejścia w okresie",
         "last_visit": "Ostatnie zarejestrowane wejście",
-        "emails": "E-maile: wysłano / doręczono / otwarcie",
+        "emails": "E-maile w okresie: wysłano / doręczono / otwarcie",
         "emails_hint": "Wysłano = przyjęte do wysyłki. Doręczono = przyjęte przez serwer odbiorcy. Otwarcie = zarejestrowane otwarcie (przybliżone).",
         "viewed": "Wyświetlone propozycje",
         "legacy": "Pole ostatniej aktywności",
-        "legacy_hint": "Dane sprzed dziennika: pole profilu nadpisywane przy każdym wejściu, bez historii."
+        "legacy_hint": "Dane sprzed dziennika: pole profilu nadpisywane przy każdym wejściu, bez historii. Przy wdrożeniu śledzenia w czerwcu 2026 istniejące konta dostały wspólną datę, więc pochodzenie wartości nie jest pewne."
       },
       "role": {
         "buyer": "Sieć handlowa",
@@ -3048,10 +3049,6 @@
       "no_open": "brak zarejestrowanego otwarcia",
       "emails_counts": "{{sent}} / {{delivered}} / {{opened}}",
       "inactive": "konto nieaktywne",
-      "legacy_kind": {
-        "bulk_set": "ustawione zbiorczo przy wdrożeniu, nie wejście",
-        "app": "z wejścia do aplikacji"
-      },
       "timeline": "Oś czasu w wybranym okresie",
       "timeline_empty": "Brak zarejestrowanych zdarzeń w tym okresie.",
       "mark_test": "Oznacz jako konto testowe",
@@ -3073,9 +3070,9 @@
         "opened": "Zarejestrowane otwarcie e-maila",
         "bounced": "E-mail odrzucony przez serwer odbiorcy",
         "complained": "Odbiorca zgłosił e-mail jako spam",
-        "app_view_list": "Wyświetlono propozycję na liście w aplikacji (razy: {{n}})",
-        "app_view_detail": "Wyświetlono szczegóły propozycji w aplikacji (razy: {{n}})",
-        "other": "Inne zdarzenie"
+        "other": "Inne zdarzenie",
+        "app_view_first": "Pierwsze wyświetlenie propozycji w aplikacji (wyświetleń łącznie: {{n}})",
+        "app_view_last": "Ostatnie wyświetlenie propozycji w aplikacji (wyświetleń łącznie: {{n}})"
       },
       "csv": {
         "role": "Rola",
@@ -3091,11 +3088,19 @@
         "last_opened": "Ostatnie zarejestrowane otwarcie",
         "viewed": "Wyświetlone propozycje",
         "legacy_last_active": "Pole ostatniej aktywności (sprzed dziennika)",
-        "legacy_kind": "Rodzaj pola",
         "at": "Data",
         "event": "Zdarzenie",
-        "source": "Źródło"
-      }
+        "source": "Źródło",
+        "note": "Pomiar niepełny: brak zarejestrowanego zdarzenia nie oznacza braku aktywności; żadne zdarzenie nie jest dowodem zainteresowania zakupem.",
+        "legacy_shared": "Liczba kont z tą samą datą"
+      },
+      "disabled": "Zapis wejść jest wyłączony w bazie — nowe wejścia nie są rejestrowane.",
+      "period_line": "Okres: {{from}} – {{to}}",
+      "legacy_shared": "ta sama data u {{n}} kont",
+      "timeline_more": "Pokaż więcej ({{shown}} z {{total}})",
+      "exporting": "Eksportowanie…",
+      "export_too_many": "Za dużo zdarzeń do jednego eksportu ({{n}}). Zawęź okres albo filtry.",
+      "export_failed": "Eksport się nie udał: {{message}}"
     }
   },
   "fm": {

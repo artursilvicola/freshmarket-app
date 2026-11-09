@@ -3005,9 +3005,10 @@
         "visit": "A visit is a signed-in buyer or supplier opening the app. Visits less than 30 minutes apart count as one. An administrator previewing an account is not recorded.",
         "opened": "A recorded e-mail open means the mail client downloaded the tracking image. Some clients download images automatically, others block them, so open counts are approximate.",
         "delivered": "Delivered means the recipient's mail server accepted the message. It does not guarantee it reached the main inbox.",
-        "app_view": "Proposal viewed means the buyer opened the proposal list or details in the app.",
+        "app_view": "Proposal views: the register stores only the first and last view date and the total number of views, without dates in between.",
         "no_intent": "None of these events is evidence of purchase interest.",
-        "mail_scope": "E-mails: PreConnect proposal register for buyers (since 22 Oct 2026) and marketing e-mails. Other mail types are not included yet."
+        "mail_scope": "E-mails: PreConnect proposal register for buyers (since 22 Oct 2026) and marketing e-mails. Other mail types are not included yet.",
+        "dates": "Each event is counted by its own date: sending by the send date, delivery and opens by the event date."
       },
       "period_days": "{{n}} days",
       "period_custom": "Custom period",
@@ -3034,11 +3035,11 @@
         "role": "Role",
         "visits": "Visits in period",
         "last_visit": "Last recorded visit",
-        "emails": "E-mails: sent / delivered / open",
+        "emails": "E-mails in period: sent / delivered / open",
         "emails_hint": "Sent = accepted for sending. Delivered = accepted by the recipient's server. Open = recorded open (approximate).",
         "viewed": "Proposals viewed",
         "legacy": "Last activity field",
-        "legacy_hint": "Data from before the log: a profile field overwritten on each visit, without history."
+        "legacy_hint": "Data from before the log: a profile field overwritten on each visit, without history. When tracking was deployed in June 2026, existing accounts received a shared date, so the origin of the value is uncertain."
       },
       "role": {
         "buyer": "Retail chain",
@@ -3048,10 +3049,6 @@
       "no_open": "no recorded open",
       "emails_counts": "{{sent}} / {{delivered}} / {{opened}}",
       "inactive": "inactive account",
-      "legacy_kind": {
-        "bulk_set": "set in bulk at deployment, not a visit",
-        "app": "from an app visit"
-      },
       "timeline": "Timeline in the selected period",
       "timeline_empty": "No recorded events in this period.",
       "mark_test": "Mark as test account",
@@ -3073,9 +3070,9 @@
         "opened": "Recorded e-mail open",
         "bounced": "E-mail rejected by the recipient's server",
         "complained": "Recipient reported the e-mail as spam",
-        "app_view_list": "Proposal viewed in the app list (times: {{n}})",
-        "app_view_detail": "Proposal details viewed in the app (times: {{n}})",
-        "other": "Other event"
+        "other": "Other event",
+        "app_view_first": "First proposal view in the app (total views: {{n}})",
+        "app_view_last": "Last proposal view in the app (total views: {{n}})"
       },
       "csv": {
         "role": "Role",
@@ -3091,11 +3088,19 @@
         "last_opened": "Last recorded open",
         "viewed": "Proposals viewed",
         "legacy_last_active": "Last activity field (before the log)",
-        "legacy_kind": "Field type",
         "at": "Date",
         "event": "Event",
-        "source": "Source"
-      }
+        "source": "Source",
+        "note": "Incomplete measurement: no recorded event does not mean no activity; no event is evidence of purchase interest.",
+        "legacy_shared": "Accounts with the same date"
+      },
+      "disabled": "Visit logging is switched off in the database — new visits are not recorded.",
+      "period_line": "Period: {{from}} – {{to}}",
+      "legacy_shared": "same date on {{n}} accounts",
+      "timeline_more": "Show more ({{shown}} of {{total}})",
+      "exporting": "Exporting…",
+      "export_too_many": "Too many events for one export ({{n}}). Narrow the period or filters.",
+      "export_failed": "Export failed: {{message}}"
     }
   },
   "fm": {

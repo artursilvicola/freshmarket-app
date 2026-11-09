@@ -1603,7 +1603,14 @@ export async function recordAppVisit() {
 export async function loadAdminActivityReport({ from, to } = {}) {
   const { data, error } = await supabase.rpc("admin_activity_report", { p_from: from || null, p_to: to || null });
   if (error) throw error;
-  return data && typeof data === "object" ? data : { meta: {}, accounts: [], events: [] };
+  return data && typeof data === "object" ? data : { meta: {}, accounts: [] };
+}
+
+// [feat/admin-activity] Zdarzenia z okresu (stronicowane, opcjonalnie tylko wskazane konta).
+export async function loadAdminActivityEvents({ from, to, profileIds = null, limit = 1000, offset = 0 } = {}) {
+  const { data, error } = await supabase.rpc("admin_activity_events", { p_from: from || null, p_to: to || null, p_profile_ids: profileIds, p_limit: limit, p_offset: offset });
+  if (error) throw error;
+  return data && typeof data === "object" ? data : { total: 0, events: [] };
 }
 
 // [feat/admin-activity] Jawne oznaczenie / zdjęcie oznaczenia konta testowego (tylko admin).
