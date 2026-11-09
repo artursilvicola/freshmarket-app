@@ -41,3 +41,21 @@ W krokach P–5 adresy kont testowych w skryptach podmienia się w jednym miejsc
 2. Netlify → deploy `6aeef6d2ffaecdbf9dbafc89` (`fa3dd0b`) → **Publish deploy** (nie `push --force`).
 3. Obiekty bazy zostają (zapis wyłączony, raport tylko dla admina); harmonogram retencji zostaje, żeby zebrane dane były usuwane po 12 miesiącach.
 4. Flagi `VITE_*` można zostawić — bez nich ani z nimi nic nie jest zapisywane przy `enabled = false`; usunąć przy następnym buildzie, jeśli zakładka ma zniknąć.
+
+## Wykonanie 9.11.2026 (po „wdrażaj” Artura)
+
+| Krok | Czas (PL) | Wynik |
+|---|---|---|
+| P `06` | 14:56 | `postgres`, pg_cron 1.6.4, obiekty modułu NULL, rejestry obecne, 0 zadań |
+| 1 migracja | 15:02 | Success; tekst w edytorze = SHA-256 `10f2838b…` (odebrany `de7a63e`) |
+| 2 `02` | 15:08 | 1 zadanie `17 3 * * *`, `postgres/postgres`, aktywne; zapis `false`; funkcje pomocnicze tylko `postgres` |
+| 3 kod | 15:12 | tag `prod-rollback-2026-11-09-activity`=`fa3dd0b`; Netlify production: `VITE_ADMIN_ACTIVITY=true`, `VITE_APP_ACTIVITY_LOG=true`; `MARKETING_SEND_ENABLED=false` i allowlista bez zmian; main `c737cd8`, deploy `6af1d4a6fbf48204846f3ac1` |
+| K `07` + panel | 15:19 | `enabled=false`, 0 wizyt, 1 zadanie; RPC → `disabled`; zakładka u admina z napisem o wyłączonym zapisie; marketing 403 `send_disabled` |
+| 4 `03` | 15:23 | `enabled=true` (14:23:50 UTC), 1 zadanie, 0 wizyt |
+| A | 15:38 | kupiec testowy (incognito, magic link): 1 wizyta, `hit_count` 1; propozycje sieci testowej bez zmian (5 read, 2 opened) |
+| B | 15:40 | po F5: ta sama wizyta, `hit_count` 2 |
+| C | 15:41 | podgląd admina „ZZZ TEST Dostawca” (kupiec nieaktywnej sieci nie jest na liście przełącznika; podglądu prawdziwych kupców nie otwierano) → bez nowych wizyt; wizyty adminów 0; RPC admina → `not_participant` |
+| D | 15:43 | dostawca testowy → `42501 admin_activity_report: tylko administrator` |
+| 6 | 15:47 | 6 kont oznaczonych jako testowe (2 kupców, 4 dostawców testowych/próbnych) |
+
+Zrzut: `zrzut-produkcja-2026-11-09.jpg`. Incydent bez skutków: karta panelu admina zawisła na chwilę po powrocie z podglądu (zablokowana przez okno przeglądarki); po odblokowaniu oczekujące skrypty oznaczeń wykonały się — sprawdzone: dokładnie 6 zamierzonych kont.

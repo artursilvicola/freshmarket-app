@@ -10,11 +10,6 @@ select s.enabled, s.enabled_changed_at, s.collecting_since,
        (select string_agg(username || '/' || database, ',') from cron.job where jobname = 'fm-app-activity-retention') as rola_baza_zadania
   from public.app_activity_settings s;
 
--- Bezpośrednie RPC jako kupiec testowy przy wyłączonym zapisie: oczekiwane {"reason":"disabled","recorded":false}
--- (transakcja wycofywana — nic się nie zmienia; podmień adres w jednym miejscu)
-begin;
-select set_config('request.jwt.claims',
-       json_build_object('sub', (select id from public.profiles where lower(email) = lower('KUPIEC-TESTOWY@example.com')), 'role', 'authenticated')::text, true);
-set local role authenticated;
-select public.record_app_visit() as wynik;
-rollback;
+-- Bezpośrednie RPC przy wyłączonym zapisie sprawdza się z panelu admina (sesja admina, POST
+-- /rest/v1/rpc/record_app_visit): funkcja najpierw czyta wyłącznik, więc oczekiwane {"reason":"disabled"}.
+-- (SQL Editor pokazuje wynik tylko ostatniego polecenia — dlatego tu jedno zapytanie.)
