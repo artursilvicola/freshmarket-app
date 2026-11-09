@@ -81,6 +81,10 @@
 # [feat/fm-plan-send-server-card] Karta PDF generowana na serwerze: pdfmake (+ @foliojs-fork/pdfkit
 # z plikami AFM czytanymi z dysku) nie może być wbundlowany przez esbuild — kopiujemy pakiet
 # z node_modules razem z zależnościami. Reszta (layout, fonty, model) trafia do bundla z src/.
+[functions."activity-retention"]
+  # [feat/admin-activity] Retencja 12 miesięcy dziennika wejść (purge_app_visits) — codziennie.
+  schedule = "@daily"
+
 [functions."fm-plan-send"]
   # + @jsquash/webp: dekoder WebP w WASM (plik .wasm czytany z node_modules w czasie wykonania)
   external_node_modules = ["pdfmake", "@jsquash/webp"]

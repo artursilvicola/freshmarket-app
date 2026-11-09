@@ -2992,6 +2992,110 @@
       "toast_super_demoted_format": "✓ {{email}} is now a regular administrator.",
       "toast_super_promoted_format": "✓ {{email}} is now a super administrator.",
       "toast_removed_success_format": "✓ {{email}} lost administrator privileges."
+    },
+    "activity": {
+      "title": "Activity",
+      "intro": "Recorded app visits by buyers and suppliers, plus PreConnect and marketing e-mail events. Visible to administrators only.",
+      "collecting_since": "Visit history collected since {{date}}.",
+      "collecting_none": "The visit log has not recorded any visit yet.",
+      "retention": "Log entries older than 12 months are deleted automatically. The “Last activity field” column is data from before the log.",
+      "disclaimer_title": "Measurement is incomplete",
+      "disclaimer": {
+        "incomplete": "No recorded visit or open does not mean no activity.",
+        "visit": "A visit is a signed-in buyer or supplier opening the app. Visits less than 30 minutes apart count as one. An administrator previewing an account is not recorded.",
+        "opened": "A recorded e-mail open means the mail client downloaded the tracking image. Some clients download images automatically, others block them, so open counts are approximate.",
+        "delivered": "Delivered means the recipient's mail server accepted the message. It does not guarantee it reached the main inbox.",
+        "app_view": "Proposal viewed means the buyer opened the proposal list or details in the app.",
+        "no_intent": "None of these events is evidence of purchase interest.",
+        "mail_scope": "E-mails: PreConnect proposal register for buyers (since 22 Oct 2026) and marketing e-mails. Other mail types are not included yet."
+      },
+      "period_days": "{{n}} days",
+      "period_custom": "Custom period",
+      "from": "From",
+      "to": "To",
+      "role_filter": "Role",
+      "role_all": "Everyone",
+      "role_buyers": "Retail chains",
+      "role_suppliers": "Suppliers",
+      "search": "Search company, chain, person or e-mail",
+      "show_test": "Show test accounts",
+      "only_with_events": "Only accounts with a recorded event",
+      "refresh": "Refresh",
+      "export_summary": "Export summary (CSV)",
+      "export_events": "Export events (CSV)",
+      "error": "Could not load data: {{message}}",
+      "loading": "Loading…",
+      "summary": "Accounts: {{total}} · with a recorded visit in the period: {{with_visit}} · no recorded visit: {{without_visit}}",
+      "truncated": "showing part of the events ({{n}} in total), narrow the period",
+      "empty": "No accounts match the filters.",
+      "col": {
+        "org": "Company / chain",
+        "person": "Person",
+        "role": "Role",
+        "visits": "Visits in period",
+        "last_visit": "Last recorded visit",
+        "emails": "E-mails: sent / delivered / open",
+        "emails_hint": "Sent = accepted for sending. Delivered = accepted by the recipient's server. Open = recorded open (approximate).",
+        "viewed": "Proposals viewed",
+        "legacy": "Last activity field",
+        "legacy_hint": "Data from before the log: a profile field overwritten on each visit, without history."
+      },
+      "role": {
+        "buyer": "Retail chain",
+        "supplier": "Supplier"
+      },
+      "no_visit": "no recorded visit",
+      "no_open": "no recorded open",
+      "emails_counts": "{{sent}} / {{delivered}} / {{opened}}",
+      "inactive": "inactive account",
+      "legacy_kind": {
+        "bulk_set": "set in bulk at deployment, not a visit",
+        "app": "from an app visit"
+      },
+      "timeline": "Timeline in the selected period",
+      "timeline_empty": "No recorded events in this period.",
+      "mark_test": "Mark as test account",
+      "unmark_test": "Remove test mark",
+      "test_marked": "Account marked as test.",
+      "test_unmarked": "Test mark removed.",
+      "test_badge": "TEST",
+      "yes": "yes",
+      "source": {
+        "preconnect": "PreConnect",
+        "marketing": "Marketing"
+      },
+      "ev": {
+        "visit": "Recorded app visit",
+        "visit_multi": "Recorded app visit (page loads during the visit: {{n}})",
+        "sent_preconnect": "PreConnect proposals e-mail sent (proposals: {{n}})",
+        "sent_marketing": "Marketing e-mail sent: {{campaign}}",
+        "delivered": "E-mail delivered (accepted by the recipient's server)",
+        "opened": "Recorded e-mail open",
+        "bounced": "E-mail rejected by the recipient's server",
+        "complained": "Recipient reported the e-mail as spam",
+        "app_view_list": "Proposal viewed in the app list (times: {{n}})",
+        "app_view_detail": "Proposal details viewed in the app (times: {{n}})",
+        "other": "Other event"
+      },
+      "csv": {
+        "role": "Role",
+        "org": "Company / chain",
+        "person": "Person",
+        "email": "E-mail",
+        "test": "Test account",
+        "visits": "Visits in period",
+        "last_visit": "Last recorded visit",
+        "sent": "E-mails sent",
+        "delivered": "Delivered",
+        "opened": "With a recorded open",
+        "last_opened": "Last recorded open",
+        "viewed": "Proposals viewed",
+        "legacy_last_active": "Last activity field (before the log)",
+        "legacy_kind": "Field type",
+        "at": "Date",
+        "event": "Event",
+        "source": "Source"
+      }
     }
   },
   "fm": {
@@ -3668,7 +3772,8 @@
       "admin_firmy_pending_tooltip_other_format": "{{count}} companies awaiting approval",
       "admin_fm_status_published": "Published",
       "admin_fm_status_active": "Active",
-      "admin_fm_status_closed": "Closed"
+      "admin_fm_status_closed": "Closed",
+      "admin_activity": "Activity"
     },
     "app_toasts": {
       "package_purchased_format": "Package purchased! +{{qty}} submissions added to your account.",

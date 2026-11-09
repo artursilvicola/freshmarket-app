@@ -2992,6 +2992,110 @@
       "toast_super_demoted_format": "✓ {{email}} jest teraz zwykłym administratorem.",
       "toast_super_promoted_format": "✓ {{email}} jest teraz super administratorem.",
       "toast_removed_success_format": "✓ {{email}} stracił uprawnienia administratora."
+    },
+    "activity": {
+      "title": "Aktywność",
+      "intro": "Zarejestrowane wejścia kupców i dostawców do aplikacji oraz zdarzenia maili PreConnect i marketingowych. Dane widzi tylko administrator.",
+      "collecting_since": "Historia wejść zbierana od {{date}}.",
+      "collecting_none": "Dziennik wejść nie zarejestrował jeszcze żadnego wejścia.",
+      "retention": "Wpisy dziennika starsze niż 12 miesięcy są usuwane automatycznie. Kolumna „Pole ostatniej aktywności” to dane sprzed dziennika.",
+      "disclaimer_title": "Pomiar jest niepełny",
+      "disclaimer": {
+        "incomplete": "Brak zarejestrowanego wejścia lub otwarcia nie oznacza braku aktywności.",
+        "visit": "Wejście to otwarcie aplikacji przez zalogowanego kupca lub dostawcę. Wejścia w odstępach krótszych niż 30 minut liczą się jako jedno. Podgląd konta przez administratora nie jest zapisywany.",
+        "opened": "Zarejestrowane otwarcie e-maila oznacza, że program pocztowy pobrał obraz śledzący. Część programów pobiera obrazy automatycznie, inne je blokują, dlatego liczba otwarć jest przybliżona.",
+        "delivered": "Doręczono oznacza, że serwer pocztowy odbiorcy przyjął wiadomość. Nie gwarantuje to trafienia do skrzynki głównej.",
+        "app_view": "Wyświetlono propozycję oznacza, że kupiec otworzył listę lub szczegóły propozycji w aplikacji.",
+        "no_intent": "Żadne z tych zdarzeń nie jest dowodem zainteresowania zakupem.",
+        "mail_scope": "Maile: rejestr propozycji PreConnect do kupców (od 22.10.2026) i maile marketingowe. Inne rodzaje poczty nie są jeszcze uwzględnione."
+      },
+      "period_days": "{{n}} dni",
+      "period_custom": "Własny okres",
+      "from": "Od",
+      "to": "Do",
+      "role_filter": "Rola",
+      "role_all": "Wszyscy",
+      "role_buyers": "Sieci handlowe",
+      "role_suppliers": "Dostawcy",
+      "search": "Szukaj firmy, sieci, osoby lub e-maila",
+      "show_test": "Pokaż konta testowe",
+      "only_with_events": "Tylko konta z zarejestrowanym zdarzeniem",
+      "refresh": "Odśwież",
+      "export_summary": "Eksport podsumowania (CSV)",
+      "export_events": "Eksport zdarzeń (CSV)",
+      "error": "Nie udało się wczytać danych: {{message}}",
+      "loading": "Wczytywanie…",
+      "summary": "Konta: {{total}} · z zarejestrowanym wejściem w okresie: {{with_visit}} · bez zarejestrowanego wejścia: {{without_visit}}",
+      "truncated": "pokazano część zdarzeń (łącznie {{n}}), zawęź okres",
+      "empty": "Brak kont spełniających filtry.",
+      "col": {
+        "org": "Firma / sieć",
+        "person": "Osoba",
+        "role": "Rola",
+        "visits": "Wejścia w okresie",
+        "last_visit": "Ostatnie zarejestrowane wejście",
+        "emails": "E-maile: wysłano / doręczono / otwarcie",
+        "emails_hint": "Wysłano = przyjęte do wysyłki. Doręczono = przyjęte przez serwer odbiorcy. Otwarcie = zarejestrowane otwarcie (przybliżone).",
+        "viewed": "Wyświetlone propozycje",
+        "legacy": "Pole ostatniej aktywności",
+        "legacy_hint": "Dane sprzed dziennika: pole profilu nadpisywane przy każdym wejściu, bez historii."
+      },
+      "role": {
+        "buyer": "Sieć handlowa",
+        "supplier": "Dostawca"
+      },
+      "no_visit": "brak zarejestrowanego wejścia",
+      "no_open": "brak zarejestrowanego otwarcia",
+      "emails_counts": "{{sent}} / {{delivered}} / {{opened}}",
+      "inactive": "konto nieaktywne",
+      "legacy_kind": {
+        "bulk_set": "ustawione zbiorczo przy wdrożeniu, nie wejście",
+        "app": "z wejścia do aplikacji"
+      },
+      "timeline": "Oś czasu w wybranym okresie",
+      "timeline_empty": "Brak zarejestrowanych zdarzeń w tym okresie.",
+      "mark_test": "Oznacz jako konto testowe",
+      "unmark_test": "Usuń oznaczenie testowe",
+      "test_marked": "Konto oznaczone jako testowe.",
+      "test_unmarked": "Usunięto oznaczenie testowe.",
+      "test_badge": "TEST",
+      "yes": "tak",
+      "source": {
+        "preconnect": "PreConnect",
+        "marketing": "Marketing"
+      },
+      "ev": {
+        "visit": "Zarejestrowane wejście do aplikacji",
+        "visit_multi": "Zarejestrowane wejście do aplikacji (wczytania w ciągu wizyty: {{n}})",
+        "sent_preconnect": "Wysłano e-mail z propozycjami PreConnect (propozycje: {{n}})",
+        "sent_marketing": "Wysłano e-mail marketingowy: {{campaign}}",
+        "delivered": "Doręczono e-mail (przyjęty przez serwer odbiorcy)",
+        "opened": "Zarejestrowane otwarcie e-maila",
+        "bounced": "E-mail odrzucony przez serwer odbiorcy",
+        "complained": "Odbiorca zgłosił e-mail jako spam",
+        "app_view_list": "Wyświetlono propozycję na liście w aplikacji (razy: {{n}})",
+        "app_view_detail": "Wyświetlono szczegóły propozycji w aplikacji (razy: {{n}})",
+        "other": "Inne zdarzenie"
+      },
+      "csv": {
+        "role": "Rola",
+        "org": "Firma / sieć",
+        "person": "Osoba",
+        "email": "E-mail",
+        "test": "Konto testowe",
+        "visits": "Wejścia w okresie",
+        "last_visit": "Ostatnie zarejestrowane wejście",
+        "sent": "Wysłane e-maile",
+        "delivered": "Doręczone",
+        "opened": "Z zarejestrowanym otwarciem",
+        "last_opened": "Ostatnie zarejestrowane otwarcie",
+        "viewed": "Wyświetlone propozycje",
+        "legacy_last_active": "Pole ostatniej aktywności (sprzed dziennika)",
+        "legacy_kind": "Rodzaj pola",
+        "at": "Data",
+        "event": "Zdarzenie",
+        "source": "Źródło"
+      }
     }
   },
   "fm": {
@@ -3668,7 +3772,8 @@
       "admin_firmy_pending_tooltip_other_format": "{{count}} firm czeka na zatwierdzenie",
       "admin_fm_status_published": "Opublikowany",
       "admin_fm_status_active": "Aktywna",
-      "admin_fm_status_closed": "Zamknięta"
+      "admin_fm_status_closed": "Zamknięta",
+      "admin_activity": "Aktywność"
     },
     "app_toasts": {
       "package_purchased_format": "Pakiet zakupiony! +{{qty}} wysyłek dodanych do Twojego konta.",

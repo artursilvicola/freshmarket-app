@@ -1591,6 +1591,28 @@ export async function touchLastActive() {
   return true;
 }
 
+// [feat/admin-activity] Zapis wejścia do aplikacji. Bez argumentów: konto i czas ustala
+// serwer (auth.uid(), now()); admin i obsługa nie są zapisywani. Best-effort.
+export async function recordAppVisit() {
+  const { data, error } = await supabase.rpc("record_app_visit");
+  if (error) throw error;
+  return data;
+}
+
+// [feat/admin-activity] Raport zakładki „Aktywność” (tylko admin — guard w SQL).
+export async function loadAdminActivityReport({ from, to } = {}) {
+  const { data, error } = await supabase.rpc("admin_activity_report", { p_from: from || null, p_to: to || null });
+  if (error) throw error;
+  return data && typeof data === "object" ? data : { meta: {}, accounts: [], events: [] };
+}
+
+// [feat/admin-activity] Jawne oznaczenie / zdjęcie oznaczenia konta testowego (tylko admin).
+export async function setActivityTestAccount(profileId, isTest, note = null) {
+  const { data, error } = await supabase.rpc("admin_set_activity_test_account", { p_profile_id: profileId, p_is_test: !!isTest, p_note: note });
+  if (error) throw error;
+  return data;
+}
+
 // [feat/account-inactivity-foundation / Lany #8] Leniwy sweep ostrzeżeń o
 // nieaktywności (30/7 dni). Woła funkcję Netlify (Resend po stronie serwera).
 // Idempotentny (markery w DB). Best-effort.

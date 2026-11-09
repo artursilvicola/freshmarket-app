@@ -15,8 +15,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
 const PKG = "docs/production/wdrozenie-marketing-zdjecia-2026-11-07/";
 const FIRST = "20261107100000";
+// Pakiet wdrożony 07.11 jest zamknięty: późniejsze migracje (np. 20261109 Aktywność) mają własne pakiety.
+const LAST = "20261107170000_marketing_review_fixes.sql";
 const all = readdirSync(path.join(root, "supabase/migrations")).filter((f) => f.endsWith(".sql")).sort();
-const before = all.filter((f) => f < FIRST), deploy = all.filter((f) => f >= FIRST);
+const before = all.filter((f) => f < FIRST), deploy = all.filter((f) => f >= FIRST && f <= LAST);
 const combined = [
   `-- Wdrożenie mail v2 + biblioteka zdjęć: ${deploy.length} migracji w kolejności, każda we własnej transakcji (begin/commit z pliku).`,
   "-- Złożone 1:1 z supabase/migrations/ (scripts/marketing-photos-deploy-check.mjs --write). Tylko projekt sklyfuvzjikkqerxtulo, jeden Run.",

@@ -62,6 +62,8 @@ import {
   sendDueExpiryReminders as dbSendDueExpiryReminders,
   // [feat/account-inactivity-foundation / Lany #8] śledzenie aktywności + sweep ostrzeżeń
   touchLastActive as dbTouchLastActive, sendDueInactivityWarnings as dbSendDueInactivityWarnings,
+  // [feat/admin-activity] dziennik wejść (konto i czas ustala serwer)
+  recordAppVisit as dbRecordAppVisit,
   // [B2B Round supplier-FM-UX] Confirm supplier's FM chain selection
   saveFmSelectionConfirmation as dbSaveFmSelectionConfirmation,
   // [B2B Round prod-rollout / faza 2] Real packages/capacity from DB
@@ -132,9 +134,11 @@ import { supabase } from "../lib/supabase";
 // AdminRightDrawer — nowy widok "Szczegóły" (5 subtabów + footer + prev/next).
 // Default false: stary CompanyPreviewModal pozostaje aktywną ścieżką dopóki
 // drawer nie przejdzie smoke testu produkcyjnego.
-import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC, ADMIN_ACCESS_POLISH, ADMIN_PIPELINE_SPLIT, ADMIN_MARKETING_ACTIVATION } from "../config/features";
+import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2_0_FILTERS, ADMIN_PIPELINE_2_0_TABLE, ADMIN_PIPELINE_2_0_MAILING_BASKET, CREDITS_UI_SUPPLIER, RETAILER_REQUIREMENTS, NIP_REQUIRED, CREDITS_VALIDITY_UI, BANK_TRANSFER_PROFORMA, CREDIT_EXPIRY_REMINDER, ACCOUNT_LIFECYCLE, ADMIN_SETTLEMENTS, ADMIN_PIPELINE_CLEANUP, ADMIN_DASHBOARD_POLISH, PRECONNECT_MAILING_DATE_LOGIC, ADMIN_ACCESS_POLISH, ADMIN_PIPELINE_SPLIT, ADMIN_MARKETING_ACTIVATION, APP_ACTIVITY_LOG, ADMIN_ACTIVITY } from "../config/features";
 // [feat/marketing-activation] Marketing → Aktywacja PreConnect (za flagą ADMIN_MARKETING_ACTIVATION).
 import MarketingActivation from "../components/admin/MarketingActivation.jsx";
+// [feat/admin-activity] Zakładka „Aktywność” (za flagą ADMIN_ACTIVITY).
+import AdminActivity from "../components/admin/AdminActivity.jsx";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -2231,6 +2235,14 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     });
   }, []);
 
+  // [feat/admin-activity] Zarejestrowane wejście do aplikacji — raz na załadowanie panelu.
+  // Serwer zapisuje tylko kupców i dostawców (admin w podglądzie cudzego konta działa na
+  // własnej sesji, więc nie zostanie zapisany jako kupiec/dostawca) i scala wejścia < 30 min.
+  useEffect(() => {
+    if (!APP_ACTIVITY_LOG) return;
+    dbRecordAppVisit().catch((e) => console.warn("[app visit]", e?.message || e));
+  }, []);
+
   // SENDS — analogicznie. Demo seed only in dev.
   const [sends, _setSendsRaw] = useState(() => import.meta.env.PROD ? [] : SENDS_INIT);
   const [sendsLoaded, setSendsLoaded] = useState(false);
@@ -3844,6 +3856,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="a-firmy")      return <PageAdminFirmy limits={limits} updateLimit={updateLimit} sends={sends} offers={offers} orders={orders} fl={fl} retailers={retailers} companies={companies} setCompanies={setCompanies} onPaymentDateSaved={saved => _setCompaniesRaw(prev => applyPaymentDate(prev, saved))} dbCapacity={dbCapacity} refreshCapacity={refreshCapacity} onOpenAdminChat={openAdminChatWithCompany} profiles={adminChatProfiles}/>;
     if(pg==="a-settlements" && ADMIN_SETTLEMENTS) return <PageAdminSettlements dbCapacity={dbCapacity} companies={companies} fl={fl} refreshCapacity={refreshCapacity} sends={sends} offers={offers}/>;
     if(pg==="a-marketing" && ADMIN_MARKETING_ACTIVATION) return <MarketingActivation fl={fl}/>;
+    if(pg==="a-activity" && ADMIN_ACTIVITY) return <AdminActivity fl={fl}/>;
     if(pg==="a-chat")       return <PageAdminChat messages={messages} runtimeAccounts={runtimeAccounts} profiles={adminChatProfiles} companies={companies} retailers={retailers} initialSelectedId={adminChatTargetId} onSendReply={sendAdminReply} onMarkThreadRead={markThreadRead} onSuggestReply={suggestAdminReply}/>;
     // Supplier FM sub-pages all route to PageSupplierFM with subPage prop
     if (["fm-sched","fm-algo","fm-wyniki"].includes(pg) && (!fmRespsLoaded || fmInputsError) && !fmSettings.planPublished)
@@ -4031,6 +4044,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
               {ADMIN_MARKETING_ACTIVATION && (
                 <div onClick={()=>nav("a-marketing")} data-testid="nav-a-marketing" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="a-marketing"?"white":"#64748b",background:navKey==="a-marketing"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-marketing"?600:400,transition:"all 0.15s" }}>
                   <Megaphone size={14}/><span>{t("shell.sidebar.admin_marketing")}</span>
+                </div>
+              )}
+              {/* [feat/admin-activity] Aktywność kont (wejścia + maile), tylko za flagą. */}
+              {ADMIN_ACTIVITY && (
+                <div onClick={()=>nav("a-activity")} data-testid="nav-a-activity" style={{ display:"flex",alignItems:"center",gap:9,padding:"8px 14px",color:navKey==="a-activity"?"white":"#64748b",background:navKey==="a-activity"?"rgba(13,148,136,0.85)":"transparent",borderRadius:8,marginBottom:1,cursor:"pointer",fontSize:13,fontWeight:navKey==="a-activity"?600:400,transition:"all 0.15s" }}>
+                  <Activity size={14}/><span>{t("shell.sidebar.admin_activity")}</span>
                 </div>
               )}
               {/* [feat/instructions-split] Instrukcja administratora PreConnect — przy module PreConnect. */}

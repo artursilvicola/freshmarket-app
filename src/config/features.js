@@ -292,3 +292,13 @@ export const ADMIN_PIPELINE_SPLIT = true;
 // Widoczność WYŁĄCZNIE w buildzie testowym: `VITE_ADMIN_MARKETING_ACTIVATION=true` w .env.test
 // (scripts/dev-test.mjs). W buildzie produkcyjnym zmiennej nie ma → false.
 export const ADMIN_MARKETING_ACTIVATION = (typeof import.meta !== "undefined" && import.meta.env?.VITE_ADMIN_MARKETING_ACTIVATION === "true");
+
+// [feat/admin-activity] Dziennik wejść do aplikacji (RPC record_app_visit) — kupcy i dostawcy,
+// tożsamość i czas po stronie serwera, deduplikacja 30 min, bez IP. Wymaga migracji
+// 20261109120000_app_activity.sql. Włączane zmienną `VITE_APP_ACTIVITY_LOG=true`
+// (.env.test / env Netlify) — bez niej nic nie jest zapisywane.
+export const APP_ACTIVITY_LOG = (typeof import.meta !== "undefined" && import.meta.env?.VITE_APP_ACTIVITY_LOG === "true");
+
+// [feat/admin-activity] Zakładka administratora „Aktywność” (raport admin_activity_report).
+// Włączana zmienną `VITE_ADMIN_ACTIVITY=true`; bez niej pozycja menu i strona nie istnieją.
+export const ADMIN_ACTIVITY = (typeof import.meta !== "undefined" && import.meta.env?.VITE_ADMIN_ACTIVITY === "true");
