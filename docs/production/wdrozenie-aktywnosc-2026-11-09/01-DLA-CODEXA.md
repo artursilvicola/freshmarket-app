@@ -43,6 +43,14 @@ Sprawdzone w przeglądarce (podgląd testowy, konto `codex.admin@freshmarket.tes
 
 Wszystkie 3 ustalenia naprawione. Uwaga warunkowa: bariera zakłada `READ COMMITTED`. Domknięcie: `record_app_visit()` przy innym poziomie izolacji niczego nie zapisuje (`reason: "isolation"`; test PGlite z `REPEATABLE READ`). Kontrola na bazie testowej rozszerzona o wywołanie rozpoczęte **w trakcie** wyłączania (czeka za blokadą wyłączną, po wyłączeniu dostaje „disabled”).
 
+## Poprawka po niezależnym review 3fea63a — mail wysłany przed wypisem
+
+Ustalenie Codexa (PGlite): wiadomość marketingowa, przy której odbiorca wypisał się **w trakcie** wysyłki, ma stan `suppressed`, ale `marketing_record_result` zachowuje jej `resend_message_id` i `sent_at`, bo Resend już ją przyjął. Raport pokazywał wtedy 0 wysłanych i 1 doręczony.
+
+Poprawka w `app_activity_event_rows`: „wysłano” = `accepted` **albo** `suppressed` z `resend_message_id` i `sent_at`. Wiadomość wykluczona przed wysyłką (`suppressed_before_send`, `suppressed_at_send` bez id Resend) nadal się nie liczy; inne stany bez potwierdzenia (`uncertain` itd.) też nie.
+
+Regresja (`tests/app-activity.integrated.test.js`, „wypis W TRAKCIE wysyłki…”): podsumowanie (1 wysłany, 1 doręczony) i oś czasu (wysłano + doręczono) dla wypisu w trakcie; 0 zdarzeń dla wykluczonej przed wysyłką; stan `uncertain` pominięty. Test na wersji z `3fea63a` **nie przechodzi** (0 wysłanych), na poprawionej przechodzi. Pełny zestaw: 1261 testów OK, 3 pominięte; build OK. Migracja nałożona ponownie tylko na bazę testową.
+
 ## Jak uruchomić testy
 
 ```

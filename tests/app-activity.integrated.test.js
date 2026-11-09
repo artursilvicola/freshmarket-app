@@ -234,6 +234,30 @@ describe.skipIf(!PGLITE_PATH)("Aktywność — dziennik wejść i raport admina 
     await expect(as(ADMIN, "select public.admin_set_activity_test_account($1::uuid, true)", [ADMIN])).rejects.toThrow(/nie jest kupcem ani dostawcą/);
   });
 
+  it("marketing: wypis W TRAKCIE wysyłki (suppressed z potwierdzeniem) liczy się jako wysłany; wykluczony PRZED wysyłką — nie", async () => {
+    await db.exec(`
+      insert into public.marketing_campaigns (id, name, template_key) values ('${CAMPAIGN}', 'Aktywacja listopad', 'start_with_credits');
+      insert into public.marketing_messages (campaign_id, company_id, profile_id, to_email, subject, html, text_body, payload_hash, idempotency_key, is_test, state, resend_message_id, sent_at, last_error) values
+        ('${CAMPAIGN}', '${COMPANY}', '${OWNER}', 'dostawca@example.invalid', 'Temat', '<p>x</p>', 'x', 'h1', 'mk-during', false, 'suppressed', 'mk-during', '2026-11-06T07:50:00Z', 'suppressed_at_send; sent_before_unsubscribe'),
+        ('${CAMPAIGN}', '${COMPANY}', '${ANNA}', 'anna@example.invalid', 'Temat', '<p>x</p>', 'x', 'h2', 'mk-before', false, 'suppressed', null, null, 'suppressed_before_send');
+      insert into public.marketing_email_events (event_id, resend_message_id, event_type, occurred_at, payload, status)
+      values ('d1', 'mk-during', 'email.delivered', '2026-11-06T07:50:04Z', '{}', 'processed');
+    `);
+    const acc = byId(await report(ADMIN, NOV));
+    // podsumowanie: 1 wysłany i 1 doręczony (wcześniej 0 wysłanych i 1 doręczony)
+    expect(acc[OWNER]).toMatchObject({ emails_sent: 1, emails_delivered: 1, emails_opened: 0, events: 2 });
+    // wykluczony przed wysyłką: nic nie jest liczone
+    expect(acc[ANNA]).toMatchObject({ emails_sent: 0, emails_delivered: 0, events: 0 });
+    // oś czasu: ta sama wiadomość jako wysłana i doręczona; brak zdarzeń dla wykluczonej
+    const ev = (await events(ADMIN, NOV)).events;
+    expect(kinds(ev, OWNER)).toEqual(["email_delivered:marketing", "email_sent:marketing"]);
+    expect(ev.find((e) => e.profile_id === OWNER && e.kind === "email_sent").detail).toMatchObject({ message: "mk-during", campaign: expect.stringMatching(/^Aktywacja listopad/) });
+    expect(kinds(ev, ANNA)).toEqual([]);
+    // inne stany bez potwierdzenia wysyłki nadal pominięte
+    await q(`update public.marketing_messages set state = 'uncertain' where idempotency_key = 'mk-during'`);
+    expect(byId(await report(ADMIN, NOV))[OWNER].emails_sent).toBe(0);
+  });
+
   it("każde zdarzenie liczone według własnej daty (wysyłka przed okresem, otwarcie po okresie)", async () => {
     await db.exec(`
       insert into public.legacy_send_messages (resend_message_id, retailer_id, buyer_profile_id, to_email, legacy_ids, sent_at) values

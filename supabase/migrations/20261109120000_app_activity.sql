@@ -263,7 +263,11 @@ as $$
            jsonb_build_object('message', mm.resend_message_id, 'campaign', c.name)
       from public.marketing_messages mm
       left join public.marketing_campaigns c on c.id = mm.campaign_id
-     where mm.profile_id is not null and mm.is_test = false and mm.state = 'accepted'
+     -- wysłano = potwierdzenie wysyłki (id Resend + sent_at): `accepted` albo `suppressed` po wypisie
+     -- W TRAKCIE wysyłki (marketing_record_result zachowuje wtedy id i sent_at). Wiadomość wykluczona
+     -- PRZED wysyłką (suppressed_before_send / suppressed_at_send) nie ma id Resend — nie liczy się.
+     where mm.profile_id is not null and mm.is_test = false
+       and (mm.state = 'accepted' or (mm.state = 'suppressed' and mm.resend_message_id is not null and mm.sent_at is not null))
        and mm.resend_message_id is not null and mm.sent_at >= p_from and mm.sent_at < p_to
     union all
     select mm.profile_id,
