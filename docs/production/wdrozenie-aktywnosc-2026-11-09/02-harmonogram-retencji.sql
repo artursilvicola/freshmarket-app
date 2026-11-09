@@ -26,15 +26,15 @@ begin
 end;
 $$;
 
--- kontrola: jedno zadanie, aktywne, z właściwym poleceniem, rola i baza = postgres
-select jobid, jobname, schedule, command, active, username, database
-  from cron.job where jobname = 'fm-app-activity-retention';
-
--- kontrola uprawnień: funkcje modułu należą do postgres; purge_app_visits i
--- app_activity_event_rows wykonuje TYLKO postgres; RPC panelu — postgres + authenticated
-select p.proname, pg_get_userbyid(p.proowner) as owner, p.proacl::text as acl
-  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
- where n.nspname = 'public'
-   and p.proname in ('purge_app_visits','app_activity_event_rows','app_activity_period','record_app_visit',
-                     'admin_activity_report','admin_activity_events','admin_set_activity_test_account')
- order by p.proname;
+-- kontrola (jedno zapytanie — SQL Editor pokazuje wynik tylko ostatniego polecenia):
+-- jedno aktywne zadanie postgres/postgres z właściwym poleceniem; zapis nadal wyłączony;
+-- funkcje modułu należą do postgres; purge_app_visits i app_activity_event_rows wykonuje TYLKO postgres
+select (select count(*) from cron.job where jobname = 'fm-app-activity-retention')               as zadania,
+       (select string_agg(schedule || ' | ' || command || ' | ' || active || ' | ' || username || '/' || database, '; ')
+          from cron.job where jobname = 'fm-app-activity-retention')                               as zadanie,
+       (select enabled from public.app_activity_settings)                                          as zapis_wlaczony,
+       (select string_agg(p.proname || '=' || pg_get_userbyid(p.proowner) || coalesce(p.proacl::text, ''), '; ' order by p.proname)
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+         where n.nspname = 'public'
+           and p.proname in ('purge_app_visits','app_activity_event_rows','app_activity_period','record_app_visit',
+                             'admin_activity_report','admin_activity_events','admin_set_activity_test_account')) as funkcje;

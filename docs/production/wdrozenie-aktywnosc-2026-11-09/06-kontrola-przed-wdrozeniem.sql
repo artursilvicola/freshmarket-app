@@ -1,6 +1,7 @@
 -- ============================================================================
 -- Aktywność — kontrola PRZED wdrożeniem (krok P). Tylko odczyt. SQL Editor projektu
 -- sklyfuvzjikkqerxtulo (sprawdź adres). Nic nie zmienia.
+-- Jedno zapytanie (SQL Editor pokazuje wynik tylko ostatniego polecenia).
 -- Oczekiwane: rola postgres; pg_cron zainstalowany; obiektów modułu jeszcze nie ma;
 -- brak zadania retencji; podstawowe tabele, z których czyta raport, istnieją.
 -- ============================================================================
@@ -15,8 +16,8 @@ select current_user                                                         as r
        to_regclass('public.legacy_send_app_reads')                          as legacy_send_app_reads,
        to_regclass('public.marketing_messages')                             as marketing_messages,
        to_regclass('public.marketing_email_events')                         as marketing_email_events,
-       to_regprocedure('public.is_admin()')                                 as is_admin;
-
--- zadanie retencji nie powinno jeszcze istnieć (0); wymaga pg_cron — jeśli kolumna pg_cron
--- wyżej jest pusta, pomiń to zapytanie i zatrzymaj wdrożenie (02 nie zadziała)
-select count(*) as zadania_retencji from cron.job where jobname = 'fm-app-activity-retention';
+       to_regprocedure('public.is_admin()')                                 as is_admin,
+       -- zadanie retencji nie powinno jeszcze istnieć (0); NULL = brak pg_cron → STOP
+       case when to_regclass('cron.job') is null then null
+            else (xpath('/row/n/text()', query_to_xml('select count(*) as n from cron.job where jobname = ''fm-app-activity-retention''', false, true, '')))[1]::text::int
+       end                                                                  as zadania_retencji;
