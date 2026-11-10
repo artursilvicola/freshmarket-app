@@ -2562,7 +2562,7 @@
         "footer_confirm_suspend": "Potwierdź wstrzymanie",
         "footer_cancel": "Anuluj"
       },
-      "list_credits_total_format": "Kredyty: {{max}} · ważne do {{expiry}}"
+      "list_credits_total_format": "Kredyty: {{max}}"
     },
     "pipeline": {
       "tab_mod_format": "Moderacja ({{count}})",
@@ -2605,7 +2605,7 @@
         "remaining": "Pozostało",
         "returned": "Zwroty",
         "awaiting": "Czeka na odczyt",
-        "hint": "Kredyt jest finalnie zużyty dopiero po odczycie propozycji przez kupca. „Wszystkie” = kredyty przyznane bezpłatnie przez organizatora i kupione, razem. „Zwroty” = kredyty zachowane za brak odczytu w 14 dni. „Czeka na odczyt” = propozycje w panelu kupca, jeszcze nieodczytane. To widok operacyjny (kredyty), nie finansowy.",
+        "hint": "Kredyt jest finalnie zużyty dopiero po odczycie propozycji przez kupca. „Wszystkie” = kredyty z aktualnie ważnych pakietów, przyznane bezpłatnie przez organizatora i kupione, razem (nie suma historyczna). „Zwroty” = kredyty zachowane za brak odczytu w 14 dni. „Czeka na odczyt” = propozycje w panelu kupca, jeszcze nieodczytane. To widok operacyjny (kredyty), nie finansowy.",
         "show_per_company": "Pokaż per firma ({{count}})",
         "hide_per_company": "Ukryj rozbicie",
         "col_company": "Firma"

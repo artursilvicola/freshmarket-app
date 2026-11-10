@@ -16,7 +16,7 @@ Dane w bazie (sprawdzone 10.11): El Roda ma 3 przyznania bezpłatne (5 + 1 + 1 =
 ## Zmiana
 
 * `src/lib/admin-credit-usage.js` — `adminCreditUsage(lim)`: zużyte = `lim.used` (`qty_used` z `company_capacity`), wszystkie = `lim.max` (`qty_total`), procent, pozostało. Odporna na brak danych i zero.
-* `src/legacy/PreconnectFM.jsx` — trzy miejsca liczące dotąd wysyłki (`filter(!rejected/refunded/queued).length`) używają `adminCreditUsage`: karta firmy (lista 2.0), szczegóły firmy (drawer), starsza lista. Nagłówek karty: `Kredyty: {{max}} · ważne do {{expiry}}` zamiast nazwy planu; licznik `{{used}}/{{max}} kredytów wykorzystanych`.
+* `src/legacy/PreconnectFM.jsx` — trzy miejsca liczące dotąd wysyłki (`filter(!rejected/refunded/queued).length`) używają `adminCreditUsage`: karta firmy (lista 2.0), szczegóły firmy (drawer), starsza lista. Nagłówek karty: `Kredyty: {{max}}` zamiast nazwy planu (bez daty — patrz „Po review”); licznik `{{used}}/{{max}} kredytów wykorzystanych`.
 * `src/i18n/{pl,en}/legacy.json` — `credits_settle.bought`: „Kupione” → „Wszystkie” / “Bought” → “All” (ten sam klucz w karcie firmy, zbiorczym rozliczeniu Pipeline i zakładce Rozliczenia — wszędzie ta liczba to `qty_total`, czyli także kredyty bezpłatne); podpowiedź wyjaśnia „Wszystkie”; nowe `list_credits_total_format`, `list_used_unit` = „kredytów wykorzystanych” / “credits used”.
 * Bez zmian: kafelki Wykorzystane / Pozostało / Zwroty / Czeka na odczyt (były poprawne), podział „bezpłatne N · data / kupione N”, pole edycji „Pakiet” (to wybór planu przy edycji, nie suma kredytów).
 
@@ -33,6 +33,13 @@ Dane w bazie (sprawdzone 10.11): El Roda ma 3 przyznania bezpłatne (5 + 1 + 1 =
 ## Wdrożenie (po review i „wdrażaj”)
 
 1. Fast-forward `main` do gałęzi i push → build Netlify (kod frontu; bez migracji i bez zmian env).
-2. Kontrola na produkcji: karta El Roda → „Kredyty: 7 · ważne do 2026-12-31”, „3/7 kredytów wykorzystanych”, pasek 43%, kafelek „Wszystkie 7”.
+2. Kontrola na produkcji: karta El Roda → „Kredyty: 7”, „3/7 kredytów wykorzystanych”, pasek 43%, kafelek „Wszystkie 7”.
 3. Kontrola, że wysyłka marketingowa nadal jest włączona (od 9.11): `marketing-send` z nieistniejącą kampanią → 404 `campaign_not_found` (nic nie wysyła).
 4. Wycofanie: Netlify → poprzedni deploy (`6af1e887`, `f4179e7` z włączoną wysyłką) → Publish.
+
+## Po review Codexa (GO z uwagą P2)
+
+* **Nagłówek bez daty:** `pkg_expiry` z `company_capacity` to najpóźniejszy termin spośród ważnych pakietów, więc „Kredyty: 7 · ważne do …” sugerowało wspólną ważność całego salda. Teraz `adminCreditTotalLabel(t, lim)` → „Kredyty: {{max}}” / “Credits: {{max}}” (karta 2.0 i starsza lista). Szczegółowe terminy zostają przy pulach („bezpłatne N · data”, „kupione N · data”).
+* **Podpowiedź:** „Wszystkie” = kredyty z **aktualnie ważnych** pakietów, przyznane bezpłatnie i kupione, razem (nie suma historyczna) — zgodnie z widokiem (`expires_at >= business_today()`).
+* **Regresja dwóch terminów:** `tests/admin-credit-capacity.integrated.test.js` (PGlite, pełny łańcuch migracji, prawdziwy `company_capacity`): pakiety 5 (+50 dni) i 2 (+10 dni) oraz wygasły 4 → `qty_total` 7, `pkg_expiry` = późniejszy, `paid_expiry` = wcześniejszy; nagłówek „Kredyty: 7” bez żadnej z dat; 1/7 = 14%.
+* Pełny zestaw: 123 pliki OK, 2 pominięte; **1269 testów OK**, 3 pominięte; `vite build` OK. Podgląd testowy: nagłówki „Kredyty: 5”, „1/5 kredytów wykorzystanych”, bez daty.

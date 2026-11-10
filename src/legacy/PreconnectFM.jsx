@@ -140,7 +140,7 @@ import MarketingActivation from "../components/admin/MarketingActivation.jsx";
 // [feat/admin-activity] Zakładka „Aktywność” (za flagą ADMIN_ACTIVITY).
 import AdminActivity from "../components/admin/AdminActivity.jsx";
 // [fix/admin-credits-display] Wykorzystanie kredytów = zużyte kredyty (qty_used), nie wysyłki.
-import { adminCreditUsage } from "../lib/admin-credit-usage.js";
+import { adminCreditUsage, adminCreditTotalLabel } from "../lib/admin-credit-usage.js";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -12151,7 +12151,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
                 {/* Right column: package badge + usage + actions */}
                 <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0 }}>
                   <div style={{ textAlign:"right" }}>
-                    <div style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.firmy.list_credits_total_format", { max: lim.max, expiry: lim.pkgExpiry })}</div>
+                    <div style={{ fontSize:10,color:"#94a3b8" }}>{adminCreditTotalLabel(t, lim)}</div>
                     <div style={{ fontWeight:700,fontSize:14,color: pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>
                       {used}/{lim.max} <span style={{ fontSize:10,color:"#94a3b8",fontWeight:400 }}>{t("admin.firmy.list_used_unit")}</span>
                     </div>
@@ -12673,7 +12673,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
                   })()}
                 </div>
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
-                  {lim.country} · {t("admin.firmy.list_credits_total_format", { max: lim.max, expiry: lim.pkgExpiry })}
+                  {lim.country} · {adminCreditTotalLabel(t, lim)}
                   {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>{t("admin.firmy.list_preconnect_off")}</span>}
                   {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>{t("admin.firmy.list_fm_b2b")}{(Math.max(1, Math.min(5, Number(firmCo.fm_b2b_packages) || 1))) > 1 ? ` ×${Math.max(1, Math.min(5, Number(firmCo.fm_b2b_packages) || 1))}` : ""}</span>}
                 </div>

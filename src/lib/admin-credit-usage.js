@@ -10,3 +10,11 @@ export function adminCreditUsage(lim) {
   const pct = max > 0 ? Math.round((used / max) * 100) : 0;
   return { used, max, remaining: Math.max(0, max - used), pct };
 }
+
+// [fix/admin-credits-display, review Codexa 10.11] Zbiorczy nagłówek karty firmy: tylko liczba
+// kredytów, BEZ daty. `pkg_expiry` z company_capacity to najpóźniejszy termin spośród ważnych
+// pakietów — część kredytów może wygasać wcześniej, więc nie wolno go pokazywać jako ważności
+// całego salda. Szczegółowe terminy zostają przy pulach (bezpłatne / kupione).
+export function adminCreditTotalLabel(t, lim) {
+  return t("admin.firmy.list_credits_total_format", { max: Math.max(0, Number(lim?.max) || 0) });
+}
