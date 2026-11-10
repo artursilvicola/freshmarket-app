@@ -2410,7 +2410,7 @@
       "toast_fm_b2b_tier_format": "{{name}}: FM B2B package tier → {{tier}}.",
       "fm_b2b_tier_tooltip": "Event package tier. Premium wins ties in the meeting queue.",
       "toast_fm_b2b_packages_format": "{{name}}: Business packages = {{count}} (pool of up to {{meetings}} B2B meetings).",
-      "list_used_unit": "submissions",
+      "list_used_unit": "credits used",
       "status_section_title": "Status & access",
       "status_approved_at_format": "· since {{date}}",
       "status_note_placeholder": "Note for the supplier (reason for rejection/suspension, instructions on what to fix). Will appear in the email.",
@@ -2561,7 +2561,8 @@
         "footer_confirm_reject": "Confirm rejection",
         "footer_confirm_suspend": "Confirm suspension",
         "footer_cancel": "Cancel"
-      }
+      },
+      "list_credits_total_format": "Credits: {{max}} · valid until {{expiry}}"
     },
     "pipeline": {
       "tab_mod_format": "Moderation ({{count}})",
@@ -2599,12 +2600,12 @@
       "track_alert_done": "All delivered proposals are confirmed.",
       "credits_settle": {
         "title": "PreConnect credits settlement",
-        "bought": "Bought",
+        "bought": "All",
         "used": "Used",
         "remaining": "Remaining",
         "returned": "Returns",
         "awaiting": "Awaiting read",
-        "hint": "A credit is finally consumed only after the buyer reads the proposal. “Returns” = credits kept due to no read within 14 days. “Awaiting read” = proposals in the buyer panel, not yet read. This is an operational view (credits), not financial.",
+        "hint": "A credit is finally consumed only after the buyer reads the proposal. “All” = credits granted free by the organiser and bought, together. “Returns” = credits kept due to no read within 14 days. “Awaiting read” = proposals in the buyer panel, not yet read. This is an operational view (credits), not financial.",
         "show_per_company": "Show per company ({{count}})",
         "hide_per_company": "Hide breakdown",
         "col_company": "Company"

@@ -139,6 +139,8 @@ import { ADMIN_COMPANIES_2_0_LIST, ADMIN_COMPANIES_2_0_DRAWER, ADMIN_COMPANIES_2
 import MarketingActivation from "../components/admin/MarketingActivation.jsx";
 // [feat/admin-activity] Zakładka „Aktywność” (za flagą ADMIN_ACTIVITY).
 import AdminActivity from "../components/admin/AdminActivity.jsx";
+// [fix/admin-credits-display] Wykorzystanie kredytów = zużyte kredyty (qty_used), nie wysyłki.
+import { adminCreditUsage } from "../lib/admin-credit-usage.js";
 import { AdminRightDrawer } from "../components/admin/AdminRightDrawer";
 // [Krok P2-1 i18n MVP] i18n singleton dla in-place dispatch dat (PL_* vs EN_*).
 // W tym kroku UŻYWANY w fmtPolishDate, NextWindowCard i ActivityCard;
@@ -12070,8 +12072,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
           const isExpanded = expandedId === lim.id;
           const firmCo = (companies||[]).find(c => c.id === lim.id) || { id: lim.id };
           const firmSends = sends.filter(s => legacyKeyMatchesCompany(s.supplierId, firmCo));
-          const used = firmSends.filter(s => !["rejected","refunded","queued"].includes(s.status)).length;
-          const pct = lim.max > 0 ? Math.round(used/lim.max*100) : 0;
+          const { used, pct } = adminCreditUsage(lim);
           const status = firmCo?.account_status || "active";
           const statusMeta = ACCOUNT_STATUS_LABELS[status] || ACCOUNT_STATUS_LABELS.active;
           const [, statusColor, statusBg] = statusMeta;
@@ -12150,7 +12151,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
                 {/* Right column: package badge + usage + actions */}
                 <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,flexShrink:0 }}>
                   <div style={{ textAlign:"right" }}>
-                    <div style={{ fontSize:10,color:"#94a3b8" }}>{getPlanLabel(lim.pkg, { withPerSend: false })} · {lim.pkgExpiry}</div>
+                    <div style={{ fontSize:10,color:"#94a3b8" }}>{t("admin.firmy.list_credits_total_format", { max: lim.max, expiry: lim.pkgExpiry })}</div>
                     <div style={{ fontWeight:700,fontSize:14,color: pct>=90?"#dc2626":pct>=70?"#d97706":"#059669" }}>
                       {used}/{lim.max} <span style={{ fontSize:10,color:"#94a3b8",fontWeight:400 }}>{t("admin.firmy.list_used_unit")}</span>
                     </div>
@@ -12208,9 +12209,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
           const liveCo = (companies||[]).find(c => c.id === drawerCompany.id) || drawerCompany;
           const drawerLim = allLims.find(l => l.id === drawerCompany.id) || null;
           const drawerFirmSends = sends.filter(s => legacyKeyMatchesCompany(s.supplierId, liveCo));
-          const drawerUsed = drawerFirmSends.filter(s => !["rejected","refunded","queued"].includes(s.status)).length;
-          const drawerMax = drawerLim ? drawerLim.max : 0;
-          const drawerPct = drawerMax > 0 ? Math.round(drawerUsed / drawerMax * 100) : 0;
+          const { used: drawerUsed, max: drawerMax, pct: drawerPct } = adminCreditUsage(drawerLim);
           const usageColor = (p) => p>=90?"#dc2626":p>=70?"#d97706":"#059669";
 
           const drawerIndex = visibleLimsByTab.findIndex(l => l.id === drawerCompany.id);
@@ -12657,8 +12656,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
         // row isn't loaded yet.
         const firmCo = (companies||[]).find(c => c.id === lim.id) || { id: lim.id };
         const firmSends = sends.filter(s => legacyKeyMatchesCompany(s.supplierId, firmCo));
-        const used = firmSends.filter(s=>!["rejected","refunded","queued"].includes(s.status)).length;
-        const pct = lim.max>0 ? Math.round(used/lim.max*100) : 0;
+        const { used, pct } = adminCreditUsage(lim);
         return (
           <div key={lim.id} style={{ background:"white",border:"1px solid #e2e8f0",borderRadius:12,marginBottom:10,overflow:"hidden" }}>
             <div style={{ display:"flex",gap:12,alignItems:"center",padding:"12px 16px",cursor:"pointer" }} onClick={()=>setExpandedId(isExpanded?null:lim.id)}>
@@ -12675,7 +12673,7 @@ export function PageAdminFirmy({ limits, updateLimit, sends, offers, orders, fl,
                   })()}
                 </div>
                 <div style={{ fontSize:11,color:"#64748b",marginTop:2 }}>
-                  {lim.country} · {t("admin.firmy.list_pkg_label")} {getPlanLabel(lim.pkg, { withPerSend: false })} · {t("admin.firmy.list_valid_until_label")} {lim.pkgExpiry}
+                  {lim.country} · {t("admin.firmy.list_credits_total_format", { max: lim.max, expiry: lim.pkgExpiry })}
                   {firmCo?.preconnect_enabled === false && firmCo?.account_status === "active" && <span style={{ color:"#d97706",marginLeft:6 }}>{t("admin.firmy.list_preconnect_off")}</span>}
                   {firmCo?.fm_b2b_enabled && <span style={{ color:"#0d9488",marginLeft:6 }}>{t("admin.firmy.list_fm_b2b")}{(Math.max(1, Math.min(5, Number(firmCo.fm_b2b_packages) || 1))) > 1 ? ` ×${Math.max(1, Math.min(5, Number(firmCo.fm_b2b_packages) || 1))}` : ""}</span>}
                 </div>

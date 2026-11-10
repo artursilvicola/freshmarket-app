@@ -2410,7 +2410,7 @@
       "toast_fm_b2b_tier_format": "{{name}}: poziom pakietu FM B2B → {{tier}}.",
       "fm_b2b_tier_tooltip": "Poziom pakietu eventowego. Premium ma pierwszeństwo przy remisie w kolejce spotkań.",
       "toast_fm_b2b_packages_format": "{{name}}: pakiety Business = {{count}} (pula do {{meetings}} spotkań B2B).",
-      "list_used_unit": "wysyłek",
+      "list_used_unit": "kredytów wykorzystanych",
       "status_section_title": "Status & dostęp",
       "status_approved_at_format": "· od {{date}}",
       "status_note_placeholder": "Notatka dla supplera (powód odrzucenia/zawieszenia, instrukcja co poprawić). Pojawi się w mailu.",
@@ -2561,7 +2561,8 @@
         "footer_confirm_reject": "Potwierdź odrzucenie",
         "footer_confirm_suspend": "Potwierdź wstrzymanie",
         "footer_cancel": "Anuluj"
-      }
+      },
+      "list_credits_total_format": "Kredyty: {{max}} · ważne do {{expiry}}"
     },
     "pipeline": {
       "tab_mod_format": "Moderacja ({{count}})",
@@ -2599,12 +2600,12 @@
       "track_alert_done": "Wszystkie dostarczone propozycje mają potwierdzenie.",
       "credits_settle": {
         "title": "Rozliczenie kredytów PreConnect",
-        "bought": "Kupione",
+        "bought": "Wszystkie",
         "used": "Wykorzystane",
         "remaining": "Pozostało",
         "returned": "Zwroty",
         "awaiting": "Czeka na odczyt",
-        "hint": "Kredyt jest finalnie zużyty dopiero po odczycie propozycji przez kupca. „Zwroty” = kredyty zachowane za brak odczytu w 14 dni. „Czeka na odczyt” = propozycje w panelu kupca, jeszcze nieodczytane. To widok operacyjny (kredyty), nie finansowy.",
+        "hint": "Kredyt jest finalnie zużyty dopiero po odczycie propozycji przez kupca. „Wszystkie” = kredyty przyznane bezpłatnie przez organizatora i kupione, razem. „Zwroty” = kredyty zachowane za brak odczytu w 14 dni. „Czeka na odczyt” = propozycje w panelu kupca, jeszcze nieodczytane. To widok operacyjny (kredyty), nie finansowy.",
         "show_per_company": "Pokaż per firma ({{count}})",
         "hide_per_company": "Ukryj rozbicie",
         "col_company": "Firma"
