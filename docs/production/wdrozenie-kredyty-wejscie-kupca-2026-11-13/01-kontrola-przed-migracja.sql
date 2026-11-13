@@ -9,6 +9,13 @@
 with pending as (
   select s.legacy_id, s.status, s.retailer_id, s.supplier_legacy_id, s.data,
          (coalesce(s.data->>'billingStatus', '') = 'charged' or (s.data->>'chargeAt') is not null) as charged,
+         -- mailing do sieci wysłany — te same znaczniki co hasRetailerEmailMarker w aplikacji
+         ((s.data->>'mailingSentAt') is not null or (s.data->>'emailSentAt') is not null
+          or s.resend_message_id is not null
+          or (s.data->>'resendMessageId') is not null or (s.data->>'resend_message_id') is not null
+          or (case when (s.data->>'resendBuyerCount') ~ '^[0-9]+$' then (s.data->>'resendBuyerCount')::int else 0 end) > 0
+          or (case when jsonb_typeof(s.data->'resendMessageIds') = 'array' then jsonb_array_length(s.data->'resendMessageIds') else 0 end) > 0
+         ) as mailed,
          r.name as retailer_name,
          coalesce(r.active, true) as retailer_active,
          (select count(*) from public.profiles p
@@ -82,8 +89,7 @@ checks(lp, kontrola, wynik, oczekiwane) as (
          (select count(*) from pending where not charged and retailer_active and active_buyers > 0 and not supplier_has_credit)::text, 'informacja'
   union all
   select 26, 'INFO: z nierozliczonych — bez wysłanego mailingu (kupiec nie dostał jeszcze maila; wejście i tak rozliczy)',
-         (select count(*) from pending where not charged
-            and (data->>'mailingSentAt') is null and (data->>'emailSentAt') is null)::text, 'informacja'
+         (select count(*) from pending where not charged and not mailed)::text, 'informacja'
   union all
   select 27, 'INFO: propozycje „opened” już rozliczone otwarciem maila (wejście zmieni tylko status, bez kredytu)',
          (select count(*) from pending where charged)::text, 'informacja'
@@ -109,7 +115,8 @@ checks(lp, kontrola, wynik, oczekiwane) as (
          'INFO sieć: ' || coalesce(max(retailer_name), '—') || ' (#' || coalesce(retailer_id::text, '—')
            || ', aktywna: ' || case when bool_and(retailer_active) then 'tak' else 'NIE' end
            || ', aktywnych kont kupców: ' || max(active_buyers)::text || ')',
-         count(*)::text || ' nierozliczonych, w tym ' || count(*) filter (where supplier_has_credit)::text || ' u dostawców z wolnym kredytem',
+         count(*)::text || ' nierozliczonych, w tym ' || count(*) filter (where supplier_has_credit)::text || ' u dostawców z wolnym kredytem, '
+           || count(*) filter (where not mailed)::text || ' bez wysłanego mailingu',
          'informacja'
   from pending
   where not charged
