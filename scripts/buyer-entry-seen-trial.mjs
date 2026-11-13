@@ -9,7 +9,7 @@
 // Wymaga na bazie testowej migracji 20261113120000_manual_read_confirm.sql (ręczne potwierdzenie).
 // Opcje: --keep (zostaw dane próbne), --only-buyer (sam scenariusz kupca), --out=<katalog> (raport + zrzuty),
 // --chrome=<ścieżka>. Tworzy i usuwa własne dane „ZZZ PROBA” (sieć 9901, firma, pakiet 5 kredytów,
-// wysyłki 990001–990003, konto kupca); istniejących seedów nie dotyka. Przeglądarka: Chrome przez CDP.
+// wysyłki 990001–990004, konto kupca); istniejących seedów nie dotyka. Przeglądarka: Chrome przez CDP.
 // Sesje z jednorazowych linków generowanych kluczem serwisowym projektu TESTOWEGO; nic nie jest
 // wypisywane (tokeny, klucze). Poczta: klucz Resend fikcyjny — żaden mail nie wychodzi.
 import { spawn } from "node:child_process";
@@ -53,7 +53,9 @@ const COMPANY_NAME = "ZZZ PROBA dostawca (wejście kupca)";
 const SUP = "sup-proba-entry";
 const SENDS = [990001, 990002];
 const MANUAL = 990003;
-const ALL = [...SENDS, MANUAL];
+// CLEAN: propozycja z CZYSTĄ sekwencją „jedno ręczne potwierdzenie → wejście kupca → cofnięcie” (review Codexa, 2. runda)
+const CLEAN = 990004;
+const ALL = [...SENDS, MANUAL, CLEAN];
 const BUYER_EMAIL = "proba.kupiec.wejscie@freshmarket.test";
 const BUYER_NAME = "ZZZ PROBA Kupiec";
 const ADMIN_EMAIL = "codex.admin@freshmarket.test";
@@ -143,13 +145,19 @@ async function setup() {
 
 async function snapshot() {
   const sends = (await db.query(
-    `select legacy_id::int as id, status, data->>'seenChannel' as seen_channel, data->>'readType' as read_type, data->>'billingStatus' as billing, (data->>'chargeAt') is not null as charged, data->>'chargeChannel' as charge_channel
+    `select legacy_id::int as id, status, data->>'seenChannel' as seen_channel, data->>'readType' as read_type, data->>'billingStatus' as billing, (data->>'chargeAt') is not null as charged, data->>'chargeChannel' as charge_channel, (data->>'buyerAppSeenAt') is not null as buyer_app_seen
        from legacy_sends where legacy_id = any($1::bigint[]) order by legacy_id`, [ALL])).rows;
+  const perSend = (await db.query(
+    `select s.legacy_id::int as id, count(*) filter (where t.type = 'send_charge')::int as charges, count(*) filter (where t.type = 'refund')::int as refunds
+       from legacy_sends s left join wallet_tx t on t.reference_id = s.id where s.legacy_id = any($1::bigint[]) group by 1`, [ALL])).rows;
+  for (const row of sends) Object.assign(row, { tx_charges: perSend.find((x) => x.id === row.id)?.charges ?? 0, tx_refunds: perSend.find((x) => x.id === row.id)?.refunds ?? 0 });
   const pkg = (await db.query(`select qty_total, qty_used from packages where company_id = $1`, [COMPANY_ID])).rows[0];
   const reads = (await db.query(`select legacy_id::int as id, reader_role, channel, read_count from legacy_send_app_reads where legacy_id = any($1::bigint[]) order by legacy_id, channel`, [ALL])).rows;
   const notify = Number((await db.query(`select count(*) from legacy_send_notify_messages where legacy_ids && $1::bigint[]`, [ALL])).rows[0].count);
   const tx = Number((await db.query(`select count(*) from wallet_tx where company_id = $1`, [COMPANY_ID])).rows[0].count);
-  return { sends, credits_used: pkg?.qty_used, app_reads: reads, notify_queue: notify, wallet_tx: tx };
+  const refunds = Number((await db.query(`select count(*) from wallet_tx where company_id = $1 and type = 'refund'`, [COMPANY_ID])).rows[0].count);
+  const charges = Number((await db.query(`select count(*) from wallet_tx where company_id = $1 and type = 'send_charge'`, [COMPANY_ID])).rows[0].count);
+  return { sends, credits_used: pkg?.qty_used, app_reads: reads, notify_queue: notify, wallet_tx: tx, refunds, charges };
 }
 
 async function sessionFor(email) {
@@ -314,7 +322,7 @@ async function scenarioManualConfirmUi() {
   const clickRowBtn = (label) => page.evaluate(`(() => { const tr = [...document.querySelectorAll("tr")].find(r => !r.querySelector("tr") && r.textContent.includes(${JSON.stringify(PRODUCT)})); if (!tr) return "brak wiersza"; const b = [...tr.querySelectorAll("button")].find(x => x.textContent.trim().includes(${JSON.stringify(label)})); if (!b) return "brak przycisku"; b.click(); return true; })()`);
   const clickBtn = (label) => page.evaluate(`(() => { const b = [...document.querySelectorAll("button")].find(x => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
   const must = (v, what) => { if (v !== true) throw new Error(`${what}: ${v}`); };
-  let hint = false, c1, s1, u1, s2, c2, s3;
+  let hint = false, c1, s1, u1, s2, c2, s3, c3, s3b;
   try {
     await page.goto("/admin");
     await page.waitFor((t) => /Wyloguj/.test(t) && /Pipeline/.test(t), 120000, "panel admina");
@@ -341,6 +349,12 @@ async function scenarioManualConfirmUi() {
     await page.waitFor((t) => t.includes("Zapisz potwierdzenie"), 10000, "formularz potwierdzenia (2)");
     must(await clickBtn("Zapisz potwierdzenie"), "przycisk Zapisz potwierdzenie (2)");
     c2 = await waitCall(3, "ponowne potwierdzenie"); s3 = await snapshot();
+    // druga propozycja: JEDNO ręczne potwierdzenie, bez cofania — czysta sekwencja do scenariusza [5]
+    const clickCleanBtn = (label) => page.evaluate(`(() => { const tr = [...document.querySelectorAll("tr")].find(r => !r.querySelector("tr") && r.textContent.includes(${JSON.stringify(productName(CLEAN))})); if (!tr) return "brak wiersza"; const b = [...tr.querySelectorAll("button")].find(x => x.textContent.trim().includes(${JSON.stringify(label)})); if (!b) return "brak przycisku"; b.click(); return true; })()`);
+    must(await clickCleanBtn("Potwierdź ręcznie"), "przycisk Potwierdź ręcznie (czysta sekwencja)");
+    await page.waitFor((t) => t.includes("Zapisz potwierdzenie"), 10000, "formularz potwierdzenia (czysta sekwencja)");
+    must(await clickBtn("Zapisz potwierdzenie"), "przycisk Zapisz potwierdzenie (czysta sekwencja)");
+    c3 = await waitCall(4, "potwierdzenie (czysta sekwencja)"); s3b = await snapshot();
     report.manual_confirm = { hint, confirm: { http: c1.http, skipped: c1.r.skipped, billing: c1.r.billing, notification: c1.r.notification }, undo: { http: u1.http, skipped: u1.r.skipped, refunded: u1.r.refunded }, reconfirm: { http: c2.http, billing: c2.r.billing }, after_confirm: st(s1), after_undo: st(s2), after_reconfirm: st(s3), js_errors: page.consoleErrors };
   } finally { await page.close(); }
 
@@ -357,7 +371,9 @@ async function scenarioManualConfirmUi() {
   const b = await sessionFor(BUYER_EMAIL);
   const res = await fetch(`${BASE}/.netlify/functions/admin-confirm-send-read`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${b.access_token}` }, body: JSON.stringify({ legacy_id: SENDS[0], action: "confirm", read_type: "manual_phone" }) });
   const s4 = await snapshot();
-  check("kupiec nie może ręcznie potwierdzać (403, baza bez zmian)", res.status === 403 && JSON.stringify(s4) === JSON.stringify(s3), `HTTP ${res.status}`);
+  check("kupiec nie może ręcznie potwierdzać (403, baza bez zmian)", res.status === 403 && JSON.stringify(s4) === JSON.stringify(s3b), `HTTP ${res.status}`);
+  const cl = (snap) => snap.sends.find((x) => x.id === CLEAN);
+  check("druga propozycja potwierdzona ręcznie dokładnie raz (jedno pobranie, zero zwrotów)", c3.r.billing?.charged === true && cl(s3b)?.status === "read_manual" && cl(s3b)?.charge_channel === "manual" && cl(s3b)?.tx_charges === 1 && cl(s3b)?.tx_refunds === 0 && s3b.credits_used === s3.credits_used + 1, `${cl(s3b)?.status}/${cl(s3b)?.charge_channel}; pobrań ${cl(s3b)?.tx_charges}, zwrotów ${cl(s3b)?.tx_refunds}; kredyty ${s3.credits_used} → ${s3b.credits_used}`);
 }
 
 async function scenarioBuyerEntry() {
@@ -385,11 +401,14 @@ async function scenarioBuyerEntry() {
   } finally { await page.close(); }
   const st = (snap, id) => snap.sends.find((s) => s.id === id);
   if (MODE === "fix") {
-    check("wejście kupca: jedno zgłoszenie odczytu z obiema propozycjami", callsEntry.length === 1 && callsEntry[0].fn === "mark-buyer-preconnect-seen" && SENDS.every((id) => callsEntry[0].ids.map(Number).includes(id)), JSON.stringify(callsEntry.map((c) => ({ fn: c.fn, ids: c.ids, status: c.status }))));
+    check("wejście kupca: jedno zgłoszenie odczytu — obie nowe propozycje i ta potwierdzona ręcznie", callsEntry.length === 1 && callsEntry[0].fn === "mark-buyer-preconnect-seen" && ALL.every((id) => callsEntry[0].ids.map(Number).includes(id)) && callsEntry[0].ids.length === ALL.length, JSON.stringify(callsEntry.map((c) => ({ fn: c.fn, ids: c.ids, status: c.status }))));
     check("wejście kupca: obie propozycje „read”, rozliczone", SENDS.every((id) => st(afterEntry, id)?.status === "read" && st(afterEntry, id)?.charged), afterEntry.sends.map((s) => `${s.id}=${s.status}/${s.billing}`).join(", "));
     check("wejście kupca: zeszły dokładnie 2 kredyty", afterEntry.credits_used === before.credits_used + 2, `${before.credits_used} → ${afterEntry.credits_used}`);
     check("wejście kupca: odczyt przypisany kupcowi (kanał app_list)", afterEntry.app_reads.filter((r) => SENDS.includes(r.id) && r.reader_role === "buyer" && r.channel === "app_list").length === 2, JSON.stringify(afterEntry.app_reads));
-    check("ręcznie potwierdzona wysyłka nie jest rozliczana drugi raz przy wejściu kupca", st(afterEntry, MANUAL)?.status === "read_manual" && !afterEntry.app_reads.some((r) => r.id === MANUAL), `${MANUAL}=${st(afterEntry, MANUAL)?.status}, rozliczona: ${st(afterEntry, MANUAL)?.charged}`);
+    // [review Codexa, 2. runda] „nie pobieraj drugi raz” ORAZ „zapisz niezależny odczyt kupca” — osobno
+    const manualIds = [MANUAL, CLEAN];
+    check("ręcznie potwierdzone propozycje: wejście kupca NIE pobiera drugiego kredytu (rozliczenie nadal z potwierdzenia)", manualIds.every((id) => st(afterEntry, id)?.status === "read_manual" && st(afterEntry, id)?.charged === true && st(afterEntry, id)?.charge_channel === "manual" && st(afterEntry, id)?.tx_charges === st(before, id)?.tx_charges) && afterEntry.charges === before.charges + 2, manualIds.map((id) => `${id}=${st(afterEntry, id)?.status}/${st(afterEntry, id)?.charge_channel}/pobrań ${st(afterEntry, id)?.tx_charges}`).join(", ") + `; pobrania razem ${before.charges} → ${afterEntry.charges}`);
+    check("ręcznie potwierdzone propozycje: wejście kupca ZAPISUJE jego niezależny odczyt", manualIds.every((id) => st(afterEntry, id)?.buyer_app_seen === true && afterEntry.app_reads.some((r) => r.id === id && r.reader_role === "buyer" && r.channel === "app_list")), manualIds.map((id) => `${id}: buyerAppSeenAt=${st(afterEntry, id)?.buyer_app_seen}`).join(", "));
     check("odświeżenie strony: brak drugiego pobrania", afterReload.credits_used === afterEntry.credits_used && callsReload.length === 0, `kredyty ${afterReload.credits_used}, wywołań ${callsReload.length}`);
     check("pulpit kupca nadal pokazuje liczbę nowych propozycji z wejścia", /\b2\b/.test(report.buyer_entry.new_count_text || ""), JSON.stringify(report.buyer_entry.new_count_text));
   } else {
@@ -398,30 +417,51 @@ async function scenarioBuyerEntry() {
 }
 
 
-// [review Codexa 13.11, P1] potwierdzenie ręczne → kupiec SAM odczytuje propozycję → cofnięcie:
-// kredyt ma zostać, a status ma odpowiadać faktycznemu odczytowi. Przez prawdziwe funkcje serwera.
+// [review Codexa 13.11, P1 — 2. runda] potwierdzenie ręczne → kupiec NORMALNIE wchodzi do aplikacji
+// (scenariusz [4], przeglądarka, bez żadnego ręcznego żądania) → administrator cofa potwierdzenie
+// w panelu. Oczekiwane: jedno pobranie łącznie, zero zwrotów, zapisany odczyt kupca, status „read”.
 async function scenarioUndoAfterBuyerRead() {
-  console.log("\n[5] Cofnięcie ręcznego potwierdzenia PO odczycie kupca (review P1)");
-  const st = (snap) => snap.sends.find((x) => x.id === MANUAL);
+  console.log("\n[5] Administrator cofa ręczne potwierdzenie PO normalnym wejściu kupca (przeglądarka)");
+  const PRODUCT = productName(CLEAN);
+  const st = (snap) => snap.sends.find((x) => x.id === CLEAN);
+  const other = (snap) => snap.sends.find((x) => x.id === MANUAL);
   const before = await snapshot();
-  const post = async (session, fn, body) => {
-    const r = await fetch(`${BASE}/.netlify/functions/${fn}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(body) });
-    return { status: r.status, body: await r.json().catch(() => ({})) };
-  };
-  const buyer = await sessionFor(BUYER_EMAIL);
-  const admin = await sessionFor(ADMIN_EMAIL);
-  const seen = await post(buyer, "mark-buyer-preconnect-seen", { legacy_ids: [MANUAL], channel: "app_list" });
-  const afterSeen = await snapshot();
-  const undo = await post(admin, "admin-confirm-send-read", { legacy_id: MANUAL, action: "undo" });
-  const afterUndo = await snapshot();
-  const again = await post(admin, "admin-confirm-send-read", { legacy_id: MANUAL, action: "undo" });
-  const afterAgain = await snapshot();
-  report.undo_after_buyer_read = { before: st(before), seen: { http: seen.status, result: (seen.body.results || [])[0]?.status, already: (seen.body.results || [])[0]?.billing?.alreadyCharged }, undo: { http: undo.status, refunded: undo.body.refunded, kept_reason: undo.body.kept_reason, status: undo.body.status }, after: st(afterUndo) };
-  check("stan wyjściowy: propozycja potwierdzona ręcznie i rozliczona tym potwierdzeniem", st(before)?.status === "read_manual" && st(before)?.charge_channel === "manual", `${st(before)?.status}/${st(before)?.charge_channel}`);
-  check("odczyt kupca po potwierdzeniu: bez drugiego kredytu, status bez zmian", seen.status === 200 && afterSeen.credits_used === before.credits_used && st(afterSeen)?.status === "read_manual", `HTTP ${seen.status}, kredyty ${afterSeen.credits_used}`);
-  check("cofnięcie po odczycie kupca: kredyt ZOSTAJE (bez zwrotu)", undo.status === 200 && undo.body.refunded === false && undo.body.kept_reason === "buyer_read" && afterUndo.credits_used === before.credits_used, `refunded=${undo.body.refunded}, kept=${undo.body.kept_reason}, kredyty ${before.credits_used} → ${afterUndo.credits_used}`);
-  check("cofnięcie po odczycie kupca: status „read”, rozliczenie zachowane i już nie „ręczne”", st(afterUndo)?.status === "read" && st(afterUndo)?.charged === true && st(afterUndo)?.charge_channel === "app_list", `${st(afterUndo)?.status}/${st(afterUndo)?.billing}/${st(afterUndo)?.charge_channel}`);
-  check("ponowne cofnięcie niczego nie zmienia", again.status === 200 && again.body.skipped === true && JSON.stringify(afterAgain) === JSON.stringify(afterUndo), `skipped=${again.body.skipped}`);
+  const page = await openPage(await sessionFor(ADMIN_EMAIL));
+  const done = () => page.calls.filter((c) => c.fn === "admin-confirm-send-read" && c.response);
+  const clickLeaf = (text) => page.evaluate(`(() => { const el = [...document.querySelectorAll("button,div,span,strong,a")].find(e => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`);
+  const rowButtons = () => page.evaluate(`(() => { const tr = [...document.querySelectorAll("tr")].find(r => !r.querySelector("tr") && r.textContent.includes(${JSON.stringify(PRODUCT)})); return tr ? [...tr.querySelectorAll("button")].map(b => b.textContent.trim()) : null; })()`);
+  const clickRowBtn = (label) => page.evaluate(`(() => { const tr = [...document.querySelectorAll("tr")].find(r => !r.querySelector("tr") && r.textContent.includes(${JSON.stringify(PRODUCT)})); if (!tr) return "brak wiersza"; const b = [...tr.querySelectorAll("button")].find(x => x.textContent.trim().includes(${JSON.stringify(label)})); if (!b) return "brak przycisku"; b.click(); return true; })()`);
+  const must = (v, what) => { if (v !== true) throw new Error(`${what}: ${v}`); };
+  let undo, text, after, buttonsAfter;
+  try {
+    await page.goto("/admin");
+    await page.waitFor((t) => /Wyloguj/.test(t) && /Pipeline/.test(t), 120000, "panel admina");
+    must(await clickLeaf("Pipeline"), "pozycja Pipeline");
+    await page.waitFor((t) => t.includes("Dostawcy / tracking"), 30000, "widok Pipeline");
+    must(await clickLeaf("Dostawcy / tracking"), "zakładka Dostawcy / tracking");
+    await page.waitFor((t) => t.includes(COMPANY_NAME), 30000, "wiersz dostawcy próbnego");
+    must(await clickLeaf(COMPANY_NAME), "wiersz dostawcy");
+    await page.waitFor((t) => t.includes(PRODUCT), 15000, "propozycje dostawcy");
+    must(await clickRowBtn("Cofnij potwierdzenie"), "przycisk Cofnij potwierdzenie");
+    const end = Date.now() + 25000;
+    while (Date.now() < end && done().length < 1) await sleep(250);
+    if (done().length < 1) throw new Error("brak odpowiedzi funkcji cofnięcia");
+    await sleep(500);
+    text = (await page.text()).replace(/\s+/g, " ");
+    undo = { http: done()[0].status, body: JSON.parse(done()[0].response || "{}") };
+    await page.shot(`proba-${MODE}-5-po-cofnieciu.png`);
+    after = await snapshot();
+    await sleep(1200);
+    buttonsAfter = await rowButtons();
+  } finally { await page.close(); }
+  report.undo_after_buyer_read = { before: st(before), undo: { http: undo.http, refunded: undo.body.refunded, kept_reason: undo.body.kept_reason, status: undo.body.status }, after: st(after), credits: [before.credits_used, after.credits_used], refunds: [before.refunds, after.refunds], charges: [before.charges, after.charges], row_buttons_after: buttonsAfter };
+  check("stan wyjściowy: potwierdzona ręcznie, rozliczona tym potwierdzeniem, z zapisanym odczytem kupca z jego wejścia", st(before)?.status === "read_manual" && st(before)?.charge_channel === "manual" && st(before)?.buyer_app_seen === true, `${st(before)?.status}/${st(before)?.charge_channel}/odczyt kupca: ${st(before)?.buyer_app_seen}`);
+  check("cofnięcie w panelu: kredyt ZOSTAJE (bez zwrotu, powód: odczyt kupca)", undo.http === 200 && undo.body.refunded === false && undo.body.kept_reason === "buyer_read" && after.credits_used === before.credits_used, `refunded=${undo.body.refunded}, kept=${undo.body.kept_reason}, kredyty ${before.credits_used} → ${after.credits_used}`);
+  check("cała sekwencja dla tej propozycji: JEDNO pobranie łącznie i ZERO zwrotów", st(after)?.tx_charges === 1 && st(after)?.tx_refunds === 0 && after.refunds === before.refunds && after.charges === before.charges, `pobrań ${st(after)?.tx_charges}, zwrotów ${st(after)?.tx_refunds}; u dostawcy zwroty ${before.refunds} → ${after.refunds}, pobrania ${before.charges} → ${after.charges}`);
+  check("druga ręcznie potwierdzona propozycja pozostaje nietknięta", JSON.stringify(other(after)) === JSON.stringify(other(before)), `${other(after)?.status}/${other(after)?.charge_channel}`);
+  check("cofnięcie w panelu: status „read”, rozliczenie zachowane i już nie „ręczne”, odczyt kupca nadal zapisany", st(after)?.status === "read" && st(after)?.charged === true && st(after)?.charge_channel === "app_list" && st(after)?.buyer_app_seen === true, `${st(after)?.status}/${st(after)?.billing}/${st(after)?.charge_channel}`);
+  check("cofnięcie w panelu: komunikat, że kredyt zostaje", /Kredyt zostaje/.test(text));
+  check("po cofnięciu przy propozycji nie ma już przycisków potwierdzania ani cofania", Array.isArray(buttonsAfter) && !buttonsAfter.some((b) => /Cofnij potwierdzenie|Potwierdź ręcznie/.test(b)), JSON.stringify(buttonsAfter));
 }
 
 // ── przebieg ─────────────────────────────────────────────────────────────────

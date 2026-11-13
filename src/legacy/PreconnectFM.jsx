@@ -108,7 +108,7 @@ import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE
 import { FM_STARS_MIN, fmPackagesOf, fmStarsMax, fmStarsState, findSupplierCompany } from "../lib/fm-stars.js";
 import { companyProfileGaps } from "../lib/company-profile.js";
 import { isOwnAccount } from "../lib/profile-guard.js";
-import { canRegisterBuyerSeen, pendingBuyerSeenSends, createSeenSubmissionTracker } from "../lib/buyer-seen.js";
+import { canRegisterBuyerSeen, pendingBuyerSeenSends, createSeenSubmissionTracker, isBuyerSeenPending, isManualAwaitingBuyerRead, isNewForBuyer } from "../lib/buyer-seen.js";
 // [feat/fm-decision-source] kto ustawił wybór sieci / decyzję kupca (oznaczenie „Wybrane przez administratora”)
 import { groupDecisionSources, targetSource, respSource, sourcesVisibleTo } from "../lib/fm-decision-sources.js";
 import DecisionSourceBadge from "../components/fm/DecisionSourceBadge.jsx";
@@ -3549,14 +3549,41 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   useEffect(() => {
     if (!buyerEntryPendingKey) return;
     // Pulpit kupca ma nadal pokazać, ile propozycji było nowych przy tym wejściu.
-    setBuyerNewAtEntry(n => Math.max(n, buyerEntryPending.length));
+    setBuyerNewAtEntry(n => Math.max(n, buyerEntryPending.filter(isNewForBuyer).length));
     markBuyerPreconnectSeen(buyerEntryPending, "app_list");
   }, [buyerEntryPendingKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function markSendOpened(send) {
     // [fix/buyer-entry-seen] podgląd cudzego konta (admin) nie jest odczytem.
     if (!buyerSeenAllowed) return;
-    if (!send || !["sent", "opened"].includes(send.status)) return;
+    if (!send) return;
+    // [review Codexa 13.11, 2. runda — P1] Propozycja potwierdzona ręcznie i już rozliczona: kupiec ją
+    // otwiera, więc zapisujemy jego niezależny odczyt (bez zmiany statusu i bez drugiego kredytu).
+    // Od tego faktu zależy, czy cofnięcie potwierdzenia zwróci kredyt. Jedno zgłoszenie na pozycję
+    // (wspólne śledzenie z wejściem i listą), ponawiane tylko po niepowodzeniu.
+    if (isManualAwaitingBuyerRead(send)) {
+      const tracker = buyerSeenTrackerRef.current;
+      const taken = tracker.take([send]);
+      if (!taken.length) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) { tracker.release(taken); return; }
+        const res = await fetch("/.netlify/functions/notify-supplier-read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({ legacy_id: send.id }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { tracker.release(taken); console.warn("[notify-supplier-read manual]", body?.error || res.status); return; }
+        tracker.settle(taken, body?.results);
+        applySeenResultsToState(Array.isArray(body?.results) ? body.results : []);
+      } catch (e) {
+        tracker.release(taken);
+        console.warn("[notify-supplier-read manual]", e?.message || e);
+      }
+      return;
+    }
+    if (!["sent", "opened"].includes(send.status)) return;
     if (send.status === "sent") {
       try {
         await dbMarkLegacySendRead(send.id);
@@ -7737,14 +7764,16 @@ function PageBuyerOffers({ sends, offers, nav, buyer, toggleStar, co, buyerRetai
     return true;
   }) : [];
   const seenListRef = useRef(new Set());
+  // [review Codexa 13.11, 2. runda — P1] także propozycje potwierdzone ręcznie, których kupiec
+  // jeszcze w aplikacji nie widział (isBuyerSeenPending) — lista zapisuje jego niezależny odczyt.
   const seenListKey = mySends
-    .filter(s => ["sent","opened"].includes(s.status))
+    .filter(isBuyerSeenPending)
     .map(s => s.id)
     .sort((a,b) => Number(a) - Number(b))
     .join(",");
   useEffect(() => {
     if (typeof onSeenList !== "function" || !seenListKey) return;
-    const candidates = mySends.filter(s => ["sent","opened"].includes(s.status) && !seenListRef.current.has(s.id));
+    const candidates = mySends.filter(s => isBuyerSeenPending(s) && !seenListRef.current.has(s.id));
     if (!candidates.length) return;
     candidates.forEach(s => seenListRef.current.add(s.id));
     onSeenList(candidates, "app_list");
@@ -8258,10 +8287,13 @@ export function PageBuyerDetail({ send, offers, co, nav, buyer, toggleStar, comp
   // sends.find() lookup that may race with hydration.
   const sendId = send?.id;
   const sendStatus = send?.status;
+  // [review Codexa 13.11, 2. runda — P1] otwarcie propozycji potwierdzonej ręcznie też jest odczytem kupca
+  const manualAwaitingRead = isManualAwaitingBuyerRead(send);
   useEffect(() => {
-    if (!send || send.status !== "sent" || typeof onOpened !== "function") return;
+    if (!send || typeof onOpened !== "function") return;
+    if (send.status !== "sent" && !manualAwaitingRead) return;
     onOpened(send);
-  }, [sendId, sendStatus, onOpened]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sendId, sendStatus, manualAwaitingRead, onOpened]); // eslint-disable-line react-hooks/exhaustive-deps
   if(!send) return <div><Btn outline onClick={()=>nav("b-offers")}><ArrowLeft size={13}/> {t("buyer.detail.top.back_short")}</Btn></div>;
   const o=getOffer(send.offerId,offers); if(!o) return null;
   const allCerts=[...(o.certs||[]),o.customCert].filter(Boolean);

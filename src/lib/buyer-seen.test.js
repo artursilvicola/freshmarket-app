@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { canRegisterBuyerSeen, pendingBuyerSeenSends, createSeenSubmissionTracker } from "./buyer-seen.js";
+import { canRegisterBuyerSeen, pendingBuyerSeenSends, createSeenSubmissionTracker, isBuyerSeenPending, isManualAwaitingBuyerRead, isNewForBuyer } from "./buyer-seen.js";
 import { buyerReadScope } from "../../netlify/functions/_shared/buyer-read-scope.js";
 
 const buyerUser = { id: "u-buyer", role: "buyer", retailer_id: 100 };
@@ -236,5 +236,151 @@ describe("markBuyerPreconnectSeen — prawdziwa funkcja z panelu, serwer na atra
     const h = harness({ allowed: false, responses: [{ body: { results: [] } }] });
     await h.fn(sent(1));
     expect(h.calls).toEqual([]);
+  });
+});
+
+// ── review Codexa 13.11, 2. runda — P1: panel kupca musi zgłaszać odczyt propozycji potwierdzonych ręcznie ──
+// (wejście, lista i szczegół), bo od tego odczytu zależy, czy cofnięcie potwierdzenia zwróci kredyt.
+const manualCharged = (id, extra = {}) => ({ id, retailerId: 100, status: "read_manual", readType: "manual_phone", billingStatus: "charged", chargeAt: "2026-11-13T10:00:00.000Z", chargeChannel: "manual", ...extra });
+
+describe("które propozycje potwierdzone ręcznie panel zgłasza jako odczyt kupca", () => {
+  it("rozliczona ręcznym potwierdzeniem, bez odczytu w aplikacji: TAK", () => {
+    expect(isManualAwaitingBuyerRead(manualCharged(1))).toBe(true);
+    expect(isBuyerSeenPending(manualCharged(1))).toBe(true);
+  });
+
+  it("po samym otwarciu maila nadal TAK (odczytu w aplikacji jeszcze nie było)", () => {
+    expect(isManualAwaitingBuyerRead(manualCharged(1, { buyerSeenAt: "x", buyerSeenChannel: "email", emailOpenedAt: "x" }))).toBe(true);
+  });
+
+  it("odczyt w aplikacji już zapisany: NIE (jedno zgłoszenie wystarczy)", () => {
+    expect(isManualAwaitingBuyerRead(manualCharged(1, { buyerAppSeenAt: "2026-11-13T11:00:00.000Z" }))).toBe(false);
+  });
+
+  it("stare albo nierozliczone read_manual: NIE — zapis odczytu nie może rozszerzyć rozliczeń", () => {
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", readType: "manual_phone" })).toBe(false); // historyczne, bez kredytu
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", billingStatus: "no_package_available" })).toBe(false); // potwierdzone bez wolnego kredytu
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", billingStatus: "charged", chargeAt: "x" })).toBe(false); // rozliczone wcześniej (np. mailem), nie potwierdzeniem
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", chargeChannel: "manual" })).toBe(false); // znacznik bez rozliczenia
+    expect(isBuyerSeenPending({ id: 1, status: "read_manual" })).toBe(false);
+  });
+
+  it("inne statusy bez zmian: wysłane i otwarte zgłaszane, przeczytane i wygasłe nie", () => {
+    expect(isBuyerSeenPending({ id: 1, status: "sent" })).toBe(true);
+    expect(isBuyerSeenPending({ id: 1, status: "opened" })).toBe(true);
+    for (const st of ["read", "unread_expired", "refunded", "queued"]) expect(isBuyerSeenPending({ id: 1, status: st, chargeChannel: "manual", chargeAt: "x" })).toBe(false);
+    expect(isBuyerSeenPending(null)).toBe(false);
+  });
+
+  it("pola w `data` (wiersz z bazy) działają tak samo jak na wierzchu", () => {
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", data: { chargeChannel: "manual", billingStatus: "charged" } })).toBe(true);
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", data: { chargeChannel: "manual", billingStatus: "charged", buyerAppSeenAt: "x" } })).toBe(false);
+  });
+
+  it("licznik „nowych” na pulpicie kupca nie obejmuje potwierdzonych ręcznie", () => {
+    expect(isNewForBuyer({ status: "sent" })).toBe(true);
+    expect(isNewForBuyer(manualCharged(1))).toBe(false);
+  });
+
+  it("wejście kupca: oczekujące obejmują potwierdzoną ręcznie i rozliczoną, pomijają historyczną", () => {
+    const sends = [{ id: 1, retailerId: 100, status: "sent" }, manualCharged(2), { id: 3, retailerId: 100, status: "read_manual" }, manualCharged(4, { retailerId: 200 }), { id: 5, retailerId: 100, status: "read" }];
+    const out = pendingBuyerSeenSends({ sends, buyerRetailerId: 100, retailers: [{ id: 100, active: true }], buyer: { active: true } });
+    expect(out.map((x) => x.id)).toEqual([1, 2]);
+    expect(out.filter(isNewForBuyer).length).toBe(1);
+  });
+
+  it("śledzenie zgłoszeń przyjmuje potwierdzoną ręcznie, a historycznej nie", () => {
+    const t = createSeenSubmissionTracker();
+    expect(t.take([manualCharged(7), { id: 8, status: "read_manual" }]).map((x) => x.id)).toEqual([7]);
+  });
+});
+
+describe("panel kupca — prawdziwe funkcje: wejście, lista i szczegół zgłaszają odczyt propozycji potwierdzonej ręcznie", () => {
+  const src = readFileSync(new URL("../legacy/PreconnectFM.jsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const cut = (name) => { const a = src.indexOf(`  async function ${name}(`); return src.slice(a, src.indexOf("\n  }\n", a) + 5); };
+  const supabase = { auth: { getSession: async () => ({ data: { session: { access_token: "t" } } }) } };
+  const quiet = { warn() {}, log() {} };
+  // serwer na atrapie: zapisuje odczyt (buyerAppSeenAt), nie zmienia statusu read_manual, nie pobiera drugi raz
+  function server() {
+    const calls = [];
+    const fetchStub = async (url, init) => {
+      const b = JSON.parse(init.body);
+      const ids = b.legacy_ids || [b.legacy_id];
+      calls.push({ fn: url.split("/").pop(), ids });
+      return { ok: true, status: 200, json: async () => ({ ok: true, results: ids.map((id) => ({ legacy_id: id, ok: true, status: "read_manual", data: { buyerAppSeenAt: "2026-11-13T11:00:00.000Z", buyerAppSeenChannel: "app_list" }, billing: { charged: false, alreadyCharged: true, billingStatus: "charged" } })) }) };
+    };
+    return { calls, fetchStub };
+  }
+
+  it("wejście i lista (markBuyerPreconnectSeen): jedno żądanie z propozycją potwierdzoną ręcznie, bez powtórki", async () => {
+    const { calls, fetchStub } = server();
+    const applied = [];
+    const tracker = { current: createSeenSubmissionTracker() };
+    // eslint-disable-next-line no-new-func
+    const fn = new Function("buyerSeenAllowed", "buyerSeenTrackerRef", "supabase", "fetch", "applySeenResultsToState", "console", `${cut("markBuyerPreconnectSeen")}\n return markBuyerPreconnectSeen;`)(true, tracker, supabase, fetchStub, (r) => applied.push(r), quiet);
+    const entry = pendingBuyerSeenSends({ sends: [manualCharged(77), { id: 78, retailerId: 100, status: "read_manual" }], buyerRetailerId: 100, retailers: [], buyer: {} });
+    await fn(entry, "app_list");                       // wejście kupca
+    await fn([manualCharged(77)].filter(isBuyerSeenPending), "app_list"); // lista: ten sam filtr co w PageBuyerOffers
+    expect(calls).toEqual([{ fn: "mark-buyer-preconnect-seen", ids: [77] }]);
+    expect(applied[0][0].billing.charged).toBe(false);
+    expect(tracker.current.isDone(77)).toBe(true);
+  });
+
+  it("lista w kodzie panelu używa wspólnego filtra w obu miejscach", () => {
+    const a = src.indexOf("function PageBuyerOffers(");
+    const block = src.slice(a, src.indexOf("const getDisplayCo", a));
+    expect(block).toMatch(/\.filter\(isBuyerSeenPending\)/);
+    expect(block).toMatch(/mySends\.filter\(s => isBuyerSeenPending\(s\) && !seenListRef\.current\.has\(s\.id\)\)/);
+    expect(block).not.toMatch(/\["sent","opened"\]\.includes\(s\.status\)/);
+  });
+
+  function detailHarness({ allowed = true } = {}) {
+    const { calls, fetchStub } = server();
+    const state = { dbRead: [], setSends: 0, applied: [] };
+    const tracker = { current: createSeenSubmissionTracker() };
+    // eslint-disable-next-line no-new-func
+    const fn = new Function("buyerSeenAllowed", "buyerSeenTrackerRef", "isManualAwaitingBuyerRead", "supabase", "fetch", "applySeenResultsToState", "dbMarkLegacySendRead", "nowStr", "_setSendsRaw", "console", `${cut("markSendOpened")}\n return markSendOpened;`)(
+      allowed, tracker, isManualAwaitingBuyerRead, supabase, fetchStub, (r) => state.applied.push(r), async (id) => { state.dbRead.push(id); }, () => "teraz", () => { state.setSends += 1; }, quiet);
+    return { fn, calls, state, tracker: tracker.current };
+  }
+
+  it("szczegół (markSendOpened): odczyt zapisany jednym żądaniem, status lokalnie NIE zmienia się na „read”", async () => {
+    const h = detailHarness();
+    await h.fn(manualCharged(77)); await h.fn(manualCharged(77)); await h.fn(manualCharged(77));
+    expect(h.calls).toEqual([{ fn: "notify-supplier-read", ids: [77] }]);
+    expect(h.state.dbRead).toEqual([]);      // RPC „sent → read” nie dotyczy potwierdzonych ręcznie
+    expect(h.state.setSends).toBe(0);        // bez ręcznego nadpisania statusu w stanie panelu
+    expect(h.state.applied.length).toBe(1);  // stan z odpowiedzi serwera (buyerAppSeenAt)
+  });
+
+  it("szczegół: historyczna nierozliczona read_manual nie jest zgłaszana; podgląd admina też nie", async () => {
+    const h = detailHarness();
+    await h.fn({ id: 5, status: "read_manual", readType: "manual_phone" });
+    await h.fn({ id: 6, status: "read_manual", billingStatus: "no_package_available" });
+    expect(h.calls).toEqual([]);
+    const preview = detailHarness({ allowed: false });
+    await preview.fn(manualCharged(77));
+    expect(preview.calls).toEqual([]);
+  });
+
+  it("szczegół: zwykła wysłana propozycja działa jak dotąd", async () => {
+    const h = detailHarness();
+    await h.fn({ id: 9, status: "sent" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(h.state.dbRead).toEqual([9]);
+    expect(h.state.setSends).toBe(1);
+    expect(h.calls).toEqual([{ fn: "notify-supplier-read", ids: [9] }]);
+  });
+
+  it("efekt szczegółu w PageBuyerDetail reaguje na propozycję potwierdzoną ręcznie", () => {
+    const a = src.indexOf("export function PageBuyerDetail(");
+    const block = src.slice(a, a + 2200);
+    expect(block).toMatch(/const manualAwaitingRead = isManualAwaitingBuyerRead\(send\);/);
+    expect(block).toMatch(/if \(send\.status !== "sent" && !manualAwaitingRead\) return;/);
+    expect(block).toMatch(/\[sendId, sendStatus, manualAwaitingRead, onOpened\]/);
+  });
+
+  it("pulpit: licznik nowych liczy tylko nieprzeczytane", () => {
+    expect(src).toMatch(/setBuyerNewAtEntry\(n => Math\.max\(n, buyerEntryPending\.filter\(isNewForBuyer\)\.length\)\)/);
   });
 });

@@ -7,6 +7,29 @@
 
 const PENDING_STATUSES = ["sent", "opened"];
 
+// Pole wysyłki bywa na wierzchu obiektu (stan panelu) albo w `data` (wiersz z bazy).
+const field = (s, k) => (s?.[k] !== undefined && s?.[k] !== null ? s[k] : s?.data?.[k]);
+const isCharged = (s) => Boolean(field(s, "chargeAt") || field(s, "chargeTxId") || field(s, "billingStatus") === "charged");
+
+// [review Codexa 13.11, 2. runda — P1] Propozycja potwierdzona RĘCZNIE przez administratora, którą kupiec
+// właśnie ogląda w aplikacji. Jego odczyt trzeba zapisać, bo od niego zależy, czy późniejsze cofnięcie
+// potwierdzenia zwróci kredyt. Zgłaszamy WYŁĄCZNIE propozycje już rozliczone tym potwierdzeniem
+// (chargeChannel = manual) i bez zapisanego jeszcze odczytu w aplikacji:
+//  * odczyt takiej propozycji nie może pobrać kredytu drugi raz (jest już rozliczona),
+//  * stare albo nierozliczone `read_manual` NIE są zgłaszane — zapis odczytu nie może po cichu
+//    rozszerzyć rozliczeń na historyczne pozycje.
+export function isManualAwaitingBuyerRead(s) {
+  return !!s && s.status === "read_manual" && field(s, "chargeChannel") === "manual" && isCharged(s) && !field(s, "buyerAppSeenAt");
+}
+
+// Czy wejście kupca / lista / szczegół mają zgłosić odczyt tej propozycji.
+export function isBuyerSeenPending(s) {
+  return !!s && (PENDING_STATUSES.includes(s.status) || isManualAwaitingBuyerRead(s));
+}
+
+// Czy propozycja jest dla kupca „nowa” (licznik na pulpicie): tylko nieprzeczytane, bez ręcznie potwierdzonych.
+export const isNewForBuyer = (s) => !!s && PENDING_STATUSES.includes(s.status);
+
 // Czy bieżąca sesja to kupiec oglądający WŁASNY panel?
 // sessionRole = rola zalogowanego użytkownika (nie rola oglądanego konta).
 export function canRegisterBuyerSeen({ sessionRole, account, currentUser }) {
@@ -31,7 +54,7 @@ export function createSeenSubmissionTracker({ maxAttempts = 3 } = {}) {
     take(sends) {
       const out = [];
       for (const s of sends || []) {
-        if (!s || !PENDING_STATUSES.includes(s.status)) continue;
+        if (!isBuyerSeenPending(s)) continue;
         const k = key(s.id);
         if (done.has(k) || inFlight.has(k)) continue;
         const n = attempts.get(k) || 0;
@@ -66,7 +89,8 @@ export function createSeenSubmissionTracker({ maxAttempts = 3 } = {}) {
   };
 }
 
-// Propozycje sieci kupca, które czekają na odczyt (wysłane, jeszcze nierozliczone).
+// Propozycje sieci kupca, których odczyt trzeba zgłosić: wysłane i jeszcze nieprzeczytane oraz
+// potwierdzone ręcznie, których kupiec jeszcze w aplikacji nie widział (isManualAwaitingBuyerRead).
 // Te same warunki widoczności co lista propozycji kupca: nieaktywna sieć albo
 // nieaktywny kupiec nie widzą nic, więc nic nie jest odczytem.
 export function pendingBuyerSeenSends({ sends, buyerRetailerId, retailers, buyer }) {
@@ -75,6 +99,6 @@ export function pendingBuyerSeenSends({ sends, buyerRetailerId, retailers, buyer
   const retailer = (retailers || []).find((r) => r.id === buyerRetailerId);
   if (retailer && retailer.active === false) return [];
   return (sends || []).filter(
-    (s) => s && s.retailerId === buyerRetailerId && PENDING_STATUSES.includes(s.status)
+    (s) => s && s.retailerId === buyerRetailerId && isBuyerSeenPending(s)
   );
 }

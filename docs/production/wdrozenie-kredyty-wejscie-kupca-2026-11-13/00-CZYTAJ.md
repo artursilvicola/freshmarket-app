@@ -16,25 +16,25 @@ Podgląd konta kupca przez administratora nie jest odczytem. Tekst regulaminu be
 
 Środowisko: osobny projekt Supabase `rruszzdffclfhbtfeznb` (testowy) + lokalny podgląd `node scripts/dev-test.mjs`, który bierze wartości wyłącznie z `.env.test`, odrzuca projekt produkcyjny i wymaga fikcyjnego klucza poczty (`re_test_…`). Żaden mail nie wyszedł, produkcja nie była używana do sprawdzania nowego mechanizmu.
 
-Stan po poprawkach z review `cffea69` (commit `b10ba3a` i późniejsze):
+Stan po poprawkach z dwóch rund review (`cffea69` → `b10ba3a`; `437fee3` → poprawka panelu kupca):
 
 | Co | Jak | Wynik |
 |---|---|---|
-| Testy jednostkowe | `npm test` | 1300 zaliczonych, 40 pominiętych (integracyjne) |
+| Testy jednostkowe | `npm test` | 1316 zaliczonych, 40 pominiętych (integracyjne) |
 | Build | `npm run build` | OK |
 | Migracja na prawdziwym Postgresie | `node scripts/manual-read-confirm-sql-test.mjs` (transakcja wycofywana) | 16/16 |
 | Wyścig odczyt kupca / cofnięcie, dwa połączenia | `node scripts/manual-read-confirm-race-test.mjs` | 4/4 (obie kolejności × mail i aplikacja) |
-| Próba end-to-end, nowy kod | `node scripts/buyer-entry-seen-trial.mjs --mode=fix` | 26/26 |
+| Próba end-to-end w przeglądarce, nowy kod | `node scripts/buyer-entry-seen-trial.mjs --mode=fix` | 30/30 |
 | Kontrola, stary kod przed migracją | `--mode=control` | podgląd admina pobrał 3/3 kredyty; wejście kupca na pulpit: 0; ręczne potwierdzenie (stary zapis statusu): 0 |
 | Kontrola, stary kod PO poprawionej migracji | `--mode=control` na bazie z wgraną migracją | identycznie jak przed migracją; funkcja odczytu odpowiada 200 i rozlicza jak dotąd |
 | Cykl skryptów pakietu w jednej wycofanej transakcji | 06 → 01 → migracja → 03 → 06 → 01 | 01: 9/9 OK w stanie sprzed migracji; 03: 11/11 OK po migracji; 06 przywraca dokładnie starą funkcję |
 
-Próba end-to-end (26 kontroli) obejmuje:
+Próba end-to-end (30 kontroli) obejmuje:
 
 - **podgląd admina:** 0 zgłoszeń odczytu, statusy/kredyty/odczyty bez zmian; bezpośrednie wywołanie obu funkcji z tokenem admina → 200, pusty wynik (`admin_preview`), baza bez zmian;
 - **ręczne potwierdzenie w prawdziwym interfejsie** (Pipeline → Dostawcy / tracking): formularz uprzedza o kredycie; potwierdzenie → `read_manual`, kredyty 0 → 1, znacznik `chargeChannel=manual`, komunikat; cofnięcie → `sent`, kredyty 1 → 0, znacznik rozliczenia usunięty, komunikat; ponowne potwierdzenie → 0 → 1; kupiec wołający funkcję admina → 403;
-- **wejście kupca na pulpit:** 1 zgłoszenie z obiema czekającymi propozycjami, obie `read` i rozliczone, dokładnie 2 kredyty, odczyt zapisany jako `buyer/app_list`; ręcznie potwierdzona propozycja nie rozlicza się drugi raz; odświeżenie strony bez drugiego pobrania; pulpit dalej pokazuje „2 nowych propozycji”;
-- **cofnięcie po odczycie kupca** (przez prawdziwe funkcje serwera): potwierdzenie ręczne → odczyt kupca → cofnięcie: bez zwrotu, kredyty bez zmian, status `read`, rozliczenie zachowane i już nie „ręczne”; ponowne cofnięcie niczego nie zmienia.
+- **wejście kupca na pulpit** (zwykła nawigacja w przeglądarce): 1 zgłoszenie z obiema czekającymi propozycjami i z dwiema potwierdzonymi ręcznie; nowe propozycje `read` i rozliczone, dokładnie 2 kredyty; propozycje potwierdzone ręcznie **nie** dostają drugiego pobrania, ale ich odczyt przez kupca **jest** zapisany (`buyerAppSeenAt`, wiersz `buyer/app_list`); odświeżenie strony bez drugiego pobrania; pulpit dalej pokazuje „2 nowych propozycji”;
+- **potwierdzenie ręczne → normalne wejście kupca → cofnięcie w panelu administratora** (wszystko w przeglądarce, bez ręcznych żądań; osobna propozycja z czystą sekwencją): kredyt zostaje, powód `buyer_read`, **jedno pobranie łącznie, zero zwrotów**, status `read`, rozliczenie zachowane i już nie „ręczne”, komunikat „Kredyt zostaje”, przyciski potwierdzania i cofania znikają.
 
 ### Review `cffea69` — NO-GO i poprawki
 
@@ -42,6 +42,14 @@ Próba end-to-end (26 kontroli) obejmuje:
 |---|---|---|---|
 | **P1:** cofnięcie ręcznego potwierdzenia zwraca kredyt i przywraca `sent`, choć kupiec po potwierdzeniu sam odczytał propozycję | po ręcznym potwierdzeniu odczyt kupca nie zostawiał w wierszu śladu, który cofnięcie mogłoby sprawdzić (status zostaje `read_manual`, pola odczytu uzupełniane tylko, gdy puste) | `mark_legacy_send_seen` zapisuje fakt odczytu przez kupca w tej samej transakcji i pod tą samą blokadą wiersza (`buyerSeenAt`, `buyerSeenChannel`, dla aplikacji też `buyerAppSeenAt`, `buyerAppSeenChannel`); `undo_legacy_send_manual_confirm` sprawdza go pod blokadą: po odczycie kupca kredyt zostaje, status = `read` (aplikacja) albo `opened` (sam mail), `chargeChannel` przestaje być `manual`, wynik niesie `kept_reason = buyer_read`; panel pokazuje osobny komunikat | SQL: mail przed cofnięciem, aplikacja przed cofnięciem, mail + aplikacja; wyścig dwóch połączeń w obu kolejnościach; próba end-to-end [5] |
 | **P2:** błąd pojedynczej pozycji zwrócony z HTTP 200 blokował ponowienie do przeładowania strony | lista „już zgłoszonych” traktowała całe udane żądanie jako ostateczne | `createSeenSubmissionTracker`: rozstrzyganie per pozycja — załatwione tylko `ok === true`; nieudane, brakujące w odpowiedzi i odpowiedź bez listy wracają do puli; najwyżej 3 próby na pozycję w sesji; udane rozliczenia nie są powtarzane | reprodukcja recenzenta na prawdziwej funkcji panelu: stary kod 1 żądanie, nowy 2; testy: wynik mieszany, odpowiedź niepełna i zniekształcona, limit prób, błąd HTTP i sieci |
+
+### Review `437fee3` — NO-GO i poprawka (2. runda)
+
+| Uwaga recenzenta | Przyczyna | Poprawka | Dowód |
+|---|---|---|---|
+| **P1:** baza działa, ale prawdziwy panel kupca nie zgłasza odczytu propozycji `read_manual` — ani przy wejściu, ani na liście, ani w szczególe; po wizycie kupca cofnięcie nadal zwracało kredyt i zostawiało `sent`. Poprzednia próba tego nie wykrywała, bo odczyt kupca wysyłała ręcznym żądaniem z pominięciem panelu | trzy filtry w panelu przepuszczały tylko `sent` / `opened` | wspólny warunek `isBuyerSeenPending` w `src/lib/buyer-seen.js` używany przy wejściu, na liście i w śledzeniu zgłoszeń; szczegół (`markSendOpened`) zapisuje odczyt propozycji potwierdzonej ręcznie bez zmiany statusu i bez wywołania „sent → read” | próba w przeglądarce [4] i [5] (zwykłe wejście kupca, cofnięcie z panelu); testy uruchamiające prawdziwe funkcje panelu dla wejścia, listy i szczegółu |
+
+**Zapis odczytu a rozliczenie to osobne sprawy.** Panel zgłasza odczyt wyłącznie tych propozycji `read_manual`, które są już rozliczone ręcznym potwierdzeniem (`chargeChannel = manual`) i nie mają jeszcze zapisanego odczytu w aplikacji. Taka propozycja nie może dostać drugiego pobrania. Stare albo nierozliczone `read_manual` (potwierdzone, gdy dostawca nie miał kredytu, albo sprzed tej zmiany) **nie są zgłaszane**, więc zapis odczytu nie rozszerza rozliczeń na historyczne pozycje. Na produkcji takich pozycji jest dziś 0 (kontrola `01`, wiersz 31). Licznik „nowych propozycji” na pulpicie kupca nadal obejmuje tylko nieprzeczytane.
 
 W wyścigu dwóch połączeń: gdy odczyt kupca pierwszy weźmie blokadę, cofnięcie czeka i kończy się bez zwrotu (`opened` / `read`); gdy pierwsze jest cofnięcie, zwraca kredyt, a czekający odczyt rozlicza od nowa — netto jeden kredyt, jeden zwrot i dwa pobrania w historii.
 
@@ -234,4 +242,6 @@ Co z tego wynika:
 | 13.11.2026 | Końcowe review `cffea69` | **NO-GO** — P1: cofnięcie ręcznego potwierdzenia zwracało kredyt mimo późniejszego odczytu kupca; P2: błąd pojedynczej pozycji przy HTTP 200 blokował ponowienie |
 | 13.11.2026 | Poprawki po review (`b10ba3a` + pakiet) | P1 i P2 poprawione; SQL 16/16, wyścig dwóch połączeń 4/4, próba end-to-end 26/26, `npm test` 1300, build OK; stary kod na bazie z poprawioną migracją bez zmian; migracja zastępuje teraz `mark_legacy_send_seen` — do ponownego review |
 | 13.11.2026 | `01-kontrola-przed-migracja.sql` na produkcji po poprawkach (tylko odczyt, commit `2ad5dd4`) | 9/9 OK, w tym suma kontrolna `mark_legacy_send_seen` zgodna z oczekiwaną; liczby jak wcześniej: 12 czekających, 10 nierozliczonych, 8 bez mailingu |
+| 13.11.2026 | Ponowne review `437fee3` | **NO-GO** — P1: panel kupca pomijał propozycje `read_manual` przy wejściu, na liście i w szczególe; baza i P2 potwierdzone jako poprawne |
+| 13.11.2026 | Poprawka po 2. rundzie review | panel zgłasza odczyt propozycji potwierdzonych ręcznie (tylko już rozliczonych tym potwierdzeniem); próba w przeglądarce 30/30 z czystą sekwencją potwierdzenie → wejście kupca → cofnięcie: jedno pobranie, zero zwrotów, status `read`; `npm test` 1316, build OK, SQL 16/16, wyścig 4/4; migracja bez zmian względem `b10ba3a` — do ponownego review |
 | — | Migracja produkcyjna i scalenie PR | **NIEWYKONANE** — osobny krok, do czasu GO recenzenta i zgody Artura (pkt 4) |
