@@ -28,6 +28,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { markLegacySendsSeen } from "./_shared/legacy-send-seen.js";
+import { buyerReadScope } from "./_shared/buyer-read-scope.js";
 import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
@@ -82,12 +83,17 @@ export const handler = async (event) => {
     return json(400, { error: errLoc(locale, "missing_legacy_id") });
   }
 
+  // [fix/buyer-entry-seen] Podgląd panelu kupca przez administratora nie jest
+  // odczytem: nic nie rozliczamy i nie powiadamiamy dostawcy.
+  const scope = buyerReadScope(profile);
+  if (!scope.counts) return json(200, { ok: true, results: [], skipped: scope.reason });
+
   const result = await markLegacySendsSeen({
     supaSvc,
     env,
     legacyIds: [legacyId],
     channel: "app_detail",
-    allowedRetailerId: profile.role === "buyer" ? profile.retailer_id : null,
+    allowedRetailerId: scope.allowedRetailerId,
     notifySupplier: true,
     // [feat/email-open-history] otwarcie propozycji przypisane do uwierzytelnionego czytającego
     readerProfileId: profile.id,

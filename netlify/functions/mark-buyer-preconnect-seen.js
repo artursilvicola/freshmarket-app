@@ -1,14 +1,19 @@
 /**
  * POST /.netlify/functions/mark-buyer-preconnect-seen
  *
- * Buyer opens the PreConnect list. Every visible sent/opened offer for that
- * buyer's retailer counts as delivered: status -> read, one package credit is
- * consumed once, supplier gets one idempotent notification.
+ * Buyer enters the platform (any panel page) or opens the PreConnect list.
+ * Every visible sent/opened offer for that buyer's retailer counts as
+ * delivered: status -> read, one package credit is consumed once, supplier
+ * gets one idempotent notification.
+ *
+ * [fix/buyer-entry-seen] Only a buyer assigned to a retailer counts. An admin
+ * previewing a buyer panel gets 200 with empty results (nothing is charged).
  */
 
 import { createClient } from "@supabase/supabase-js";
 import { envErrorPayload, missingEnvNames, resolveEnvConfig } from "./_shared/function-env.js";
 import { markLegacySendsSeen } from "./_shared/legacy-send-seen.js";
+import { buyerReadScope } from "./_shared/buyer-read-scope.js";
 import { errLoc, resolveLocale } from "./_shared/error-messages.js";
 
 const cors = {
@@ -57,12 +62,20 @@ export const handler = async (event) => {
   const channel = body.channel === "app_detail" ? "app_detail" : "app_list";
   if (!legacyIds.length) return json(200, { ok: true, results: [] });
 
+  // [fix/buyer-entry-seen] Podgląd panelu kupca przez administratora nie jest
+  // odczytem: nic nie rozliczamy i nie powiadamiamy dostawcy.
+  const scope = buyerReadScope(profile);
+  if (!scope.counts) {
+    console.log("[mark-buyer-preconnect-seen]", JSON.stringify({ channel, role: profile.role, skipped: scope.reason, rows: legacyIds.length }));
+    return json(200, { ok: true, results: [], skipped: scope.reason });
+  }
+
   const result = await markLegacySendsSeen({
     supaSvc,
     env,
     legacyIds,
     channel,
-    allowedRetailerId: profile.role === "buyer" ? profile.retailer_id : null,
+    allowedRetailerId: scope.allowedRetailerId,
     notifySupplier: true,
     // [feat/email-open-history] wejście przypisane do uwierzytelnionego czytającego
     readerProfileId: profile.id,

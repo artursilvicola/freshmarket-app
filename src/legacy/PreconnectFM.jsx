@@ -107,6 +107,7 @@ import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE
 import { FM_STARS_MIN, fmPackagesOf, fmStarsMax, fmStarsState, findSupplierCompany } from "../lib/fm-stars.js";
 import { companyProfileGaps } from "../lib/company-profile.js";
 import { isOwnAccount } from "../lib/profile-guard.js";
+import { canRegisterBuyerSeen, pendingBuyerSeenSends } from "../lib/buyer-seen.js";
 // [feat/fm-decision-source] kto ustawił wybór sieci / decyzję kupca (oznaczenie „Wybrane przez administratora”)
 import { groupDecisionSources, targetSource, respSource, sourcesVisibleTo } from "../lib/fm-decision-sources.js";
 import DecisionSourceBadge from "../components/fm/DecisionSourceBadge.jsx";
@@ -2132,6 +2133,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // panel cudzego konta. „Mój profil" i zmiana hasła dotyczą ZAWSZE zalogowanego
   // użytkownika, więc w podglądzie muszą być tylko do odczytu.
   const viewingOtherAccount = !isOwnAccount(account, currentUser);
+  // [fix/buyer-entry-seen] Odczyt propozycji (kredyt + mail do dostawcy) rejestruje
+  // wyłącznie zalogowany kupiec na własnym koncie. Administrator w podglądzie konta
+  // kupca niczego nie odczytuje.
+  const buyerSeenAllowed = canRegisterBuyerSeen({ sessionRole: initialRole, account, currentUser });
+  const buyerSeenSubmittedRef = useRef(new Set());
+  const [buyerNewAtEntry, setBuyerNewAtEntry] = useState(0);
   useEffect(() => {
     if (!lockedRole) return;
     const next = buildAccountFromCurrentUser();
@@ -3469,11 +3476,18 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   }
 
   async function markBuyerPreconnectSeen(sendList, channel = "app_list") {
-    const candidates = (sendList || []).filter(s => s && ["sent", "opened"].includes(s.status));
+    // [fix/buyer-entry-seen] podgląd cudzego konta (admin) nie jest odczytem.
+    if (!buyerSeenAllowed) return;
+    // Wejście na platformę i lista propozycji mogą zgłosić te same wysyłki —
+    // każdą wysyłamy raz; po błędzie zdejmujemy blokadę, żeby kolejna próba mogła przejść.
+    const submitted = buyerSeenSubmittedRef.current;
+    const candidates = (sendList || []).filter(s => s && ["sent", "opened"].includes(s.status) && !submitted.has(s.id));
     if (!candidates.length) return;
+    candidates.forEach(s => submitted.add(s.id));
+    const release = () => candidates.forEach(s => submitted.delete(s.id));
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
+      if (!session?.access_token) { release(); return; }
       const res = await fetch("/.netlify/functions/mark-buyer-preconnect-seen", {
         method: "POST",
         headers: {
@@ -3484,13 +3498,30 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
       });
       const body = await res.json().catch(() => ({}));
       if (res.ok) applySeenResultsToState(body.results || []);
-      else console.warn("[mark-buyer-preconnect-seen]", body?.error || res.status);
+      else { release(); console.warn("[mark-buyer-preconnect-seen]", body?.error || res.status); }
     } catch (e) {
+      release();
       console.warn("[mark-buyer-preconnect-seen]", e?.message || e);
     }
   }
 
+  // [fix/buyer-entry-seen] Kredyty schodzą już przy wejściu kupca na platformę
+  // (dowolna strona panelu), nie dopiero po otwarciu listy propozycji.
+  const buyerEntryRetailerId = account.retailerId || CHAIN_TO_RETAILER[account.chainId];
+  const buyerEntryPending = (buyerSeenAllowed && sendsLoaded && retailersLoaded)
+    ? pendingBuyerSeenSends({ sends, buyerRetailerId: buyerEntryRetailerId, retailers, buyer })
+    : [];
+  const buyerEntryPendingKey = buyerEntryPending.map(s => s.id).sort((a, b) => Number(a) - Number(b)).join(",");
+  useEffect(() => {
+    if (!buyerEntryPendingKey) return;
+    // Pulpit kupca ma nadal pokazać, ile propozycji było nowych przy tym wejściu.
+    setBuyerNewAtEntry(n => Math.max(n, buyerEntryPending.length));
+    markBuyerPreconnectSeen(buyerEntryPending, "app_list");
+  }, [buyerEntryPendingKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function markSendOpened(send) {
+    // [fix/buyer-entry-seen] podgląd cudzego konta (admin) nie jest odczytem.
+    if (!buyerSeenAllowed) return;
     if (!send || !["sent", "opened"].includes(send.status)) return;
     if (send.status === "sent") {
       try {
@@ -3802,7 +3833,7 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     if(pg==="offer-copy")   { const src=offers.find(o=>o.id===sid); const copy=src?{...src,id:undefined,status:"draft",title:(src.title||src.product||"")+t("supplier.offer_form.copy_suffix"),product:(src.product||"")+t("supplier.offer_form.copy_suffix"),internalTitle:src.internalTitle?src.internalTitle+t("supplier.offer_form.copy_suffix"):undefined}:null; return <PageOfferForm offer={copy} saveOffer={saveOffer} nav={nav} co={co}/>; }
     if(pg==="finanse")      return <PageFinanse wallet={wallet} sends={sends} offers={offers} co={co} setCo={setCo} fl={fl} nav={nav} buyPackage={buyPackage} orders={orders} pkgMax={pkgMax} pkgUsed={pkgUsed} creditUsage={creditUsage} pkgPlan={pkgPlan} creditPools={creditPools} retailers={retailers} accountId={mySupplierKey}/>;
     if(pg==="profile")      return <PageSupplierProfile account={account} co={co} fl={fl} readOnly={viewingOtherAccount} onSaved={(patch) => setAccount(prev => ({ ...prev, personName: patch.name, phone: patch.phone, position: patch.position }))}/>;
-    if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]}/>;
+    if(pg==="b-dash")       return <PageBuyerDashboard nav={nav} fmSettings={fmSettings} buyer={buyer} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} newAtEntry={buyerSeenAllowed ? buyerNewAtEntry : 0}/>;
     if(pg==="b-offers")     return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-saved")      return <PageBuyerOffers sends={sends} offers={offersForBuyer} nav={nav} buyer={buyer} toggleStar={toggleStar} co={co} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} retailers={retailers} companies={companies} initialFilter={{ starred:true }} onSeenList={markBuyerPreconnectSeen}/>;
     if(pg==="b-katalog")    return <PageBuyerCatalog companies={companies} offers={offersForBuyer} nav={nav} sends={sends} buyerRetailerId={account.retailerId || CHAIN_TO_RETAILER[account.chainId]} role={account.role} hiddenRetailers={companyHiddenRetailers} profiles={adminChatProfiles}/>;
@@ -6847,7 +6878,7 @@ export function PageFinanse({ wallet, sends, offers, co, setCo, fl, nav, buyPack
               CREDITS_UI_SUPPLIER
                 ? [t("supplier.finance.credits.stat_used_label"), activePkgUsed, t("supplier.finance.credits.stat_used_unit"), "rgba(255,255,255,0.07)", "white"]
                 : [t("supplier.finance.wallet.stats.total_sent_label"), allSent.length, t("supplier.finance.wallet.stats.total_sent_unit"), "rgba(255,255,255,0.07)", "white"],
-              [t("supplier.finance.credits.reserved_label"), creditUsage.reserved, t("supplier.finance.credits.stat_used_unit"), "rgba(5,150,105,0.22)", "#6ee7b7"],
+              [t("supplier.finance.credits.reserved_label"), creditUsage.reserved, t("supplier.finance.credits.reserved_unit"), "rgba(5,150,105,0.22)", "#6ee7b7"],
               [t("supplier.finance.wallet.stats.refunds_label"), refundedExpired.length, t("supplier.finance.wallet.stats.refunds_unit"), "rgba(239,68,68,0.18)", "#fca5a5"],
             ].map(([l,v,u,bg,c])=>(
               <div key={l} style={{ padding:"12px 16px",background:bg,borderRadius:10,border:"1px solid rgba(255,255,255,0.06)",minWidth:100,textAlign:"center" }}>
@@ -7506,16 +7537,19 @@ export function PageFinansePakiety({ co, setCo, fl, buyPackage, orders, wallet, 
   );
 }
 /* ── Dashboard kupca — 2 bloki: PreConnect + Fresh Market 2026 ────────────── */
-function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId }) {
+function PageBuyerDashboard({ nav, fmSettings, buyer, sends, buyerRetailerId, newAtEntry = 0 }) {
   // [Krok P2-2b] Bilingual via legacy.buyer.dashboard.*
   const { t } = useTranslation("legacy");
   const fmOpen = fmSettings?.schedulingOpen;
-  const unread = sends
+  const liveUnread = sends
     ? sends.filter(s =>
         ["sent","opened"].includes(s.status) &&
         (!buyerRetailerId || s.retailerId === buyerRetailerId)
       ).length
     : 0;
+  // [fix/buyer-entry-seen] wejście na platformę od razu rozlicza propozycje, więc
+  // licznik „nowych" trzyma liczbę z chwili wejścia (inaczej znikałby po sekundzie).
+  const unread = Math.max(liveUnread, Number(newAtEntry) || 0);
   const [howOpenBuy, setHowOpenBuy] = useState(false);
 
   return (

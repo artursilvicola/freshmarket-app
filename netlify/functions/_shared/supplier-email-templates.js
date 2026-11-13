@@ -365,7 +365,7 @@ function tplOffersReadByBuyerPL({ companyName, offerTitle, offers, offerCount, r
   const channel = openedVia === "email"
     ? "otworzył mail Fresh Market PreConnect z Twoimi propozycjami"
     : openedVia === "app_list"
-      ? "wszedł na listę ofert PreConnect i zobaczył Twoje propozycje"
+      ? "wszedł do panelu PreConnect, w którym czekają Twoje propozycje"
       : "otworzył Twoją propozycję w panelu PreConnect";
   const subject = count === 1
     ? `Fresh Market – ${retailerName || "sieć"} zobaczyła Twoją ofertę`
@@ -391,7 +391,7 @@ function tplOffersReadByBuyerEN({ companyName, offerTitle, offers, offerCount, r
   const channel = openedVia === "email"
     ? "opened the Fresh Market PreConnect email with your submissions"
     : openedVia === "app_list"
-      ? "visited the PreConnect submissions list and saw your submissions"
+      ? "signed in to the PreConnect panel where your submissions are waiting"
       : "opened your submission in the PreConnect panel";
   const subject = count === 1
     ? `Fresh Market – ${retailerName || "retailer"} saw your submission`
