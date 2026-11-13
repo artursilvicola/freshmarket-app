@@ -96,3 +96,4 @@ Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmieni
 |---|---|---|
 | 13.11.2026 | Testy na bazie testowej (pkt 2) | komplet zaliczony |
 | 13.11.2026 | Podgląd Netlify PR #1 | usunięty, 404; PR jako szkic |
+| 13.11.2026 | Blokada podglądów w `netlify.toml` (commit `efc2c0a`) | build podglądu `6af71c7e` anulowany przez Netlify („Canceled build due to no content change”), adres podglądu nadal 404, produkcja bez zmian (`9c8e747`) |
