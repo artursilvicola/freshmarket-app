@@ -172,6 +172,8 @@ Uruchomiona w Supabase → SQL Editor na projekcie produkcyjnym; treść zapytan
 
 **Warunki wstępne migracji (wiersze 1–8): 8/8 OK** — zależności istnieją, nowych funkcji jeszcze nie ma, kolumny zgodne.
 
+**Powtórzona 13.11 po poprawkach z review (plik z commita `2ad5dd4`, z nowym wierszem 9): 9/9 OK.** Wiersz 9: `mark_legacy_send_seen` na produkcji ma skrót `8b3a720e7374e0bfe873969401706f63` — dokładnie treść z migracji 20260927120000, na której oparta jest nowa wersja. Liczby w tabeli poniżej bez zmian.
+
 **Liczba propozycji objętych regułą „kredyt przy wejściu kupca”:**
 
 | Wiersz | Co | Wynik |
@@ -231,4 +233,5 @@ Co z tego wynika:
 | 13.11.2026 | Decyzja Artura: rozliczenie przed mailingiem | potwierdzone — wejście kupca rozlicza także propozycje, dla których mailing jeszcze nie wyszedł (w kontroli z 13.11: 8 z 10 nierozliczonych) |
 | 13.11.2026 | Końcowe review `cffea69` | **NO-GO** — P1: cofnięcie ręcznego potwierdzenia zwracało kredyt mimo późniejszego odczytu kupca; P2: błąd pojedynczej pozycji przy HTTP 200 blokował ponowienie |
 | 13.11.2026 | Poprawki po review (`b10ba3a` + pakiet) | P1 i P2 poprawione; SQL 16/16, wyścig dwóch połączeń 4/4, próba end-to-end 26/26, `npm test` 1300, build OK; stary kod na bazie z poprawioną migracją bez zmian; migracja zastępuje teraz `mark_legacy_send_seen` — do ponownego review |
+| 13.11.2026 | `01-kontrola-przed-migracja.sql` na produkcji po poprawkach (tylko odczyt, commit `2ad5dd4`) | 9/9 OK, w tym suma kontrolna `mark_legacy_send_seen` zgodna z oczekiwaną; liczby jak wcześniej: 12 czekających, 10 nierozliczonych, 8 bez mailingu |
 | — | Migracja produkcyjna i scalenie PR | **NIEWYKONANE** — osobny krok, do czasu GO recenzenta i zgody Artura (pkt 4) |
