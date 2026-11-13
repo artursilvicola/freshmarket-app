@@ -3806,6 +3806,7 @@
       "undo_confirm_error_format": "Błąd cofania potwierdzenia: {{message}}",
       "undo_confirm_done": "Potwierdzenie cofnięte",
       "undo_confirm_done_refunded": "Potwierdzenie cofnięte — kredyt wrócił do pakietu dostawcy.",
+      "undo_confirm_done_kept_buyer_read": "Potwierdzenie cofnięte. Kredyt zostaje — kupiec sam odczytał tę propozycję.",
       "fm_company_not_found": "Nie udało się znaleźć Twojej firmy w bazie. Skontaktuj się z administratorem.",
       "fm_confirm_error_format": "Błąd potwierdzenia: {{message}}",
       "fm_confirm_saved": "Dziękujemy, Twój wybór sieci został zapisany.",

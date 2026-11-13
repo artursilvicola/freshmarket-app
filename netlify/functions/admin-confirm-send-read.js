@@ -75,7 +75,7 @@ export const handler = async (event) => {
     if (req.action === "undo") {
       const { data: r, error } = await supaSvc.rpc("undo_legacy_send_manual_confirm", { p_send_id: row.id });
       if (error) throw error;
-      log({ action: "undo", admin: profile.id, legacy_id: row.legacy_id, skipped: !!r?.skipped, reason: r?.reason || null, refunded: !!r?.refunded });
+      log({ action: "undo", admin: profile.id, legacy_id: row.legacy_id, skipped: !!r?.skipped, reason: r?.reason || null, refunded: !!r?.refunded, kept: r?.kept_reason || null });
       return json(200, {
         ok: true,
         action: "undo",
@@ -85,6 +85,8 @@ export const handler = async (event) => {
         status: r?.status || row.status,
         data: r?.data || row.data || {},
         refunded: !!r?.refunded,
+        // "buyer_read": kupiec sam odczytał propozycję — kredyt zostaje, status z faktycznego odczytu
+        kept_reason: r?.kept_reason || null,
       });
     }
 

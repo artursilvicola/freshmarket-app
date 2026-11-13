@@ -397,6 +397,33 @@ async function scenarioBuyerEntry() {
   }
 }
 
+
+// [review Codexa 13.11, P1] potwierdzenie ręczne → kupiec SAM odczytuje propozycję → cofnięcie:
+// kredyt ma zostać, a status ma odpowiadać faktycznemu odczytowi. Przez prawdziwe funkcje serwera.
+async function scenarioUndoAfterBuyerRead() {
+  console.log("\n[5] Cofnięcie ręcznego potwierdzenia PO odczycie kupca (review P1)");
+  const st = (snap) => snap.sends.find((x) => x.id === MANUAL);
+  const before = await snapshot();
+  const post = async (session, fn, body) => {
+    const r = await fetch(`${BASE}/.netlify/functions/${fn}`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(body) });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  };
+  const buyer = await sessionFor(BUYER_EMAIL);
+  const admin = await sessionFor(ADMIN_EMAIL);
+  const seen = await post(buyer, "mark-buyer-preconnect-seen", { legacy_ids: [MANUAL], channel: "app_list" });
+  const afterSeen = await snapshot();
+  const undo = await post(admin, "admin-confirm-send-read", { legacy_id: MANUAL, action: "undo" });
+  const afterUndo = await snapshot();
+  const again = await post(admin, "admin-confirm-send-read", { legacy_id: MANUAL, action: "undo" });
+  const afterAgain = await snapshot();
+  report.undo_after_buyer_read = { before: st(before), seen: { http: seen.status, result: (seen.body.results || [])[0]?.status, already: (seen.body.results || [])[0]?.billing?.alreadyCharged }, undo: { http: undo.status, refunded: undo.body.refunded, kept_reason: undo.body.kept_reason, status: undo.body.status }, after: st(afterUndo) };
+  check("stan wyjściowy: propozycja potwierdzona ręcznie i rozliczona tym potwierdzeniem", st(before)?.status === "read_manual" && st(before)?.charge_channel === "manual", `${st(before)?.status}/${st(before)?.charge_channel}`);
+  check("odczyt kupca po potwierdzeniu: bez drugiego kredytu, status bez zmian", seen.status === 200 && afterSeen.credits_used === before.credits_used && st(afterSeen)?.status === "read_manual", `HTTP ${seen.status}, kredyty ${afterSeen.credits_used}`);
+  check("cofnięcie po odczycie kupca: kredyt ZOSTAJE (bez zwrotu)", undo.status === 200 && undo.body.refunded === false && undo.body.kept_reason === "buyer_read" && afterUndo.credits_used === before.credits_used, `refunded=${undo.body.refunded}, kept=${undo.body.kept_reason}, kredyty ${before.credits_used} → ${afterUndo.credits_used}`);
+  check("cofnięcie po odczycie kupca: status „read”, rozliczenie zachowane i już nie „ręczne”", st(afterUndo)?.status === "read" && st(afterUndo)?.charged === true && st(afterUndo)?.charge_channel === "app_list", `${st(afterUndo)?.status}/${st(afterUndo)?.billing}/${st(afterUndo)?.charge_channel}`);
+  check("ponowne cofnięcie niczego nie zmienia", again.status === 200 && again.body.skipped === true && JSON.stringify(afterAgain) === JSON.stringify(afterUndo), `skipped=${again.body.skipped}`);
+}
+
 // ── przebieg ─────────────────────────────────────────────────────────────────
 let code = 0;
 try {
@@ -413,6 +440,7 @@ try {
       if (MODE === "fix") await scenarioManualConfirmUi(); else await scenarioManualConfirmLegacy();
     }
     await scenarioBuyerEntry();
+    if (MODE === "fix" && !arg("only-buyer")) await scenarioUndoAfterBuyerRead();
     writeFileSync(path.join(HERE, `proba-${MODE}-raport.json`), JSON.stringify(report, null, 2));
     console.log("Raport i zrzuty: " + HERE);
     const bad = report.checks.filter((c) => !c.ok);

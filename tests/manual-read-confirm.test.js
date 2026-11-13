@@ -75,7 +75,7 @@ describe("spięcie w kodzie (strażnik regresji)", () => {
       const j = JSON.parse(read(`../src/i18n/${l}/legacy.json`));
       const hit = JSON.stringify(j).match(/"confirm_form_charge_hint":"[^"]+"/);
       expect(hit, l).not.toBeNull();
-      for (const k of ["confirm_saved_charged", "confirm_saved_already_charged", "confirm_saved_no_credit", "confirm_skipped", "undo_confirm_done_refunded"]) {
+      for (const k of ["confirm_saved_charged", "confirm_saved_already_charged", "confirm_saved_no_credit", "confirm_skipped", "undo_confirm_done_refunded", "undo_confirm_done_kept_buyer_read"]) {
         expect(JSON.stringify(j)).toContain(`"${k}":`);
       }
     }
@@ -87,10 +87,46 @@ describe("spięcie w kodzie (strażnik regresji)", () => {
     expect(fn).toMatch(/rpc\("confirm_legacy_send_manual"/);
     expect(fn).toMatch(/rpc\("undo_legacy_send_manual_confirm"/);
     expect(fn).toMatch(/openedVia: "manual"/);
+    expect(fn).toMatch(/kept_reason: r\?\.kept_reason \|\| null/);
     const sql = read("../supabase/migrations/20261113120000_manual_read_confirm.sql");
-    for (const f of ["confirm_legacy_send_manual", "undo_legacy_send_manual_confirm"]) {
+    for (const f of ["confirm_legacy_send_manual", "undo_legacy_send_manual_confirm", "mark_legacy_send_seen"]) {
       expect(sql).toMatch(new RegExp(`revoke all on function public\\.${f}\\([^)]*\\) from public, anon, authenticated`));
       expect(sql).toMatch(new RegExp(`grant execute on function public\\.${f}\\([^)]*\\) to service_role`));
     }
+  });
+});
+
+describe("[review Codexa 13.11, P1] cofnięcie po niezależnym odczycie kupca", () => {
+  const sql = read("../supabase/migrations/20261113120000_manual_read_confirm.sql").replace(/\r\n/g, "\n");
+  const old = read("../supabase/migrations/20260927120000_free_credit_grants.sql").replace(/\r\n/g, "\n");
+  const fnText = (text, name) => { const a = text.indexOf(`create or replace function public.${name}(`); return text.slice(a, text.indexOf("\n$$;", a) + 4); };
+
+  it("mark_legacy_send_seen: treść sprzed zmiany zachowana w całości, dopisany tylko zapis faktu odczytu", () => {
+    const before = fnText(old, "mark_legacy_send_seen").split("\n");
+    const after = fnText(sql, "mark_legacy_send_seen").split("\n");
+    let i = 0;
+    for (const line of after) if (i < before.length && line === before[i]) i += 1;
+    expect(i, "każda linia starej funkcji występuje w nowej w tej samej kolejności").toBe(before.length);
+    const added = after.length - before.length;
+    expect(added).toBeGreaterThan(0);
+    const text = after.join("\n");
+    for (const k of ["buyerSeenAt", "buyerSeenChannel", "buyerAppSeenAt", "buyerAppSeenChannel"]) expect(text).toContain(`'${k}'`);
+  });
+
+  it("cofnięcie sprawdza fakt odczytu kupca przed zwrotem i zwraca powód zachowania kredytu", () => {
+    const undo = fnText(sql, "undo_legacy_send_manual_confirm");
+    const lock = undo.indexOf("for update");
+    const check = undo.indexOf("v_buyer_read :=");
+    const refund = undo.indexOf("set qty_used = coalesce(qty_used, 0) - 1");
+    expect(lock).toBeGreaterThan(-1);
+    expect(check).toBeGreaterThan(lock);
+    expect(refund).toBeGreaterThan(undo.indexOf("if v_buyer_read then"));
+    expect(undo).toMatch(/'kept_reason', 'buyer_read'/);
+    expect(undo).toMatch(/v_restore := case when v_app_read then 'read' else 'opened' end;/);
+  });
+
+  it("panel pokazuje osobny komunikat, gdy kredyt zostaje po odczycie kupca", () => {
+    const app = read("../src/legacy/PreconnectFM.jsx");
+    expect(app).toMatch(/r\?\.kept_reason === "buyer_read" \? "shell\.app_toasts\.undo_confirm_done_kept_buyer_read"/);
   });
 });

@@ -55,14 +55,19 @@ try {
   await db.query(migration);
   await db.query(`insert into retailers (id, name, country, active) values ($1,'ZZZ SQL TEST sieć','PL',true)`, [RID]);
   await db.query(`insert into companies (id, name, legacy_supplier_id, account_status, preconnect_enabled) values ($1,'ZZZ SQL TEST dostawca','sup-sqltest-1','active',true), ($2,'ZZZ SQL TEST bez pakietu','sup-sqltest-2','active',true)`, [COMPANY, COMPANY_EMPTY]);
-  await db.query(`insert into packages (company_id, plan, qty_total, qty_used, source, purchased_at, expires_at) values ($1,'std_5',5,0,'purchase',now(), current_date + 300)`, [COMPANY]);
+  await db.query(`insert into packages (company_id, plan, qty_total, qty_used, source, purchased_at, expires_at) values ($1,'std_20',20,0,'purchase',now(), current_date + 300)`, [COMPANY]);
   const A = await newSend(880001, "sup-sqltest-1");
   const B = await newSend(880002, "sup-sqltest-1");
   const C = await newSend(880003, "sup-sqltest-1", "read");
   const D = await newSend(880004, "sup-sqltest-2");
+  const E = await newSend(880005, "sup-sqltest-1");
+  const F = await newSend(880006, "sup-sqltest-1");
+  const G = await newSend(880007, "sup-sqltest-1");
+  const H = await newSend(880008, "sup-sqltest-1");
+  const I = await newSend(880009, "sup-sqltest-1");
 
   await test("uprawnienia: tylko service_role", async () => {
-    for (const [fn, sig] of [["confirm_legacy_send_manual", "uuid, uuid, text, text, timestamptz"], ["undo_legacy_send_manual_confirm", "uuid, timestamptz"]]) {
+    for (const [fn, sig] of [["confirm_legacy_send_manual", "uuid, uuid, text, text, timestamptz"], ["undo_legacy_send_manual_confirm", "uuid, timestamptz"], ["mark_legacy_send_seen", "uuid, uuid, text, timestamptz"]]) {
       const r = await one(`select has_function_privilege('authenticated', 'public.${fn}(${sig})', 'execute') a, has_function_privilege('anon', 'public.${fn}(${sig})', 'execute') n, has_function_privilege('service_role', 'public.${fn}(${sig})', 'execute') s`);
       assert.deepEqual([r.a, r.n, r.s], [false, false, true], fn);
     }
@@ -165,9 +170,91 @@ try {
     assert.equal(u.status, "sent"); assert.equal(u.refunded, false);
     assert.equal(Number((await one(`select count(*) n from wallet_tx where company_id = $1`, [COMPANY_EMPTY])).n), 0);
   });
+
+  // ── review Codexa 13.11, P1: cofnięcie po NIEZALEŻNYM odczycie kupca ──
+  const LATER = "2026-11-13T11:00:00Z";
+  const refunds = async (id) => Number((await one(`select count(*) n from wallet_tx where reference_id = $1 and type = 'refund'`, [id])).n);
+
+  await test("odczyt kupca zapisuje fakt odczytu w tej samej transakcji (mail, potem aplikacja)", async () => {
+    const m = await rpc("mark_legacy_send_seen", [I, COMPANY, "email", NOW]);
+    assert.equal(m.status, "opened"); assert.equal(m.billing.charged, true);
+    let s = await send(880009);
+    assert.equal(s.data.buyerSeenChannel, "email"); assert.ok(s.data.buyerSeenAt);
+    assert.equal(s.data.buyerAppSeenAt, undefined, "sam mail nie jest odczytem w aplikacji");
+    const a = await rpc("mark_legacy_send_seen", [I, COMPANY, "app_detail", LATER]);
+    assert.equal(a.status, "read"); assert.equal(a.billing.already_charged, true);
+    s = await send(880009);
+    assert.equal(s.data.buyerSeenChannel, "email", "pierwszy kanał zostaje");
+    assert.equal(s.data.buyerAppSeenChannel, "app_detail"); assert.ok(s.data.buyerAppSeenAt);
+    assert.equal(s.data.readType, "auto_buyer_open"); assert.equal(s.data.seenChannel, "email");
+  });
+
+  await test("P1: potwierdzenie → kupiec otwiera MAIL → cofnięcie: kredyt ZOSTAJE, status „opened”", async () => {
+    const before = await used();
+    const c = await rpc("confirm_legacy_send_manual", [E, COMPANY, "manual_phone", "telefon", NOW]);
+    assert.equal(c.billing.charged, true); assert.equal(await used(), before + 1);
+    const m = await rpc("mark_legacy_send_seen", [E, COMPANY, "email", LATER]);
+    assert.equal(m.status, "read_manual"); assert.equal(m.billing.already_charged, true);
+    assert.equal((await send(880005)).data.buyerSeenChannel, "email");
+    const u = await rpc("undo_legacy_send_manual_confirm", [E, LATER]);
+    assert.equal(u.skipped, false); assert.equal(u.refunded, false); assert.equal(u.kept_reason, "buyer_read"); assert.equal(u.status, "opened");
+    const s = await send(880005);
+    assert.equal(s.status, "opened"); assert.equal(s.data.status, "opened");
+    assert.equal(s.data.billingStatus, "charged"); assert.ok(s.data.chargeAt); assert.ok(s.data.packageId);
+    assert.equal(s.data.chargeChannel, "email", "kredyt przestaje być zwrotny");
+    assert.equal(s.data.seenChannel, "email"); assert.ok(s.data.emailOpenedAt);
+    for (const k of ["readType", "manualNote", "manualPrevStatus", "readAt"]) assert.equal(k in s.data, false, `pole ${k} powinno zniknąć`);
+    const h = s.data.confirmHistory;
+    assert.equal(h[h.length - 1].action, "undo"); assert.equal(h[h.length - 1].refunded, false); assert.equal(h[h.length - 1].kept, "buyer_read");
+    assert.equal(await used(), before + 1, "kredyt nie wraca");
+    assert.equal(await refunds(E), 0);
+    const again = await rpc("undo_legacy_send_manual_confirm", [E, LATER]);
+    assert.equal(again.skipped, true); assert.equal(again.reason, "status_opened");
+    assert.equal(await used(), before + 1);
+  });
+
+  await test("P1: potwierdzenie → kupiec wchodzi do APLIKACJI → cofnięcie: kredyt ZOSTAJE, status „read”", async () => {
+    const before = await used();
+    await rpc("confirm_legacy_send_manual", [F, COMPANY, "manual_meeting", "", NOW]);
+    const m = await rpc("mark_legacy_send_seen", [F, COMPANY, "app_list", LATER]);
+    assert.equal(m.status, "read_manual"); assert.equal(m.billing.already_charged, true);
+    const u = await rpc("undo_legacy_send_manual_confirm", [F, LATER]);
+    assert.equal(u.refunded, false); assert.equal(u.kept_reason, "buyer_read"); assert.equal(u.status, "read");
+    const s = await send(880006);
+    assert.equal(s.status, "read"); assert.equal(s.data.billingStatus, "charged");
+    assert.equal(s.data.chargeChannel, "app_list"); assert.equal(s.data.readType, "auto_buyer_preconnect_list");
+    assert.equal(s.data.seenChannel, "app_list"); assert.ok(s.data.readAt);
+    assert.equal(s.data.manualNote, undefined);
+    assert.equal(await used(), before + 1);
+    assert.equal(await refunds(F), 0);
+  });
+
+  await test("P1: potwierdzenie → mail → aplikacja → cofnięcie: status „read”, kredyt zostaje (jeden)", async () => {
+    const before = await used();
+    await rpc("confirm_legacy_send_manual", [G, COMPANY, "manual_email", "", NOW]);
+    await rpc("mark_legacy_send_seen", [G, COMPANY, "email", LATER]);
+    await rpc("mark_legacy_send_seen", [G, COMPANY, "app_detail", LATER]);
+    const u = await rpc("undo_legacy_send_manual_confirm", [G, LATER]);
+    assert.equal(u.status, "read"); assert.equal(u.refunded, false);
+    const s = await send(880007);
+    assert.equal(s.data.readType, "auto_buyer_open"); assert.equal(s.data.seenChannel, "email"); assert.equal(s.data.chargeChannel, "app_detail");
+    assert.equal(await used(), before + 1);
+  });
+
+  await test("bez niezależnego odczytu cofnięcie nadal zwraca kredyt (zachowanie dotychczasowe)", async () => {
+    const before = await used();
+    await rpc("confirm_legacy_send_manual", [H, COMPANY, "manual_phone", "", NOW]);
+    assert.equal(await used(), before + 1);
+    const u = await rpc("undo_legacy_send_manual_confirm", [H, LATER]);
+    assert.equal(u.refunded, true); assert.equal(u.kept_reason, null); assert.equal(u.status, "sent");
+    assert.equal(await used(), before);
+    assert.equal(await refunds(H), 1);
+    const s = await send(880008);
+    assert.equal(s.data.buyerSeenAt, undefined); assert.equal(s.data.billingStatus, undefined);
+  });
 } finally {
   await db.query("rollback");
-  const left = await one(`select (select count(*) from legacy_sends where legacy_id between 880001 and 880004)::int s, (select count(*) from pg_proc where proname in ('confirm_legacy_send_manual','undo_legacy_send_manual_confirm'))::int f`);
+  const left = await one(`select (select count(*) from legacy_sends where legacy_id between 880001 and 880009)::int s, (select count(*) from pg_proc where proname in ('confirm_legacy_send_manual','undo_legacy_send_manual_confirm'))::int f`);
   console.log(`po wycofaniu: wysyłki testowe ${left.s}, funkcje w bazie ${left.f}`);
   await db.end();
 }

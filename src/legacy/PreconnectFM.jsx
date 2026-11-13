@@ -108,7 +108,7 @@ import { FM_MAX_M, FM_MAX_S, FM_SCORE, FM_MIN_GAP, FM_EXCLUDED_PACKAGES, FM_ZONE
 import { FM_STARS_MIN, fmPackagesOf, fmStarsMax, fmStarsState, findSupplierCompany } from "../lib/fm-stars.js";
 import { companyProfileGaps } from "../lib/company-profile.js";
 import { isOwnAccount } from "../lib/profile-guard.js";
-import { canRegisterBuyerSeen, pendingBuyerSeenSends } from "../lib/buyer-seen.js";
+import { canRegisterBuyerSeen, pendingBuyerSeenSends, createSeenSubmissionTracker } from "../lib/buyer-seen.js";
 // [feat/fm-decision-source] kto ustawił wybór sieci / decyzję kupca (oznaczenie „Wybrane przez administratora”)
 import { groupDecisionSources, targetSource, respSource, sourcesVisibleTo } from "../lib/fm-decision-sources.js";
 import DecisionSourceBadge from "../components/fm/DecisionSourceBadge.jsx";
@@ -2138,7 +2138,8 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   // wyłącznie zalogowany kupiec na własnym koncie. Administrator w podglądzie konta
   // kupca niczego nie odczytuje.
   const buyerSeenAllowed = canRegisterBuyerSeen({ sessionRole: initialRole, account, currentUser });
-  const buyerSeenSubmittedRef = useRef(new Set());
+  const buyerSeenTrackerRef = useRef(null);
+  if (!buyerSeenTrackerRef.current) buyerSeenTrackerRef.current = createSeenSubmissionTracker();
   const [buyerNewAtEntry, setBuyerNewAtEntry] = useState(0);
   useEffect(() => {
     if (!lockedRole) return;
@@ -3449,7 +3450,10 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         return;
       }
       applyServerSend(id, r?.data);
-      fl(t(r?.refunded ? "shell.app_toasts.undo_confirm_done_refunded" : "shell.app_toasts.undo_confirm_done"), "warning");
+      // [review Codexa 13.11, P1] kupiec sam odczytał propozycję → kredyt zostaje, status z faktycznego odczytu
+      fl(t(r?.refunded ? "shell.app_toasts.undo_confirm_done_refunded"
+          : r?.kept_reason === "buyer_read" ? "shell.app_toasts.undo_confirm_done_kept_buyer_read"
+          : "shell.app_toasts.undo_confirm_done"), "warning");
       return;
     }
     const ts = nowStr();
@@ -3505,16 +3509,17 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   async function markBuyerPreconnectSeen(sendList, channel = "app_list") {
     // [fix/buyer-entry-seen] podgląd cudzego konta (admin) nie jest odczytem.
     if (!buyerSeenAllowed) return;
-    // Wejście na platformę i lista propozycji mogą zgłosić te same wysyłki —
-    // każdą wysyłamy raz; po błędzie zdejmujemy blokadę, żeby kolejna próba mogła przejść.
-    const submitted = buyerSeenSubmittedRef.current;
-    const candidates = (sendList || []).filter(s => s && ["sent", "opened"].includes(s.status) && !submitted.has(s.id));
+    // Wejście na platformę i lista propozycji mogą zgłosić te same wysyłki — każda idzie raz naraz.
+    // [review Codexa 13.11, P2] Rozstrzygamy PER POZYCJA: serwer odpowiada HTTP 200 także wtedy, gdy
+    // rozliczenie konkretnej propozycji się nie udało. Załatwione są tylko pozycje z ok === true;
+    // pozostałe wracają do puli i idą ponownie przy kolejnym zgłoszeniu (np. otwarcie listy propozycji),
+    // najwyżej kilka razy na pozycję w sesji. Udane rozliczenia nie są powtarzane.
+    const tracker = buyerSeenTrackerRef.current;
+    const candidates = tracker.take(sendList);
     if (!candidates.length) return;
-    candidates.forEach(s => submitted.add(s.id));
-    const release = () => candidates.forEach(s => submitted.delete(s.id));
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) { release(); return; }
+      if (!session?.access_token) { tracker.release(candidates); return; }
       const res = await fetch("/.netlify/functions/mark-buyer-preconnect-seen", {
         method: "POST",
         headers: {
@@ -3524,10 +3529,12 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
         body: JSON.stringify({ legacy_ids: candidates.map(s => s.id), channel }),
       });
       const body = await res.json().catch(() => ({}));
-      if (res.ok) applySeenResultsToState(body.results || []);
-      else { release(); console.warn("[mark-buyer-preconnect-seen]", body?.error || res.status); }
+      if (!res.ok) { tracker.release(candidates); console.warn("[mark-buyer-preconnect-seen]", body?.error || res.status); return; }
+      const { failed } = tracker.settle(candidates, body?.results);
+      applySeenResultsToState(Array.isArray(body?.results) ? body.results : []);
+      if (failed.length) console.warn("[mark-buyer-preconnect-seen] pozycje bez rozliczenia, do ponowienia:", failed.length);
     } catch (e) {
-      release();
+      tracker.release(candidates);
       console.warn("[mark-buyer-preconnect-seen]", e?.message || e);
     }
   }
