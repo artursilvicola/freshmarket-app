@@ -1517,6 +1517,22 @@ export async function upsertLegacySend(send) {
   if (error) throw error;
 }
 
+// [fix/buyer-entry-seen] Ręczne potwierdzenie odczytu przez administratora (i jego
+// cofnięcie) idzie przez funkcję serwera: status + rozliczenie kredytu w jednej
+// transakcji w bazie. action: "confirm" | "undo".
+export async function adminConfirmSendRead({ legacyId, action, readType = null, note = "" }) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Brak sesji");
+  const res = await fetch("/.netlify/functions/admin-confirm-send-read", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ legacy_id: legacyId, action, read_type: readType, note }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `admin-confirm-send-read ${res.status}`);
+  return body;
+}
+
 export async function bulkUpsertLegacySends(sends) {
   if (!sends || !sends.length) return;
   const rows = sends.map((send) => ({

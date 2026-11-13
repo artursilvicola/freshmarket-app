@@ -6,6 +6,7 @@
 //   node scripts/buyer-entry-seen-trial.mjs --mode=fix       kod z poprawką: sprawdza oczekiwania (kod wyjścia 1 = niezaliczone)
 //   node scripts/buyer-entry-seen-trial.mjs --mode=control   stary kod: tylko opisuje, co się stało
 //   node scripts/buyer-entry-seen-trial.mjs --cleanup        samo sprzątanie danych próbnych
+// Wymaga na bazie testowej migracji 20261113120000_manual_read_confirm.sql (ręczne potwierdzenie).
 // Opcje: --keep (zostaw dane próbne), --only-buyer (sam scenariusz kupca), --out=<katalog> (raport + zrzuty),
 // --chrome=<ścieżka>. Tworzy i usuwa własne dane „ZZZ PROBA” (sieć 9901, firma, pakiet 5 kredytów,
 // wysyłki 990001–990003, konto kupca); istniejących seedów nie dotyka. Przeglądarka: Chrome przez CDP.
@@ -57,6 +58,7 @@ const BUYER_EMAIL = "proba.kupiec.wejscie@freshmarket.test";
 const BUYER_NAME = "ZZZ PROBA Kupiec";
 const ADMIN_EMAIL = "codex.admin@freshmarket.test";
 
+const productName = (id) => `ZZZ PROBA produkt ${id}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const svc = createClient(fileEnv.SUPABASE_URL, fileEnv.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 const db = await connect();
@@ -69,6 +71,7 @@ async function cleanup() {
     ["kolejka powiadomień", `delete from legacy_send_notify_messages where legacy_ids && $1::bigint[]`, [ALL]],
     ["wallet_tx", `delete from wallet_tx where company_id = $1`, [COMPANY_ID]],
     ["wysyłki", `delete from legacy_sends where legacy_id = any($1::bigint[])`, [ALL]],
+    ["oferty", `delete from legacy_offers where legacy_id = any($1::bigint[])`, [ALL]],
     ["pakiety", `delete from packages where company_id = $1`, [COMPANY_ID]],
     ["firma", `delete from companies where id = $1`, [COMPANY_ID]],
   ];
@@ -84,7 +87,7 @@ async function cleanup() {
 }
 
 function sendData(id) {
-  return { id, supplierId: SUP, offerId: null, retailerId: RID, month: today.slice(0, 7), pos: 1, status: "sent", sentAt: today, sendDate: today, daysLeft: 14, price: 40, confirmHistory: [] };
+  return { id, supplierId: SUP, offerId: id, retailerId: RID, month: today.slice(0, 7), pos: 1, status: "sent", sentAt: today, sendDate: today, daysLeft: 14, price: 40, confirmHistory: [] };
 }
 
 async function resetSends() {
@@ -94,7 +97,7 @@ async function resetSends() {
   await db.query(`delete from legacy_sends where legacy_id = any($1::bigint[])`, [ALL]);
   for (const id of ALL) {
     await db.query(
-      `insert into legacy_sends (legacy_id, supplier_legacy_id, offer_legacy_id, retailer_id, status, data) values ($1,$2,null,$3,'sent',$4::jsonb)`,
+      `insert into legacy_sends (legacy_id, supplier_legacy_id, offer_legacy_id, retailer_id, status, data) values ($1,$2,$1,$3,'sent',$4::jsonb)`,
       [id, SUP, RID, JSON.stringify(sendData(id))]
     );
   }
@@ -127,13 +130,20 @@ async function setup() {
       where p.id = $1`,
     [buyerId]
   );
+  for (const id of ALL) {
+    const offer = { id, supplierId: SUP, title: productName(id), product: productName(id), category: "warzywa", origin: "PL", status: "active", photos: [], certs: [] };
+    await db.query(
+      `insert into legacy_offers (legacy_id, supplier_legacy_id, status, category, origin, data) values ($1,$2,'active','warzywa','PL',$3::jsonb)`,
+      [id, SUP, JSON.stringify(offer)]
+    );
+  }
   await resetSends();
   return buyerId;
 }
 
 async function snapshot() {
   const sends = (await db.query(
-    `select legacy_id::int as id, status, data->>'seenChannel' as seen_channel, data->>'readType' as read_type, data->>'billingStatus' as billing, (data->>'chargeAt') is not null as charged
+    `select legacy_id::int as id, status, data->>'seenChannel' as seen_channel, data->>'readType' as read_type, data->>'billingStatus' as billing, (data->>'chargeAt') is not null as charged, data->>'chargeChannel' as charge_channel
        from legacy_sends where legacy_id = any($1::bigint[]) order by legacy_id`, [ALL])).rows;
   const pkg = (await db.query(`select qty_total, qty_used from packages where company_id = $1`, [COMPANY_ID])).rows[0];
   const reads = (await db.query(`select legacy_id::int as id, reader_role, channel, read_count from legacy_send_app_reads where legacy_id = any($1::bigint[]) order by legacy_id, channel`, [ALL])).rows;
@@ -182,7 +192,7 @@ async function openPage(session) {
       byReq.get(m.params.requestId).status = m.params.response.status;
     } else if (m.method === "Network.loadingFinished" && byReq.has(m.params.requestId)) {
       const c = byReq.get(m.params.requestId);
-      if (/mark-buyer-preconnect-seen|notify-supplier-read/.test(c.fn)) {
+      if (/mark-buyer-preconnect-seen|notify-supplier-read|admin-confirm-send-read/.test(c.fn)) {
         try { const b = await send("Network.getResponseBody", { requestId: m.params.requestId }); c.response = b.body; } catch { /* brak treści */ }
       }
     } else if (m.method === "Runtime.exceptionThrown") {
@@ -270,8 +280,8 @@ async function scenarioAdminDirectCall() {
   check("po wywołaniach admina baza bez zmian", JSON.stringify(before) === JSON.stringify(after), `kredyty użyte: ${after.credits_used}`);
 }
 
-async function scenarioManualConfirm() {
-  console.log("\n[3] Administrator: ręczne potwierdzenie odczytu (jak przycisk w Pipeline)");
+async function scenarioManualConfirmLegacy() {
+  console.log("\n[3] Administrator: ręczne potwierdzenie odczytu — stary kod (sam zapis statusu z przeglądarki)");
   const before = await snapshot();
   const s = await sessionFor(ADMIN_EMAIL);
   const admin = createClient(fileEnv.SUPABASE_URL, fileEnv.SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false }, global: { headers: { Authorization: `Bearer ${s.access_token}` } } });
@@ -283,6 +293,71 @@ async function scenarioManualConfirm() {
   const row = after.sends.find((x) => x.id === MANUAL);
   report.manual_confirm = { error: error?.message || null, send: row, credits_used_before: before.credits_used, credits_used_after: after.credits_used };
   console.log(`  status wysyłki ${MANUAL}: ${row?.status}; kredyty użyte ${before.credits_used} → ${after.credits_used}; rozliczona: ${row?.charged}`);
+}
+
+async function scenarioManualConfirmUi() {
+  console.log("\n[3] Administrator: ręczne potwierdzenie w Pipeline → Dostawcy / tracking (prawdziwy interfejs)");
+  const PRODUCT = productName(MANUAL);
+  const before = await snapshot();
+  const st = (snap) => snap.sends.find((x) => x.id === MANUAL);
+  const page = await openPage(await sessionFor(ADMIN_EMAIL));
+  const done = () => page.calls.filter((c) => c.fn === "admin-confirm-send-read" && c.response);
+  const waitCall = async (n, label) => {
+    const end = Date.now() + 25000;
+    while (Date.now() < end && done().length < n) await sleep(250);
+    if (done().length < n) throw new Error("brak odpowiedzi funkcji: " + label);
+    await sleep(500);
+    const text = (await page.text()).replace(/\s+/g, " ");
+    return { r: JSON.parse(done()[n - 1].response || "{}"), http: done()[n - 1].status, text };
+  };
+  const clickLeaf = (text) => page.evaluate(`(() => { const el = [...document.querySelectorAll("button,div,span,strong,a")].find(e => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)}); if (!el) return false; el.click(); return true; })()`);
+  const clickRowBtn = (label) => page.evaluate(`(() => { const tr = [...document.querySelectorAll("tr")].find(r => !r.querySelector("tr") && r.textContent.includes(${JSON.stringify(PRODUCT)})); if (!tr) return "brak wiersza"; const b = [...tr.querySelectorAll("button")].find(x => x.textContent.trim().includes(${JSON.stringify(label)})); if (!b) return "brak przycisku"; b.click(); return true; })()`);
+  const clickBtn = (label) => page.evaluate(`(() => { const b = [...document.querySelectorAll("button")].find(x => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()`);
+  const must = (v, what) => { if (v !== true) throw new Error(`${what}: ${v}`); };
+  let hint = false, c1, s1, u1, s2, c2, s3;
+  try {
+    await page.goto("/admin");
+    await page.waitFor((t) => /Wyloguj/.test(t) && /Pipeline/.test(t), 120000, "panel admina");
+    must(await clickLeaf("Pipeline"), "pozycja Pipeline");
+    await page.waitFor((t) => t.includes("Dostawcy / tracking"), 30000, "widok Pipeline");
+    must(await clickLeaf("Dostawcy / tracking"), "zakładka Dostawcy / tracking");
+    await page.waitFor((t) => t.includes(COMPANY_NAME), 30000, "wiersz dostawcy próbnego");
+    must(await clickLeaf(COMPANY_NAME), "wiersz dostawcy");
+    await page.waitFor((t) => t.includes(PRODUCT), 15000, "propozycje dostawcy");
+
+    must(await clickRowBtn("Potwierdź ręcznie"), "przycisk Potwierdź ręcznie");
+    hint = (await page.waitFor((t) => t.includes("Zapisz potwierdzenie"), 10000, "formularz potwierdzenia")).includes("pobierze 1 kredyt");
+    await page.shot(`proba-${MODE}-3a-formularz.png`);
+    must(await clickBtn("Zapisz potwierdzenie"), "przycisk Zapisz potwierdzenie");
+    c1 = await waitCall(1, "potwierdzenie"); s1 = await snapshot();
+    await page.shot(`proba-${MODE}-3b-po-potwierdzeniu.png`);
+
+    await page.waitFor((t) => t.includes("Cofnij potwierdzenie"), 10000, "przycisk cofnięcia");
+    must(await clickRowBtn("Cofnij potwierdzenie"), "przycisk Cofnij potwierdzenie");
+    u1 = await waitCall(2, "cofnięcie"); s2 = await snapshot();
+
+    await page.waitFor((t) => t.includes("Potwierdź ręcznie"), 10000, "przycisk potwierdzenia po cofnięciu");
+    must(await clickRowBtn("Potwierdź ręcznie"), "przycisk Potwierdź ręcznie (2)");
+    await page.waitFor((t) => t.includes("Zapisz potwierdzenie"), 10000, "formularz potwierdzenia (2)");
+    must(await clickBtn("Zapisz potwierdzenie"), "przycisk Zapisz potwierdzenie (2)");
+    c2 = await waitCall(3, "ponowne potwierdzenie"); s3 = await snapshot();
+    report.manual_confirm = { hint, confirm: { http: c1.http, skipped: c1.r.skipped, billing: c1.r.billing, notification: c1.r.notification }, undo: { http: u1.http, skipped: u1.r.skipped, refunded: u1.r.refunded }, reconfirm: { http: c2.http, billing: c2.r.billing }, after_confirm: st(s1), after_undo: st(s2), after_reconfirm: st(s3), js_errors: page.consoleErrors };
+  } finally { await page.close(); }
+
+  check("formularz uprzedza, że zapis pobierze kredyt", hint);
+  check("ręczne potwierdzenie: status read_manual, kredyt pobrany (kanał manual)", st(s1)?.status === "read_manual" && st(s1)?.charged && st(s1)?.charge_channel === "manual" && c1.r.billing?.charged === true, `${st(s1)?.status}/${st(s1)?.billing}/${st(s1)?.charge_channel}`);
+  check("ręczne potwierdzenie: zszedł dokładnie 1 kredyt", s1.credits_used === before.credits_used + 1, `${before.credits_used} → ${s1.credits_used}`);
+  check("ręczne potwierdzenie: komunikat o pobraniu kredytu", /pobrano 1 kredyt/.test(c1.text));
+  check("ręczne potwierdzenie: powiadomienie dostawcy uruchomione (poczta testowa je odrzuca)", !!c1.r.notification?.status, `status: ${c1.r.notification?.status}`);
+  check("cofnięcie: status „sent”, kredyt wrócił, znacznik rozliczenia zniknął", st(s2)?.status === "sent" && !st(s2)?.charged && s2.credits_used === before.credits_used && u1.r.refunded === true, `${st(s2)?.status}, kredyty ${s2.credits_used}, refunded=${u1.r.refunded}`);
+  check("cofnięcie: komunikat o zwrocie kredytu", /kredyt wrócił/.test(u1.text));
+  check("ponowne potwierdzenie rozlicza od nowa (1 kredyt)", st(s3)?.status === "read_manual" && s3.credits_used === before.credits_used + 1 && c2.r.billing?.charged === true, `kredyty ${s3.credits_used}`);
+
+  // kupiec nie może wołać funkcji administratora
+  const b = await sessionFor(BUYER_EMAIL);
+  const res = await fetch(`${BASE}/.netlify/functions/admin-confirm-send-read`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${b.access_token}` }, body: JSON.stringify({ legacy_id: SENDS[0], action: "confirm", read_type: "manual_phone" }) });
+  const s4 = await snapshot();
+  check("kupiec nie może ręcznie potwierdzać (403, baza bez zmian)", res.status === 403 && JSON.stringify(s4) === JSON.stringify(s3), `HTTP ${res.status}`);
 }
 
 async function scenarioBuyerEntry() {
@@ -314,7 +389,7 @@ async function scenarioBuyerEntry() {
     check("wejście kupca: obie propozycje „read”, rozliczone", SENDS.every((id) => st(afterEntry, id)?.status === "read" && st(afterEntry, id)?.charged), afterEntry.sends.map((s) => `${s.id}=${s.status}/${s.billing}`).join(", "));
     check("wejście kupca: zeszły dokładnie 2 kredyty", afterEntry.credits_used === before.credits_used + 2, `${before.credits_used} → ${afterEntry.credits_used}`);
     check("wejście kupca: odczyt przypisany kupcowi (kanał app_list)", afterEntry.app_reads.filter((r) => SENDS.includes(r.id) && r.reader_role === "buyer" && r.channel === "app_list").length === 2, JSON.stringify(afterEntry.app_reads));
-    check("ręcznie potwierdzona wysyłka nie jest ruszana przez wejście kupca", st(afterEntry, MANUAL)?.status === "read_manual", `${MANUAL}=${st(afterEntry, MANUAL)?.status}, rozliczona: ${st(afterEntry, MANUAL)?.charged}`);
+    check("ręcznie potwierdzona wysyłka nie jest rozliczana drugi raz przy wejściu kupca", st(afterEntry, MANUAL)?.status === "read_manual" && !afterEntry.app_reads.some((r) => r.id === MANUAL), `${MANUAL}=${st(afterEntry, MANUAL)?.status}, rozliczona: ${st(afterEntry, MANUAL)?.charged}`);
     check("odświeżenie strony: brak drugiego pobrania", afterReload.credits_used === afterEntry.credits_used && callsReload.length === 0, `kredyty ${afterReload.credits_used}, wywołań ${callsReload.length}`);
     check("pulpit kupca nadal pokazuje liczbę nowych propozycji z wejścia", /\b2\b/.test(report.buyer_entry.new_count_text || ""), JSON.stringify(report.buyer_entry.new_count_text));
   } else {
@@ -335,7 +410,7 @@ try {
       await scenarioAdminPreview();
       await resetSends();
       if (MODE === "fix") { await scenarioAdminDirectCall(); await resetSends(); }
-      await scenarioManualConfirm();
+      if (MODE === "fix") await scenarioManualConfirmUi(); else await scenarioManualConfirmLegacy();
     }
     await scenarioBuyerEntry();
     writeFileSync(path.join(HERE, `proba-${MODE}-raport.json`), JSON.stringify(report, null, 2));

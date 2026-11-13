@@ -24,6 +24,7 @@ import {
 import {
   loadLegacyOffers, upsertLegacyOffer, bulkUpsertLegacyOffers, deleteLegacyOffer,
   loadLegacySends, upsertLegacySend, bulkUpsertLegacySends, deleteLegacySend,
+  adminConfirmSendRead as dbAdminConfirmSendRead,
   // [B2B Round 2.1] Replace localStorage for FM 2026 state
   getCompanies as dbGetCompanies, updateCompany as dbUpdateCompany, bulkUpsertCompanies, saveCompanyContacts as dbSaveCompanyContacts, saveCompanyCerts as dbSaveCompanyCerts,
   getRetailers as dbGetRetailers, bulkUpsertRetailers,
@@ -3180,7 +3181,14 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
   const pkgPlan = myLimit.pkg || co?.pkg || "std_5";
   const rem     = Math.max(0, pkgMax - pkgUsed);
 
-  const fl  = (m,t) => { setFlash({m, t:t||"success"}); setTimeout(()=>setFlash(null), 3800); };
+  // [fix/buyer-entry-seen] Jeden licznik gaszenia: wcześniej licznik starszego komunikatu
+  // gasił też nowszy (np. „kredyt wrócił” znikał od razu po szybkim cofnięciu potwierdzenia).
+  const flashTimerRef = useRef(null);
+  const fl  = (m,t) => {
+    setFlash({m, t:t||"success"});
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = setTimeout(()=>{ flashTimerRef.current = null; setFlash(null); }, 3800);
+  };
   const nav = (p0,id) => {
     const p = normalizeInstructionKey(p0, initialRole);
     setAdminChatTargetId(null);
@@ -3399,32 +3407,51 @@ export default function App({ initialRole = "supplier", currentUser = null } = {
     fl(t("shell.app_toasts.send_success_format", { count: updated.length }));
   }
 
+  // [fix/buyer-entry-seen] Stan wysyłki po operacji serwera: bierzemy JSON z bazy w całości
+  // (cofnięcie USUWA pola rozliczenia — scalanie ze starym stanem by je zostawiło).
+  function applyServerSend(id, data) {
+    if (!data || typeof data !== "object") return;
+    _setSendsRaw(s => s.map(x => x.id === id
+      ? { ...data, id: x.id, ...(x.resend_message_id ? { resend_message_id: x.resend_message_id } : {}) }
+      : x));
+  }
+
+  // [fix/buyer-entry-seen] Ręczne potwierdzenie = odczyt rozliczany (decyzja Artura 13.11.2026):
+  // status + 1 kredyt z pakietu dostawcy w jednej transakcji w bazie + powiadomienie dostawcy.
   async function confirmManual(id, rt, note) {
     const cur = sends.find(x => x.id === id);
     if (!cur) return;
-    const ts = nowStr();
-    const updated = {
-      ...cur,
-      status: "read_manual",
-      readAt: ts,
-      readType: rt,
-      manualNote: note,
-      daysLeft: 0,
-      confirmHistory: [...(cur.confirmHistory || []), { action: "confirm", type: rt, note, at: ts }],
-    };
+    let r;
     try {
-      await upsertLegacySend(updated);
+      r = await dbAdminConfirmSendRead({ legacyId: id, action: "confirm", readType: rt, note });
     } catch (e) {
       fl(t("shell.app_toasts.confirm_error_format", { message: e?.message || t("shell.app_toasts.tryagain_fallback") }), "error");
       return;
     }
-    _setSendsRaw(s => s.map(x => x.id === id ? updated : x));
-    fl(t("shell.app_toasts.confirm_saved"));
+    applyServerSend(id, r?.data);
+    if (r?.skipped) fl(t("shell.app_toasts.confirm_skipped"), "warning");
+    else if (r?.billing?.charged) fl(t("shell.app_toasts.confirm_saved_charged"));
+    else if (r?.billing?.alreadyCharged) fl(t("shell.app_toasts.confirm_saved_already_charged"));
+    else fl(t("shell.app_toasts.confirm_saved_no_credit"), "warning");
   }
 
   async function undoConfirm(id) {
     const cur = sends.find(x => x.id === id);
     if (!cur) return;
+    // [fix/buyer-entry-seen] cofnięcie RĘCZNEGO potwierdzenia: status wraca, a kredyt pobrany
+    // tym potwierdzeniem wraca do pakietu — całość po stronie bazy.
+    if (cur.status === "read_manual") {
+      let r;
+      try {
+        r = await dbAdminConfirmSendRead({ legacyId: id, action: "undo" });
+      } catch (e) {
+        fl(t("shell.app_toasts.undo_confirm_error_format", { message: e?.message || t("shell.app_toasts.tryagain_fallback") }), "error");
+        return;
+      }
+      applyServerSend(id, r?.data);
+      fl(t(r?.refunded ? "shell.app_toasts.undo_confirm_done_refunded" : "shell.app_toasts.undo_confirm_done"), "warning");
+      return;
+    }
     const ts = nowStr();
     const updated = {
       ...cur,
@@ -9657,11 +9684,14 @@ export function PipelineTableV2({ sends, offers, retailers, companies, dbCapacit
 //      ROZWIJALNY do listy propozycji (sieć/produkt/daty/odczyt/status rozliczenia)
 //      + Podgląd propozycji. Bez finansów zakupowych (te w Rozliczeniach).
 // Zasada: nowy widok porządkuje, ale NIE usuwa żadnej funkcji z PipelineTableV2.
-function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved, onAnalyzeModerationOffer, onSendModerationMessage }) {
+function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onToggleBasket, onSendRetailerEmail, onModerate, onSendApproved, onAnalyzeModerationOffer, onSendModerationMessage, onConfirmManual, onUndoConfirm }) {
   const { t } = useTranslation("legacy");
   const [tab, setTab] = useState("mod");
   const [expanded, setExpanded] = useState({});       // rozwinięte wiersze dostawców
   const [previewOffer, setPreviewOffer] = useState(null); // podgląd z zakładki Dostawcy
+  // [fix/buyer-entry-seen] ręczne potwierdzenie odczytu (telefon / e-mail / spotkanie) — formularz
+  // pod wierszem propozycji; nowy widok Pipeline nie miał tej akcji (była tylko w starym widoku kart).
+  const [confirmFor, setConfirmFor] = useState(null);
   const list = sends || [];
   const getRetailer = (id) => (retailers || []).find(r => r.id === id) || null;
 
@@ -9717,7 +9747,7 @@ function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onTo
         const ed = emailDate(s);
         const dl = s.status === "sent" ? (() => { const d = new Date(sendMailingDate(s)); d.setDate(d.getDate() + 14); return d; })() : null;
         return {
-          id: s.id, offer: o,
+          id: s.id, offer: o, send: s, status: s.status,
           retailerName: getRetailer(s.retailerId)?.name || ("#" + s.retailerId),
           product: o?.title || o?.product || "—",
           added, planned: plannedMailingDateForSend(s), emailed: ed,
@@ -9802,7 +9832,8 @@ function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onTo
                                   </tr></thead>
                                   <tbody>
                                     {row.proposals.map(p => (
-                                      <tr key={p.id}>
+                                      <Fragment key={p.id}>
+                                      <tr>
                                         <td style={{ ...tdS, fontSize: 12 }}>{p.retailerName}</td>
                                         <td style={{ ...tdS, fontSize: 12 }}>{p.product}</td>
                                         <td style={{ ...tdS, fontSize: 12, color: "#64748b" }}>{dmy(p.added)}</td>
@@ -9811,8 +9842,26 @@ function PipelineSplitV2({ sends, offers, retailers, companies, dbCapacity, onTo
                                         <td style={{ ...tdS, fontSize: 12 }}>{p.read ? (p.readDate ? dmy(p.readDate) : "✓") : t("admin.pipeline_split.date_none")}</td>
                                         <td style={{ ...tdS, fontSize: 12, color: "#64748b" }}>{dmy(p.deadline)}</td>
                                         <td style={{ ...tdS, fontSize: 12 }}>{p.settle}</td>
-                                        <td style={{ ...tdS, textAlign: "right" }}>{p.offer ? <Btn sm outline onClick={() => setPreviewOffer(p.offer)} style={{ gap: 5 }}><Eye size={11} /> {t("admin.pipeline_split.prop_preview")}</Btn> : null}</td>
+                                        <td style={{ ...tdS, textAlign: "right" }}>
+                                          <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                                            {typeof onConfirmManual === "function" && ["sent", "opened"].includes(p.status) && (
+                                              <Btn sm outline onClick={() => setConfirmFor(c => c === p.id ? null : p.id)} style={{ gap: 5 }}><Phone size={11} /> {t("admin.pipeline_split.prop_confirm_manual")}</Btn>
+                                            )}
+                                            {typeof onUndoConfirm === "function" && p.status === "read_manual" && (
+                                              <Btn sm danger onClick={() => onUndoConfirm(p.id)} style={{ gap: 5 }}><RotateCcw size={11} /> {t("admin.pipeline_split.prop_undo_manual")}</Btn>
+                                            )}
+                                            {p.offer ? <Btn sm outline onClick={() => setPreviewOffer(p.offer)} style={{ gap: 5 }}><Eye size={11} /> {t("admin.pipeline_split.prop_preview")}</Btn> : null}
+                                          </span>
+                                        </td>
                                       </tr>
+                                      {confirmFor === p.id && ["sent", "opened"].includes(p.status) && (
+                                        <tr>
+                                          <td colSpan={9} style={{ padding: "0 10px 10px", borderBottom: "1px solid #f1f5f9" }}>
+                                            <ConfirmForm send={p.send} onConfirm={(id, rt, note) => { onConfirmManual(id, rt, note); setConfirmFor(null); }} />
+                                          </td>
+                                        </tr>
+                                      )}
+                                      </Fragment>
                                     ))}
                                   </tbody>
                                 </table>
@@ -10020,6 +10069,8 @@ export function PageAdminPipeline({ sends, setSends, onRetailerEmailSent, offers
             onSendApproved={sendApproved}
             onAnalyzeModerationOffer={analyzeModerationOffer}
             onSendModerationMessage={sendModerationMessage}
+            onConfirmManual={confirmManual}
+            onUndoConfirm={undoConfirm}
           />
         ) : (
           <PipelineTableV2
@@ -10224,7 +10275,7 @@ export function PageAdminPipeline({ sends, setSends, onRetailerEmailSent, offers
                 {isConf&&<Btn sm danger onClick={()=>undoConfirm(s.id)} style={{ fontSize:11 }}><RotateCcw size={10}/> {t("admin.pipeline.track_confirm_undo_btn")}</Btn>}
               </div>
             </div>
-            {!isConf&&s.status==="sent"&&<ConfirmForm send={s} onConfirm={(id,rt,note)=>{ confirmManual(id,rt,note); fl(t("admin.pipeline.confirm_form_toast_saved")); }}/>}
+            {!isConf&&s.status==="sent"&&<ConfirmForm send={s} onConfirm={(id,rt,note)=>{ confirmManual(id,rt,note); }}/>}
             {isConf&&<div style={{ padding:"8px 10px",background:"#f8fafc",borderRadius:7,fontSize:12,marginTop:4 }}>
               {isEmail?<span style={{ color:"#7c3aed" }}>{t("admin.pipeline.track_confirmed_email")}</span>:isAuto?<span style={{ color:"#059669" }}>{t("admin.pipeline.track_confirmed_auto")}</span>:<><strong>{s.readType==="manual_phone"?t("admin.pipeline.track_manual_phone"):s.readType==="manual_email"?t("admin.pipeline.track_manual_email"):t("admin.pipeline.track_manual_meeting")}</strong>{s.manualNote&&<span style={{ color:"#64748b" }}> · {s.manualNote}</span>}</>}
               {hasChargeMarker(s)&&<span style={{ marginLeft:10,color:"#059669" }}>{t("admin.pipeline.track_settlement_inline_format", { amount: getChargeAmount(s, Number(s.price||0)) })}</span>}
@@ -13054,6 +13105,7 @@ function ConfirmForm({ send, onConfirm }) {
         <span key={v} onClick={()=>setRt(v)} style={{ padding:"4px 10px",border:`2px solid ${rt===v?"#0891b2":"#e2e8f0"}`,borderRadius:7,fontSize:12,cursor:"pointer",background:rt===v?"rgba(8,145,178,0.05)":"white",fontWeight:rt===v?600:400,userSelect:"none" }}>{l}</span>
       ))}</div>
       <Inp label={t("admin.pipeline.confirm_form_note_label")} ta value={note} onChange={e=>setNote(e.target.value)} style={{ minHeight:48 }}/>
+      <div style={{ fontSize:11,color:"#b45309",margin:"6px 0 8px" }}>{t("admin.pipeline.confirm_form_charge_hint")}</div>
       <Btn primary sm onClick={()=>{ onConfirm(send.id,rt,note); setNote(""); setRt("manual_phone"); }}>{t("admin.pipeline.confirm_form_save_btn")}</Btn>
     </div>
   );

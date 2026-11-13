@@ -14,7 +14,7 @@ function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ""));
 }
 
-async function findCompanyBySupplierKey(supaSvc, supplierKey) {
+export async function findCompanyBySupplierKey(supaSvc, supplierKey) {
   if (!supplierKey) return null;
   const { data: byLegacy, error: legacyErr } = await supaSvc
     .from("companies")
