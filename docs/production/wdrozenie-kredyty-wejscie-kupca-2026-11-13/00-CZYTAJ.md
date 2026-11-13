@@ -36,26 +36,65 @@ Próba end-to-end (21 kontroli) obejmuje:
 
 **Czego testy NIE pokryły:** faktycznego doręczenia maila do dostawcy. Na środowisku testowym wysyłka kończy się odmową poczty (klucz fikcyjny), więc sprawdzone jest tylko to, że powiadomienie jest uruchamiane raz i że rozliczenie nie zależy od jego powodzenia. Treść maila pokrywają testy jednostkowe.
 
-## 3. Podgląd Netlify (Deploy Preview) — stan faktyczny
+## 3. Podgląd Netlify (Deploy Preview) — stan faktyczny i zabezpieczenia
 
-Otwarcie PR uruchomiło automatyczny podgląd `deploy-preview-1--freshmarketb2b.netlify.app`. Sprawdzone 13.11 odczytem konfiguracji (bez wypisywania wartości sekretów):
+Otwarcie PR uruchomiło automatyczny podgląd `deploy-preview-1--freshmarketb2b.netlify.app`. Ustalenia z 13.11 pochodzą z odczytu konfiguracji przez API Netlify, bez wypisywania wartości zmiennych.
 
-- **baza:** kontekst `deploy-preview` wskazuje projekt Supabase `uowpixwtewrmmvkyooec` („Freshmarket B2B Queue Tests”, osobny projekt testowy z września), z własnym kluczem serwisowym — **nie produkcję**. Adres tego projektu 13.11 nie odpowiadał (nazwa się nie rozwiązuje), więc logowanie na podglądzie nie mogło zadziałać;
-- **poczta:** `RESEND_API_KEY` w podglądzie ma tę samą końcówkę co produkcyjny (Netlify maskuje resztę) — należy go traktować jako **produkcyjny**. `MARKETING_SEND_ENABLED` w podglądzie nie jest ustawione (marketing wyłączony), ale to nie blokuje pozostałych maili;
-- **inne klucze identyczne z produkcją:** PayU (`PAYU_ENV=production`, POS, klucze), `FM_EXPORT_TOKEN`, `RESEND_WEBHOOK_SECRET`; `OPENAI_API_KEY` z tą samą końcówką;
-- **kontekst `branch-deploy`** ma konfigurację produkcyjną (produkcyjna baza). Wdrożenia gałęzi nie są dziś uruchamiane, ale gdyby je włączono, szłyby na produkcję.
+### Co wiadomo na pewno
 
-Ścieżki wysyłki poczty w funkcjach (wszystkie na `RESEND_API_KEY`): `send-retailer-batch`, `send-supplier-notification`, powiadomienie dostawcy o odczycie (`_shared/supplier-read-notify`), `send-expiry-reminders`, `send-inactivity-warnings` (obie wołane automatycznie przy każdym wejściu zalogowanego użytkownika), `register-supplier-self`, `fm-plan-send`, `generate-proforma`, `marketing-send` / `marketing-campaign` (za flagą).
+- **Baza podglądu:** kontekst `deploy-preview` wskazuje projekt Supabase `uowpixwtewrmmvkyooec` („Freshmarket B2B Queue Tests”, osobny projekt testowy z września) — nie produkcję. Adres tego projektu 13.11 nie odpowiadał (nazwa się nie rozwiązuje), więc logowanie na podglądzie nie mogło zadziałać.
+- **Zmienne z jedną wartością dla wszystkich kontekstów (`all`)** są z definicji identyczne na produkcji, w podglądach i we wdrożeniach gałęzi: `PAYU_ENV` (= `production`), `PAYU_OAUTH_CLIENT_ID`, `PAYU_OAUTH_CLIENT_SECRET`, `PAYU_POS_ID`, `PAYU_SECOND_KEY`, `FM_EXPORT_TOKEN`, `RESEND_WEBHOOK_SECRET`, a także niesekretne `PROFORMA_BANK_IBAN`, `PROFORMA_SELLER_NIP`, `ACCOUNT_EMAIL_CONTACT_FIX`. To jest dowód, nie przypuszczenie: te zmienne mają jeden wspólny wpis.
+- **Kontekst `branch-deploy`** ma `VITE_SUPABASE_URL` projektu produkcyjnego. Wdrożenia gałęzi nie są uruchamiane (dozwolona gałąź: tylko `main`).
+- **Brak zmiennych wspólnych konta** (dziedziczonych między projektami) i **brak build hooków** w projekcie.
+- **`MARKETING_SEND_ENABLED`** w podglądzie nie jest ustawione — to blokuje tylko kampanie marketingowe, nie pozostałe maile.
 
-Wykonane 13.11:
+### Co jest tylko podejrzeniem
 
-- podgląd `6af718218971caf123529964` **usunięty** — adres podglądu, adres wdrożenia i jego funkcje odpowiadają 404; produkcja bez zmian;
-- w `netlify.toml` dodane `ignore = "exit 0"` dla kontekstów `deploy-preview` i `branch-deploy` — Netlify anuluje takie buildy, zanim cokolwiek opublikuje (skutek sprawdzony po wypchnięciu — patrz dziennik na końcu);
-- PR oznaczony jako **szkic**, żeby nie dało się go scalić przypadkiem.
+Sekrety z osobnym wpisem na kontekst — `RESEND_API_KEY`, `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — API zwraca zamaskowane (16 gwiazdek i 4 ostatnie znaki). Da się porównać wyłącznie końcówki:
 
-Do zrobienia przez Artura w panelu Netlify (10 sekund, pewniejsze niż plik w repo, bo działa też dla gałęzi bez tej zmiany): Project configuration → Build & deploy → Continuous deployment → Deploy Previews → **Don't deploy pull requests**.
+| Zmienna | podgląd PR a produkcja | gałąź a produkcja |
+|---|---|---|
+| `RESEND_API_KEY` | końcówka zgodna — **podejrzenie**, że to ten sam klucz | nie porównywano osobno; wpis istnieje |
+| `OPENAI_API_KEY` | końcówka zgodna — **podejrzenie** | wpis istnieje |
+| `SUPABASE_SERVICE_ROLE_KEY` | końcówka inna — to inny klucz (spójne z innym projektem) | wpis istnieje; przy produkcyjnym adresie bazy należy zakładać klucz produkcyjny |
 
-Podglądu Netlify nie podłączam do bazy testowej: izolowane środowisko testowe już istnieje (lokalny podgląd z `.env.test`) i na nim wykonano komplet testów. Hostowany podgląd wymagałby wpisania testowych sekretów do kontekstu `deploy-preview` i odcięcia kluczy PayU/poczty — to osobna decyzja.
+Zgodność czterech znaków nie dowodzi identyczności kluczy. Do czasu sprawdzenia przez osobę znającą wartości te wpisy trzeba traktować jak produkcyjne.
+
+### Ścieżki wysyłki poczty
+
+Wszystkie na `RESEND_API_KEY`: `send-retailer-batch`, `send-supplier-notification`, powiadomienie dostawcy o odczycie (`_shared/supplier-read-notify`), `send-expiry-reminders` i `send-inactivity-warnings` (obie wołane automatycznie przy każdym wejściu zalogowanego użytkownika), `register-supplier-self`, `fm-plan-send`, `generate-proforma`, `marketing-send` / `marketing-campaign` (za flagą).
+
+### Wykonane 13.11
+
+| Zabezpieczenie | Stan | Dowód |
+|---|---|---|
+| Usunięcie podglądu `6af718218971caf123529964` | zrobione | adres podglądu, adres wdrożenia i funkcje → 404; API Netlify → 404 |
+| Automatyczne podglądy wyłączone w ustawieniach projektu (`build_settings.skip_prs = true`) | zrobione | odczyt po zmianie: `skip_prs = true`; skrót pozostałych ustawień budowania identyczny przed i po; po kolejnym pushu nie powstał żaden build podglądu (dziennik) |
+| `ignore = "exit 0"` dla `deploy-preview` i `branch-deploy` w `netlify.toml` | zrobione, zostaje jako dodatkowa ochrona | dwa buildy podglądu anulowane przez Netlify przed wyłączeniem w ustawieniach |
+| PR jako szkic | zrobione | — |
+
+`ignore` nie jest pełnym wyłączeniem: nie zatrzymuje buildów z build hooka (w projekcie nie ma żadnego) i nie działa w gałęziach bez tej reguły. Dlatego właściwym wyłącznikiem jest ustawienie projektu.
+
+### NIEWYKONANE — odcięcie produkcyjnych kluczy od podglądów i gałęzi
+
+Do zrobienia **przed jakimkolwiek kolejnym hostowanym podglądem**. Claude przygotował i sprawdził ten krok (odczyt struktury, próba mechanizmu na zmiennej tymczasowej — utworzona, zamieniona, usunięta — oraz przebieg na sucho), ale właściwego zapisu nie wykonał: zabezpieczenie jego środowiska zablokowało zapis do magazynu sekretów. Zmienne są w stanie sprzed próby.
+
+Zakres (produkcja bez zmian):
+
+- `PAYU_ENV`, `PAYU_OAUTH_CLIENT_ID`, `PAYU_OAUTH_CLIENT_SECRET`, `PAYU_POS_ID`, `PAYU_SECOND_KEY`, `FM_EXPORT_TOKEN`, `RESEND_WEBHOOK_SECRET`: zamiast jednej wartości dla wszystkich kontekstów — ta sama wartość tylko dla **Production** i **Local development**;
+- `RESEND_API_KEY`, `OPENAI_API_KEY`: usunąć wpisy **Deploy Previews** i **Branch deploys**;
+- `SUPABASE_SERVICE_ROLE_KEY`: usunąć wpis **Branch deploys** (w Deploy Previews jest klucz projektu testowego).
+
+Dwa sposoby:
+
+1. **Skrypt:** `node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs --dry`, potem to samo bez `--dry`. Po każdej zmiennej sprawdza, że produkcja widzi to samo co przedtem, a przy niezgodności przywraca i staje. Kończy porównaniem wszystkich zmiennych produkcyjnych przed i po.
+2. **Ręcznie w panelu Netlify:** Project configuration → Environment variables → przy zmiennej Options → Edit → „Different value for each deploy context” → zostawić Production i Local development, wyczyścić Deploy Previews i Branch deploys → Save.
+
+Zmiany w zmiennych nie uruchamiają builda i nie dotykają opublikowanego wdrożenia.
+
+Poza zakresem tego kroku, do decyzji: kontekst `branch-deploy` nadal ma adres i klucz publiczny produkcyjnej bazy (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — to nie sekrety, ale wdrożenie gałęzi łączyłoby się z produkcją); kontekst `dev-server` ma własne wpisy `RESEND_API_KEY`, `OPENAI_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+Podglądu Netlify nie podłączam do bazy testowej: izolowane środowisko testowe już istnieje (lokalny podgląd z `.env.test`) i na nim wykonano komplet testów.
 
 ## 4. Kolejność wdrożenia
 
@@ -89,6 +128,7 @@ Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmieni
 - `04-PROBA-PO-WDROZENIU.md` — próba na kontach testowych po scaleniu
 - `05-kontrola-po-wdrozeniu.sql` — ostatnie odczyty i rozliczenia (tylko odczyt)
 - `06-wycofanie-funkcji.sql` — opcjonalne usunięcie funkcji po cofnięciu kodu
+- `07-odciecie-sekretow-od-podgladow.mjs` — odcięcie produkcyjnych kluczy od podglądów i gałęzi w Netlify (uruchamia Artur; ma tryb `--dry`)
 
 ## 7. Dziennik
 
@@ -97,3 +137,5 @@ Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmieni
 | 13.11.2026 | Testy na bazie testowej (pkt 2) | komplet zaliczony |
 | 13.11.2026 | Podgląd Netlify PR #1 | usunięty, 404; PR jako szkic |
 | 13.11.2026 | Blokada podglądów w `netlify.toml` (commit `efc2c0a`) | build podglądu `6af71c7e` anulowany przez Netlify („Canceled build due to no content change”), adres podglądu nadal 404, produkcja bez zmian (`9c8e747`) |
+| 13.11.2026 | Podglądy PR wyłączone w ustawieniach projektu (`skip_prs = true`) | pozostałe ustawienia budowania bez zmian (skrót identyczny) |
+| 13.11.2026 | Odcięcie kluczy od podglądów i gałęzi (`07`) | NIEWYKONANE przez Claude'a (zapis sekretów zablokowany); przebieg `--dry`: 7 zmiennych do ograniczenia, 5 wpisów do usunięcia, produkcja 25/25 bez zmian |
