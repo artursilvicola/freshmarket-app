@@ -149,6 +149,32 @@ export default function LanguageSwitcher({ variant = "compact" }) {
     );
   }
 
+  // ─── Wariant: auth-light (strona logowania na jasnym tle) ────────────
+  // [feat/login-page] Ta sama obsługa zmiany języka (handleChange) — inny jest tylko wygląd:
+  // przyciski PL | EN czytelne na jasnym tle. Style: src/auth/loginPage.css (.fm-login-lang).
+  if (variant === "auth-light") {
+    return (
+      <div className="fm-login-lang" role="group" aria-label={t("language_switcher.title")}>
+        {SUPPORTED_LOCALES.map((code, idx) => {
+          const active = code === current;
+          return (
+            <span key={code} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              {idx > 0 && <span className="fm-login-lang-sep" aria-hidden="true" />}
+              <button
+                type="button"
+                onClick={() => handleChange(code)}
+                aria-pressed={active}
+                aria-label={code === "pl" ? "Polski" : "English"}
+              >
+                {code.toUpperCase()}
+              </button>
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
   // ─── Wariant: auth (pełne labelki dla LoginPage/RegisterPage) ────────
   if (variant === "auth") {
     return (
