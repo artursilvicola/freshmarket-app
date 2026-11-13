@@ -1,6 +1,8 @@
 -- [fix/buyer-entry-seen] KONTROLA PRZED MIGRACJĄ 20261113120000 — TYLKO ODCZYT, jedno zapytanie (sam SELECT).
 -- Uruchom w Supabase → SQL Editor na PRODUKCJI. Niczego nie zapisuje.
---   wiersze 1–8   warunki wstępne migracji: każde „ŹLE” = STOP, nie wgrywaj migracji;
+--   wiersze 1–9   warunki wstępne migracji: każde „ŹLE” = STOP, nie wgrywaj migracji;
+--                 (wiersz 9: migracja ZASTĘPUJE mark_legacy_send_seen — obecna treść w bazie musi być
+--                 dokładnie tą z migracji 20260927120000, na której oparto nową wersję)
 --   wiersze 20–31 liczby informacyjne: ile propozycji obejmie nowa reguła po wdrożeniu KODU
 --                 (sama migracja niczego nie rozlicza) — zapisz je w dzienniku;
 --   wiersze 100+  te same propozycje w podziale na sieci.
@@ -67,6 +69,11 @@ checks(lp, kontrola, wynik, oczekiwane) as (
          (select count(*) from information_schema.columns
            where table_schema = 'public' and table_name = 'wallet_tx'
              and column_name in ('company_id', 'type', 'amount', 'currency', 'description', 'reference_id', 'meta'))::text, '7'
+  union all
+  select 9, 'mark_legacy_send_seen ma treść z migracji 20260927120000 (skrót md5, bez znaków CR)',
+         coalesce((select md5(replace(p.prosrc, E'\r', '')) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'public' and p.proname = 'mark_legacy_send_seen'), 'brak'),
+         '8b3a720e7374e0bfe873969401706f63'
 
   -- ── liczby: zakres nowej reguły „kredyt przy wejściu kupca” ──
   union all

@@ -16,23 +16,36 @@ Podgląd konta kupca przez administratora nie jest odczytem. Tekst regulaminu be
 
 Środowisko: osobny projekt Supabase `rruszzdffclfhbtfeznb` (testowy) + lokalny podgląd `node scripts/dev-test.mjs`, który bierze wartości wyłącznie z `.env.test`, odrzuca projekt produkcyjny i wymaga fikcyjnego klucza poczty (`re_test_…`). Żaden mail nie wyszedł, produkcja nie była używana do sprawdzania nowego mechanizmu.
 
+Stan po poprawkach z review `cffea69` (commit `b10ba3a` i późniejsze):
+
 | Co | Jak | Wynik |
 |---|---|---|
-| Testy jednostkowe | `npm test` | 1257 zaliczonych, 40 pominiętych (integracyjne) |
+| Testy jednostkowe | `npm test` | 1300 zaliczonych, 40 pominiętych (integracyjne) |
 | Build | `npm run build` | OK |
-| Migracja na prawdziwym Postgresie | `node scripts/manual-read-confirm-sql-test.mjs` (transakcja wycofywana) | 11/11 |
-| Próba end-to-end, nowy kod | `node scripts/buyer-entry-seen-trial.mjs --mode=fix` | 21/21 |
+| Migracja na prawdziwym Postgresie | `node scripts/manual-read-confirm-sql-test.mjs` (transakcja wycofywana) | 16/16 |
+| Wyścig odczyt kupca / cofnięcie, dwa połączenia | `node scripts/manual-read-confirm-race-test.mjs` | 4/4 (obie kolejności × mail i aplikacja) |
+| Próba end-to-end, nowy kod | `node scripts/buyer-entry-seen-trial.mjs --mode=fix` | 26/26 |
 | Kontrola, stary kod przed migracją | `--mode=control` | podgląd admina pobrał 3/3 kredyty; wejście kupca na pulpit: 0; ręczne potwierdzenie (stary zapis statusu): 0 |
-| Kontrola, stary kod PO migracji | `--mode=control` na bazie z wgraną migracją | identycznie jak przed migracją |
-| Skrypty kontrolne pakietu | 01, 03, 05, 06 uruchomione na bazie testowej | wykonują się; 06 w transakcji wycofanej |
+| Kontrola, stary kod PO poprawionej migracji | `--mode=control` na bazie z wgraną migracją | identycznie jak przed migracją; funkcja odczytu odpowiada 200 i rozlicza jak dotąd |
+| Cykl skryptów pakietu w jednej wycofanej transakcji | 06 → 01 → migracja → 03 → 06 → 01 | 01: 9/9 OK w stanie sprzed migracji; 03: 11/11 OK po migracji; 06 przywraca dokładnie starą funkcję |
 
-Próba end-to-end (21 kontroli) obejmuje:
+Próba end-to-end (26 kontroli) obejmuje:
 
 - **podgląd admina:** 0 zgłoszeń odczytu, statusy/kredyty/odczyty bez zmian; bezpośrednie wywołanie obu funkcji z tokenem admina → 200, pusty wynik (`admin_preview`), baza bez zmian;
 - **ręczne potwierdzenie w prawdziwym interfejsie** (Pipeline → Dostawcy / tracking): formularz uprzedza o kredycie; potwierdzenie → `read_manual`, kredyty 0 → 1, znacznik `chargeChannel=manual`, komunikat; cofnięcie → `sent`, kredyty 1 → 0, znacznik rozliczenia usunięty, komunikat; ponowne potwierdzenie → 0 → 1; kupiec wołający funkcję admina → 403;
-- **wejście kupca na pulpit:** 1 zgłoszenie z obiema czekającymi propozycjami, obie `read` i rozliczone, dokładnie 2 kredyty, odczyt zapisany jako `buyer/app_list`; ręcznie potwierdzona propozycja nie rozlicza się drugi raz; odświeżenie strony bez drugiego pobrania; pulpit dalej pokazuje „2 nowych propozycji”.
+- **wejście kupca na pulpit:** 1 zgłoszenie z obiema czekającymi propozycjami, obie `read` i rozliczone, dokładnie 2 kredyty, odczyt zapisany jako `buyer/app_list`; ręcznie potwierdzona propozycja nie rozlicza się drugi raz; odświeżenie strony bez drugiego pobrania; pulpit dalej pokazuje „2 nowych propozycji”;
+- **cofnięcie po odczycie kupca** (przez prawdziwe funkcje serwera): potwierdzenie ręczne → odczyt kupca → cofnięcie: bez zwrotu, kredyty bez zmian, status `read`, rozliczenie zachowane i już nie „ręczne”; ponowne cofnięcie niczego nie zmienia.
 
-**Zgodność migracji ze starym kodem** (który działa na produkcji do scalenia PR): migracja zawiera wyłącznie `create or replace function` ×2, `comment`, `revoke`, `grant` — żadnych zmian tabel, typów, polityk ani istniejących funkcji. Stary kod nie zawiera żadnego odwołania do nowych funkcji. Kontrola na starym kodzie dała ten sam wynik przed migracją i po niej.
+### Review `cffea69` — NO-GO i poprawki
+
+| Uwaga recenzenta | Przyczyna | Poprawka | Dowód |
+|---|---|---|---|
+| **P1:** cofnięcie ręcznego potwierdzenia zwraca kredyt i przywraca `sent`, choć kupiec po potwierdzeniu sam odczytał propozycję | po ręcznym potwierdzeniu odczyt kupca nie zostawiał w wierszu śladu, który cofnięcie mogłoby sprawdzić (status zostaje `read_manual`, pola odczytu uzupełniane tylko, gdy puste) | `mark_legacy_send_seen` zapisuje fakt odczytu przez kupca w tej samej transakcji i pod tą samą blokadą wiersza (`buyerSeenAt`, `buyerSeenChannel`, dla aplikacji też `buyerAppSeenAt`, `buyerAppSeenChannel`); `undo_legacy_send_manual_confirm` sprawdza go pod blokadą: po odczycie kupca kredyt zostaje, status = `read` (aplikacja) albo `opened` (sam mail), `chargeChannel` przestaje być `manual`, wynik niesie `kept_reason = buyer_read`; panel pokazuje osobny komunikat | SQL: mail przed cofnięciem, aplikacja przed cofnięciem, mail + aplikacja; wyścig dwóch połączeń w obu kolejnościach; próba end-to-end [5] |
+| **P2:** błąd pojedynczej pozycji zwrócony z HTTP 200 blokował ponowienie do przeładowania strony | lista „już zgłoszonych” traktowała całe udane żądanie jako ostateczne | `createSeenSubmissionTracker`: rozstrzyganie per pozycja — załatwione tylko `ok === true`; nieudane, brakujące w odpowiedzi i odpowiedź bez listy wracają do puli; najwyżej 3 próby na pozycję w sesji; udane rozliczenia nie są powtarzane | reprodukcja recenzenta na prawdziwej funkcji panelu: stary kod 1 żądanie, nowy 2; testy: wynik mieszany, odpowiedź niepełna i zniekształcona, limit prób, błąd HTTP i sieci |
+
+W wyścigu dwóch połączeń: gdy odczyt kupca pierwszy weźmie blokadę, cofnięcie czeka i kończy się bez zwrotu (`opened` / `read`); gdy pierwsze jest cofnięcie, zwraca kredyt, a czekający odczyt rozlicza od nowa — netto jeden kredyt, jeden zwrot i dwa pobrania w historii.
+
+**Migracja a stary kod** (który działa na produkcji do scalenia PR): migracja **nie jest już czysto addytywna**. Zastępuje `mark_legacy_send_seen` wersją o tych samych argumentach i tym samym wyniku — cała dotychczasowa treść jest zachowana linia po linii, dopisanych jest 15 linii zapisujących cztery nowe pola w danych wysyłki. Dodaje dwie nowe funkcje, których stary kod nie woła. Żadnych zmian tabel, typów ani polityk. Kontrola na starym kodzie dała ten sam wynik przed migracją i po niej. Skrypt `01` sprawdza sumę kontrolną funkcji, którą migracja zastąpi (musi to być wersja z migracji 20260927120000), a `03` — sumę nowej.
 
 **Czego testy NIE pokryły:** faktycznego doręczenia maila do dostawcy. Na środowisku testowym wysyłka kończy się odmową poczty (klucz fikcyjny), więc sprawdzone jest tylko to, że powiadomienie jest uruchamiane raz i że rozliczenie nie zależy od jego powodzenia. Treść maila pokrywają testy jednostkowe.
 
@@ -143,15 +156,15 @@ Każdy krok ma warunek przejścia dalej. Wynik każdego kroku zapisz w dzienniku
 
 | # | Krok | Kto | Warunek przejścia |
 |---|---|---|---|
-| 1 | `01-kontrola-przed-migracja.sql` na produkcji (tylko odczyt) — powtórzyć w dniu migracji | Artur / Codex | wiersze 1–8 = OK; zapisz wartości „informacja” (20–31 i podział na sieci 100+) |
+| 1 | `01-kontrola-przed-migracja.sql` na produkcji (tylko odczyt) — powtórzyć w dniu migracji | Artur / Codex | wiersze 1–9 = OK (wiersz 9: suma kontrolna zastępowanej funkcji); zapisz wartości „informacja” (20–31 i podział na sieci 100+) |
 | 2 | Migracja: cała treść `supabase/migrations/20261113120000_manual_read_confirm.sql` jednym Run | Artur / Codex | „Success. No rows returned” |
-| 3 | `03-kontrola-po-migracji.sql` (tylko odczyt) | Artur / Codex | 8/8 OK |
+| 3 | `03-kontrola-po-migracji.sql` (tylko odczyt) | Artur / Codex | 11/11 OK |
 | 4 | Produkcja po migracji, jeszcze na starym kodzie: panel admina i Pipeline otwierają się bez błędów | Artur | brak błędów; stary kod nie używa nowych funkcji |
 | 5 | PR: „Ready for review”, przegląd, scalenie do `main` | Artur / Codex | Netlify: deploy produkcyjny `ready`, commit zgodny ze scaleniem |
 | 6 | `04-PROBA-PO-WDROZENIU.md` na kontach testowych + `05-kontrola-po-wdrozeniu.sql` | Artur + Claude | wszystkie oczekiwane wyniki |
 | 7 | Zamknięcie: wpis w dzienniku, konta testowe z powrotem zawieszone | Artur | — |
 
-Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmienia w działaniu starego kodu.
+Między krokiem 2 a 5 może minąć dowolny czas — po migracji stary kod działa jak dotąd (funkcja odczytu ma te same argumenty i wynik, dopisuje tylko nowe pola).
 
 ### Zakres nowej reguły na produkcji — kontrola z 13.11.2026 (tylko odczyt)
 
@@ -188,17 +201,17 @@ Co z tego wynika:
 ## 5. Wycofanie
 
 1. Netlify → Deploys → poprzedni deploy produkcyjny `6af2db23` (main `9c8e747`) → **Publish deploy**. Nie `git push --force`.
-2. Funkcje z migracji mogą zostać w bazie — stary kod ich nie woła. Usunięcie jest opcjonalne: `06-wycofanie-funkcji.sql`.
+2. Migracja może zostać w bazie — nowa `mark_legacy_send_seen` działa ze starym kodem, a dwóch nowych funkcji stary kod nie woła. Pełne wycofanie jest opcjonalne: `06-wycofanie-funkcji.sql` usuwa nowe funkcje i przywraca `mark_legacy_send_seen` w treści z migracji 20260927120000 (sprawdzone: po `06` kontrola `01` znów daje 9/9).
 3. Rozliczenia wykonane przez nowy kod nie cofają się same. Ręczne potwierdzenie cofnij przyciskiem „Cofnij potwierdzenie” **przed** cofnięciem kodu; resztę koryguje bezpłatny kredyt od organizatora.
 
 ## 6. Pliki
 
 - `01-kontrola-przed-migracja.sql` — warunki wstępne + liczby informacyjne (tylko odczyt)
-- `supabase/migrations/20261113120000_manual_read_confirm.sql` — migracja (w repo, nie kopiowana tutaj, żeby nie było dwóch wersji)
+- `supabase/migrations/20261113120000_manual_read_confirm.sql` — migracja: zastępuje `mark_legacy_send_seen`, dodaje `confirm_legacy_send_manual` i `undo_legacy_send_manual_confirm` (w repo, nie kopiowana tutaj, żeby nie było dwóch wersji)
 - `03-kontrola-po-migracji.sql` — funkcje, sygnatury, uprawnienia (tylko odczyt)
 - `04-PROBA-PO-WDROZENIU.md` — próba na kontach testowych po scaleniu
 - `05-kontrola-po-wdrozeniu.sql` — ostatnie odczyty i rozliczenia (tylko odczyt)
-- `06-wycofanie-funkcji.sql` — opcjonalne usunięcie funkcji po cofnięciu kodu
+- `06-wycofanie-funkcji.sql` — opcjonalne pełne wycofanie migracji po cofnięciu kodu (usuwa nowe funkcje, przywraca starą `mark_legacy_send_seen`)
 - `07-odciecie-sekretow-od-podgladow.mjs` — odcięcie produkcyjnych kluczy od podglądów i gałęzi w Netlify (domyślnie na sucho; zapis `--apply` po zgodzie recenzenta); logika w `scripts/lib/netlify-context-isolation.mjs`, testy w `tests/netlify-context-isolation.test.js`
 
 ## 7. Dziennik
@@ -216,4 +229,6 @@ Co z tego wynika:
 | 13.11.2026 | `--apply` skryptu `07` | **ZALICZONE.** Uruchomił Artur. Kontrole odczytem (Codex i Claude, niezależnie): izolacja 0/19 par z dostępem; produkcja 24/24 zgodna z odciskami sprzed operacji (wartości jawne i identyfikatory wpisów sekretów); zakresy bez zmian; brak zmian poza planem; opublikowany deploy ten sam (`6af2db23`, `9c8e747`); podglądy PR wyłączone. Etap zabezpieczeń zamknięty |
 | 13.11.2026 | `01-kontrola-przed-migracja.sql` na produkcji (tylko odczyt, commit `e26e497`) | warunki wstępne 8/8 OK; 12 czekających, 10 nierozliczonych (8 sieci, 2 dostawców), z tego 8 bez wysłanego mailingu; 2 odczyty zapisane dotąd na administratora; szczegóły w pkt 4 |
 | 13.11.2026 | Decyzja Artura: rozliczenie przed mailingiem | potwierdzone — wejście kupca rozlicza także propozycje, dla których mailing jeszcze nie wyszedł (w kontroli z 13.11: 8 z 10 nierozliczonych) |
+| 13.11.2026 | Końcowe review `cffea69` | **NO-GO** — P1: cofnięcie ręcznego potwierdzenia zwracało kredyt mimo późniejszego odczytu kupca; P2: błąd pojedynczej pozycji przy HTTP 200 blokował ponowienie |
+| 13.11.2026 | Poprawki po review (`b10ba3a` + pakiet) | P1 i P2 poprawione; SQL 16/16, wyścig dwóch połączeń 4/4, próba end-to-end 26/26, `npm test` 1300, build OK; stary kod na bazie z poprawioną migracją bez zmian; migracja zastępuje teraz `mark_legacy_send_seen` — do ponownego review |
 | — | Migracja produkcyjna i scalenie PR | **NIEWYKONANE** — osobny krok, do czasu GO recenzenta i zgody Artura (pkt 4) |

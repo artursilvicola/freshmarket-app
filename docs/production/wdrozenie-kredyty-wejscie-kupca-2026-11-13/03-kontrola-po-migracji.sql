@@ -29,9 +29,27 @@ checks(lp, kontrola, wynik, oczekiwane) as (
   select 7, 'service_role może wołać obie',
          (select count(*) from fn where has_function_privilege('service_role', oid, 'execute'))::text, '2'
   union all
-  select 8, 'funkcje rozliczające nietknięte: mark_legacy_send_seen i charge_legacy_send_first_seen nadal po jednej wersji',
+  select 8, 'mark_legacy_send_seen i charge_legacy_send_first_seen nadal po jednej wersji',
          (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname in ('mark_legacy_send_seen', 'charge_legacy_send_first_seen'))::text, '2'
+  union all
+  select 9, 'mark_legacy_send_seen ma NOWĄ treść z migracji 20261113120000 (skrót md5, bez znaków CR)',
+         coalesce((select md5(replace(p.prosrc, E'\r', '')) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'public' and p.proname = 'mark_legacy_send_seen'), 'brak'),
+         '9e9186e23c61e2167401366aaaf496ee'
+  union all
+  select 10, 'mark_legacy_send_seen: te same argumenty co dotąd, SECURITY DEFINER, tylko service_role',
+         (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'mark_legacy_send_seen' and p.prosecdef
+             and pg_get_function_identity_arguments(p.oid) = 'p_send_id uuid, p_company_id uuid, p_channel text, p_now timestamp with time zone'
+             and has_function_privilege('service_role', p.oid, 'execute')
+             and not has_function_privilege('authenticated', p.oid, 'execute')
+             and not has_function_privilege('anon', p.oid, 'execute'))::text, '1'
+  union all
+  select 11, 'charge_legacy_send_first_seen nietknięta (skrót md5, bez znaków CR)',
+         coalesce((select md5(replace(p.prosrc, E'\r', '')) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname = 'public' and p.proname = 'charge_legacy_send_first_seen'), 'brak'),
+         '081322088ea944795ebf74230bcf2408'
 )
 select lp, kontrola, wynik, oczekiwane, case when wynik = oczekiwane then 'OK' else 'ŹLE' end as ocena
 from checks
