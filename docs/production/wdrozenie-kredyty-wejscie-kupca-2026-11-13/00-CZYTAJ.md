@@ -72,12 +72,28 @@ Wszystkie na `RESEND_API_KEY`: `send-retailer-batch`, `send-supplier-notificatio
 | Automatyczne podglądy wyłączone w ustawieniach projektu (`build_settings.skip_prs = true`) | zrobione | odczyt po zmianie: `skip_prs = true`; skrót pozostałych ustawień budowania identyczny przed i po; po kolejnym pushu nie powstał żaden build podglądu (dziennik) |
 | `ignore = "exit 0"` dla `deploy-preview` i `branch-deploy` w `netlify.toml` | zrobione, zostaje jako dodatkowa ochrona | dwa buildy podglądu anulowane przez Netlify przed wyłączeniem w ustawieniach |
 | PR jako szkic | zrobione | — |
+| Odcięcie produkcyjnych kluczy od `deploy-preview` i `branch-deploy` | zrobione (Artur, skrypt `07 --apply`) | 0 z 19 par klucz–kontekst z dostępem; produkcja 24/24 bez zmian — dwie niezależne kontrole odczytem |
 
 `ignore` nie jest pełnym wyłączeniem: nie zatrzymuje buildów z build hooka (w projekcie nie ma żadnego) i nie działa w gałęziach bez tej reguły. Dlatego właściwym wyłącznikiem jest ustawienie projektu.
 
-### NIEWYKONANE — odcięcie produkcyjnych kluczy od podglądów i gałęzi
+### WYKONANE 13.11 — odcięcie produkcyjnych kluczy od podglądów i gałęzi
 
-Do zrobienia **przed jakimkolwiek kolejnym hostowanym podglądem**. Zmienne w Netlify są w stanie wyjściowym: Claude nie wykonał żadnego zapisu (zapis do magazynu sekretów jest zablokowany w jego środowisku), a pierwsza wersja skryptu `07` dostała od recenzenta **NO-GO** (13.11).
+Przebieg `--apply` skryptu `07` (wersja z commita `819f316`, GO recenzenta) wykonał **Artur**. Wynik potwierdziły niezależnie dwie kontrole odczytem — Codexa i Claude'a — względem odcisków stanu sprzed operacji (wartości jawne: skrót wartości; sekrety: identyfikator wpisu; żadna wartość nie była wypisywana ani zapisywana):
+
+| Kontrola | Wynik |
+|---|---|
+| Izolacja: wskazane pary klucz–kontekst z dostępem do wartości | **0 z 19** (przed operacją 19 z 19) |
+| Produkcja: 24 zmienne względem odcisków sprzed operacji | bez zmian — wartości jawne te same, identyfikatory wpisów sekretów te same |
+| Zakresy zmiennych (builds / functions / runtime…) | bez zmian |
+| Zmiany poza planem | brak |
+| Konteksty po operacji | 7 zmiennych z `all` → `production` + `dev`; `RESEND_API_KEY` i `OPENAI_API_KEY` bez wpisów `deploy-preview` i `branch-deploy`; `SUPABASE_SERVICE_ROLE_KEY` bez wpisu `branch-deploy` |
+| Opublikowane wdrożenie | to samo: `6af2db23` (main `9c8e747`) |
+| Podglądy PR w ustawieniach projektu | nadal wyłączone (`skip_prs = true`) |
+| Ponowny przebieg skryptu na sucho | „bez zmian” dla wszystkich pozycji, kod 0 |
+
+Ograniczenie tej kontroli: przy sekretach potwierdzona jest tożsamość wpisu produkcyjnego (ten sam identyfikator), nie pełna wartość — API jej nie zwraca.
+
+Claude nie wykonał żadnego zapisu zmiennych (zapis do magazynu sekretów jest zablokowany w jego środowisku). Pierwsza wersja skryptu dostała od recenzenta NO-GO; poprawki opisuje tabela niżej.
 
 Zakres (produkcja bez zmian):
 
@@ -85,7 +101,7 @@ Zakres (produkcja bez zmian):
 - `RESEND_API_KEY`, `OPENAI_API_KEY`: usunąć wpisy **Deploy Previews** i **Branch deploys**;
 - `SUPABASE_SERVICE_ROLE_KEY`: usunąć wpis **Branch deploys** (w Deploy Previews jest klucz projektu testowego).
 
-#### Skrypt `07` — wersja poprawiona po review (GO recenzenta dla `819f316`; `--apply` uruchamia Artur)
+#### Skrypt `07` — wersja poprawiona po review (GO recenzenta dla `819f316`)
 
 Uwagi recenzenta i co się zmieniło:
 
@@ -104,12 +120,12 @@ Logika: `scripts/lib/netlify-context-isolation.mjs`; testy z atrapami: `tests/ne
 
 ```
 node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs            # próba na sucho (tylko odczyt)
-node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs --apply    # zapis — zgoda recenzenta jest (13.11); kod 2 = stop i ustalenie stanu przed ponowieniem
+node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs --apply    # zapis (wykonany 13.11; ponowne uruchomienie niczego nie zmienia)
 ```
 
 Przebieg na sucho na prawdziwym projekcie (13.11, tylko odczyt): 7 zmiennych do ograniczenia, 5 wpisów do usunięcia; w symulacji po zmianach żaden z 19 par klucz–kontekst nie jest dostępny, a 24 zmienne produkcyjne są bez zmian; kod 0.
 
-**Czego nie sprawdzono na prawdziwym Netlify:** ścieżki zapisu przez HTTPS (adresy `PUT …/env/{klucz}` i `DELETE …/env/{klucz}/value/{id}`, token z konfiguracji CLI). Jest pokryta wyłącznie testami z atrapą `fetch`. Sam mechanizm zamiany `all` → `production` + `dev` został wcześniej potwierdzony na zmiennej tymczasowej, ale przez `netlify api`, nie tą ścieżką. Pierwszy prawdziwy zapis warto zrobić przy recenzencie; błąd adresu lub tokenu kończy się odmową serwera przed jakąkolwiek zmianą (kod 1 albo 2 z ustalonym stanem „nie weszła”).
+Ścieżka zapisu przez HTTPS, wcześniej sprawdzona tylko na atrapie, zadziałała w przebiegu `--apply` 13.11 (wynik w tabeli wyżej).
 
 #### Alternatywa: ręcznie w panelu Netlify
 
@@ -167,3 +183,5 @@ Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmieni
 | 13.11.2026 | Skrypt `07` po review (NO-GO dla pierwszej wersji) | przepisany: zapis poza linią poleceń, wymuszona kontrola braku kluczy, stan niepewny po awarii; 27 testów z atrapami; przebieg na sucho na prawdziwym projekcie: kod 0, nic nie zapisano; czeka na zgodę recenzenta |
 | 13.11.2026 | Review skryptu `07` w `819f316` | GO recenzenta dla skryptu (nie dla migracji ani scalenia PR); następny krok: nadzorowany `--apply`, bez równoległych zmian zmiennych |
 | 13.11.2026 | `--apply` | NIEWYKONANE: próba Claude'a zablokowana przez zabezpieczenie jego środowiska (zapis do magazynu sekretów) przed uruchomieniem — zmienne w stanie wyjściowym (kontrola odczytem: 19/19 par klucz–kontekst nadal z dostępem, produkcja bez zmian). Uruchamia Artur; po przebiegu Claude wykonuje niezależną kontrolę odczytem i dopisuje wynik |
+| 13.11.2026 | `--apply` skryptu `07` | **ZALICZONE.** Uruchomił Artur. Kontrole odczytem (Codex i Claude, niezależnie): izolacja 0/19 par z dostępem; produkcja 24/24 zgodna z odciskami sprzed operacji (wartości jawne i identyfikatory wpisów sekretów); zakresy bez zmian; brak zmian poza planem; opublikowany deploy ten sam (`6af2db23`, `9c8e747`); podglądy PR wyłączone. Etap zabezpieczeń zamknięty |
+| — | Migracja produkcyjna i scalenie PR | **NIEWYKONANE** — osobny krok, wymaga osobnej zgody (pkt 4) |
