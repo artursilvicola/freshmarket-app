@@ -181,7 +181,7 @@ Podział nierozliczonych na sieci (wszystkie aktywne, wszystkie u dostawców z w
 Co z tego wynika:
 
 - po wdrożeniu kodu pierwsze wejście kupca każdej z 8 sieci rozliczy propozycje czekające na tę sieć — łącznie do **10 kredytów u 2 dostawców**;
-- **8 z tych 10** to propozycje, dla których mailing do sieci jeszcze nie wyszedł. Obecny kod rozlicza je dopiero, gdy kupiec otworzy listę propozycji; nowy — już przy samym wejściu do aplikacji. To zamierzony skutek decyzji z 13.11, ale warto go potwierdzić świadomie przed scaleniem;
+- **8 z tych 10** to propozycje, dla których mailing do sieci jeszcze nie wyszedł. Obecny kod rozlicza je dopiero, gdy kupiec otworzy listę propozycji; nowy — już przy samym wejściu do aplikacji. **Artur potwierdził 13.11.2026, że tak ma być:** wejście kupca rozlicza także propozycje sprzed wysłania mailingu;
 - wiersz 30 potwierdza, że błąd podglądu administratora wystąpił na produkcji: 2 odczyty zapisane na administratora;
 - liczby zmieniają się z każdą nową wysyłką i odczytem — kontrolę trzeba powtórzyć w dniu migracji.
 
@@ -215,4 +215,5 @@ Co z tego wynika:
 | 13.11.2026 | `--apply` | NIEWYKONANE: próba Claude'a zablokowana przez zabezpieczenie jego środowiska (zapis do magazynu sekretów) przed uruchomieniem — zmienne w stanie wyjściowym (kontrola odczytem: 19/19 par klucz–kontekst nadal z dostępem, produkcja bez zmian). Uruchamia Artur; po przebiegu Claude wykonuje niezależną kontrolę odczytem i dopisuje wynik |
 | 13.11.2026 | `--apply` skryptu `07` | **ZALICZONE.** Uruchomił Artur. Kontrole odczytem (Codex i Claude, niezależnie): izolacja 0/19 par z dostępem; produkcja 24/24 zgodna z odciskami sprzed operacji (wartości jawne i identyfikatory wpisów sekretów); zakresy bez zmian; brak zmian poza planem; opublikowany deploy ten sam (`6af2db23`, `9c8e747`); podglądy PR wyłączone. Etap zabezpieczeń zamknięty |
 | 13.11.2026 | `01-kontrola-przed-migracja.sql` na produkcji (tylko odczyt, commit `e26e497`) | warunki wstępne 8/8 OK; 12 czekających, 10 nierozliczonych (8 sieci, 2 dostawców), z tego 8 bez wysłanego mailingu; 2 odczyty zapisane dotąd na administratora; szczegóły w pkt 4 |
+| 13.11.2026 | Decyzja Artura: rozliczenie przed mailingiem | potwierdzone — wejście kupca rozlicza także propozycje, dla których mailing jeszcze nie wyszedł (w kontroli z 13.11: 8 z 10 nierozliczonych) |
 | — | Migracja produkcyjna i scalenie PR | **NIEWYKONANE** — osobny krok, do czasu GO recenzenta i zgody Artura (pkt 4) |
