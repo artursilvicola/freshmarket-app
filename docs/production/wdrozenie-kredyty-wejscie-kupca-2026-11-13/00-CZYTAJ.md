@@ -77,7 +77,7 @@ Wszystkie na `RESEND_API_KEY`: `send-retailer-batch`, `send-supplier-notificatio
 
 ### NIEWYKONANE — odcięcie produkcyjnych kluczy od podglądów i gałęzi
 
-Do zrobienia **przed jakimkolwiek kolejnym hostowanym podglądem**. Claude przygotował i sprawdził ten krok (odczyt struktury, próba mechanizmu na zmiennej tymczasowej — utworzona, zamieniona, usunięta — oraz przebieg na sucho), ale właściwego zapisu nie wykonał: zabezpieczenie jego środowiska zablokowało zapis do magazynu sekretów. Zmienne są w stanie sprzed próby.
+Do zrobienia **przed jakimkolwiek kolejnym hostowanym podglądem**. Zmienne w Netlify są w stanie wyjściowym: Claude nie wykonał żadnego zapisu (zapis do magazynu sekretów jest zablokowany w jego środowisku), a pierwsza wersja skryptu `07` dostała od recenzenta **NO-GO** (13.11).
 
 Zakres (produkcja bez zmian):
 
@@ -85,10 +85,35 @@ Zakres (produkcja bez zmian):
 - `RESEND_API_KEY`, `OPENAI_API_KEY`: usunąć wpisy **Deploy Previews** i **Branch deploys**;
 - `SUPABASE_SERVICE_ROLE_KEY`: usunąć wpis **Branch deploys** (w Deploy Previews jest klucz projektu testowego).
 
-Dwa sposoby:
+#### Skrypt `07` — wersja poprawiona po review (czeka na zgodę recenzenta)
 
-1. **Skrypt:** `node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs --dry`, potem to samo bez `--dry`. Po każdej zmiennej sprawdza, że produkcja widzi to samo co przedtem, a przy niezgodności przywraca i staje. Kończy porównaniem wszystkich zmiennych produkcyjnych przed i po.
-2. **Ręcznie w panelu Netlify:** Project configuration → Environment variables → przy zmiennej Options → Edit → „Different value for each deploy context” → zostawić Production i Local development, wyczyścić Deploy Previews i Branch deploys → Save.
+Uwagi recenzenta i co się zmieniło:
+
+| Uwaga | Poprawka | Test |
+|---|---|---|
+| P1: wartości sekretów w argumentach polecenia (`execSync … --data`), ryzyko wypisania w błędzie | zapisy idą przez HTTPS — wartość tylko w treści żądania; odczyty przez `netlify api` dostają wyłącznie identyfikatory (kontrola argumentów); każdy błąd jest przepisywany na komunikat bez treści polecenia, odpowiedzi i wartości | „[P1] sekrety poza linią poleceń…” (6 testów) |
+| P2: kod 0 mimo klucza nadal widocznego w podglądzie (dziedziczenie z `all`) | brak wskazanych kluczy w podglądzie i gałęzi jest **wymuszany** kodem wyjścia, z uwzględnieniem dziedziczenia; sekret z wpisem `all` = odmowa przed jakimkolwiek zapisem | „[P2] sukces tylko wtedy…” (4 testy) |
+| P2: wyjątek po zapisie zatrzymywał skrypt bez cofnięcia i bez kontroli | awaria po zapisie lub w jego trakcie = **stan niepewny**: żadnych dalszych zapisów, żadnego automatycznego cofania; skrypt ustala faktyczny stan (weszła / nie weszła / inny / nieznany), wykonuje kontrolę końcową i kończy kodem 2 | „[P2] awaria po zapisie…” (6 testów) |
+| zamaskowane sekrety | niezmienność wpisu produkcyjnego potwierdza **identyfikator wpisu**, nie pełna wartość | „zamaskowane sekrety…” (2 testy) |
+
+Dodatkowo: wszystkie warunki wstępne są sprawdzane dla wszystkich zmiennych, zanim cokolwiek zostanie zapisane; ponowne uruchomienie jest bezpieczne (pomija to, co już zrobione); domyślnie skrypt działa **na sucho**, zapis wymaga `--apply`.
+
+Kody wyjścia: `0` odcięte i produkcja bez zmian · `1` niezaliczone · `2` stan niepewny · `3` odmowa (nic nie zapisano).
+
+Logika: `scripts/lib/netlify-context-isolation.mjs`; testy z atrapami: `tests/netlify-context-isolation.test.js` (27 testów, fikcyjne dane).
+
+```
+node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs            # próba na sucho (tylko odczyt)
+node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs --apply    # zapis — DOPIERO po zgodzie recenzenta
+```
+
+Przebieg na sucho na prawdziwym projekcie (13.11, tylko odczyt): 7 zmiennych do ograniczenia, 5 wpisów do usunięcia; w symulacji po zmianach żaden z 19 par klucz–kontekst nie jest dostępny, a 24 zmienne produkcyjne są bez zmian; kod 0.
+
+**Czego nie sprawdzono na prawdziwym Netlify:** ścieżki zapisu przez HTTPS (adresy `PUT …/env/{klucz}` i `DELETE …/env/{klucz}/value/{id}`, token z konfiguracji CLI). Jest pokryta wyłącznie testami z atrapą `fetch`. Sam mechanizm zamiany `all` → `production` + `dev` został wcześniej potwierdzony na zmiennej tymczasowej, ale przez `netlify api`, nie tą ścieżką. Pierwszy prawdziwy zapis warto zrobić przy recenzencie; błąd adresu lub tokenu kończy się odmową serwera przed jakąkolwiek zmianą (kod 1 albo 2 z ustalonym stanem „nie weszła”).
+
+#### Alternatywa: ręcznie w panelu Netlify
+
+Project configuration → Environment variables → przy zmiennej Options → Edit → „Different value for each deploy context” → zostawić Production i Local development, wyczyścić Deploy Previews i Branch deploys → Save.
 
 Zmiany w zmiennych nie uruchamiają builda i nie dotykają opublikowanego wdrożenia.
 
@@ -128,7 +153,7 @@ Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmieni
 - `04-PROBA-PO-WDROZENIU.md` — próba na kontach testowych po scaleniu
 - `05-kontrola-po-wdrozeniu.sql` — ostatnie odczyty i rozliczenia (tylko odczyt)
 - `06-wycofanie-funkcji.sql` — opcjonalne usunięcie funkcji po cofnięciu kodu
-- `07-odciecie-sekretow-od-podgladow.mjs` — odcięcie produkcyjnych kluczy od podglądów i gałęzi w Netlify (uruchamia Artur; ma tryb `--dry`)
+- `07-odciecie-sekretow-od-podgladow.mjs` — odcięcie produkcyjnych kluczy od podglądów i gałęzi w Netlify (domyślnie na sucho; zapis `--apply` po zgodzie recenzenta); logika w `scripts/lib/netlify-context-isolation.mjs`, testy w `tests/netlify-context-isolation.test.js`
 
 ## 7. Dziennik
 
@@ -139,3 +164,4 @@ Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmieni
 | 13.11.2026 | Blokada podglądów w `netlify.toml` (commit `efc2c0a`) | build podglądu `6af71c7e` anulowany przez Netlify („Canceled build due to no content change”), adres podglądu nadal 404, produkcja bez zmian (`9c8e747`) |
 | 13.11.2026 | Podglądy PR wyłączone w ustawieniach projektu (`skip_prs = true`) | pozostałe ustawienia budowania bez zmian (skrót identyczny) |
 | 13.11.2026 | Odcięcie kluczy od podglądów i gałęzi (`07`) | NIEWYKONANE przez Claude'a (zapis sekretów zablokowany); przebieg `--dry`: 7 zmiennych do ograniczenia, 5 wpisów do usunięcia, produkcja 25/25 bez zmian |
+| 13.11.2026 | Skrypt `07` po review (NO-GO dla pierwszej wersji) | przepisany: zapis poza linią poleceń, wymuszona kontrola braku kluczy, stan niepewny po awarii; 27 testów z atrapami; przebieg na sucho na prawdziwym projekcie: kod 0, nic nie zapisano; czeka na zgodę recenzenta |
