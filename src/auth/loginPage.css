@@ -1,0 +1,258 @@
+/* [feat/login-page] Strona logowania: Fresh Market + PreConnect.
+   Tylko wygląd. Mechanizm logowania (hasło / magic link / reset / rejestracja / przekierowania)
+   zostaje w LoginPage.jsx bez zmian. Klasy z prefiksem fm-login-, żeby nie dotykać reszty aplikacji. */
+
+.fm-login {
+  --fm-ink: #0b2822;          /* kolor znaku Fresh Market (public/brand/fm-email-logo-green.png) */
+  --fm-green: #1c7c3c;
+  --fm-green-dark: #14602d;
+  --fm-text: #33443d;
+  --fm-muted: #5d6f67;
+  --fm-line: #d5e0d4;
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--fm-text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background:
+    radial-gradient(60% 45% at 12% 8%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 70%),
+    radial-gradient(45% 40% at 88% 18%, rgba(214, 235, 196, 0.75) 0%, rgba(214, 235, 196, 0) 72%),
+    linear-gradient(180deg, #f8fbf4 0%, #eef6e7 55%, #e3efd7 100%);
+}
+.fm-login *, .fm-login *::before, .fm-login *::after { box-sizing: border-box; }
+
+/* Pas owoców, warzyw i kwiatów na dole strony — dekoracja, bez treści. */
+.fm-login-produce {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(190px, 34vh, 430px);
+  background: url("./assets/login-produce-2400.webp") center bottom / cover no-repeat;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 42%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 42%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.fm-login-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;            /* wąski ekran: przełącznik języka przechodzi do osobnego wiersza, nic na siebie nie nachodzi */
+  gap: 10px 16px;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 26px 32px 0;
+}
+.fm-login-brand { display: flex; align-items: center; gap: 18px; min-width: 0; max-width: 100%; }
+/* logo z ustawień marki może mieć dowolne proporcje — stała wysokość, ograniczona szerokość */
+.fm-login-logo { display: block; height: 52px; width: auto; max-width: 200px; object-fit: contain; object-position: left center; flex-shrink: 0; }
+.fm-login-logo--pending { width: 130px; }
+.fm-login-brand-sep { width: 2px; height: 46px; background: var(--fm-green); opacity: 0.55; border-radius: 2px; flex-shrink: 0; }
+.fm-login-brand-name { margin: 0; font-size: 27px; line-height: 1.1; font-weight: 800; letter-spacing: 0; color: var(--fm-ink); white-space: nowrap; }
+.fm-login-brand-tag { margin: 4px 0 0; font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; color: var(--fm-muted); white-space: nowrap; }
+
+.fm-login-main {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
+  grid-template-areas: "info card";
+  align-items: start;
+  gap: 56px;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 36px 32px clamp(150px, 27vh, 330px);
+}
+
+/* ── formularz ── */
+.fm-login-card {
+  grid-area: card;
+  background: #ffffff;
+  border: 1px solid rgba(11, 40, 34, 0.06);
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgba(11, 40, 34, 0.14), 0 2px 6px rgba(11, 40, 34, 0.05);
+  padding: 34px 34px 26px;
+}
+.fm-login-card-title { margin: 0; font-size: 26px; line-height: 1.2; font-weight: 800; letter-spacing: 0; color: var(--fm-ink); text-align: center; }
+.fm-login-card-sub { margin: 6px 0 24px; font-size: 14px; font-weight: 600; color: var(--fm-green-dark); text-align: center; }
+.fm-login-form { display: flex; flex-direction: column; gap: 14px; }
+.fm-login-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; color: var(--fm-text); }
+.fm-login-field { position: relative; display: block; }
+.fm-login-field svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; color: var(--fm-muted); pointer-events: none; }
+.fm-login-input {
+  width: 100%;
+  padding: 13px 14px 13px 44px;
+  border: 1px solid #c3d0c5;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--fm-ink);
+  font: inherit;
+  font-size: 16px;            /* 16px: telefon nie powiększa strony po dotknięciu pola */
+  font-weight: 400;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.fm-login-input::placeholder { color: #94a39c; }
+.fm-login-input:focus { border-color: var(--fm-green); box-shadow: 0 0 0 3px rgba(28, 124, 60, 0.2); }
+.fm-login-btn {
+  margin-top: 6px;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #218a45 0%, var(--fm-green-dark) 100%);
+  color: #ffffff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(20, 96, 45, 0.25);
+  transition: filter 0.15s;
+}
+.fm-login-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.fm-login-btn:disabled { opacity: 0.7; cursor: default; }
+.fm-login-btn-link {
+  align-self: center;
+  padding: 4px 6px;
+  border: none;
+  background: none;
+  color: var(--fm-green-dark);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.fm-login-btn:focus-visible, .fm-login-btn-link:focus-visible, .fm-login-register:focus-visible,
+.fm-login-legal a:focus-visible, .fm-login-lang button:focus-visible {
+  outline: 3px solid rgba(28, 124, 60, 0.45);
+  outline-offset: 2px;
+}
+.fm-login-err { padding: 10px 12px; border-radius: 8px; background: #fee2e2; color: #b91c1c; font-size: 13.5px; line-height: 1.45; }
+.fm-login-ok { padding: 10px 12px; border-radius: 8px; background: #dcf5e3; color: #14602d; font-size: 13.5px; line-height: 1.45; }
+
+.fm-login-register-box { margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--fm-line); text-align: center; }
+.fm-login-register-intro { margin: 0 0 12px; font-size: 14.5px; color: var(--fm-text); }
+.fm-login-register {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border: 2px solid var(--fm-green);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--fm-green-dark);
+  font-size: 15.5px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.fm-login-register:hover { background: #f0f8ec; }
+.fm-login-register svg { width: 22px; height: 22px; flex-shrink: 0; }
+.fm-login-buyers-note { margin: 10px 0 0; font-size: 12.5px; color: var(--fm-muted); }
+
+.fm-login-legal { margin-top: 18px; padding-top: 14px; border-top: 1px solid #e6ece5; text-align: center; font-size: 12px; color: #9aa8a1; }
+.fm-login-legal a { color: var(--fm-green-dark); font-weight: 600; text-decoration: none; }
+.fm-login-legal a:hover { text-decoration: underline; }
+.fm-login-legal span { margin: 0 8px; color: #c5d0c8; }
+
+/* ── opis platformy ── */
+.fm-login-info { grid-area: info; min-width: 0; padding-top: 8px; }
+.fm-login-hero-title { margin: 0; font-size: 44px; line-height: 1.1; font-weight: 800; letter-spacing: 0; color: var(--fm-ink); }
+.fm-login-hero-highlight { margin: 10px 0 0; font-size: 28px; line-height: 1.2; font-weight: 800; letter-spacing: 0; color: var(--fm-green); }
+.fm-login-hero-lead { margin: 16px 0 0; max-width: 560px; font-size: 18px; line-height: 1.5; color: var(--fm-text); }
+
+.fm-login-roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 26px; max-width: 680px; }
+.fm-login-role {
+  display: flex;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 24px rgba(11, 40, 34, 0.07);
+}
+.fm-login-role--supplier { background: linear-gradient(135deg, #e7f5dd 0%, #f6fbf1 100%); }
+.fm-login-role--buyer { background: linear-gradient(135deg, #e3f0fa 0%, #f5fafe 100%); }
+.fm-login-role svg { width: 40px; height: 40px; flex-shrink: 0; }
+.fm-login-role--supplier svg { color: var(--fm-green); }
+.fm-login-role--buyer svg { color: #1d5fa8; }
+.fm-login-role h3 { margin: 0 0 6px; font-size: 17.5px; font-weight: 800; color: var(--fm-ink); }
+.fm-login-role p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--fm-text); }
+
+.fm-login-modules { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 30px; margin: 26px 0 0; padding: 0; list-style: none; max-width: 680px; }
+.fm-login-modules li { display: flex; align-items: center; gap: 10px; font-size: 14px; line-height: 1.35; color: var(--fm-text); }
+.fm-login-modules svg { width: 28px; height: 28px; flex-shrink: 0; color: var(--fm-green); }
+.fm-login-modules strong { display: block; font-weight: 800; color: var(--fm-ink); }
+.fm-login-sectors { font-weight: 700; color: var(--fm-ink); }
+.fm-login-sectors i { font-style: normal; color: var(--fm-green); margin: 0 5px; }
+
+/* ── przełącznik języka (wariant na jasne tło) ── */
+.fm-login-lang { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: auto; }
+.fm-login-lang button {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fm-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+.fm-login-lang button[aria-pressed="true"] { background: var(--fm-green); color: #ffffff; cursor: default; }
+.fm-login-lang-sep { width: 1px; height: 18px; background: #9fb0a7; }
+
+/* Rozmiary nagłówków: stałe dla każdego progu szerokości (bez zależności od szerokości okna). */
+@media (max-width: 1199px) {
+  .fm-login-hero-title { font-size: 38px; }
+  .fm-login-hero-highlight { font-size: 25px; }
+}
+
+/* ── tablet i telefon: formularz pierwszy, opis pod nim ── */
+@media (max-width: 960px) {
+  .fm-login-hero-title { font-size: 34px; }
+  .fm-login-hero-highlight { font-size: 24px; }
+  .fm-login-main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "card" "info";
+    gap: 30px;
+    max-width: 560px;
+    padding: 24px 20px 170px;
+  }
+  .fm-login-header { max-width: 560px; padding: 18px 20px 0; }
+  .fm-login-produce { height: 190px; }
+  .fm-login-info { padding-top: 0; }
+}
+@media (max-width: 600px) {
+  .fm-login-header { padding: 14px 16px 0; gap: 8px 10px; }
+  .fm-login-brand { gap: 11px; }
+  .fm-login-logo { height: 38px; max-width: 130px; }
+  .fm-login-logo--pending { width: 95px; }
+  .fm-login-brand-sep { height: 34px; }
+  .fm-login-brand-name { font-size: 19px; }
+  .fm-login-brand-tag { font-size: 10px; }
+  .fm-login-hero-title { font-size: 30px; }
+  .fm-login-hero-highlight { font-size: 21px; }
+  .fm-login-main { padding: 18px 16px 150px; gap: 26px; }
+  .fm-login-card { padding: 26px 20px 20px; border-radius: 16px; }
+  .fm-login-card-title { font-size: 23px; }
+  .fm-login-hero-lead { font-size: 16px; }
+  .fm-login-roles { grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 20px; }
+  .fm-login-modules { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .fm-login-produce { height: 160px; background-image: url("./assets/login-produce-1200.webp"); }
+}

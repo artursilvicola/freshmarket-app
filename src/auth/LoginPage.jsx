@@ -1,11 +1,53 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "./AuthProvider";
-import FreshMarketLogo from "../components/FreshMarketLogo";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { loginErrorKey } from "./authErrors.js";
 import { normalizeLocale } from "../i18n/locale";
+import { getBrandSettings } from "../lib/db";
+import { Mail, Lock, UserPlus, Apple, ShoppingCart, MonitorCheck, Users, Leaf } from "lucide-react";
+import "./loginPage.css";
+
+// [feat/login-page] Logo jak dotąd pochodzi z ustawień marki (panel Branding → fm_settings.brand_logo_url,
+// to samo źródło co <FreshMarketLogo>). Gdy administrator nie wgrał logo albo plik się nie wczyta,
+// pokazujemy oficjalny znak Fresh Market z repozytorium (ten sam plik co w mailach).
+const LOGO_FALLBACK_SRC = "/brand/fm-email-logo-green.png";
+// Po tym czasie nie czekamy dłużej na ustawienia marki — pokazujemy znak z repozytorium.
+const LOGO_WAIT_MS = 1500;
+
+function LoginLogo() {
+  const [brandUrl, setBrandUrl] = useState(null);
+  const [resolved, setResolved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => { if (!cancelled) setResolved(true); }, LOGO_WAIT_MS);
+    (async () => {
+      try {
+        const { brandLogoUrl } = await getBrandSettings();
+        if (!cancelled) setBrandUrl(brandLogoUrl || null);
+      } catch (e) {
+        // brak ustawień / błąd sieci → znak z repozytorium
+      } finally {
+        clearTimeout(timer);
+        if (!cancelled) setResolved(true);
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, []);
+
+  // Do czasu odpowiedzi rezerwujemy miejsce (bez podmiany jednego logo na drugie na oczach użytkownika).
+  if (!resolved) return <span className="fm-login-logo fm-login-logo--pending" aria-hidden="true" />;
+  return (
+    <img
+      className="fm-login-logo"
+      src={brandUrl || LOGO_FALLBACK_SRC}
+      alt="Fresh Market"
+      onError={() => { if (brandUrl) setBrandUrl(null); }}
+    />
+  );
+}
 
 export default function LoginPage() {
   const { signIn, sendMagicLink, sendPasswordReset, user } = useAuth();
@@ -66,176 +108,171 @@ export default function LoginPage() {
   const termsHref = locale === "en" ? "/regulations" : "/regulamin";
   const privacyHref = locale === "en" ? "/privacy-policy" : "/polityka-prywatnosci";
 
+  // [feat/login-page] Zmiana WYŁĄCZNIE wyglądu: te same pola, te same trzy tryby (hasło / magic link /
+  // reset), ta sama rejestracja dostawcy i te same przekierowania co wcześniej. Teksty w HTML (PL/EN),
+  // grafika jest tylko dekoracją. Bez daty wydarzenia — strona nie czyta konfiguracji wydarzeń.
   return (
-    <div style={S.wrap}>
-      {/* [B2B Round prod-rollout / i18n MVP — Krok 3] Przełącznik języka
-          w prawym górnym rogu, na gradiencie. Wariant "auth" — białe litery. */}
-      <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
-        <LanguageSwitcher variant="auth" />
-      </div>
-      <div style={S.card}>
-        {/* [B2B Round prod-rollout / branding] Zamiast placeholdera "FM" —
-            FreshMarketLogo (img z fm_settings.brand_logo_url, fallback SVG
-            jabłka). variant="dark" bo karta logowania ma białe tło. */}
-        <div style={S.brand}>
-          <FreshMarketLogo variant="dark" size={44} showText={false} />
+    <div className="fm-login">
+      <div className="fm-login-produce" aria-hidden="true" />
+
+      <header className="fm-login-header">
+        <div className="fm-login-brand">
+          <LoginLogo />
+          <span className="fm-login-brand-sep" aria-hidden="true" />
           <div>
-            <h1 style={S.h1}>{t("login.title")}</h1>
-            <p style={S.sub}>{t("login.subtitle")}</p>
+            <p className="fm-login-brand-name">PreConnect</p>
+            <p className="fm-login-brand-tag">{t("login.brand_tagline")}</p>
           </div>
         </div>
+        <LanguageSwitcher variant="auth-light" />
+      </header>
 
-        <form onSubmit={handleSubmit} style={S.form}>
-          <label style={S.label}>
-            {t("common.email")}
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={S.input}
-              placeholder={t("common.email_placeholder_login")}
-              autoComplete="email"
-            />
-          </label>
+      <main className="fm-login-main">
+        <section className="fm-login-card" aria-labelledby="fm-login-title">
+          <h1 id="fm-login-title" className="fm-login-card-title">{t("login.card_title")}</h1>
+          <p className="fm-login-card-sub">{t("login.card_subtitle")}</p>
 
-          {mode === "password" && (
-            <label style={S.label}>
-              {t("common.password")}
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                style={S.input}
-                autoComplete="current-password"
-              />
+          <form onSubmit={handleSubmit} className="fm-login-form">
+            <label className="fm-login-label">
+              {t("common.email")}
+              <span className="fm-login-field">
+                <Mail {...iconProps} />
+                <input
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="fm-login-input"
+                  placeholder={t("common.email_placeholder_login")}
+                  autoComplete="email"
+                />
+              </span>
             </label>
-          )}
 
-          {err && <div style={S.err}>{err}</div>}
-          {msg && <div style={S.ok}>{msg}</div>}
+            {mode === "password" && (
+              <label className="fm-login-label">
+                {t("common.password")}
+                <span className="fm-login-field">
+                  <Lock {...iconProps} />
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="fm-login-input"
+                    autoComplete="current-password"
+                  />
+                </span>
+              </label>
+            )}
 
-          <button type="submit" disabled={busy} style={S.btn}>
-            {busy
-              ? t("login.busy")
-              : mode === "password"
-                ? t("login.sign_in_button")
-                : mode === "forgot"
-                  ? t("login.send_reset_link")
-                  : t("login.magic_link_send")}
-          </button>
+            {err && <div className="fm-login-err" role="alert">{err}</div>}
+            {msg && <div className="fm-login-ok" role="status">{msg}</div>}
 
-          {mode === "password" && (
+            <button type="submit" disabled={busy} className="fm-login-btn">
+              {busy
+                ? t("login.busy")
+                : mode === "password"
+                  ? t("login.sign_in_button")
+                  : mode === "forgot"
+                    ? t("login.send_reset_link")
+                    : t("login.magic_link_send")}
+            </button>
+
+            {mode === "password" && (
+              <button
+                type="button"
+                onClick={() => { setMode("forgot"); setErr(null); setMsg(null); }}
+                className="fm-login-btn-link"
+              >
+                {t("login.forgot_password")}
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => { setMode("forgot"); setErr(null); setMsg(null); }}
-              style={{ ...S.btnLink, marginTop: 0 }}
+              onClick={() => {
+                setErr(null); setMsg(null);
+                if (mode === "password") setMode("magic");
+                else setMode("password");
+              }}
+              className="fm-login-btn-link"
             >
-              {t("login.forgot_password")}
+              {mode === "password" ? t("login.magic_link_switch") : t("login.back_to_password")}
             </button>
-          )}
+          </form>
 
-          <button
-            type="button"
-            onClick={() => {
-              setErr(null); setMsg(null);
-              if (mode === "password") setMode("magic");
-              else setMode("password");
-            }}
-            style={S.btnLink}
-          >
-            {mode === "password" ? t("login.magic_link_switch") : t("login.back_to_password")}
-          </button>
-        </form>
-
-        <div style={S.footer}>
           {/* [B2B Round supplier-onboarding-access-and-communication] Self-register
               dostawcy. Konto trafia do stanu "pending_review" — admin zatwierdza
               osobno. Buyer dalej idzie przez admina (nie ma self-register dla kupców). */}
-          {t("login.no_account_register_intro")}
-          <Link to="/zarejestruj-dostawce" style={S.link}>{t("login.register_link")}</Link>
-        </div>
+          <div className="fm-login-register-box">
+            <p className="fm-login-register-intro">{t("login.no_account_register_intro")}</p>
+            <Link to="/zarejestruj-dostawce" className="fm-login-register">
+              <UserPlus {...iconProps} />
+              {t("login.register_link")}
+            </Link>
+            <p className="fm-login-buyers-note">{t("login.buyers_note")}</p>
+          </div>
 
-        {/* [B2B Round prod-rollout / legal] Linki do Regulaminu i Polityki
-            Prywatności — wymóg dobrej praktyki dla aplikacji przetwarzającej
-            dane osobowe. Otwierane w nowej karcie żeby nie wybić usera z loginu.
-            [Krok 4] termsHref / privacyHref zależą od locale (PL → /regulamin,
-            EN → /regulations). */}
-        <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #e2e8f0", textAlign: "center", fontSize: 11, color: "#94a3b8" }}>
-          <a href={termsHref} target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>{t("login.footer_terms")}</a>
-          <span style={{ margin: "0 8px", color: "#cbd5e1" }}>·</span>
-          <a href={privacyHref} target="_blank" rel="noopener" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>{t("login.footer_privacy")}</a>
-          <span style={{ margin: "0 8px", color: "#cbd5e1" }}>·</span>
-          <a href="mailto:support@freshmarket.eu" style={{ color: "#0d9488", fontWeight: 600, textDecoration: "none" }}>{t("login.footer_contact")}</a>
-        </div>
-      </div>
+          {/* [B2B Round prod-rollout / legal] Linki do Regulaminu i Polityki
+              Prywatności — wymóg dobrej praktyki dla aplikacji przetwarzającej
+              dane osobowe. Otwierane w nowej karcie żeby nie wybić usera z loginu.
+              [Krok 4] termsHref / privacyHref zależą od locale (PL → /regulamin,
+              EN → /regulations). */}
+          <div className="fm-login-legal">
+            <a href={termsHref} target="_blank" rel="noopener">{t("login.footer_terms")}</a>
+            <span aria-hidden="true">·</span>
+            <a href={privacyHref} target="_blank" rel="noopener">{t("login.footer_privacy")}</a>
+            <span aria-hidden="true">·</span>
+            <a href="mailto:support@freshmarket.eu">{t("login.footer_contact")}</a>
+          </div>
+        </section>
+
+        <section className="fm-login-info" aria-labelledby="fm-login-hero">
+          <h2 id="fm-login-hero" className="fm-login-hero-title">{t("login.hero_title")}</h2>
+          <p className="fm-login-hero-highlight">{t("login.hero_highlight")}</p>
+          <p className="fm-login-hero-lead">{t("login.hero_lead")}</p>
+
+          <div className="fm-login-roles">
+            <div className="fm-login-role fm-login-role--supplier">
+              <Apple {...iconProps} />
+              <div>
+                <h3>{t("login.for_suppliers_title")}</h3>
+                <p>{t("login.for_suppliers_text")}</p>
+              </div>
+            </div>
+            <div className="fm-login-role fm-login-role--buyer">
+              <ShoppingCart {...iconProps} />
+              <div>
+                <h3>{t("login.for_buyers_title")}</h3>
+                <p>{t("login.for_buyers_text")}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* PreConnect (online, cały rok) i Spotkania B2B (stacjonarnie) to dwa różne moduły —
+              pokazane osobno i bez daty wydarzenia. */}
+          <ul className="fm-login-modules">
+            <li>
+              <MonitorCheck {...iconProps} />
+              <span><strong>{t("login.module_preconnect_title")}</strong>{t("login.module_preconnect_text")}</span>
+            </li>
+            <li>
+              <Users {...iconProps} />
+              <span><strong>{t("login.module_meetings_title")}</strong>{t("login.module_meetings_text")}</span>
+            </li>
+            <li>
+              <Leaf {...iconProps} />
+              <span className="fm-login-sectors">
+                {t("login.sector_fruit")}<i aria-hidden="true">•</i>{t("login.sector_vegetables")}<i aria-hidden="true">•</i>{t("login.sector_flowers")}
+              </span>
+            </li>
+          </ul>
+        </section>
+      </main>
     </div>
   );
 }
 
-const S = {
-  wrap: {
-    minHeight: "100vh",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "linear-gradient(135deg, #0d9488 0%, #14b8a6 100%)",
-    padding: 20,
-  },
-  card: {
-    background: "white",
-    borderRadius: 16,
-    boxShadow: "0 20px 60px rgba(0,0,0,0.15)",
-    padding: 40,
-    width: "100%",
-    maxWidth: 420,
-  },
-  brand: { display: "flex", alignItems: "center", gap: 12, marginBottom: 28 },
-  logo: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    background: "#0d9488",
-    color: "white",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontWeight: 700,
-    fontSize: 18,
-  },
-  h1: { margin: 0, fontSize: 22, color: "#0f172a" },
-  sub: { margin: 0, fontSize: 13, color: "#64748b" },
-  form: { display: "flex", flexDirection: "column", gap: 14 },
-  label: { display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#475569", fontWeight: 500 },
-  input: {
-    padding: "10px 12px",
-    border: "1px solid #cbd5e1",
-    borderRadius: 8,
-    fontSize: 14,
-    outline: "none",
-  },
-  btn: {
-    padding: "12px 20px",
-    background: "#0d9488",
-    color: "white",
-    border: "none",
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-    marginTop: 6,
-  },
-  btnLink: {
-    background: "none",
-    border: "none",
-    color: "#0d9488",
-    fontSize: 13,
-    cursor: "pointer",
-    textDecoration: "underline",
-  },
-  err: { color: "#dc2626", fontSize: 13, padding: 8, background: "#fee2e2", borderRadius: 6 },
-  ok: { color: "#059669", fontSize: 13, padding: 8, background: "#d1fae5", borderRadius: 6 },
-  footer: { marginTop: 24, textAlign: "center", color: "#64748b", fontSize: 13 },
-  link: { color: "#0d9488", fontWeight: 600, textDecoration: "none" },
-};
+// Ikony z lucide-react (biblioteka już używana w aplikacji); dekoracyjne — ukryte przed czytnikami ekranu.
+const iconProps = { strokeWidth: 1.7, "aria-hidden": true, focusable: "false" };
