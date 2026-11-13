@@ -3,7 +3,7 @@
 --   wiersze 1–9   warunki wstępne migracji: każde „ŹLE” = STOP, nie wgrywaj migracji;
 --                 (wiersz 9: migracja ZASTĘPUJE mark_legacy_send_seen — obecna treść w bazie musi być
 --                 dokładnie tą z migracji 20260927120000, na której oparto nową wersję)
---   wiersze 20–31 liczby informacyjne: ile propozycji obejmie nowa reguła po wdrożeniu KODU
+--   wiersze 20–32 liczby informacyjne: ile propozycji obejmie nowa reguła po wdrożeniu KODU
 --                 (sama migracja niczego nie rozlicza) — zapisz je w dzienniku;
 --   wiersze 100+  te same propozycje w podziale na sieci.
 -- „Czekająca” = propozycja w statusie sent/opened: po wdrożeniu kodu pierwsze wejście kupca tej sieci
@@ -115,6 +115,15 @@ checks(lp, kontrola, wynik, oczekiwane) as (
          (select count(*) from public.legacy_sends s
            where s.status = 'read_manual'
              and coalesce(s.data->>'billingStatus', '') <> 'charged' and (s.data->>'chargeAt') is null)::text, 'informacja'
+  union all
+  select 32, 'INFO: propozycje read_manual już ROZLICZONE, bez odczytu kupca w aplikacji (przy wejściu kupca kod dopisze odczyt; BEZ pobrania kredytu)',
+         (select count(*)::text
+                 || ' (z potwierdzenia ręcznego: ' || (count(*) filter (where s.data->>'chargeChannel' = 'manual'))::text
+                 || ', rozliczone wcześniej innym kanałem: ' || (count(*) filter (where coalesce(s.data->>'chargeChannel', '') <> 'manual'))::text || ')'
+            from public.legacy_sends s
+           where s.status = 'read_manual'
+             and (coalesce(s.data->>'billingStatus', '') = 'charged' or (s.data->>'chargeAt') is not null or (s.data->>'chargeTxId') is not null)
+             and (s.data->>'buyerAppSeenAt') is null), 'informacja'
 
   -- ── nierozliczone czekające propozycje w podziale na sieci ──
   union all

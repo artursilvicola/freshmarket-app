@@ -257,12 +257,20 @@ describe("które propozycje potwierdzone ręcznie panel zgłasza jako odczyt kup
     expect(isManualAwaitingBuyerRead(manualCharged(1, { buyerAppSeenAt: "2026-11-13T11:00:00.000Z" }))).toBe(false);
   });
 
-  it("stare albo nierozliczone read_manual: NIE — zapis odczytu nie może rozszerzyć rozliczeń", () => {
+  it("nierozliczone read_manual (stare albo bez wolnego kredytu): NIE — zapis odczytu nie może rozszerzyć rozliczeń", () => {
     expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", readType: "manual_phone" })).toBe(false); // historyczne, bez kredytu
     expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", billingStatus: "no_package_available" })).toBe(false); // potwierdzone bez wolnego kredytu
-    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", billingStatus: "charged", chargeAt: "x" })).toBe(false); // rozliczone wcześniej (np. mailem), nie potwierdzeniem
     expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", chargeChannel: "manual" })).toBe(false); // znacznik bez rozliczenia
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", chargeChannel: "email", emailOpenedAt: "x" })).toBe(false); // mail otwarty, ale bez rozliczenia
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", data: { billingStatus: "refunded" } })).toBe(false);
     expect(isBuyerSeenPending({ id: 1, status: "read_manual" })).toBe(false);
+  });
+
+  it("[P2, 3. runda] rozliczone wcześniejszym otwarciem maila, potem potwierdzone ręcznie: TAK", () => {
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", billingStatus: "charged", chargeAt: "x" })).toBe(true); // bez znacznika kanału
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", billingStatus: "charged", chargeAt: "x", chargeChannel: "email" })).toBe(true);
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", data: { chargeTxId: "tx", chargeChannel: "email", buyerSeenChannel: "email" } })).toBe(true);
+    expect(isManualAwaitingBuyerRead({ id: 1, status: "read_manual", billingStatus: "charged", chargeAt: "x", chargeChannel: "email", buyerAppSeenAt: "y" })).toBe(false); // odczyt w aplikacji już zapisany
   });
 
   it("inne statusy bez zmian: wysłane i otwarte zgłaszane, przeczytane i wygasłe nie", () => {
@@ -382,5 +390,90 @@ describe("panel kupca — prawdziwe funkcje: wejście, lista i szczegół zgłas
 
   it("pulpit: licznik nowych liczy tylko nieprzeczytane", () => {
     expect(src).toMatch(/setBuyerNewAtEntry\(n => Math\.max\(n, buyerEntryPending\.filter\(isNewForBuyer\)\.length\)\)/);
+  });
+});
+
+// ── review Codexa 13.11, 3. runda — P2: mail → potwierdzenie ręczne → aplikacja ──
+// Kredyt pobrało OTWARCIE MAILA, więc potwierdzenie ręczne nie ustawia chargeChannel = manual.
+// Odczyt w aplikacji (wejście, lista, szczegół) i tak musi zostać zgłoszony — dokładnie raz.
+describe("[P2, 3. runda] mail → potwierdzenie ręczne → aplikacja: prawdziwe funkcje panelu zgłaszają odczyt", () => {
+  const src = readFileSync(new URL("../legacy/PreconnectFM.jsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const cut = (name) => { const a = src.indexOf(`  async function ${name}(`); return src.slice(a, src.indexOf("\n  }\n", a) + 5); };
+  const supabase = { auth: { getSession: async () => ({ data: { session: { access_token: "t" } } }) } };
+  const quiet = { warn() {}, log() {} };
+  // tak wygląda wiersz po sekwencji: sent → mark_legacy_send_seen(email) → confirm_legacy_send_manual
+  const emailThenManual = (id, extra = {}) => ({ id, retailerId: 100, status: "read_manual", readType: "manual_phone", billingStatus: "charged", chargeAt: "2026-11-13T09:00:00.000Z", chargeChannel: "email", emailOpenedAt: "2026-11-13T09:00:00.000Z", buyerSeenAt: "2026-11-13T09:00:00.000Z", buyerSeenChannel: "email", seenChannel: "email", ...extra });
+  const variants = [["chargeChannel = email", emailThenManual(41)], ["bez znacznika kanału", emailThenManual(42, { chargeChannel: undefined })], ["pola w data (wiersz z bazy)", { id: 43, retailerId: 100, status: "read_manual", data: { billingStatus: "charged", chargeAt: "x", chargeChannel: "email", buyerSeenChannel: "email" } }]];
+
+  function server() {
+    const calls = [];
+    const fetchStub = async (url, init) => {
+      const b = JSON.parse(init.body);
+      const ids = b.legacy_ids || [b.legacy_id];
+      calls.push({ fn: url.split("/").pop(), ids });
+      return { ok: true, status: 200, json: async () => ({ ok: true, results: ids.map((id) => ({ legacy_id: id, ok: true, status: "read_manual", data: { buyerAppSeenAt: "2026-11-13T11:00:00.000Z", buyerAppSeenChannel: "app_list" }, billing: { charged: false, alreadyCharged: true, billingStatus: "charged" } })) }) };
+    };
+    return { calls, fetchStub };
+  }
+  const entryFn = (fetchStub, applied, tracker) =>
+    // eslint-disable-next-line no-new-func
+    new Function("buyerSeenAllowed", "buyerSeenTrackerRef", "supabase", "fetch", "applySeenResultsToState", "console", `${cut("markBuyerPreconnectSeen")}\n return markBuyerPreconnectSeen;`)(true, tracker, supabase, fetchStub, (r) => applied.push(r), quiet);
+  const detailFn = (fetchStub, state, tracker, allowed = true) =>
+    // eslint-disable-next-line no-new-func
+    new Function("buyerSeenAllowed", "buyerSeenTrackerRef", "isManualAwaitingBuyerRead", "supabase", "fetch", "applySeenResultsToState", "dbMarkLegacySendRead", "nowStr", "_setSendsRaw", "console", `${cut("markSendOpened")}\n return markSendOpened;`)(
+      allowed, tracker, isManualAwaitingBuyerRead, supabase, fetchStub, (r) => state.applied.push(r), async (id) => { state.dbRead.push(id); }, () => "teraz", () => { state.setSends += 1; }, quiet);
+
+  for (const [label, send] of variants) {
+    it(`wejście kupca (${label}): dokładnie jedno zgłoszenie, bez drugiego pobrania`, async () => {
+      const { calls, fetchStub } = server();
+      const applied = []; const tracker = { current: createSeenSubmissionTracker() };
+      const fn = entryFn(fetchStub, applied, tracker);
+      const pending = pendingBuyerSeenSends({ sends: [send], buyerRetailerId: 100, retailers: [{ id: 100, active: true }], buyer: { active: true } });
+      expect(pending.map((x) => x.id)).toEqual([send.id]);
+      expect(pending.filter(isNewForBuyer)).toHaveLength(0);   // nie liczy się jako „nowa” na pulpicie
+      await fn(pending, "app_list"); await fn(pending, "app_list");
+      expect(calls).toEqual([{ fn: "mark-buyer-preconnect-seen", ids: [send.id] }]);
+      expect(applied[0][0].billing.charged).toBe(false);
+    });
+
+    it(`lista (${label}): ten sam filtr co w PageBuyerOffers, dokładnie jedno zgłoszenie`, async () => {
+      const { calls, fetchStub } = server();
+      const applied = []; const tracker = { current: createSeenSubmissionTracker() };
+      const fn = entryFn(fetchStub, applied, tracker);
+      const seen = new Set();
+      const candidates = () => [send].filter((s) => isBuyerSeenPending(s) && !seen.has(s.id));
+      expect(candidates().map((x) => x.id)).toEqual([send.id]);
+      await fn(candidates(), "app_list"); await fn(candidates(), "app_list");
+      expect(calls).toEqual([{ fn: "mark-buyer-preconnect-seen", ids: [send.id] }]);
+    });
+
+    it(`szczegół (${label}): dokładnie jedno zgłoszenie, status lokalnie bez zmian, bez ścieżki „sent → read”`, async () => {
+      const { calls, fetchStub } = server();
+      const state = { dbRead: [], setSends: 0, applied: [] };
+      const fn = detailFn(fetchStub, state, { current: createSeenSubmissionTracker() });
+      await fn(send); await fn(send);
+      expect(calls).toEqual([{ fn: "notify-supplier-read", ids: [send.id] }]);
+      expect(state.dbRead).toEqual([]); expect(state.setSends).toBe(0); expect(state.applied).toHaveLength(1);
+    });
+  }
+
+  it("po zapisaniu odczytu w aplikacji żadna ścieżka nie zgłasza ponownie", async () => {
+    const done = emailThenManual(44, { buyerAppSeenAt: "2026-11-13T11:00:00.000Z" });
+    const { calls, fetchStub } = server();
+    expect(pendingBuyerSeenSends({ sends: [done], buyerRetailerId: 100, retailers: [], buyer: {} })).toEqual([]);
+    expect(isBuyerSeenPending(done)).toBe(false);
+    const state = { dbRead: [], setSends: 0, applied: [] };
+    await detailFn(fetchStub, state, { current: createSeenSubmissionTracker() })(done);
+    expect(calls).toEqual([]);
+  });
+
+  it("nierozliczona read_manual po otwarciu maila bez kredytu: żadna ścieżka jej nie zgłasza; podgląd admina też nie", async () => {
+    const unpaid = { id: 45, retailerId: 100, status: "read_manual", billingStatus: "no_package_available", emailOpenedAt: "x", buyerSeenChannel: "email" };
+    const { calls, fetchStub } = server();
+    expect(pendingBuyerSeenSends({ sends: [unpaid], buyerRetailerId: 100, retailers: [], buyer: {} })).toEqual([]);
+    const state = { dbRead: [], setSends: 0, applied: [] };
+    await detailFn(fetchStub, state, { current: createSeenSubmissionTracker() })(unpaid);
+    await detailFn(fetchStub, state, { current: createSeenSubmissionTracker() }, false)(emailThenManual(46));
+    expect(calls).toEqual([]);
   });
 });

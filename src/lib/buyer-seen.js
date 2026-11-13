@@ -13,13 +13,16 @@ const isCharged = (s) => Boolean(field(s, "chargeAt") || field(s, "chargeTxId") 
 
 // [review Codexa 13.11, 2. runda — P1] Propozycja potwierdzona RĘCZNIE przez administratora, którą kupiec
 // właśnie ogląda w aplikacji. Jego odczyt trzeba zapisać, bo od niego zależy, czy późniejsze cofnięcie
-// potwierdzenia zwróci kredyt. Zgłaszamy WYŁĄCZNIE propozycje już rozliczone tym potwierdzeniem
-// (chargeChannel = manual) i bez zapisanego jeszcze odczytu w aplikacji:
+// potwierdzenia zwróci kredyt i jaki status wróci („read” zamiast „opened”/„sent”).
+// Zgłaszamy WYŁĄCZNIE propozycje już ROZLICZONE i bez zapisanego jeszcze odczytu w aplikacji:
 //  * odczyt takiej propozycji nie może pobrać kredytu drugi raz (jest już rozliczona),
-//  * stare albo nierozliczone `read_manual` NIE są zgłaszane — zapis odczytu nie może po cichu
-//    rozszerzyć rozliczeń na historyczne pozycje.
+//  * nierozliczone `read_manual` (stare albo potwierdzone bez wolnego kredytu) NIE są zgłaszane —
+//    zapis odczytu nie może po cichu rozszerzyć rozliczeń na historyczne pozycje.
+// [review Codexa 13.11, 3. runda — P2] Nie ma znaczenia, CO pobrało kredyt: ręczne potwierdzenie
+// (chargeChannel = manual) czy wcześniejsze otwarcie maila (mail → potwierdzenie ręczne → aplikacja).
+// Poprzedni warunek „tylko chargeChannel = manual” gubił odczyt w aplikacji w tej drugiej sekwencji.
 export function isManualAwaitingBuyerRead(s) {
-  return !!s && s.status === "read_manual" && field(s, "chargeChannel") === "manual" && isCharged(s) && !field(s, "buyerAppSeenAt");
+  return !!s && s.status === "read_manual" && isCharged(s) && !field(s, "buyerAppSeenAt");
 }
 
 // Czy wejście kupca / lista / szczegół mają zgłosić odczyt tej propozycji.
