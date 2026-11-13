@@ -1,14 +1,53 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "./AuthProvider";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import { loginErrorKey } from "./authErrors.js";
 import { normalizeLocale } from "../i18n/locale";
+import { getBrandSettings } from "../lib/db";
+import { Mail, Lock, UserPlus, Apple, ShoppingCart, MonitorCheck, Users, Leaf } from "lucide-react";
 import "./loginPage.css";
 
-// [feat/login-page] Oficjalny znak Fresh Market z repozytorium (ten sam plik co w mailach).
-const LOGO_SRC = "/brand/fm-email-logo-green.png";
+// [feat/login-page] Logo jak dotąd pochodzi z ustawień marki (panel Branding → fm_settings.brand_logo_url,
+// to samo źródło co <FreshMarketLogo>). Gdy administrator nie wgrał logo albo plik się nie wczyta,
+// pokazujemy oficjalny znak Fresh Market z repozytorium (ten sam plik co w mailach).
+const LOGO_FALLBACK_SRC = "/brand/fm-email-logo-green.png";
+// Po tym czasie nie czekamy dłużej na ustawienia marki — pokazujemy znak z repozytorium.
+const LOGO_WAIT_MS = 1500;
+
+function LoginLogo() {
+  const [brandUrl, setBrandUrl] = useState(null);
+  const [resolved, setResolved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(() => { if (!cancelled) setResolved(true); }, LOGO_WAIT_MS);
+    (async () => {
+      try {
+        const { brandLogoUrl } = await getBrandSettings();
+        if (!cancelled) setBrandUrl(brandLogoUrl || null);
+      } catch (e) {
+        // brak ustawień / błąd sieci → znak z repozytorium
+      } finally {
+        clearTimeout(timer);
+        if (!cancelled) setResolved(true);
+      }
+    })();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, []);
+
+  // Do czasu odpowiedzi rezerwujemy miejsce (bez podmiany jednego logo na drugie na oczach użytkownika).
+  if (!resolved) return <span className="fm-login-logo fm-login-logo--pending" aria-hidden="true" />;
+  return (
+    <img
+      className="fm-login-logo"
+      src={brandUrl || LOGO_FALLBACK_SRC}
+      alt="Fresh Market"
+      onError={() => { if (brandUrl) setBrandUrl(null); }}
+    />
+  );
+}
 
 export default function LoginPage() {
   const { signIn, sendMagicLink, sendPasswordReset, user } = useAuth();
@@ -78,7 +117,7 @@ export default function LoginPage() {
 
       <header className="fm-login-header">
         <div className="fm-login-brand">
-          <img className="fm-login-logo" src={LOGO_SRC} alt="Fresh Market" width="130" height="52" />
+          <LoginLogo />
           <span className="fm-login-brand-sep" aria-hidden="true" />
           <div>
             <p className="fm-login-brand-name">PreConnect</p>
@@ -97,7 +136,7 @@ export default function LoginPage() {
             <label className="fm-login-label">
               {t("common.email")}
               <span className="fm-login-field">
-                <IconMail />
+                <Mail {...iconProps} />
                 <input
                   type="email"
                   required
@@ -114,7 +153,7 @@ export default function LoginPage() {
               <label className="fm-login-label">
                 {t("common.password")}
                 <span className="fm-login-field">
-                  <IconLock />
+                  <Lock {...iconProps} />
                   <input
                     type="password"
                     required
@@ -169,7 +208,7 @@ export default function LoginPage() {
           <div className="fm-login-register-box">
             <p className="fm-login-register-intro">{t("login.no_account_register_intro")}</p>
             <Link to="/zarejestruj-dostawce" className="fm-login-register">
-              <IconUserPlus />
+              <UserPlus {...iconProps} />
               {t("login.register_link")}
             </Link>
             <p className="fm-login-buyers-note">{t("login.buyers_note")}</p>
@@ -196,14 +235,14 @@ export default function LoginPage() {
 
           <div className="fm-login-roles">
             <div className="fm-login-role fm-login-role--supplier">
-              <IconCrate />
+              <Apple {...iconProps} />
               <div>
                 <h3>{t("login.for_suppliers_title")}</h3>
                 <p>{t("login.for_suppliers_text")}</p>
               </div>
             </div>
             <div className="fm-login-role fm-login-role--buyer">
-              <IconCart />
+              <ShoppingCart {...iconProps} />
               <div>
                 <h3>{t("login.for_buyers_title")}</h3>
                 <p>{t("login.for_buyers_text")}</p>
@@ -215,15 +254,15 @@ export default function LoginPage() {
               pokazane osobno i bez daty wydarzenia. */}
           <ul className="fm-login-modules">
             <li>
-              <IconScreen />
+              <MonitorCheck {...iconProps} />
               <span><strong>{t("login.module_preconnect_title")}</strong>{t("login.module_preconnect_text")}</span>
             </li>
             <li>
-              <IconPeople />
+              <Users {...iconProps} />
               <span><strong>{t("login.module_meetings_title")}</strong>{t("login.module_meetings_text")}</span>
             </li>
             <li>
-              <IconLeaf />
+              <Leaf {...iconProps} />
               <span className="fm-login-sectors">
                 {t("login.sector_fruit")}<i aria-hidden="true">•</i>{t("login.sector_vegetables")}<i aria-hidden="true">•</i>{t("login.sector_flowers")}
               </span>
@@ -235,13 +274,5 @@ export default function LoginPage() {
   );
 }
 
-// Ikony: proste rysunki liniowe w kodzie (bez zewnętrznych plików), ukryte przed czytnikami ekranu.
-const svgProps = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true, focusable: "false" };
-const IconMail = () => (<svg {...svgProps}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3.5 7 8.5 6 8.5-6" /></svg>);
-const IconLock = () => (<svg {...svgProps}><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></svg>);
-const IconUserPlus = () => (<svg {...svgProps}><circle cx="10" cy="8" r="3.5" /><path d="M3.5 20a6.5 6.5 0 0 1 13 0" /><path d="M19 8v6M16 11h6" /></svg>);
-const IconCrate = () => (<svg {...svgProps}><path d="M3 11h18v9H3z" /><path d="M3 15.5h18M8 11v9M16 11v9" /><circle cx="9" cy="7.5" r="2.5" /><circle cx="15" cy="7.5" r="2.5" /><path d="M12 5.2c.3-1.2 1.1-2 2.2-2.2" /></svg>);
-const IconCart = () => (<svg {...svgProps}><path d="M2.5 4h2.6l2.3 10.5h10.2l2-7.5H6.3" /><circle cx="9" cy="18.5" r="1.4" /><circle cx="16.5" cy="18.5" r="1.4" /></svg>);
-const IconScreen = () => (<svg {...svgProps}><rect x="3" y="4.5" width="18" height="12" rx="2" /><path d="M8.5 20h7M12 16.5V20" /><path d="m9 10.5 2 2 4-4" /></svg>);
-const IconPeople = () => (<svg {...svgProps}><circle cx="8" cy="8.5" r="3" /><circle cx="16.5" cy="9.5" r="2.5" /><path d="M2.5 19.5a5.5 5.5 0 0 1 11 0M14.5 19.5a4.2 4.2 0 0 1 7 -3" /></svg>);
-const IconLeaf = () => (<svg {...svgProps}><path d="M5 19c0-8 5-13.5 15-14-.5 10-6 15-14 15" /><path d="M5 19c2-4.5 5-7.5 9.5-9.5" /></svg>);
+// Ikony z lucide-react (biblioteka już używana w aplikacji); dekoracyjne — ukryte przed czytnikami ekranu.
+const iconProps = { strokeWidth: 1.7, "aria-hidden": true, focusable: "false" };
