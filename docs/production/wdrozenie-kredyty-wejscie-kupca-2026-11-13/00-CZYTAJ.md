@@ -143,7 +143,7 @@ Każdy krok ma warunek przejścia dalej. Wynik każdego kroku zapisz w dzienniku
 
 | # | Krok | Kto | Warunek przejścia |
 |---|---|---|---|
-| 1 | `01-kontrola-przed-migracja.sql` na produkcji (tylko odczyt) | Artur / Codex | wiersze 1–8 = OK; zapisz wartości „informacja” (20–23) |
+| 1 | `01-kontrola-przed-migracja.sql` na produkcji (tylko odczyt) — powtórzyć w dniu migracji | Artur / Codex | wiersze 1–8 = OK; zapisz wartości „informacja” (20–31 i podział na sieci 100+) |
 | 2 | Migracja: cała treść `supabase/migrations/20261113120000_manual_read_confirm.sql` jednym Run | Artur / Codex | „Success. No rows returned” |
 | 3 | `03-kontrola-po-migracji.sql` (tylko odczyt) | Artur / Codex | 8/8 OK |
 | 4 | Produkcja po migracji, jeszcze na starym kodzie: panel admina i Pipeline otwierają się bez błędów | Artur | brak błędów; stary kod nie używa nowych funkcji |
@@ -153,7 +153,37 @@ Każdy krok ma warunek przejścia dalej. Wynik każdego kroku zapisz w dzienniku
 
 Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmienia w działaniu starego kodu.
 
-**Uwaga operacyjna (wiersz 20 kontroli):** po wdrożeniu kodu pierwsze wejście każdego kupca rozliczy wszystkie propozycje czekające na jego sieć. To zamierzony skutek nowej reguły; liczbę znasz z kroku 1.
+### Zakres nowej reguły na produkcji — kontrola z 13.11.2026 (tylko odczyt)
+
+Uruchomiona w Supabase → SQL Editor na projekcie produkcyjnym; treść zapytania zgodna co do bajta z plikiem `01-kontrola-przed-migracja.sql` z commita `e26e497` (suma kontrolna sprawdzona przed uruchomieniem). Zapytanie to pojedynczy `SELECT`; niczego nie zapisuje.
+
+**Warunki wstępne migracji (wiersze 1–8): 8/8 OK** — zależności istnieją, nowych funkcji jeszcze nie ma, kolumny zgodne.
+
+**Liczba propozycji objętych regułą „kredyt przy wejściu kupca”:**
+
+| Wiersz | Co | Wynik |
+|---|---|---|
+| 20 | propozycje czekające razem (`sent` / `opened`) — pierwsze wejście kupca zmieni im status | **12** |
+| 21 | z nich nierozliczone — tyle kredytów może zejść przy pierwszych wejściach kupców | **10** |
+| 22 | z nierozliczonych: w sieciach aktywnych z co najmniej jednym aktywnym kontem kupca | 10 |
+| 23 | z nierozliczonych: w sieciach nieaktywnych albo bez aktywnego konta kupca | 0 |
+| 24 | z realnego zakresu: dostawca ma wolny kredyt (kredyt zejdzie) | 10 |
+| 25 | z realnego zakresu: dostawca nie ma wolnego kredytu | 0 |
+| 26 | z nierozliczonych: **bez wysłanego mailingu** (kupiec nie dostał jeszcze maila) | **8** |
+| 27 | `opened` już rozliczone otwarciem maila (wejście zmieni tylko status) | 2 |
+| 28 | sieci / dostawcy z nierozliczonymi czekającymi propozycjami | 8 / 2 |
+| 29 | daty wysłania nierozliczonych czekających | 2026-10-29 – 2026-11-04 |
+| 30 | odczyty aplikacji zapisane dotąd na administratora (rozliczenia z podglądu konta kupca) | 2 |
+| 31 | `read_manual` bez rozliczenia | 0 |
+
+Podział nierozliczonych na sieci (wszystkie aktywne, wszystkie u dostawców z wolnym kredytem): Albert CZ/Bakker 2 (1 bez mailingu), PROMO Cash and Carry 2 (2), Aldi Polska 1 (1), Makro Polska 1 (1), NOVUS 1 (1), Mega Image 1 (1), Bingo 1 (0), Tesco 1 (1).
+
+Co z tego wynika:
+
+- po wdrożeniu kodu pierwsze wejście kupca każdej z 8 sieci rozliczy propozycje czekające na tę sieć — łącznie do **10 kredytów u 2 dostawców**;
+- **8 z tych 10** to propozycje, dla których mailing do sieci jeszcze nie wyszedł. Obecny kod rozlicza je dopiero, gdy kupiec otworzy listę propozycji; nowy — już przy samym wejściu do aplikacji. To zamierzony skutek decyzji z 13.11, ale warto go potwierdzić świadomie przed scaleniem;
+- wiersz 30 potwierdza, że błąd podglądu administratora wystąpił na produkcji: 2 odczyty zapisane na administratora;
+- liczby zmieniają się z każdą nową wysyłką i odczytem — kontrolę trzeba powtórzyć w dniu migracji.
 
 ## 5. Wycofanie
 
@@ -184,4 +214,5 @@ Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmieni
 | 13.11.2026 | Review skryptu `07` w `819f316` | GO recenzenta dla skryptu (nie dla migracji ani scalenia PR); następny krok: nadzorowany `--apply`, bez równoległych zmian zmiennych |
 | 13.11.2026 | `--apply` | NIEWYKONANE: próba Claude'a zablokowana przez zabezpieczenie jego środowiska (zapis do magazynu sekretów) przed uruchomieniem — zmienne w stanie wyjściowym (kontrola odczytem: 19/19 par klucz–kontekst nadal z dostępem, produkcja bez zmian). Uruchamia Artur; po przebiegu Claude wykonuje niezależną kontrolę odczytem i dopisuje wynik |
 | 13.11.2026 | `--apply` skryptu `07` | **ZALICZONE.** Uruchomił Artur. Kontrole odczytem (Codex i Claude, niezależnie): izolacja 0/19 par z dostępem; produkcja 24/24 zgodna z odciskami sprzed operacji (wartości jawne i identyfikatory wpisów sekretów); zakresy bez zmian; brak zmian poza planem; opublikowany deploy ten sam (`6af2db23`, `9c8e747`); podglądy PR wyłączone. Etap zabezpieczeń zamknięty |
-| — | Migracja produkcyjna i scalenie PR | **NIEWYKONANE** — osobny krok, wymaga osobnej zgody (pkt 4) |
+| 13.11.2026 | `01-kontrola-przed-migracja.sql` na produkcji (tylko odczyt, commit `e26e497`) | warunki wstępne 8/8 OK; 12 czekających, 10 nierozliczonych (8 sieci, 2 dostawców), z tego 8 bez wysłanego mailingu; 2 odczyty zapisane dotąd na administratora; szczegóły w pkt 4 |
+| — | Migracja produkcyjna i scalenie PR | **NIEWYKONANE** — osobny krok, do czasu GO recenzenta i zgody Artura (pkt 4) |
