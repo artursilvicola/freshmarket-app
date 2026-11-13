@@ -85,7 +85,7 @@ Zakres (produkcja bez zmian):
 - `RESEND_API_KEY`, `OPENAI_API_KEY`: usunąć wpisy **Deploy Previews** i **Branch deploys**;
 - `SUPABASE_SERVICE_ROLE_KEY`: usunąć wpis **Branch deploys** (w Deploy Previews jest klucz projektu testowego).
 
-#### Skrypt `07` — wersja poprawiona po review (czeka na zgodę recenzenta)
+#### Skrypt `07` — wersja poprawiona po review (GO recenzenta dla `819f316`; `--apply` uruchamia Artur)
 
 Uwagi recenzenta i co się zmieniło:
 
@@ -104,7 +104,7 @@ Logika: `scripts/lib/netlify-context-isolation.mjs`; testy z atrapami: `tests/ne
 
 ```
 node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs            # próba na sucho (tylko odczyt)
-node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs --apply    # zapis — DOPIERO po zgodzie recenzenta
+node docs/production/wdrozenie-kredyty-wejscie-kupca-2026-11-13/07-odciecie-sekretow-od-podgladow.mjs --apply    # zapis — zgoda recenzenta jest (13.11); kod 2 = stop i ustalenie stanu przed ponowieniem
 ```
 
 Przebieg na sucho na prawdziwym projekcie (13.11, tylko odczyt): 7 zmiennych do ograniczenia, 5 wpisów do usunięcia; w symulacji po zmianach żaden z 19 par klucz–kontekst nie jest dostępny, a 24 zmienne produkcyjne są bez zmian; kod 0.
@@ -165,3 +165,5 @@ Między krokiem 2 a 5 może minąć dowolny czas — migracja niczego nie zmieni
 | 13.11.2026 | Podglądy PR wyłączone w ustawieniach projektu (`skip_prs = true`) | pozostałe ustawienia budowania bez zmian (skrót identyczny) |
 | 13.11.2026 | Odcięcie kluczy od podglądów i gałęzi (`07`) | NIEWYKONANE przez Claude'a (zapis sekretów zablokowany); przebieg `--dry`: 7 zmiennych do ograniczenia, 5 wpisów do usunięcia, produkcja 25/25 bez zmian |
 | 13.11.2026 | Skrypt `07` po review (NO-GO dla pierwszej wersji) | przepisany: zapis poza linią poleceń, wymuszona kontrola braku kluczy, stan niepewny po awarii; 27 testów z atrapami; przebieg na sucho na prawdziwym projekcie: kod 0, nic nie zapisano; czeka na zgodę recenzenta |
+| 13.11.2026 | Review skryptu `07` w `819f316` | GO recenzenta dla skryptu (nie dla migracji ani scalenia PR); następny krok: nadzorowany `--apply`, bez równoległych zmian zmiennych |
+| 13.11.2026 | `--apply` | NIEWYKONANE: próba Claude'a zablokowana przez zabezpieczenie jego środowiska (zapis do magazynu sekretów) przed uruchomieniem — zmienne w stanie wyjściowym (kontrola odczytem: 19/19 par klucz–kontekst nadal z dostępem, produkcja bez zmian). Uruchamia Artur; po przebiegu Claude wykonuje niezależną kontrolę odczytem i dopisuje wynik |
